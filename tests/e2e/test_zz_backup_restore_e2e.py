@@ -3,7 +3,6 @@
 Tests the full backup/restore cycle with real pg_dump/psql to verify
 that --clean flag produces restorable dumps when tables already exist.
 """
-import shutil
 from datetime import UTC
 from uuid import uuid4
 
@@ -12,17 +11,27 @@ import pytest_asyncio
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
+from app.config.settings import settings
 from app.models.memory_models import MemoryCreate
 from app.repositories.postgres.memory_repository import PostgresMemoryRepository
 from app.services.backup_service import BackupService
+from tests.backup_restore_cases import BackupTestEmbeddings
 
 pytestmark = [
     pytest.mark.asyncio(loop_scope="session"),
-    pytest.mark.skipif(
-        shutil.which("pg_dump") is None,
-        reason="pg_dump not found — install postgresql-client to run backup tests",
-    ),
+    pytest.mark.usefixtures("postgres_backup_tools", "backup_directory"),
 ]
+
+
+@pytest.fixture
+def backup_directory(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "SQLITE_PATH", str(tmp_path / "backup-test.db"))
+
+
+@pytest.fixture
+def embedding_adapter():
+    """Backup checks need real vectors, but no external model or API."""
+    return BackupTestEmbeddings()
 
 
 @pytest_asyncio.fixture(loop_scope="session")
@@ -45,7 +54,7 @@ async def _restore_and_recycle_pool(backup_service, backup_path, db_adapter):
     2. Run the restore
     3. Pool auto-rebuilds with fresh connections on next use
     """
-    await db_adapter._engine.dispose()
+    await db_adapter.dispose()
     await backup_service.restore_backup(backup_path)
 
 

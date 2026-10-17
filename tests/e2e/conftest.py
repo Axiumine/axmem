@@ -16,6 +16,8 @@ connection pool is session-scoped and its connections are bound to the event loo
 they were created on. All tests must also run on the session loop.
 """
 import asyncio
+import os
+import shutil
 import subprocess
 import time
 import typing
@@ -263,6 +265,17 @@ def _container_running(container_name: str) -> bool:
 
 
 @pytest.fixture(scope="session")
+def postgres_backup_tools():
+    """Local runs may skip missing clients; CI must actually exercise backup recovery."""
+    missing = [tool for tool in ("pg_dump", "psql") if shutil.which(tool) is None]
+    if missing:
+        message = f"Install postgresql-client to run backup tests: missing {', '.join(missing)}"
+        if os.environ.get("CI"):
+            pytest.fail(message)
+        pytest.skip(message)
+
+
+@pytest.fixture(scope="session")
 def postgres_container():
     """Ensure forgetful-db container is running for the entire test session.
 
@@ -276,7 +289,6 @@ def postgres_container():
     # Ensure .env exists (copy from .env.example if missing, e.g. in CI)
     env_file = docker_dir / ".env"
     if not env_file.exists():
-        import shutil
         shutil.copy(docker_dir / ".env.example", env_file)
         print("\n  Copied .env.example -> .env")
 
@@ -288,7 +300,7 @@ def postgres_container():
         env = {"COMPOSE_PROJECT_NAME": "forgetful"}
         result = subprocess.run(
             ["docker", "compose", "-f", str(compose_file), "up", "-d", "forgetful-db"],
-            env={**dict(__import__("os").environ), **env},
+            env={**os.environ, **env},
             capture_output=True, text=True, cwd=str(project_root),
         )
         if result.returncode != 0:

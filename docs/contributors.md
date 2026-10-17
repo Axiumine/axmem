@@ -96,15 +96,40 @@ These tests use an in-memory SQLite database for test isolation. Fast execution 
 **Run locally**:
 ```bash
 # Start PostgreSQL
-docker compose up -d postgres
+docker compose -f docker/docker-compose.yml up -d forgetful-db
 
 # Run E2E tests
 pytest -m e2e
 ```
 
-**CI Status**: ⚠️ Only runs on push to `main` branch or manual workflow dispatch
+**CI Status**: Runs on every branch push, pull request, and manual workflow dispatch.
 
-These tests are marked with `@pytest.mark.e2e` and validate the full application stack with PostgreSQL backend. They're heavier than SQLite E2E tests and reserved for main branch validation.
+These tests are marked with `@pytest.mark.e2e` and validate the full application stack with
+PostgreSQL. Use a disposable database: the E2E fixtures clear its application tables.
+
+#### Backup and recovery tests
+
+These tests use a temporary SQLite file or the PostgreSQL E2E database. They check that a
+backup restores memories, metadata, links, obsolete state, and searchable vectors. They also
+run the real CLI, fail the embedding provider after a saved batch or during the final search
+check, and verify that automatic recovery restores the original data.
+
+The embedding provider returns fixed vectors, so these tests need no model downloads or API keys.
+PostgreSQL requires `pg_dump` and `psql` compatible with the PostgreSQL 16 test server. CI installs
+the client tools explicitly and fails if either is missing; local runs skip with an explanation.
+
+```bash
+uv run pytest tests/e2e_sqlite/test_backup_restore_sqlite.py -q --durations=5
+uv run pytest tests/e2e/test_backup_recovery_e2e.py \
+  tests/e2e/test_zz_backup_restore_e2e.py -m e2e -q --durations=5
+```
+
+To target a disposable database already running on port 55099, prefix the PostgreSQL command
+with `PGPORT=55099 POSTGRES_DB=forgetful_backup_tests`. Set `POSTGRES_USER` and
+`POSTGRES_PASSWORD` to that test database's credentials as needed.
+
+Both suites run in the existing CI jobs. A push to a branch with an open PR starts both a push
+run and a PR run; newer runs cancel older runs for the same workflow and ref.
 
 ---
 ## Linting
@@ -132,16 +157,19 @@ uv tool run ruff check .
 
 ### `e2e.yml` - PostgreSQL E2E Validation
 
-**Triggers**: Push to `main` branch OR manual workflow dispatch
+**Triggers**: Every branch push, pull request, and manual workflow dispatch
 
 **Purpose**: Validate with real PostgreSQL database
 
 **Steps**:
-1. Run PostgreSQL E2E tests (`tests/e2e/` with `-m e2e` marker)
+1. Install PostgreSQL backup client tools.
+2. Run PostgreSQL E2E tests (`tests/e2e/` with `-m e2e` marker), including backup recovery.
 
-**Status**: Reports failures but doesn't block ⚠️
+**Merge requirements**: Configure the repository's branch rules to require the `e2e` check.
+The workflow alone does not make a check mandatory for merging.
 
-**Test Coverage**: Validates full application stack with PostgreSQL backend. These are heavier tests reserved for main branch validation to ensure production database compatibility.
+**Test Coverage**: Validates the full application stack with PostgreSQL, including real
+`pg_dump`/`psql` backup and restore.
 
 ### `build.yml` - Docker Image Build
 
