@@ -108,6 +108,10 @@ _SourceFile = Annotated[
     BeforeValidator(_reject_unencodable),
 ]
 
+# Values accepted for sorting memory listings (same sets as the REST list endpoint)
+VALID_SORT_BY: tuple[str, ...] = ("created_at", "updated_at", "importance")
+VALID_SORT_ORDER: tuple[str, ...] = ("asc", "desc")
+
 
 class MemoryCreate(BaseModel):
     """Request model for creating a memory
