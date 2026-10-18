@@ -9,12 +9,25 @@ import json
 import os
 import re
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlsplit, urlunsplit
+
+from app.utils.url_helpers import redact_url
 
 # A real scheme is always followed by "://"; "localhost:8020" is NOT a scheme
 # (urlparse misreads its scheme as "localhost"), so match on the "://" form.
 _SCHEME_RE = re.compile(r"^([a-zA-Z][a-zA-Z0-9+.-]*)://")
 _LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
+
+# fastmcp waits forever by default, for the initialize handshake and for every request.
+# A server that answers with 200 and a non-MCP body (proxy error page, SPA catch-all,
+# captive portal, wrong --server URL) would then hang the CLI until Ctrl-C. A timeout
+# turns that into a clean "Error: ..." and exit code 1.
+CLIENT_INIT_TIMEOUT_SECONDS = 30.0
+# Matches the 300s read timeout the MCP HTTP transport already applies by default.
+CLIENT_REQUEST_TIMEOUT_SECONDS = 300.0
+# The OAuth browser login runs inside the first request, and fastmcp's callback server
+# waits up to 300s for it, so an interactive client needs more headroom than that.
+INTERACTIVE_CLIENT_TIMEOUT_SECONDS = 360.0
 
 
 def normalize_server_url(url: str) -> str:
@@ -22,24 +35,46 @@ def normalize_server_url(url: str) -> str:
 
     Scheme-less input (bare ``host`` or ``host:port``) gets a default scheme:
     ``http://`` for loopback hosts (localhost / 127.0.0.1 / [::1]) and ``https://``
-    for everything else (secure by default). The ``/mcp`` mount path is then appended
-    when the URL carries no explicit path. Explicit ``http``/``https`` URLs keep their
-    scheme; any other explicit scheme (e.g. ``ftp://``) is rejected.
+    for everything else (secure by default). The scheme is lower-cased, because
+    fastmcp's transport inference is case-sensitive. The ``/mcp`` mount path is then
+    set when the URL carries no explicit path; only the path component is edited, so
+    a query string or fragment is preserved and normalizing twice changes nothing.
+    Explicit ``http``/``https`` URLs keep their scheme; any other explicit scheme
+    (e.g. ``ftp://``) is rejected.
     """
-    url = url.rstrip("/")
     match = _SCHEME_RE.match(url)
     if match:
         if match.group(1).lower() not in ("http", "https"):
-            raise ValueError(f"Unsupported server URL scheme: {url!r}")
+            raise ValueError(f"Unsupported server URL scheme: {redact_url(url)!r}")
     else:
         # Prepend a throwaway scheme so urlparse can extract the real hostname
         # (it strips IPv6 brackets and lowercases), then pick the true default.
         host = urlparse(f"http://{url}").hostname or ""
         scheme = "http" if host in _LOOPBACK_HOSTS else "https"
         url = f"{scheme}://{url}"
-    if urlparse(url).path in ("", "/"):
-        return f"{url}/mcp"
-    return url
+    parts = urlsplit(url)  # also lower-cases the scheme
+    return urlunsplit(parts._replace(path=parts.path.rstrip("/") or "/mcp"))
+
+
+def strip_url_userinfo(url: str) -> str:
+    """Drop any ``user:password@`` part of a URL; the rest is kept as is."""
+    parts = urlsplit(url)
+    if "@" not in parts.netloc:
+        return url
+    return urlunsplit(parts._replace(netloc=parts.netloc.rpartition("@")[2]))
+
+
+def client_timeouts(*, interactive: bool = False) -> dict[str, float]:
+    """Handshake and request timeouts for a fastmcp Client (``interactive``: OAuth)."""
+    if interactive:
+        return {
+            "init_timeout": INTERACTIVE_CLIENT_TIMEOUT_SECONDS,
+            "timeout": INTERACTIVE_CLIENT_TIMEOUT_SECONDS,
+        }
+    return {
+        "init_timeout": CLIENT_INIT_TIMEOUT_SECONDS,
+        "timeout": CLIENT_REQUEST_TIMEOUT_SECONDS,
+    }
 
 
 def bearer_token_from_env() -> str | None:
@@ -72,7 +107,7 @@ def _default_client_factory(url: str, token: str | None):
     from fastmcp import Client
 
     if token:
-        return Client(url, auth=token)
+        return Client(url, auth=token, **client_timeouts())
 
     from fastmcp.client.auth import OAuth
 
@@ -83,7 +118,7 @@ def _default_client_factory(url: str, token: str | None):
     cache.mkdir(parents=True, exist_ok=True)
     cache.chmod(0o700)
     oauth = OAuth(mcp_url=url, token_storage=oauth_token_file_tree_store(cache))
-    return Client(url, auth=oauth)
+    return Client(url, auth=oauth, **client_timeouts(interactive=True))
 
 
 class RemoteExecutor:
