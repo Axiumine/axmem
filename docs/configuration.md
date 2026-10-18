@@ -466,6 +466,9 @@ browser flow, so an expired token is reported as not authenticated until you run
 
 These settings control the atomic memory system's behavior and constraints.
 
+The length and count limits below are checked when a memory is created or updated. Lowering
+one later does not make memories that were stored under the old limit unreadable.
+
 ### `MEMORY_TITLE_MAX_LENGTH`
 - **Default**: `200`
 - **Description**: Maximum characters for memory titles
@@ -497,6 +500,27 @@ These settings control the atomic memory system's behavior and constraints.
 - **Description**: Maximum number of tags per memory
 - **Purpose**: Categorization and filtering
 - **Example**: `MEMORY_TAGS_MAX_COUNT=10`
+
+### `MEMORY_KEYWORD_MAX_LENGTH`
+- **Default**: `100`
+- **Description**: Maximum characters for a single memory keyword (after trimming whitespace)
+- **Purpose**: Keywords are search terms, not sentences. Bounding each item also bounds the text that is embedded and token-counted for every search that returns the memory
+- **Note**: Applies when memories are created or updated; memories stored earlier with longer keywords stay readable
+- **Example**: `MEMORY_KEYWORD_MAX_LENGTH=100`
+
+### `MEMORY_TAG_MAX_LENGTH`
+- **Default**: `100`
+- **Description**: Maximum characters for a single memory tag (after trimming whitespace)
+- **Purpose**: Tags are short category labels; see `MEMORY_KEYWORD_MAX_LENGTH` for why each item is bounded
+- **Note**: Applies when memories are created or updated; memories stored earlier with longer tags stay readable
+- **Example**: `MEMORY_TAG_MAX_LENGTH=100`
+
+### `MEMORY_SOURCE_FILE_MAX_LENGTH`
+- **Default**: `4096`
+- **Description**: Maximum characters for a single `source_files` path (after trimming whitespace)
+- **Purpose**: Keeps provenance paths bounded; the default matches the Linux `PATH_MAX`
+- **Note**: Applies when memories are created or updated; memories stored earlier stay readable
+- **Example**: `MEMORY_SOURCE_FILE_MAX_LENGTH=4096`
 
 ### `MEMORY_TOKEN_BUDGET`
 - **Default**: `8000`

@@ -155,8 +155,8 @@ Create an atomic memory with automatic linking to related memories.
 - `content` (required): Memory content - ONE concept (max 2000 chars, ~300-400 words)
 - `importance` (required): Importance score 1-10 (9-10 = foundational, 7-8 = patterns, 5-6 = context)
 - `context` (required): Why the memory matters (max 500 chars)
-- `keywords` (required): Search keywords (max 10)
-- `tags` (required): Categorization tags (max 10)
+- `keywords` (required): Search keywords (max 10, each max 100 chars)
+- `tags` (required): Categorization tags (max 10, each max 100 chars)
 - `project_ids` (optional): Project IDs to link
 - `document_ids` (optional): Document IDs to link
 - `file_ids` (optional): Existing file IDs to link (files must belong to the current user; unknown IDs fail)
@@ -164,11 +164,14 @@ Create an atomic memory with automatic linking to related memories.
 
 **Provenance Tracking (optional):**
 - `source_repo` (optional): Repository source (e.g., 'owner/repo', max 200 chars)
-- `source_files` (optional): List of file paths that informed this memory
+- `source_files` (optional): List of file paths that informed this memory (each max 4096 chars)
 - `source_url` (optional): URL to original source material (max 2048 chars)
 - `confidence` (optional): Encoding confidence score (0.0-1.0)
 - `encoding_agent` (optional): Agent/process that created this memory (max 100 chars)
 - `encoding_version` (optional): Version of encoding process/prompt (max 50 chars)
+
+Blank (whitespace-only) `title` and `content` values are rejected, as are strings that cannot be
+encoded as UTF-8 (for example a lone surrogate).
 
 **Returns:**
 - `id`: Created memory ID
@@ -221,7 +224,7 @@ memory = execute_forgetful_tool(
 Semantic search across all memories with context-aware ranking.
 
 **Parameters:**
-- `query` (required): Natural language search query
+- `query` (required): Natural language search query (must not be blank)
 - `query_context` (required): Why the search is being performed
 - `k` (optional): Number of primary results (default: 3, maximum: 20)
 - `include_links` (optional): Include linked memories (default: true)
@@ -273,12 +276,12 @@ Update existing memory fields (PATCH semantics - only updates provided fields).
 
 **Parameters:**
 - `memory_id` (required): Memory ID
-- `title` (optional): Updated title
-- `content` (optional): Updated content
+- `title` (optional): Updated title (must not be blank)
+- `content` (optional): Updated content (must not be blank)
 - `importance` (optional): Updated importance score
-- `context` (optional): Updated context
-- `keywords` (optional): Updated keywords
-- `tags` (optional): Updated tags
+- `context` (optional): Updated context (must not be blank)
+- `keywords` (optional): Updated keywords (each max 100 chars)
+- `tags` (optional): Updated tags (each max 100 chars)
 - `file_ids` (optional): Replaces existing file links; `[]` clears them; omit to leave them unchanged
 
 **Provenance Tracking (optional):**
@@ -1016,7 +1019,7 @@ execute_forgetful_tool("delete_skill", {"skill_id": 5})
 Semantic search across skills by description similarity.
 
 **Parameters:**
-- `query` (required): Search query string (semantic, not keyword-only)
+- `query` (required): Search query string (semantic, not keyword-only; must not be blank)
 - `k` (optional): Number of results (default: 5)
 - `project_id` (optional): Filter by project
 

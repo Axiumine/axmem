@@ -1,9 +1,112 @@
 from datetime import UTC, datetime
-from typing import Any
+from typing import Annotated, Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    BeforeValidator,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
+from pydantic_core import PydanticCustomError
 
 from app.config.settings import settings
+
+# Write-time rules for request models (MemoryCreate, MemoryUpdate, MemoryQueryRequest).
+#
+# They are attached to the *types* of the request fields rather than to validators so
+# that the Memory response model, which re-declares those fields as plain types, never
+# enforces them: rows stored under an older or looser rule must stay readable.
+#
+# Violations raise PydanticCustomError instead of ValueError: the message stays clean
+# ("title cannot be empty ...", no "Value error, " prefix) and the error context holds
+# plain values, whereas a ValueError puts the exception object there, which cannot be
+# serialised by anything that returns ``e.errors()`` to a client.
+
+
+def _reject_blank(value: str, info: ValidationInfo) -> str:
+    """Reject text that is empty after trimming; the value itself is kept verbatim"""
+    if not value.strip():
+        raise PydanticCustomError(
+            "blank_text",
+            "{field} cannot be empty or whitespace only",
+            {"field": info.field_name},
+        )
+    return value
+
+
+def _reject_unencodable(value: Any, info: ValidationInfo) -> Any:
+    """Reject strings that cannot be encoded as UTF-8, such as a lone surrogate.
+
+    json.loads accepts escapes like "\\ud83d" and a bare str is passed through
+    unchecked, but the string can neither be encoded for a JSON response nor stored
+    safely. Runs before pydantic's own str validation so the outcome does not depend
+    on whether a length constraint happens to make pydantic decode the value.
+    """
+    if isinstance(value, str):
+        try:
+            value.encode("utf-8")
+        except UnicodeEncodeError:
+            raise PydanticCustomError(
+                "unencodable_text",
+                "{field} contains characters that cannot be encoded as UTF-8 (for example a lone surrogate)",
+                {"field": info.field_name},
+            ) from None
+    return value
+
+
+# Text that must carry content: blank values pass min_length=1 but are meaningless. The
+# length constraints live in the type, ahead of the validators, so pydantic applies them
+# to the str schema itself and keeps its usual "String should have at most N characters"
+# errors even when the field is Optional.
+_Title = Annotated[
+    str,
+    StringConstraints(min_length=1, max_length=settings.MEMORY_TITLE_MAX_LENGTH),
+    BeforeValidator(_reject_unencodable),
+    AfterValidator(_reject_blank),
+]
+_Content = Annotated[
+    str,
+    StringConstraints(min_length=1, max_length=settings.MEMORY_CONTENT_MAX_LENGTH),
+    BeforeValidator(_reject_unencodable),
+    AfterValidator(_reject_blank),
+]
+_Context = Annotated[
+    str,
+    StringConstraints(min_length=1, max_length=settings.MEMORY_CONTEXT_MAX_LENGTH),
+    BeforeValidator(_reject_unencodable),
+    AfterValidator(_reject_blank),
+]
+_Query = Annotated[
+    str,
+    StringConstraints(min_length=1),
+    BeforeValidator(_reject_unencodable),
+    AfterValidator(_reject_blank),
+]
+
+# List items are trimmed before the cap is checked so that padding does not count towards
+# it. The cap also bounds the text that query_memory token-counts for every search hit.
+# The constraints come before the BeforeValidator on purpose: pydantic applies them to the
+# str schema only when they precede the validator that wraps it.
+_Keyword = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, max_length=settings.MEMORY_KEYWORD_MAX_LENGTH),
+    BeforeValidator(_reject_unencodable),
+]
+_Tag = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, max_length=settings.MEMORY_TAG_MAX_LENGTH),
+    BeforeValidator(_reject_unencodable),
+]
+_SourceFile = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, max_length=settings.MEMORY_SOURCE_FILE_MAX_LENGTH),
+    BeforeValidator(_reject_unencodable),
+]
 
 
 class MemoryCreate(BaseModel):
@@ -18,16 +121,12 @@ class MemoryCreate(BaseModel):
         Good (atomic): "TTS engine preferences: XTTS-v2"
         Bad (mega): "Complete TTS evaluation with all pros/cons/results" 
     """
-    title: str = Field(
+    title: _Title = Field(
         ...,
-        min_length=1,
-        max_length=settings.MEMORY_TITLE_MAX_LENGTH,
         description="Concise, scannable title (5-50 words). Examples: 'Python QueueHandler prevents asyncio blocking', 'TTS preference: XTTS-v2'",
     )
-    content: str = Field(
+    content: _Content = Field(
         ...,
-        min_length=1,
-        max_length=settings.MEMORY_CONTENT_MAX_LENGTH,
         description="ONE concept, self-contained (max ~400 words). If >300 words, use create_document and extract atomic memories instead.",
     )
     context: str = Field(
@@ -35,12 +134,12 @@ class MemoryCreate(BaseModel):
         max_length=settings.MEMORY_CONTEXT_MAX_LENGTH,
         description="WHY this matters, HOW it relates to other concepts, WHAT implications. Enables intelligent auto-linking and semantic retrieval.",
     )
-    keywords: list[str] = Field(
+    keywords: list[_Keyword] = Field(
         ...,
         max_length=settings.MEMORY_KEYWORDS_MAX_COUNT,
         description="Search terms for semantic discovery (e.g., 'python', 'asyncio', 'logging'). Max 10.",
     )
-    tags: list[str] = Field(
+    tags: list[_Tag] = Field(
         ...,
         max_length=settings.MEMORY_TAGS_MAX_COUNT,
         description="Categories for grouping memories (e.g., 'pattern', 'decision', 'bug-fix'). Max 10.",
@@ -78,7 +177,7 @@ class MemoryCreate(BaseModel):
         max_length=200,
         description="Repository/project source (e.g., 'owner/repo')",
     )
-    source_files: list[str] | None = Field(
+    source_files: list[_SourceFile] | None = Field(
         default=None,
         description="Files that informed this memory (JSON list of paths)",
     )
@@ -121,17 +220,12 @@ class MemoryCreate(BaseModel):
 
     @field_validator("keywords", "tags")
     @classmethod
-    def validate_lists(cls, v, info):
-        """Ensure the list doesn't contain empty strings and respect max count"""
-        cleaned = [item.strip() for item in v if item.strip()]
+    def validate_lists(cls, v):
+        """Ensure the list doesn't contain empty strings
 
-        field_name = info.field_name
-        max_count = settings.MEMORY_KEYWORDS_MAX_COUNT if field_name == "keywords" else settings.MEMORY_TAGS_MAX_COUNT
-
-        if len(cleaned) > max_count:
-            raise ValueError(f"Too many {field_name} ({len(cleaned)}, max {max_count})")
-
-        return cleaned
+        The maximum count is enforced by the field's max_length, which is checked first.
+        """
+        return [item.strip() for item in v if item.strip()]
 
     @field_validator("source_files")
     @classmethod
@@ -143,30 +237,24 @@ class MemoryCreate(BaseModel):
 
 class MemoryUpdate(BaseModel):
     """Request model for updating a memory"""
-    title: str | None = Field(
+    title: _Title | None = Field(
         None,
-        min_length=1,
-        max_length=settings.MEMORY_TITLE_MAX_LENGTH,
         description="New title (5-50 words, scannable). Unchanged if null.",
     )
-    content: str | None = Field(
+    content: _Content | None = Field(
         None,
-        min_length=1,
-        max_length=settings.MEMORY_CONTENT_MAX_LENGTH,
         description="New content (ONE concept, max ~400 words). Unchanged if null.",
     )
-    context: str | None = Field(
+    context: _Context | None = Field(
         None,
-        min_length=1,
-        max_length=settings.MEMORY_CONTEXT_MAX_LENGTH,
         description="New context (WHY/HOW/WHAT for auto-linking). Unchanged if null.",
     )
-    keywords: list[str] | None = Field(
+    keywords: list[_Keyword] | None = Field(
         None,
         max_length=settings.MEMORY_KEYWORDS_MAX_COUNT,
         description="New search terms (max 10). Replaces existing if provided, unchanged if null.",
     )
-    tags: list[str] | None = Field(
+    tags: list[_Tag] | None = Field(
         None,
         max_length=settings.MEMORY_TAGS_MAX_COUNT,
         description="New categories (max 10). Replaces existing if provided, unchanged if null.",
@@ -204,7 +292,7 @@ class MemoryUpdate(BaseModel):
         max_length=200,
         description="New repository/project source. Unchanged if null.",
     )
-    source_files: list[str] | None = Field(
+    source_files: list[_SourceFile] | None = Field(
         None,
         description="New source files list. Replaces existing if provided, unchanged if null.",
     )
@@ -259,20 +347,15 @@ class MemoryUpdate(BaseModel):
 
     @field_validator("keywords", "tags")
     @classmethod
-    def validate_lists(cls, v, info):
-        """Ensure the list doesn't contain empty strings and respect max count"""
+    def validate_lists(cls, v):
+        """Ensure the list doesn't contain empty strings
+
+        The maximum count is enforced by the field's max_length, which is checked first.
+        """
         if v is None:
             return None  # Keep None for optional fields in update model
 
-        cleaned = [item.strip() for item in v if item.strip()]
-
-        field_name = info.field_name
-        max_count = settings.MEMORY_KEYWORDS_MAX_COUNT if field_name == "keywords" else settings.MEMORY_TAGS_MAX_COUNT
-
-        if len(cleaned) > max_count:
-            raise ValueError(f"Too many {field_name} ({len(cleaned)}, max {max_count})")
-
-        return cleaned
+        return [item.strip() for item in v if item.strip()]
 
     @field_validator("source_files")
     @classmethod
@@ -284,6 +367,18 @@ class MemoryUpdate(BaseModel):
 
 class Memory(MemoryCreate):
     id: int
+    # Limits apply when a memory is written, not when it is read: the settings behind them
+    # can be lowered after data was stored, and older versions accepted blank text. The
+    # request fields that carry a write-time rule are therefore re-declared as plain types.
+    title: str = Field(..., description=MemoryCreate.model_fields["title"].description)
+    content: str = Field(..., description=MemoryCreate.model_fields["content"].description)
+    context: str = Field(..., description=MemoryCreate.model_fields["context"].description)
+    keywords: list[str] = Field(..., description=MemoryCreate.model_fields["keywords"].description)
+    tags: list[str] = Field(..., description=MemoryCreate.model_fields["tags"].description)
+    source_files: list[str] | None = Field(
+        default=None,
+        description=MemoryCreate.model_fields["source_files"].description,
+    )
     created_at: datetime = Field(default_factory=lambda: datetime.now(tz=UTC), frozen=True)
     updated_at: datetime = Field(default_factory=lambda: datetime.now(tz=UTC))
     project_ids: list[int] = Field(default_factory=list)
@@ -382,9 +477,8 @@ class MemoryListResponse(BaseModel):
 
 class MemoryQueryRequest(BaseModel):
     """Request model for querying memories"""
-    query: str = Field(
+    query: _Query = Field(
         ...,
-        min_length=1,
         description="Natural language query for semantic search (e.g., 'Python logging best practices')",
     )
     query_context: str = Field(

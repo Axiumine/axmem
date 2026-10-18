@@ -628,7 +628,13 @@ class SkillService:
 
         Returns:
             List of SkillSummary ranked by relevance
+
+        Raises:
+            ValueError: If query is empty or whitespace only
         """
+        if not query.strip():
+            raise ValueError("query cannot be empty or whitespace only")
+
         logger.info(
             "searching skills",
             extra={

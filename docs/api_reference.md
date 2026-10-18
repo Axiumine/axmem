@@ -179,11 +179,18 @@ Create a new memory.
 | Field | Type | Description |
 |-------|------|-------------|
 | `source_repo` | string | Repository source (e.g., 'owner/repo', max 200 chars) |
-| `source_files` | string[] | List of file paths that informed this memory |
+| `source_files` | string[] | List of file paths that informed this memory (each max 4096 chars) |
 | `source_url` | string | URL to original source material (max 2048 chars) |
 | `confidence` | float | Encoding confidence score (0.0-1.0) |
 | `encoding_agent` | string | Agent/process that created this memory (max 100 chars) |
 | `encoding_version` | string | Version of encoding process/prompt (max 50 chars) |
+
+**Validation:** `title` and `content` must not be blank (whitespace only); each `keywords` and
+`tags` item is limited to 100 characters (`MEMORY_KEYWORD_MAX_LENGTH`, `MEMORY_TAG_MAX_LENGTH`);
+strings that cannot be encoded as UTF-8, such as a lone surrogate from a `"\ud83d"` escape, are
+rejected. Invalid requests return `400` with a list of errors (`loc`, `msg`, `type`).
+`PUT /api/v1/memories/{id}` applies the same rules to the fields it receives, and also rejects a
+blank `context`.
 
 **Response (201):**
 ```json
@@ -256,7 +263,7 @@ Mark a memory as obsolete (soft delete).
 
 ### POST /api/v1/memories/search
 
-Semantic search across memories.
+Semantic search across memories. A blank (whitespace-only) `query` is rejected with `400`.
 
 **Request Body:**
 ```json
@@ -735,7 +742,7 @@ Semantic search for skills by description similarity.
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `query` | string | (required) | Search query |
+| `query` | string | (required) | Search query; blank (whitespace-only) values return `400` |
 | `k` | int | 5 | Number of results |
 | `project_id` | int | - | Filter by project |
 

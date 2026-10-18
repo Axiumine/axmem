@@ -200,7 +200,7 @@ def register(mcp: FastMCP):
             body = await read_json_object(request)
             memory_data = MemoryCreate(**body)
         except ValidationError as e:
-            return JSONResponse({"error": e.errors()}, status_code=400)
+            return JSONResponse({"error": e.errors(include_input=False)}, status_code=400)
         except Exception as e:
             return JSONResponse({"error": f"Invalid request body: {e!s}"}, status_code=400)
 
@@ -246,7 +246,7 @@ def register(mcp: FastMCP):
             body = await read_json_object(request)
             update_data = MemoryUpdate(**body)
         except ValidationError as e:
-            return JSONResponse({"error": e.errors()}, status_code=400)
+            return JSONResponse({"error": e.errors(include_input=False)}, status_code=400)
         except Exception as e:
             return JSONResponse({"error": f"Invalid request body: {e!s}"}, status_code=400)
 
@@ -320,7 +320,7 @@ def register(mcp: FastMCP):
             body = await read_json_object(request)
             query_request = MemoryQueryRequest(**body)
         except ValidationError as e:
-            return JSONResponse({"error": e.errors()}, status_code=400)
+            return JSONResponse({"error": e.errors(include_input=False)}, status_code=400)
         except Exception as e:
             return JSONResponse({"error": f"Invalid request body: {e!s}"}, status_code=400)
 
