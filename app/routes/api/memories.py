@@ -11,7 +11,11 @@ from pydantic import ValidationError
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-from app.exceptions import NotFoundError
+from app.exceptions import (
+    AssociationNotFoundError,
+    InvalidStateTransitionError,
+    NotFoundError,
+)
 from app.middleware.auth import get_user_from_request
 from app.models.memory_models import (
     MemoryCreate,
@@ -198,10 +202,13 @@ def register(mcp: FastMCP):
         except Exception as e:
             return JSONResponse({"error": f"Invalid request body: {e!s}"}, status_code=400)
 
-        memory, similar_memories = await mcp.memory_service.create_memory(
-            user_id=user.id,
-            memory_data=memory_data,
-        )
+        try:
+            memory, similar_memories = await mcp.memory_service.create_memory(
+                user_id=user.id,
+                memory_data=memory_data,
+            )
+        except AssociationNotFoundError as e:
+            return JSONResponse({"error": str(e)}, status_code=404)
         obsolete_matches = await mcp.memory_service.find_obsolete_matches(
             user_id=user.id,
             memory_id=memory.id,
@@ -215,6 +222,7 @@ def register(mcp: FastMCP):
             code_artifact_ids=memory.code_artifact_ids,
             document_ids=memory.document_ids,
             file_ids=memory.file_ids,
+            skill_ids=memory.skill_ids,
             similar_memories=similar_memories,
             obsolete_matches=obsolete_matches,
         )
@@ -246,6 +254,8 @@ def register(mcp: FastMCP):
                 memory_id=memory_id,
                 updated_memory=update_data,
             )
+        except AssociationNotFoundError as e:
+            return JSONResponse({"error": str(e)}, status_code=404)
         except NotFoundError:
             return JSONResponse({"error": "Memory not found"}, status_code=404)
 
@@ -273,12 +283,22 @@ def register(mcp: FastMCP):
             reason = "Marked obsolete via API"
             superseded_by = None
 
-        success = await mcp.memory_service.mark_memory_obsolete(
-            user_id=user.id,
-            memory_id=memory_id,
-            reason=reason,
-            superseded_by=superseded_by,
-        )
+        if superseded_by is not None and (isinstance(superseded_by, bool) or not isinstance(superseded_by, int)):
+            return JSONResponse({"error": "superseded_by must be an integer memory id"}, status_code=400)
+
+        try:
+            success = await mcp.memory_service.mark_memory_obsolete(
+                user_id=user.id,
+                memory_id=memory_id,
+                reason=reason,
+                superseded_by=superseded_by,
+            )
+        except AssociationNotFoundError as e:
+            return JSONResponse({"error": str(e)}, status_code=404)
+        except NotFoundError:
+            return JSONResponse({"error": "Memory not found"}, status_code=404)
+        except InvalidStateTransitionError as e:
+            return JSONResponse({"error": str(e)}, status_code=422)
 
         if not success:
             return JSONResponse({"error": "Memory not found"}, status_code=404)

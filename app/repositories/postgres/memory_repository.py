@@ -10,7 +10,11 @@ from sqlalchemy.orm import selectinload
 
 from app.config.logging_config import logging
 from app.config.settings import settings
-from app.exceptions import NotFoundError
+from app.exceptions import (
+    AssociationNotFoundError,
+    InvalidStateTransitionError,
+    NotFoundError,
+)
 from app.models.memory_models import Memory, MemoryCreate, MemoryScore, MemoryUpdate
 from app.protocols.embedding_protocol import EmbeddingsAdapter
 from app.repositories.embeddings.reranker_adapter import RerankAdapter
@@ -492,7 +496,8 @@ class PostgresMemoryRepository:
             
         Raises:
             NotFoundError: If memory not found or doesn't belong to user
-            NotFoundError: If superseded_by memory not found or doesn't belong to user
+            AssociationNotFoundError: If superseded_by memory not found or doesn't belong to user
+            InvalidStateTransitionError: If the memory is already obsolete
         """
         if not _fits_int4(memory_id):
             raise NotFoundError(f"Memory {memory_id} not found")
@@ -500,20 +505,21 @@ class PostgresMemoryRepository:
             raise NotFoundError(f"Superseding memory {superseded_by} not found")
 
         async with self.db_adapter.session(user_id) as session:
-            if superseded_by:
+            if superseded_by is not None:
                 superseding_stmt = select(MemoryTable).where(
                     MemoryTable.user_id == user_id,
                     MemoryTable.id == superseded_by,
                 )
                 superseding_result = await session.execute(superseding_stmt)
                 if not superseding_result.scalar_one_or_none():
-                    raise NotFoundError(f"Superseding memory {superseded_by} not found")
+                    raise AssociationNotFoundError(f"Superseding memory {superseded_by} not found")
 
             stmt = (
                 update(MemoryTable)
                 .where(
                     MemoryTable.user_id == user_id,
                     MemoryTable.id == memory_id,
+                    MemoryTable.is_obsolete.is_(False),
                 )
                 .values(
                     is_obsolete=True,
@@ -528,6 +534,14 @@ class PostgresMemoryRepository:
             obsoleted_memory = result.scalar_one_or_none()
 
             if not obsoleted_memory:
+                existing = await session.execute(
+                    select(MemoryTable.id).where(
+                        MemoryTable.user_id == user_id,
+                        MemoryTable.id == memory_id,
+                    ),
+                )
+                if existing.scalar_one_or_none() is not None:
+                    raise InvalidStateTransitionError(f"Memory {memory_id} is already obsolete")
                 raise NotFoundError(f"Memory {memory_id} not found")
 
             return True
@@ -1016,7 +1030,7 @@ class PostgresMemoryRepository:
         found_ids = {p.id for p in projects}
         missing_ids = set(project_ids) - found_ids
         if missing_ids:
-            raise NotFoundError(f"Projects not found: {missing_ids}")
+            raise AssociationNotFoundError(f"Projects not found: {missing_ids}")
 
         await session.run_sync(lambda sync_session: memory.projects.extend(projects))
 
@@ -1038,7 +1052,7 @@ class PostgresMemoryRepository:
         found_ids = {a.id for a in artifacts}
         missing_ids = set(code_artifact_ids) - found_ids
         if missing_ids:
-            raise NotFoundError(f"Code artifacts not found: {missing_ids}")
+            raise AssociationNotFoundError(f"Code artifacts not found: {missing_ids}")
 
         await session.run_sync(lambda sync_session: memory.code_artifacts.extend(artifacts))
 
@@ -1060,7 +1074,7 @@ class PostgresMemoryRepository:
         found_ids = {d.id for d in documents}
         missing_ids = set(document_ids) - found_ids
         if missing_ids:
-            raise NotFoundError(f"Documents not found: {missing_ids}")
+            raise AssociationNotFoundError(f"Documents not found: {missing_ids}")
 
         await session.run_sync(lambda sync_session: memory.documents.extend(documents))
 
@@ -1082,7 +1096,7 @@ class PostgresMemoryRepository:
         found_ids = {f.id for f in files}
         missing_ids = set(file_ids) - found_ids
         if missing_ids:
-            raise NotFoundError(f"Files not found: {missing_ids}")
+            raise AssociationNotFoundError(f"Files not found: {missing_ids}")
 
         await session.run_sync(lambda sync_session: memory.files.extend(files))
 
@@ -1104,7 +1118,7 @@ class PostgresMemoryRepository:
         found_ids = {s.id for s in skills}
         missing_ids = set(skill_ids) - found_ids
         if missing_ids:
-            raise NotFoundError(f"Skills not found: {missing_ids}")
+            raise AssociationNotFoundError(f"Skills not found: {missing_ids}")
 
         await session.run_sync(lambda sync_session: memory.skills.extend(skills))
 

@@ -194,9 +194,13 @@ Create a new memory.
   "project_ids": [1],
   "code_artifact_ids": [],
   "document_ids": [],
+  "file_ids": [],
+  "skill_ids": [],
   "similar_memories": []
 }
 ```
+
+**Errors:** `404` with a message such as `Projects not found: {999}` when an id in `project_ids`, `code_artifact_ids`, `document_ids`, `file_ids` or `skill_ids` does not exist (or belongs to another user). Nothing is created in that case.
 
 ### PUT /api/v1/memories/{id}
 
@@ -224,6 +228,8 @@ A field that is omitted or `null` is left unchanged. The link lists `project_ids
 
 **Response:** Updated memory object
 
+**Errors:** `404` with `Memory not found` when the memory does not exist, or with a message such as `Projects not found: {999}` when an associated id does not exist.
+
 ### DELETE /api/v1/memories/{id}
 
 Mark a memory as obsolete (soft delete).
@@ -242,6 +248,11 @@ Mark a memory as obsolete (soft delete).
   "success": true
 }
 ```
+
+**Errors:**
+- `400` when `superseded_by` is not an integer.
+- `404` with `Memory not found` when the memory does not exist, or with `Superseding memory {id} not found` when `superseded_by` does not reference one of your memories.
+- `422` when the memory is already obsolete (restore it first; the original reason and timestamp are kept) or when `superseded_by` is the memory's own id.
 
 ### POST /api/v1/memories/search
 
