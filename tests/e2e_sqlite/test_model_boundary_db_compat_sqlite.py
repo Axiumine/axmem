@@ -59,6 +59,16 @@ def _assert_rejected(response, *loc):
     return errors[0]
 
 
+def _assert_refused_by_body_parser(response):
+    """NaN, Infinity and 1e999 never reach the models over REST: the shared body parser
+    answers 400 first. The models still refuse them for the MCP tools and direct callers
+    (tests/integration/test_model_boundary_db_compat.py)."""
+    assert response.status_code == 400, response.text
+    assert json.loads(response.text, parse_constant=lambda c: pytest.fail(c)) == {
+        "error": "Invalid JSON body",
+    }
+
+
 def _assert_skill_rejected(response, location, error_type):
     """The skills routes return the pydantic message as text; it must name the field and rule."""
     assert response.status_code == 400, response.text
@@ -95,7 +105,7 @@ class TestRelationshipMetadata:
             f"/api/v1/entities/{a}/relationships", content=body, headers=JSON,
         )
 
-        _assert_rejected(response, "metadata", "w")
+        _assert_refused_by_body_parser(response)
         listed = await http_client.get(f"/api/v1/entities/{a}/relationships")
         assert listed.json()["relationships"] == []
         await _graph_is_healthy(http_client, a)
@@ -113,7 +123,7 @@ class TestRelationshipMetadata:
             content=_raw_json({"metadata": {"w": "TOKEN"}}, token), headers=JSON,
         )
 
-        _assert_rejected(response, "metadata", "w")
+        _assert_refused_by_body_parser(response)
         listed = await http_client.get(f"/api/v1/entities/{a}/relationships")
         assert listed.json()["relationships"][0]["metadata"] == {"w": 1}
         await _graph_is_healthy(http_client, a)
@@ -155,7 +165,7 @@ class TestSkill:
 
         response = await http_client.post("/api/v1/skills", content=body, headers=JSON)
 
-        _assert_skill_rejected(response, "metadata.score", "non_finite_number")
+        _assert_refused_by_body_parser(response)
         assert (await http_client.get("/api/v1/skills")).json()["total"] == 0
 
     async def test_update_with_non_finite_metadata_is_refused_and_skill_is_intact(self, http_client):
@@ -168,7 +178,7 @@ class TestSkill:
             f"/api/v1/skills/{skill_id}", content='{"metadata": {"score": NaN}}', headers=JSON,
         )
 
-        _assert_skill_rejected(response, "metadata.score", "non_finite_number")
+        _assert_refused_by_body_parser(response)
         assert (await http_client.get(f"/api/v1/skills/{skill_id}")).json()["metadata"] == {"score": 1}
 
     async def test_nul_in_content_is_refused(self, http_client):
