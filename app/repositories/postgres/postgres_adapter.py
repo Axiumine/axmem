@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from uuid import UUID
 
 from sqlalchemy import text
+from sqlalchemy.engine import URL
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -14,6 +15,22 @@ from sqlalchemy.ext.asyncio import (
 from app.config.settings import settings
 
 logger = logging.getLogger(__name__)
+
+# Arbitrary application-wide key for the advisory lock that serialises schema setup.
+MIGRATION_LOCK_KEY = 0x666F72676574
+
+
+def build_postgres_url() -> URL:
+    """Build the asyncpg URL from settings, escaping any special characters."""
+    return URL.create(
+        "postgresql+asyncpg",
+        username=settings.POSTGRES_USER,
+        password=settings.POSTGRES_PASSWORD,
+        host=settings.POSTGRES_HOST,
+        port=settings.PGPORT,
+        database=settings.POSTGRES_DB,
+    )
+
 
 class PostgresDatabaseAdapter:
 
@@ -75,6 +92,15 @@ class PostgresDatabaseAdapter:
         - Existing database: Runs pending migrations
         """
         async with self._engine.begin() as conn:
+            # Concurrent first starts (server plus CLI, several replicas) would otherwise
+            # collide on CREATE EXTENSION and the table creates. The transaction-scoped
+            # lock is released on commit or rollback, so losers then find the schema
+            # already migrated and Alembic has nothing left to do.
+            await conn.execute(
+                text("SELECT pg_advisory_xact_lock(:key)"),
+                {"key": MIGRATION_LOCK_KEY},
+            )
+
             # Enable pg_vector extension
             await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
             logger.info("Initializing Database")
@@ -98,10 +124,11 @@ class PostgresDatabaseAdapter:
         # Create Alembic config
         alembic_cfg = Config(str(alembic_ini))
 
-        # Override database URL in config
+        # Override database URL in config. Config options are %-interpolated, so any
+        # literal % (escaped credentials, for example) has to be doubled.
         alembic_cfg.set_main_option(
             "sqlalchemy.url",
-            self.construct_postgres_connection_string(),
+            self.construct_postgres_connection_string().replace("%", "%%"),
         )
 
         # Configure to use existing connection
@@ -118,8 +145,4 @@ class PostgresDatabaseAdapter:
        await self._engine.dispose()
 
     def construct_postgres_connection_string(self) -> str:
-       return (
-           f"postgresql+asyncpg://{settings.POSTGRES_USER}:"
-           f"{settings.POSTGRES_PASSWORD}@{settings.POSTGRES_HOST}:"
-           f"{settings.PGPORT}/{settings.POSTGRES_DB}"
-       )
+       return build_postgres_url().render_as_string(hide_password=False)
