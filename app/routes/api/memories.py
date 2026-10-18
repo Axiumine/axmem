@@ -18,8 +18,10 @@ from app.exceptions import (
 )
 from app.middleware.auth import get_user_from_request
 from app.models.memory_models import (
+    Memory,
     MemoryCreate,
     MemoryCreateResponse,
+    MemoryLinkRequest,
     MemoryListResponse,
     MemoryQueryRequest,
     MemoryUpdate,
@@ -350,10 +352,18 @@ def register(mcp: FastMCP):
             return JSONResponse({"error": "related_ids is required"}, status_code=400)
 
         try:
+            link_request = MemoryLinkRequest(memory_id=memory_id, related_ids=related_ids)
+        except ValidationError as e:
+            return JSONResponse(
+                {"error": e.errors(include_url=False, include_context=False, include_input=False)},
+                status_code=400,
+            )
+
+        try:
             linked_ids = await mcp.memory_service.link_memories(
                 user_id=user.id,
                 memory_id=memory_id,
-                related_ids=related_ids,
+                related_ids=link_request.related_ids,
             )
         except NotFoundError:
             return JSONResponse({"error": "Memory not found"}, status_code=404)
@@ -363,7 +373,12 @@ def register(mcp: FastMCP):
     @mcp.custom_route("/api/v1/memories/{memory_id}/links", methods=["GET"])
     @handle_request_errors
     async def get_memory_links(request: Request) -> JSONResponse:
-        """Get memories linked to this memory."""
+        """Get memories linked to this memory.
+
+        Query params:
+            limit: Max linked memories to return, at least 1 (default 20, capped at 100)
+            include_obsolete: Include obsolete linked memories (default false)
+        """
         try:
             user = await get_user_from_request(request, mcp)
         except ValueError as e:
@@ -372,7 +387,17 @@ def register(mcp: FastMCP):
         memory_id = path_id(request, "memory_id")
 
         params = request.query_params
-        limit = min(int(params.get("limit", 20)), 100)
+        try:
+            parsed_limit = parse_int_param(params, "limit", 20)
+        except ValueError as e:
+            return JSONResponse({"error": str(e)}, status_code=400)
+
+        limit = 20 if parsed_limit is None else parsed_limit
+        if limit < 1:
+            return JSONResponse({"error": "limit must be at least 1"}, status_code=400)
+        limit = min(limit, 100)
+
+        include_obsolete = params.get("include_obsolete", "false").lower() == "true"
 
         # Get the memory first to access linked_memory_ids
         try:
@@ -386,19 +411,22 @@ def register(mcp: FastMCP):
         if not memory:
             return JSONResponse({"error": "Memory not found"}, status_code=404)
 
-        # Fetch linked memories
-        linked_memories = []
-        for linked_id in memory.linked_memory_ids[:limit]:
+        # Fetch linked memories, skipping missing and (by default) obsolete ones
+        # so that `limit` counts only the memories actually returned
+        linked_memories: list[Memory] = []
+        for linked_id in memory.linked_memory_ids:
+            if len(linked_memories) >= limit:
+                break
             try:
                 linked_memory = await mcp.memory_service.get_memory(
                     user_id=user.id,
                     memory_id=linked_id,
                 )
-                if linked_memory:
-                    linked_memories.append(linked_memory)
             except NotFoundError:
                 # Skip if linked memory no longer exists
                 continue
+            if linked_memory and (include_obsolete or not linked_memory.is_obsolete):
+                linked_memories.append(linked_memory)
 
         return JSONResponse({
             "memory_id": memory_id,

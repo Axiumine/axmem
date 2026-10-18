@@ -289,6 +289,9 @@ Link memories together (bidirectional).
 }
 ```
 
+`related_ids` must be a non-empty list of integers and must not contain the memory's own id;
+anything else returns `400`.
+
 **Response:**
 ```json
 {
@@ -301,7 +304,8 @@ Link memories together (bidirectional).
 Get memories linked to this memory.
 
 **Query Parameters:**
-- `limit` (int, default 20): Max linked memories to return
+- `limit` (int, default 20): Max linked memories to return. Must be at least 1 (`400` otherwise); values above 100 are capped at 100
+- `include_obsolete` (bool, default false): Include linked memories that have been marked obsolete
 
 **Response:**
 ```json
@@ -972,13 +976,14 @@ This is the recommended endpoint for graph visualization with depth-limited trav
 
 **Deprecated:** Use `/api/v1/graph/subgraph?node_id=memory_{id}` instead.
 
-Get subgraph centered on a specific memory.
+Get subgraph centered on a specific memory. Each memory within `depth` hops is returned once with
+its shortest `level`, each link edge is listed once, and obsolete memories are not included.
 
 **Query Parameters:**
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `depth` | int | 1 | Link traversal depth (1-3) |
+| `depth` | int | 1 | Link traversal depth (1-3). Values below 1 return `400`; values above 3 are capped at 3 |
 
 **Response:**
 ```json
