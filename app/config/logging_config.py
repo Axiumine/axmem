@@ -19,6 +19,8 @@ from datetime import UTC, date, datetime
 from queue import Queue
 from uuid import UUID
 
+from app.config.settings import LOG_FORMATS, canonical_choice
+
 
 class ConsoleFormatter(logging.Formatter):
     """Console formatter with Pretty ANSI colour codes for development.
@@ -240,7 +242,8 @@ def configure_logging(
 
     Args:
         log_level: Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
-        log_format: "json" for production, "console" for development
+        log_format: "json" for production, "console" for development (case-insensitive;
+            any other value raises ValueError)
         db_logging: Log SQL statements (DB_LOGGING). Goes through this pipeline (stderr, masked)
             because SQLAlchemy's own ``echo`` would write to stdout, which carries the stdio
             MCP stream. Parameter values stay hidden (``hide_parameters`` on the engines).
@@ -254,6 +257,8 @@ def configure_logging(
     off the event loop.
     """
     global _queue_listener
+
+    log_format = canonical_choice("LOG_FORMAT", log_format, LOG_FORMATS)
 
     # Create queue for log records
     log_queue: Queue = Queue(-1)  # Unlimited size

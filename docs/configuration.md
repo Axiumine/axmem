@@ -103,6 +103,7 @@ Forgetful provides three Docker Compose configurations:
 - **Values**:
   - `console` - Human-readable format (recommended for development)
   - `json` - Structured JSON format (recommended for production)
+- **Note**: Matched case-insensitively. Any other value stops startup with an error naming the setting; an empty value keeps the default
 - **Example**: `LOG_FORMAT=json`
 
 ### `MCP_DESCRIPTOR_MODE`
@@ -478,6 +479,8 @@ These settings control the atomic memory system's behavior and constraints.
 The length and count limits below are checked when a memory is created or updated. Lowering
 one later does not make memories that were stored under the old limit unreadable.
 
+**PostgreSQL column widths**: on PostgreSQL several `*_MAX_LENGTH` settings map to fixed-width `VARCHAR` columns (the plan/task title and assigned agent, skill name/description/license/compatibility, code artifact and document title, file name, entity name/type and relationship type). A value above the column width is lowered to it at startup with a warning, because PostgreSQL would reject longer values. SQLite does not enforce `VARCHAR` length, so the configured value is used as is.
+
 ### `MEMORY_TITLE_MAX_LENGTH`
 - **Default**: `200`
 - **Description**: Maximum characters for memory titles
@@ -779,29 +782,36 @@ These settings control the planning and task management feature.
 
 These settings allow you to stamp every object created through a Forgetful server instance with identifying information about the agent and software doing the encoding. Useful when multiple agents or tools write to the same knowledge base.
 
+Values are checked at startup against the length limits of the fields they are copied into (noted per setting below); an over-long value stops startup with an error naming the setting, instead of failing every create later.
+
 ### `ENCODING_AGENT`
 - **Default**: `""` (empty, not applied)
 - **Description**: Software or tool running the agent (e.g., the AI coding tool or script)
+- **Note**: At most 100 characters
 - **Example**: `ENCODING_AGENT=OpenCode`
 
 ### `ENCODING_VERSION`
 - **Default**: `""` (empty, not applied)
 - **Description**: Version of the encoding software
+- **Note**: At most 50 characters
 - **Example**: `ENCODING_VERSION=1.3.13`
 
 ### `AGENT_ID`
 - **Default**: `""` (empty, not applied)
 - **Description**: Identity of the agent doing the encoding (logical name, not an instance ID)
+- **Note**: At most 100 characters
 - **Example**: `AGENT_ID=CodeAgentUltra`
 
 ### `AGENT_VERSION`
 - **Default**: `""` (empty, not applied)
 - **Description**: Version of the agent
+- **Note**: At most 50 characters
 - **Example**: `AGENT_VERSION=1.0`
 
 ### `AGENT_MODEL`
 - **Default**: `""` (empty, not applied)
 - **Description**: LLM model the agent is running on
+- **Note**: At most 100 characters
 - **Example**: `AGENT_MODEL=claude-sonnet-4-6`
 
 ### `ENFORCE_ENV_OVERWRITE`
@@ -849,7 +859,7 @@ Activity tracking provides an audit log of all entity lifecycle events (created,
 - **Default**: `null` (forever)
 - **Description**: Number of days to keep activity events before automatic cleanup
 - **Values**:
-  - `null` or omit - Keep events forever
+  - empty, `null`, `none`, or omit - Keep events forever
   - `30` - Keep events for 30 days
   - `90` - Keep events for 90 days
 - **Behavior**: Cleanup happens lazily on API access (not via scheduled job)
@@ -921,6 +931,7 @@ ACTIVITY_TRACK_READS=false
 - **Default**: `FastEmbed`
 - **Description**: Embedding generation provider
 - **Current Support**: FastEmbed | Azure | Google | OpenAI | Ollama
+- **Note**: Matched case-insensitively. Any other value stops startup with an error naming the setting; an empty value keeps the default
 - **Example**: `EMBEDDING_PROVIDER=FastEmbed`
 
 ### `EMBEDDING_MODEL`
@@ -1051,6 +1062,7 @@ ACTIVITY_TRACK_READS=false
 - **Values**:
   - `FastEmbed` - Local cross-encoder model via FastEmbed (zero-config, no API key)
   - `HTTP` - Any server exposing a `/v1/rerank`-compatible endpoint (Jina, Cohere, vLLM, llama.cpp, Infinity, etc.)
+- **Note**: Matched case-insensitively. Any other value stops startup with an error naming the setting; an empty value keeps the default
 - **Example**: `RERANKING_PROVIDER=HTTP`
 
 #### `RERANKING_MODEL`

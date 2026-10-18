@@ -49,18 +49,18 @@ commands have additional paths omitted here; the diagram does not assert univers
 | Inspection point | Responsibility |
 | --- | --- |
 | [main.py:46](main.py#L46) | Server lifespan configures logging, calls `build_runtime`, attaches services/registry/scopes to the FastMCP instance, then disposes the runtime on normal shutdown. Logging is deferred to protect STDIO transport. |
-| [main.py:112](main.py#L112), [main.py:306](main.py#L306) | Construct FastMCP with configured authentication; serve over STDIO or HTTP. The CORS branch wraps the HTTP app with Starlette middleware and runs Uvicorn. |
-| [bootstrap.py:224](app/bootstrap.py#L224) | Composition root: choose providers and database, initialize schema, construct repositories, services, optional events, tool registry, and instance scope ceiling. |
-| [bootstrap.py:193](app/bootstrap.py#L193) | `Services` and `Runtime` collect the instances for front doors; optional services are `None` when disabled. This is explicit constructor injection, not a DI container. |
-| [bootstrap.py:377](app/bootstrap.py#L377) | Drain pending event handlers before closing the database; especially relevant to one-shot CLI execution. |
+| [main.py:112](main.py#L112), [main.py:307](main.py#L307) | Construct FastMCP with configured authentication; serve over STDIO or HTTP. Both HTTP branches run the app under Uvicorn directly so lifespan teardown (`dispose_runtime`) completes before a shutdown signal is re-raised; the CORS branch additionally wraps the app with Starlette middleware. |
+| [bootstrap.py:231](app/bootstrap.py#L231) | Composition root: choose providers and database, initialize schema, construct repositories, services, optional events, tool registry, and instance scope ceiling. |
+| [bootstrap.py:200](app/bootstrap.py#L200) | `Services` and `Runtime` collect the instances for front doors; optional services are `None` when disabled. This is explicit constructor injection, not a DI container. |
+| [bootstrap.py:384](app/bootstrap.py#L384) | Drain pending event handlers before closing the database; especially relevant to one-shot CLI execution. |
 | [parser.py:258](app/routes/cli/parser.py#L258) | Dispatch CLI serve, re-embed, tool discovery/calls, memory/project verbs, and authentication commands. |
 
 The bootstrap factories select PostgreSQL or SQLite repositories at
-[bootstrap.py:91](app/bootstrap.py#L91), passing embedding and rerank adapters to memory/skill repositories.
+[bootstrap.py:98](app/bootstrap.py#L98), passing embedding and rerank adapters to memory/skill repositories.
 `FILES_ENABLED`, `SKILLS_ENABLED`, and `PLANNING_ENABLED` control matching repositories, services,
 metadata registration, and HTTP route registration. `GraphService` receives memory/entity repositories
-plus the other services, including optional ones ([bootstrap.py:311](app/bootstrap.py#L311)).
-Settings and validation live in [settings.py:33](app/config/settings.py#L33).
+plus the other services, including optional ones ([bootstrap.py:318](app/bootstrap.py#L318)).
+Settings and validation live in [settings.py:93](app/config/settings.py#L93).
 
 The [local executor:18](app/routes/cli/local_executor.py#L18) builds the same runtime, supplies a
 CLI context, checks the instance's permitted tools, and executes the registry in process.
@@ -94,11 +94,11 @@ of registration helpers, not a second `ToolMetadataRegistry` class.
 [MemoryToolAdapters.create_memory:199](app/routes/mcp/tool_adapters.py#L199) illustrates identity
 resolution, argument conversion, model construction, service delegation, and response formatting.
 The older category `*_tools.py` registration functions also appear in the map; their presence does
-not mean they are mounted by `main.py`, which registers `meta_tools` at [line 150](main.py#L150).
+not mean they are mounted by `main.py`, which registers `meta_tools` at [line 149](main.py#L149).
 
 HTTP endpoints are FastMCP custom routes accepting Starlette requests, rather than a separate
 FastAPI application despite the opening docstring in `main.py`.
-[main.py:130](main.py#L130) mounts health, auth info, domain CRUD, graph, and activity routes;
+[main.py:129](main.py#L129) mounts health, auth info, domain CRUD, graph, and activity routes;
 files, skills, plans, and tasks are conditional. The root service-info route starts at
 [main.py:115](main.py#L115). Examples:
 
@@ -167,8 +167,8 @@ When reranking is enabled, they retrieve a larger candidate set and rerank when 
 | PostgreSQL | [PostgresDatabaseAdapter:19](app/repositories/postgres/postgres_adapter.py#L19) owns async sessions, commit/rollback, initialization, and disposal. User sessions set `app.current_user_id`; repositories also apply user filters. Backend table definitions start at [postgres_tables.py:26](app/repositories/postgres/postgres_tables.py#L26). |
 | SQLite | [SqliteDatabaseAdapter:47](app/repositories/sqlite/sqlite_adapter.py#L47) owns file/in-memory connections and sessions, loads sqlite-vec, and creates vector virtual tables. It creates a new data directory `0700` and keeps the database file (and its WAL/SHM) `0600`. Repository queries enforce user ownership. Relational tables start at [sqlite_tables.py:31](app/repositories/sqlite/sqlite_tables.py#L31). |
 | Schema lifecycle | Both database adapters run Alembic during `init_db`; backend selection and migration execution live in [alembic/env.py:1](alembic/env.py#L1), with revisions in [alembic/versions](alembic/versions). Vector-storage initialization also has adapter-specific work. |
-| Embeddings | [EmbeddingsAdapter:6](app/protocols/embedding_protocol.py#L6) defines `generate_embedding`. Implementations: local FastEmbed, Azure OpenAI, Google, OpenAI, and Ollama. Selection is explicit in [bootstrap.py:27](app/bootstrap.py#L27). |
-| Reranking | [RerankAdapter:13](app/repositories/embeddings/reranker_adapter.py#L13) has local FastEmbed cross-encoder and HTTP implementations. [bootstrap.py:48](app/bootstrap.py#L48) selects one or disables reranking. |
+| Embeddings | [EmbeddingsAdapter:6](app/protocols/embedding_protocol.py#L6) defines `generate_embedding`. Implementations: local FastEmbed, Azure OpenAI, Google, OpenAI, and Ollama. Selection is explicit in [bootstrap.py:32](app/bootstrap.py#L32). |
+| Reranking | [RerankAdapter:13](app/repositories/embeddings/reranker_adapter.py#L13) has local FastEmbed cross-encoder and HTTP implementations. [bootstrap.py:54](app/bootstrap.py#L54) selects one or disables reranking. |
 
 The two persistence backends implement the same broad contracts but use different SQL/vector
 mechanisms. This source review does not establish complete behavioral parity or transaction equivalence.
@@ -187,7 +187,7 @@ These are explanatory groupings; they do not imply separate subsystems in the so
 | Graph views | [GraphService:73](app/services/graph_service.py#L73) combines repository traversal with domain-service lookups. [get_subgraph:129](app/services/graph_service.py#L129) bounds depth/node count and asks `MemoryRepository.get_subgraph_nodes` for traversal results across supported object types. |
 | Activity and usage | Optional [EventBus:28](app/events/event_bus.py#L28) dispatches background handlers and per-user streams. [ActivityService:24](app/services/activity_service.py#L24) persists and queries events; it remains queryable when event emission is disabled. Memory read/query events optionally update access counters via [memory_service.py:723](app/services/memory_service.py#L723). |
 | Re-embedding | [ReEmbeddingService:43](app/services/re_embedding_service.py#L43) coordinates full storage reset/batch embedding/validation (memories and, when given a skill repository, skills) and targeted rebuilds, using repository contracts and an embedding adapter. [main.py:243](main.py#L243) is the operational CLI path: a read-only dry run, a backup restored on failure or SIGINT/SIGTERM, and a skill repository built regardless of `SKILLS_ENABLED`. |
-| Backup | [BackupService:9](app/services/backup_service.py#L9) supplies the timestamp and delegates through `BackupAdapter`; [DatabaseBackupAdapter:59](app/repositories/backup_adapter.py#L59) owns SQLite online-backup snapshots and PostgreSQL `pg_dump`/`psql` (owner-only files, optional `BACKUP_DIR`). [create_backup_service:19](app/bootstrap.py#L19) connects them. |
+| Backup | [BackupService:9](app/services/backup_service.py#L9) supplies the timestamp and delegates through `BackupAdapter`; [DatabaseBackupAdapter:59](app/repositories/backup_adapter.py#L59) owns SQLite online-backup snapshots and PostgreSQL `pg_dump`/`psql` (owner-only files, optional `BACKUP_DIR`). [create_backup_service:24](app/bootstrap.py#L24) connects them. |
 
 Startup constructs `ReEmbeddingService` and supplies it to MCP handlers; handlers call its
 validation and rebuild methods without accessing `MemoryService.memory_repo`.
