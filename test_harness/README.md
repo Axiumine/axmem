@@ -35,7 +35,13 @@ uv run python -m test_harness --timeout 600 --output /tmp/uat
 uv run python -m test_harness --rebuild-image                  # force image rebuild
 ```
 
-Flags > `TEST_HARNESS_*` env > defaults (`test_harness/config.py`). The walkthrough order
+Flags > `TEST_HARNESS_*` env > defaults (`test_harness/config.py`). `--skills` and
+`TEST_HARNESS_SKILLS` share one comma-separated spelling (`a,b`; spaces around commas are
+ignored; an empty value is an error, never "all skills"). `--timeout` /
+`TEST_HARNESS_SKILL_TIMEOUT` applies to every skill, including encode-repo, whose longer
+1800s default only applies when no timeout was given; it must be at least 1 second.
+
+The walkthrough order
 is fixed by data dependencies — write-skills populate the store the read-skills then
 query: `cli-setup → remember → entities → procedures → files → recall → explore →
 context-gather → encode-repo`. `forgetful-mcp-setup` is seeded but not walked: the MCP
@@ -43,7 +49,8 @@ surface pass is a reserved axis (`--surface` accepts only `cli` in v1). `--agent
 only `opencode` in v1 — other agents need provisioning ported in `container.py`.
 
 Exit codes: `0` every session completed (issues found are findings, not failures),
-`1` some session timed out or errored (partial UAT), `2` harness infrastructure failure.
+`1` some session timed out or errored (partial UAT), `2` harness infrastructure failure
+or invalid usage/configuration (a one-line `usage error: ...` on stderr, nothing started).
 
 ## The image
 
