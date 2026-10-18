@@ -744,7 +744,9 @@ class SkillsTable(Base):
     content: Mapped[str] = mapped_column(Text, nullable=False)
     license: Mapped[str] = mapped_column(String(100), nullable=True)
     compatibility: Mapped[str] = mapped_column(String(500), nullable=True)
-    allowed_tools: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=True, default=list)
+    # No Python default: the ORM drops an explicit None for ARRAY, so a default would
+    # store an empty array (a restriction) instead of NULL (unrestricted).
+    allowed_tools: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=True)
     skill_metadata: Mapped[dict] = mapped_column(JSONB, nullable=True)
     tags: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=False)
     importance: Mapped[int] = mapped_column(Integer, default=7, nullable=False)
@@ -804,6 +806,7 @@ class SkillsTable(Base):
         Index("ix_skills_user_id", "user_id"),
         Index("ix_skills_project_id", "project_id"),
         Index("ix_skills_name", "name"),
+        Index("ix_skills_user_name", "user_id", "name", unique=True),
         Index("ix_skills_tags", "tags", postgresql_using="gin"),
         Index("ix_skills_importance", "importance"),
         Index("ix_skills_embedding", "embedding", postgresql_using="hnsw", postgresql_ops={"embedding": "vector_cosine_ops"}),
