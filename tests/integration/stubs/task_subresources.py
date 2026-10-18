@@ -53,10 +53,11 @@ class TaskSubresourceMixin:
             find_item(self._criteria, user_id, criterion_id),
             f"Criterion with id {criterion_id} not found",
         )
+        was_met = criterion.met and criterion.met_at is not None
         patch_item(criterion, criterion_data.model_dump(exclude_unset=True))
 
-        # Auto-set met_at when met changes
-        if criterion_data.met is True:
+        # Stamp met_at only when met actually changes to True (mirrors the real repositories)
+        if criterion_data.met is True and not was_met:
             criterion.met_at = datetime.now(UTC)
         elif criterion_data.met is False:
             criterion.met_at = None

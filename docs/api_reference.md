@@ -1342,6 +1342,8 @@ Update an existing plan.
 | `external_ref` | string | Replacement reference; omitted or null leaves it unchanged |
 | `status` | string | New status (must be a valid transition) |
 
+Fields that are omitted or sent as `null` are left unchanged.
+
 References cannot be cleared: empty or whitespace-only values are invalid. Replacing a reference
 or deleting its plan releases the old value. Completing or archiving a plan retains it. Duplicate
 updates return 409 and leave the whole plan unchanged.
@@ -1510,7 +1512,15 @@ Update task metadata. State changes must go through the transition endpoint.
 | `description` | string | Updated description |
 | `priority` | string | Updated priority: `P0`, `P1`, `P2`, `P3` |
 
+Fields that are omitted or sent as `null` are left unchanged.
+
 **Response:** Updated task object
+
+**Error Responses:**
+
+| Code | Condition |
+|------|-----------|
+| 404 | Task not found |
 
 ### DELETE /api/v1/tasks/{task_id}
 
@@ -1645,6 +1655,9 @@ Update a criterion (e.g., mark it as met).
 |-------|------|-------------|
 | `description` | string | Updated description |
 | `met` | bool | Whether the criterion has been met |
+
+Fields that are omitted or sent as `null` are left unchanged. `met_at` records when the criterion
+first became met; repeating `met: true` keeps it, and `met: false` clears it.
 
 **Response:** Updated criterion object
 
