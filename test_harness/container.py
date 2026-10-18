@@ -21,7 +21,9 @@ import hashlib
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
+import threading
 from pathlib import Path
 
 from test_harness.config import HarnessConfig
@@ -37,12 +39,25 @@ _INSTALL_TIMEOUT = 300
 _HEALTH_TIMEOUT = 180
 _HOST_EXEC_GRACE = 120
 _MISSING_SDK = "docker SDK (docker-py) is not installed - run `uv sync --group harness`"
+_REACHABILITY_TIMEOUT = 60
 
 IMAGE = "forgetful-test-harness:latest"
 CONTAINER_HOME = "/home/node"
 SKILLS_MOUNT = "/skills"
 HARNESS_MOUNT = "/harness"
 DECOY_DB = "/tmp/local-decoy.db"  # noqa: S108 - container-side path, dies with the container
+HOST_ALIAS = "host.docker.internal"
+
+# GET <argv[1]> from inside the container; stdlib only, so the probe needs nothing
+# beyond the image's python. Any failure prints the reason and exits non-zero.
+_REACHABILITY_PROBE = (
+    "import sys, urllib.request\n"
+    "try:\n"
+    "    urllib.request.urlopen(sys.argv[1], timeout=10).close()\n"
+    "except Exception as exc:\n"
+    "    print(f'{type(exc).__name__}: {exc}')\n"
+    "    sys.exit(1)\n"
+)
 
 
 def build_container_env(server_url: str) -> dict[str, str]:
@@ -68,6 +83,15 @@ def exec_command(timeout: float, skill: str) -> list[str]:
         "timeout", "--kill-after=30s", str(int(timeout)),
         "python", "-u", f"{HARNESS_MOUNT}/runner.py",
         "--skill-dir", f"{SKILLS_MOUNT}/{skill}",
+    ]
+
+
+def reachability_command(server_url: str) -> list[str]:
+    """Probe the throwaway server's /health from inside the container, under the same
+    OS-level timeout wrapper as every other exec."""
+    return [
+        "timeout", "--kill-after=5s", str(_REACHABILITY_TIMEOUT),
+        "python", "-c", _REACHABILITY_PROBE, f"{server_url}/health",
     ]
 
 
@@ -232,7 +256,10 @@ class AgentContainer:
     Created with the fenced environment baked in (the server URL must be known first),
     `sleep infinity` as PID 1, and the working tree installed on top of the image's
     locked deps. `stop()` is safe to call from a finally regardless of how far
-    `start()` got.
+    `start()` got - including while `start()` is still running in its worker thread
+    (a cancelled `asyncio.to_thread` cannot interrupt it): `stop()` raises a flag that
+    `start()` checks between its steps, and whichever side finds a container or staged
+    credential copy releases it.
     """
 
     def __init__(self, config: HarnessConfig, run_dir: Path, server_url: str):
@@ -242,18 +269,22 @@ class AgentContainer:
         self._staged: list[Path] = []
         self._client = None
         self._container = None
+        self._stopping = threading.Event()
+        self._lock = threading.Lock()
 
     def start(self) -> None:
         docker = docker_sdk()
 
         self._client = _docker_client()
         volumes = provision_agent(self.config.agent_type, self._staged)
+        self._abort_if_stopping()
         skills_dir = self.run_dir / "skills"
         skills_dir.mkdir(exist_ok=True)
         volumes[str(skills_dir)] = {"bind": SKILLS_MOUNT, "mode": "rw"}
         volumes[str(_prepare_harness_mount(self.run_dir))] = {
             "bind": HARNESS_MOUNT, "mode": "ro",
         }
+        self._abort_if_stopping()
 
         name = f"forgetful-uat-{self.run_dir.name}"
         try:
@@ -279,9 +310,15 @@ class AgentContainer:
                 detach=True,
                 name=name,
                 user=_host_user(),
+                # Docker Desktop resolves host.docker.internal itself; Docker Engine
+                # for Linux only does with this explicit mapping
+                extra_hosts={HOST_ALIAS: "host-gateway"},
             )
         except docker.errors.DockerException as exc:
             raise HarnessInfraError(f"could not start {IMAGE}: {exc}") from exc
+        # stop() may have run while containers.run() was in flight and found nothing
+        # to remove; the container is assigned before this check, so one side sees it
+        self._abort_if_stopping()
 
         install = (
             "uv pip install --python /opt/venv/bin/python --no-deps --quiet "
@@ -293,6 +330,23 @@ class AgentContainer:
         if exit_code != 0:
             raise HarnessInfraError(
                 f"working-tree install failed (exit {exit_code}):\n{output}",
+            )
+
+    def check_server_reachable(self) -> None:
+        """Fail fast when the throwaway server cannot be reached from in here.
+
+        The agent's `forgetful` calls all go to FORGETFUL_SERVER; if that route is dead
+        every session would burn model time on connection errors that read like
+        product findings. A tiny stdlib GET costs nothing next to the model probe.
+        """
+        exit_code, output = self._exec(reachability_command(self.server_url))
+        if exit_code != 0:
+            reason = output.strip() or f"probe exited {exit_code}"
+            raise HarnessInfraError(
+                f"throwaway server {self.server_url} is not reachable from inside the "
+                f"container ({reason}). The server listens on 127.0.0.1, which only "
+                f"Docker Desktop routes to via {HOST_ALIAS}; Docker Engine for Linux "
+                "cannot reach a loopback-only listener from the bridge network",
             )
 
     def health_check(self) -> None:
@@ -351,14 +405,46 @@ class AgentContainer:
         return self._client.api.exec_inspect(exec_id)["ExitCode"], buffer
 
     def stop(self) -> None:
-        if self._container is not None:
-            docker = docker_sdk()
+        """Release everything this object holds; idempotent and never raises for a
+        docker failure. Safe while `start()` is still running in another thread."""
+        self._stopping.set()
+        self._release()
+
+    def _abort_if_stopping(self) -> None:
+        """Called by `start()` between steps: bail out (cleaning up whatever it has
+        made so far) once `stop()` has been requested."""
+        if self._stopping.is_set():
+            self._release()
+            raise HarnessInfraError("container start abandoned: the harness is shutting down")
+
+    def _release(self) -> None:
+        with self._lock:
+            container, self._container = self._container, None
+        try:
+            if container is not None:
+                self._remove(container)
+        finally:
+            # one at a time: start() may still be appending a staged dir
+            while True:
+                try:
+                    staging = self._staged.pop()
+                except IndexError:
+                    break
+                shutil.rmtree(staging, ignore_errors=True)
+
+    def _remove(self, container) -> None:
+        """Stop, then force-remove, as independent best-effort steps: a dead docker
+        daemon raises requests' transport errors (not DockerException) from either
+        call, and a failed stop must not leave the container undeleted."""
+        for step, action in (
+            ("stop", lambda: container.stop(timeout=5)),
+            ("remove", lambda: container.remove(force=True)),
+        ):
             try:
-                self._container.stop(timeout=5)
-                self._container.remove()
-            except docker.errors.DockerException:
-                pass
-            self._container = None
-        for staging in self._staged:
-            shutil.rmtree(staging, ignore_errors=True)
-        self._staged.clear()
+                action()
+            except Exception as exc:
+                print(
+                    f"warning: could not {step} container "
+                    f"forgetful-uat-{self.run_dir.name}: {exc}",
+                    file=sys.stderr,
+                )
