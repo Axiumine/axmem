@@ -23,6 +23,7 @@ from app.models.memory_models import (
 from app.routes.api.request_utils import (
     handle_request_errors,
     path_id,
+    read_json_object,
 )
 
 logger = logging.getLogger(__name__)
@@ -190,7 +191,7 @@ def register(mcp: FastMCP):
             return JSONResponse({"error": str(e)}, status_code=401)
 
         try:
-            body = await request.json()
+            body = await read_json_object(request)
             memory_data = MemoryCreate(**body)
         except ValidationError as e:
             return JSONResponse({"error": e.errors()}, status_code=400)
@@ -232,7 +233,7 @@ def register(mcp: FastMCP):
         memory_id = path_id(request, "memory_id")
 
         try:
-            body = await request.json()
+            body = await read_json_object(request)
             update_data = MemoryUpdate(**body)
         except ValidationError as e:
             return JSONResponse({"error": e.errors()}, status_code=400)
@@ -294,7 +295,7 @@ def register(mcp: FastMCP):
             return JSONResponse({"error": str(e)}, status_code=401)
 
         try:
-            body = await request.json()
+            body = await read_json_object(request)
             query_request = MemoryQueryRequest(**body)
         except ValidationError as e:
             return JSONResponse({"error": e.errors()}, status_code=400)
