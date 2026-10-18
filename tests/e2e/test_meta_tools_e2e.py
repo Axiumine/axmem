@@ -13,15 +13,50 @@ import pytest
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 
+def _has_field(data, name):
+    """True when a tool payload exposes name as an attribute or as a key."""
+    return hasattr(data, name) or name in data
+
+
+def _find_tool(tools, name):
+    """Return the tool entry called name from a discovery listing, or None."""
+    return next((tool for tool in tools if tool["name"] == name), None)
+
+
+def _assert_discovery_payload_keys(data):
+    """A discovery response carries the listing, the total and the categories."""
+    assert "tools_by_category" in data
+    assert "total_count" in data
+    assert "categories_available" in data
+
+
+def _assert_tool_entry(tool, category):
+    """A discovery entry exposes the full tool structure for the category."""
+    assert "name" in tool
+    assert "category" in tool
+    assert "description" in tool
+    assert "parameters" in tool
+    assert "returns" in tool
+    assert tool["category"] == category
+
+
+def _assert_tool_doc_fields(data):
+    """A how_to_use response carries the full documentation fields."""
+    assert "description" in data
+    assert "parameters" in data
+    assert "returns" in data
+    assert "examples" in data
+    assert "tags" in data
+    assert "json_schema" in data
+
+
 @pytest.mark.e2e
 async def test_discover_forgetful_tools_all_e2e(mcp_client):
     """Test discovering all tools without category filter"""
     result = await mcp_client.call_tool("discover_forgetful_tools", {})
 
     assert result.data is not None
-    assert "tools_by_category" in result.data
-    assert "total_count" in result.data
-    assert "categories_available" in result.data
+    _assert_discovery_payload_keys(result.data)
 
     # Should have at least user and memory categories
     assert "user" in result.data["categories_available"]
@@ -54,12 +89,7 @@ async def test_discover_forgetful_tools_by_category_e2e(mcp_client):
 
     # Verify tool structure
     for tool in user_tools:
-        assert "name" in tool
-        assert "category" in tool
-        assert "description" in tool
-        assert "parameters" in tool
-        assert "returns" in tool
-        assert tool["category"] == "user"
+        _assert_tool_entry(tool, "user")
 
 
 @pytest.mark.e2e
@@ -86,12 +116,7 @@ async def test_how_to_use_forgetful_tool_e2e(mcp_client):
     assert result.data is not None
     assert result.data["name"] == "get_current_user"
     assert result.data["category"] == "user"
-    assert "description" in result.data
-    assert "parameters" in result.data
-    assert "returns" in result.data
-    assert "examples" in result.data
-    assert "tags" in result.data
-    assert "json_schema" in result.data
+    _assert_tool_doc_fields(result.data)
 
     # Verify JSON schema structure
     schema = result.data["json_schema"]
@@ -126,8 +151,8 @@ async def test_execute_forgetful_tool_user_e2e(mcp_client):
 
     assert result.data is not None
     # Result should be a UserResponse
-    assert hasattr(result.data, "name") or "name" in result.data
-    assert hasattr(result.data, "created_at") or "created_at" in result.data
+    assert _has_field(result.data, "name")
+    assert _has_field(result.data, "created_at")
 
 
 @pytest.mark.e2e
@@ -150,8 +175,8 @@ async def test_execute_forgetful_tool_memory_create_e2e(mcp_client):
 
     assert result.data is not None
     # Result should be a MemoryCreateResponse
-    assert hasattr(result.data, "id") or "id" in result.data
-    assert hasattr(result.data, "title") or "title" in result.data
+    assert _has_field(result.data, "id")
+    assert _has_field(result.data, "title")
 
     memory_id = result.data.id if hasattr(result.data, "id") else result.data["id"]
     assert memory_id is not None
@@ -191,8 +216,8 @@ async def test_execute_forgetful_tool_memory_query_e2e(mcp_client):
     )
 
     assert query_result.data is not None
-    assert hasattr(query_result.data, "primary_memories") or "primary_memories" in query_result.data
-    assert hasattr(query_result.data, "total_count") or "total_count" in query_result.data
+    assert _has_field(query_result.data, "primary_memories")
+    assert _has_field(query_result.data, "total_count")
 
 
 @pytest.mark.e2e
@@ -253,10 +278,7 @@ async def test_meta_tools_workflow_e2e(mcp_client):
     assert len(memory_tools) > 0
 
     # Find create_memory tool
-    create_memory_tool = next(
-        (t for t in memory_tools if t["name"] == "create_memory"),
-        None,
-    )
+    create_memory_tool = _find_tool(memory_tools, "create_memory")
     assert create_memory_tool is not None
 
     # Step 2: Get detailed docs for create_memory
@@ -284,7 +306,7 @@ async def test_meta_tools_workflow_e2e(mcp_client):
         },
     )
     assert execute_result.data is not None
-    assert hasattr(execute_result.data, "id") or "id" in execute_result.data
+    assert _has_field(execute_result.data, "id")
 
 
 # ============================================================================
@@ -307,8 +329,8 @@ async def test_execute_create_project_via_meta_tools_e2e(mcp_client):
     )
 
     assert result.data is not None
-    assert hasattr(result.data, "id") or "id" in result.data
-    assert hasattr(result.data, "name") or "name" in result.data
+    assert _has_field(result.data, "id")
+    assert _has_field(result.data, "name")
 
 
 @pytest.mark.e2e
@@ -338,8 +360,8 @@ async def test_execute_list_projects_via_meta_tools_e2e(mcp_client):
     )
 
     assert list_result.data is not None
-    assert hasattr(list_result.data, "projects") or "projects" in list_result.data
-    assert hasattr(list_result.data, "count") or "count" in list_result.data
+    assert _has_field(list_result.data, "projects")
+    assert _has_field(list_result.data, "count")
 
 
 # ============================================================================
@@ -362,8 +384,8 @@ async def test_execute_create_entity_via_meta_tools_e2e(mcp_client):
     )
 
     assert result.data is not None
-    assert hasattr(result.data, "id") or "id" in result.data
-    assert hasattr(result.data, "name") or "name" in result.data
+    assert _has_field(result.data, "id")
+    assert _has_field(result.data, "name")
 
 
 @pytest.mark.e2e

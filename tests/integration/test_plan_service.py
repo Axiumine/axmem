@@ -9,6 +9,24 @@ from app.exceptions import NotFoundError
 from app.models.plan_models import PlanCreate, PlanStatus, PlanUpdate
 
 
+def _assert_my_plan_content_fields(plan):
+    """Assert the identity and content fields of the freshly created 'My Plan'."""
+    assert plan is not None
+    assert plan.id is not None
+    assert plan.title == "My Plan"
+    assert plan.project_id == 1
+    assert plan.goal == "Build feature X"
+
+
+def _assert_my_plan_state_fields(plan):
+    """Assert the default status, counters and timestamps of the created plan."""
+    assert plan.context is None
+    assert plan.status == PlanStatus.DRAFT
+    assert plan.task_count == 0
+    assert plan.created_at is not None
+    assert plan.updated_at is not None
+
+
 @pytest.mark.asyncio
 async def test_create_plan_basic(test_plan_service):
     """Test creating a plan and verifying all returned fields."""
@@ -17,16 +35,8 @@ async def test_create_plan_basic(test_plan_service):
     plan_data = PlanCreate(title="My Plan", project_id=1, goal="Build feature X")
     plan = await test_plan_service.create_plan(user_id=user_id, plan_data=plan_data)
 
-    assert plan is not None
-    assert plan.id is not None
-    assert plan.title == "My Plan"
-    assert plan.project_id == 1
-    assert plan.goal == "Build feature X"
-    assert plan.context is None
-    assert plan.status == PlanStatus.DRAFT
-    assert plan.task_count == 0
-    assert plan.created_at is not None
-    assert plan.updated_at is not None
+    _assert_my_plan_content_fields(plan)
+    _assert_my_plan_state_fields(plan)
 
 
 @pytest.mark.asyncio

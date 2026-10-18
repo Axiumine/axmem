@@ -6,6 +6,39 @@ Tests the /api/v1/entities endpoints.
 import pytest
 
 
+async def _create_pagination_entities(http_client, count):
+    """Create ``count`` individual entities tagged ``pagination-test``."""
+    for i in range(count):
+        await http_client.post("/api/v1/entities", json={
+            "name": f"Pagination Entity {i}",
+            "entity_type": "Individual",
+            "tags": ["pagination-test"],
+        })
+
+
+def _entity_ids(data):
+    """Return the set of entity ids in a listing response body."""
+    return {e["id"] for e in data["entities"]}
+
+
+async def _create_linked_memories(http_client, entity_id, count):
+    """Create ``count`` memories, link each to the entity and return their ids."""
+    memory_ids = []
+    for i in range(count):
+        mem_resp = await http_client.post("/api/v1/memories", json={
+            "title": f"Test Memory {i}",
+            "content": f"Content {i}",
+            "context": "Testing",
+            "keywords": ["test"],
+            "tags": ["test"],
+            "importance": 7,
+        })
+        memory_id = mem_resp.json()["id"]
+        memory_ids.append(memory_id)
+        await http_client.post(f"/api/v1/entities/{entity_id}/memories", json={"memory_id": memory_id})
+    return memory_ids
+
+
 class TestEntityAPIList:
     """Test GET /api/v1/entities endpoint."""
 
@@ -70,12 +103,7 @@ class TestEntityAPIList:
     async def test_list_entities_pagination(self, http_client):
         """GET /api/v1/entities supports pagination with limit and offset."""
         # Create 5 entities
-        for i in range(5):
-            await http_client.post("/api/v1/entities", json={
-                "name": f"Pagination Entity {i}",
-                "entity_type": "Individual",
-                "tags": ["pagination-test"],
-            })
+        await _create_pagination_entities(http_client, 5)
 
         # Get first page (limit=2, offset=0)
         response = await http_client.get("/api/v1/entities?limit=2&offset=0")
@@ -94,8 +122,8 @@ class TestEntityAPIList:
         assert data2["offset"] == 2
 
         # Verify different entities on different pages
-        page1_ids = {e["id"] for e in data["entities"]}
-        page2_ids = {e["id"] for e in data2["entities"]}
+        page1_ids = _entity_ids(data)
+        page2_ids = _entity_ids(data2)
         assert page1_ids.isdisjoint(page2_ids)  # No overlap between pages
 
     @pytest.mark.asyncio
@@ -393,19 +421,7 @@ class TestEntityMemoryLinks:
         entity_id = entity_response.json()["id"]
 
         # Create and link memories
-        memory_ids = []
-        for i in range(2):
-            mem_resp = await http_client.post("/api/v1/memories", json={
-                "title": f"Test Memory {i}",
-                "content": f"Content {i}",
-                "context": "Testing",
-                "keywords": ["test"],
-                "tags": ["test"],
-                "importance": 7,
-            })
-            memory_id = mem_resp.json()["id"]
-            memory_ids.append(memory_id)
-            await http_client.post(f"/api/v1/entities/{entity_id}/memories", json={"memory_id": memory_id})
+        memory_ids = await _create_linked_memories(http_client, entity_id, 2)
 
         # Get entity memories
         response = await http_client.get(f"/api/v1/entities/{entity_id}/memories")

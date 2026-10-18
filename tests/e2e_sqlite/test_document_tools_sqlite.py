@@ -3,6 +3,15 @@
 import pytest
 
 
+def _assert_created_document_tags_size_timestamps(data):
+    """Assert tags, size and timestamps of the document created in the basic create test."""
+    assert data["tags"] == ["api", "documentation", "rest"]
+    assert data["size_bytes"] is not None
+    assert data["size_bytes"] > 0
+    assert data["created_at"] is not None
+    assert data["updated_at"] is not None
+
+
 @pytest.mark.asyncio
 async def test_create_document_basic_e2e(mcp_client):
     """Test creating a document with all fields"""
@@ -29,11 +38,7 @@ Returns a list of items...""",
     assert result.data["description"] == "REST API documentation for the service"
     assert result.data["document_type"] == "markdown"
     assert result.data["filename"] == "api-docs.md"
-    assert result.data["tags"] == ["api", "documentation", "rest"]
-    assert result.data["size_bytes"] is not None
-    assert result.data["size_bytes"] > 0
-    assert result.data["created_at"] is not None
-    assert result.data["updated_at"] is not None
+    _assert_created_document_tags_size_timestamps(result.data)
 
 
 @pytest.mark.asyncio

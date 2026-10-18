@@ -13,6 +13,34 @@ from app.models.activity_models import ActionType
 from app.models.memory_models import MemoryCreate, MemoryQueryRequest
 
 
+def _assert_query_event_tracks_ids(event_bus, primary_id, linked_id):
+    """Assert exactly one QUERIED event was emitted and it tracks the primary and linked ids."""
+    queried_events = [e for e in event_bus.collected_events if e.action == ActionType.QUERIED]
+    assert len(queried_events) == 1
+    snapshot = queried_events[0].snapshot or {}
+    tracked_ids = set(snapshot.get("result_ids") or []) | set(snapshot.get("linked_ids") or [])
+    assert primary_id in tracked_ids
+    assert linked_id in tracked_ids
+
+
+async def _assert_primary_access_tracked(service, user_id, primary_id, updated_at_before):
+    """Assert the primary memory recorded an access without moving updated_at."""
+    primary_refreshed = await service.memory_repo.get_memory_by_id(user_id=user_id, memory_id=primary_id)
+    assert primary_refreshed is not None
+    assert primary_refreshed.access_count >= 1
+    assert primary_refreshed.last_accessed_at is not None
+    assert primary_refreshed.updated_at == updated_at_before
+
+
+async def _assert_linked_access_tracked(service, user_id, linked_id, updated_at_before):
+    """Assert the linked memory recorded an access without moving updated_at."""
+    linked_refreshed = await service.memory_repo.get_memory_by_id(user_id=user_id, memory_id=linked_id)
+    assert linked_refreshed is not None
+    assert linked_refreshed.access_count >= 1
+    assert linked_refreshed.last_accessed_at is not None
+    assert linked_refreshed.updated_at == updated_at_before
+
+
 @pytest.mark.asyncio
 async def test_record_memory_access_does_not_mutate_updated_at(test_memory_service):
     """Access tracking must update access_count + last_accessed_at but NOT updated_at."""
@@ -123,24 +151,9 @@ async def test_query_memory_records_access_for_primaries_and_linked(
     assert len(result.primary_memories) >= 1
     assert any(m.id == primary.id for m in result.primary_memories)
 
-    queried_events = [e for e in event_bus.collected_events if e.action == ActionType.QUERIED]
-    assert len(queried_events) == 1
-    snapshot = queried_events[0].snapshot or {}
-    tracked_ids = set(snapshot.get("result_ids") or []) | set(snapshot.get("linked_ids") or [])
-    assert primary.id in tracked_ids
-    assert linked.id in tracked_ids
-
-    primary_refreshed = await service.memory_repo.get_memory_by_id(user_id=user_id, memory_id=primary.id)
-    assert primary_refreshed is not None
-    assert primary_refreshed.access_count >= 1
-    assert primary_refreshed.last_accessed_at is not None
-    assert primary_refreshed.updated_at == primary_updated_at_before
-
-    linked_refreshed = await service.memory_repo.get_memory_by_id(user_id=user_id, memory_id=linked.id)
-    assert linked_refreshed is not None
-    assert linked_refreshed.access_count >= 1
-    assert linked_refreshed.last_accessed_at is not None
-    assert linked_refreshed.updated_at == linked_updated_at_before
+    _assert_query_event_tracks_ids(event_bus, primary.id, linked.id)
+    await _assert_primary_access_tracked(service, user_id, primary.id, primary_updated_at_before)
+    await _assert_linked_access_tracked(service, user_id, linked.id, linked_updated_at_before)
 
 
 @pytest.mark.asyncio

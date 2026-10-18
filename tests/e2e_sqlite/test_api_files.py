@@ -12,6 +12,28 @@ SMALL_FILE_DATA = base64.b64encode(b"Hello, World!").decode("utf-8")  # 13 bytes
 PNG_HEADER = base64.b64encode(b"\x89PNG\r\n\x1a\n" + b"\x00" * 100).decode("utf-8")
 
 
+def _assert_file_summary_shape(file_summary):
+    """Assert a listed file is a FileSummary: no ``data`` field, all summary fields present."""
+    assert "data" not in file_summary
+    # Verify summary fields are present
+    assert "id" in file_summary
+    assert "filename" in file_summary
+    assert "description" in file_summary
+    assert "mime_type" in file_summary
+    assert "size_bytes" in file_summary
+    assert "tags" in file_summary
+    assert "created_at" in file_summary
+    assert "updated_at" in file_summary
+
+
+def _assert_created_file_tags_data_timestamps(data):
+    """Assert the tags, payload and timestamps of the file created by ``test_create_file``."""
+    assert data["tags"] == ["test", "hello"]
+    assert data["data"] == SMALL_FILE_DATA
+    assert data["created_at"] is not None
+    assert data["updated_at"] is not None
+
+
 class TestFileAPIList:
     """Test GET /api/v1/files endpoint."""
 
@@ -115,16 +137,7 @@ class TestFileAPIList:
         data = response.json()
         assert len(data["files"]) >= 1
         for file_summary in data["files"]:
-            assert "data" not in file_summary
-            # Verify summary fields are present
-            assert "id" in file_summary
-            assert "filename" in file_summary
-            assert "description" in file_summary
-            assert "mime_type" in file_summary
-            assert "size_bytes" in file_summary
-            assert "tags" in file_summary
-            assert "created_at" in file_summary
-            assert "updated_at" in file_summary
+            _assert_file_summary_shape(file_summary)
 
 
 class TestFileAPICrud:
@@ -148,10 +161,7 @@ class TestFileAPICrud:
         assert data["description"] == "A simple text file"
         assert data["mime_type"] == "text/plain"
         assert data["size_bytes"] == 13  # len(b"Hello, World!")
-        assert data["tags"] == ["test", "hello"]
-        assert data["data"] == SMALL_FILE_DATA
-        assert data["created_at"] is not None
-        assert data["updated_at"] is not None
+        _assert_created_file_tags_data_timestamps(data)
 
     @pytest.mark.asyncio
     async def test_create_file_validation_error(self, http_client):

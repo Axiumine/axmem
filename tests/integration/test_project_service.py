@@ -15,6 +15,37 @@ from app.models.project_models import (
 )
 
 
+def _assert_forgetful_project_descriptive_fields(project):
+    """Assert identity and descriptive fields of the fully specified forgetful project."""
+    assert project is not None
+    assert project.id is not None
+    assert project.name == "forgetful"
+    assert (
+        project.description
+        == "MIT-licensed memory service implementing atomic memory principles"
+    )
+    assert project.project_type == ProjectType.DEVELOPMENT
+
+
+def _assert_forgetful_project_state_fields(project):
+    """Assert status, repository, notes, counters and timestamps of the forgetful project."""
+    assert project.status == ProjectStatus.ACTIVE
+    assert project.repo_name == "scottrbk/forgetful"
+    assert project.notes == "Uses FastAPI, PostgreSQL, and pgvector for semantic search"
+    assert project.memory_count == 0
+    assert project.created_at is not None
+    assert project.updated_at is not None
+
+
+def _assert_project_summary_shape(project):
+    """Assert a listed project exposes the ProjectSummary attributes."""
+    assert hasattr(project, "id")
+    assert hasattr(project, "name")
+    assert hasattr(project, "project_type")
+    assert hasattr(project, "status")
+    assert hasattr(project, "memory_count")
+
+
 @pytest.mark.asyncio
 async def test_create_project_basic(test_project_service):
     """Test creating a project with all fields"""
@@ -33,20 +64,8 @@ async def test_create_project_basic(test_project_service):
         user_id=user_id, project_data=project_data,
     )
 
-    assert project is not None
-    assert project.id is not None
-    assert project.name == "forgetful"
-    assert (
-        project.description
-        == "MIT-licensed memory service implementing atomic memory principles"
-    )
-    assert project.project_type == ProjectType.DEVELOPMENT
-    assert project.status == ProjectStatus.ACTIVE
-    assert project.repo_name == "scottrbk/forgetful"
-    assert project.notes == "Uses FastAPI, PostgreSQL, and pgvector for semantic search"
-    assert project.memory_count == 0
-    assert project.created_at is not None
-    assert project.updated_at is not None
+    _assert_forgetful_project_descriptive_fields(project)
+    _assert_forgetful_project_state_fields(project)
 
 
 @pytest.mark.asyncio
@@ -149,11 +168,7 @@ async def test_list_projects_multiple(test_project_service):
 
     # Verify they're ProjectSummary objects (not full Project)
     for project in projects:
-        assert hasattr(project, "id")
-        assert hasattr(project, "name")
-        assert hasattr(project, "project_type")
-        assert hasattr(project, "status")
-        assert hasattr(project, "memory_count")
+        _assert_project_summary_shape(project)
 
 
 @pytest.mark.asyncio

@@ -13,6 +13,37 @@ SETTINGS_OVERRIDE = {
 }
 
 
+async def _post_tracked_memory(http_client, title, content, context, keyword, importance):
+    """POST a memory tagged for the access-count tests and return the raw response."""
+    return await http_client.post("/api/v1/memories", json={
+        "title": title,
+        "content": content,
+        "context": context,
+        "keywords": [keyword],
+        "tags": ["e2e", "usage"],
+        "importance": importance,
+    })
+
+
+async def _search_and_assert_both_returned(http_client, primary_id, linked_id):
+    """Search for the primary memory and assert it and its linked memory are both returned."""
+    search_response = await http_client.post("/api/v1/memories/search", json={
+        "query": "access-count-e2e-query-primary",
+        "query_context": "E2E query access tracking",
+        "k": 5,
+        "include_links": True,
+        "max_links_per_primary": 5,
+    })
+    assert search_response.status_code == 200
+    result = search_response.json()
+    assert any(m["id"] == primary_id for m in result["primary_memories"])
+
+    tracked_ids = {m["id"] for m in result["primary_memories"]}
+    tracked_ids.update(lm["memory"]["id"] for lm in result["linked_memories"])
+    assert primary_id in tracked_ids
+    assert linked_id in tracked_ids
+
+
 @pytest.mark.e2e
 class TestMemoryUsageTrackingE2E:
     """access_count updates on read paths when activity read tracking is enabled."""
@@ -43,25 +74,25 @@ class TestMemoryUsageTrackingE2E:
 
     async def test_query_memory_increments_access_count(self, http_client, wait_for_events):
         """POST /api/v1/memories/search records access for returned memory IDs."""
-        primary_response = await http_client.post("/api/v1/memories", json={
-            "title": "Access Count Query Primary E2E",
-            "content": "Unique e2e primary memory for query access tracking",
-            "context": "E2E query access primary",
-            "keywords": ["access-count-e2e-query-primary"],
-            "tags": ["e2e", "usage"],
-            "importance": 9,
-        })
+        primary_response = await _post_tracked_memory(
+            http_client,
+            "Access Count Query Primary E2E",
+            "Unique e2e primary memory for query access tracking",
+            "E2E query access primary",
+            "access-count-e2e-query-primary",
+            importance=9,
+        )
         assert primary_response.status_code == 201
         primary_id = primary_response.json()["id"]
 
-        linked_response = await http_client.post("/api/v1/memories", json={
-            "title": "Access Count Query Linked E2E",
-            "content": "Unique e2e linked memory for query access tracking",
-            "context": "E2E query access linked",
-            "keywords": ["access-count-e2e-query-linked"],
-            "tags": ["e2e", "usage"],
-            "importance": 8,
-        })
+        linked_response = await _post_tracked_memory(
+            http_client,
+            "Access Count Query Linked E2E",
+            "Unique e2e linked memory for query access tracking",
+            "E2E query access linked",
+            "access-count-e2e-query-linked",
+            importance=8,
+        )
         assert linked_response.status_code == 201
         linked_id = linked_response.json()["id"]
 
@@ -78,21 +109,7 @@ class TestMemoryUsageTrackingE2E:
         linked_count_before = linked_before["access_count"]
         await wait_for_events()
 
-        search_response = await http_client.post("/api/v1/memories/search", json={
-            "query": "access-count-e2e-query-primary",
-            "query_context": "E2E query access tracking",
-            "k": 5,
-            "include_links": True,
-            "max_links_per_primary": 5,
-        })
-        assert search_response.status_code == 200
-        result = search_response.json()
-        assert any(m["id"] == primary_id for m in result["primary_memories"])
-
-        tracked_ids = {m["id"] for m in result["primary_memories"]}
-        tracked_ids.update(lm["memory"]["id"] for lm in result["linked_memories"])
-        assert primary_id in tracked_ids
-        assert linked_id in tracked_ids
+        await _search_and_assert_both_returned(http_client, primary_id, linked_id)
 
         await wait_for_events()
 

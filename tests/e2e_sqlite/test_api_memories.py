@@ -5,6 +5,57 @@ Tests the /api/v1/memories endpoints.
 """
 import pytest
 
+MEMORIES_URL = "/api/v1/memories"
+
+
+async def _create_memory(
+    http_client, title, content, context, keywords, tags, importance=7, **extra,
+):
+    """POST a memory built from the given fields and return the raw response."""
+    payload = {
+        "title": title,
+        "content": content,
+        "context": context,
+        "keywords": keywords,
+        "tags": tags,
+        "importance": importance,
+        **extra,
+    }
+    return await http_client.post(MEMORIES_URL, json=payload)
+
+
+async def _create_memory_pair(http_client, first, second):
+    """Create two memories from (title, content, context, keywords, tags) tuples."""
+    first_response = await _create_memory(http_client, *first)
+    second_response = await _create_memory(http_client, *second)
+    return first_response.json()["id"], second_response.json()["id"]
+
+
+async def _delete_memory(http_client, memory_id, reason):
+    """Soft-delete (mark obsolete) a memory through the REST API."""
+    return await http_client.request(
+        "DELETE", f"{MEMORIES_URL}/{memory_id}", json={"reason": reason},
+    )
+
+
+async def _memory_ids(http_client, query=""):
+    """List memories (optionally with a query string) and return their IDs."""
+    response = await http_client.get(f"{MEMORIES_URL}{query}")
+    return [memory["id"] for memory in response.json()["memories"]]
+
+
+async def _memory_titles(http_client, query):
+    """List memories for a query string and return their titles."""
+    response = await http_client.get(f"{MEMORIES_URL}{query}")
+    return [memory["title"] for memory in response.json()["memories"]]
+
+
+async def _link(http_client, memory_id, related_id):
+    """Link two memories via POST /memories/{id}/links."""
+    return await http_client.post(
+        f"{MEMORIES_URL}/{memory_id}/links", json={"related_ids": [related_id]},
+    )
+
 
 class TestMemoryAPIList:
     """Test GET /api/v1/memories endpoint."""
@@ -12,7 +63,7 @@ class TestMemoryAPIList:
     @pytest.mark.asyncio
     async def test_list_memories_empty(self, http_client):
         """GET /api/v1/memories returns empty list initially."""
-        response = await http_client.get("/api/v1/memories")
+        response = await http_client.get(MEMORIES_URL)
         assert response.status_code == 200
         data = response.json()
         assert data["memories"] == []
@@ -24,19 +75,18 @@ class TestMemoryAPIList:
     async def test_list_memories_with_data(self, http_client):
         """GET /api/v1/memories returns created memories."""
         # Create a memory first
-        payload = {
-            "title": "Test Memory for List",
-            "content": "This is test content for listing.",
-            "context": "Testing the list API",
-            "keywords": ["test", "api"],
-            "tags": ["test"],
-            "importance": 7,
-        }
-        create_response = await http_client.post("/api/v1/memories", json=payload)
+        create_response = await _create_memory(
+            http_client,
+            "Test Memory for List",
+            "This is test content for listing.",
+            "Testing the list API",
+            ["test", "api"],
+            ["test"],
+        )
         assert create_response.status_code == 201
 
         # Now list
-        response = await http_client.get("/api/v1/memories")
+        response = await http_client.get(MEMORIES_URL)
         assert response.status_code == 200
         data = response.json()
         assert len(data["memories"]) >= 1
@@ -47,18 +97,17 @@ class TestMemoryAPIList:
         """GET /api/v1/memories respects limit and offset."""
         # Create 3 memories
         for i in range(3):
-            payload = {
-                "title": f"Pagination Memory {i}",
-                "content": f"Content for pagination test {i}",
-                "context": "Pagination test",
-                "keywords": ["pagination"],
-                "tags": ["test"],
-                "importance": 7,
-            }
-            await http_client.post("/api/v1/memories", json=payload)
+            await _create_memory(
+                http_client,
+                f"Pagination Memory {i}",
+                f"Content for pagination test {i}",
+                "Pagination test",
+                ["pagination"],
+                ["test"],
+            )
 
         # Get first page with limit=2
-        response = await http_client.get("/api/v1/memories?limit=2&offset=0")
+        response = await http_client.get(f"{MEMORIES_URL}?limit=2&offset=0")
         assert response.status_code == 200
         data = response.json()
         assert len(data["memories"]) == 2
@@ -66,7 +115,7 @@ class TestMemoryAPIList:
         assert data["offset"] == 0
 
         # Get second page
-        response = await http_client.get("/api/v1/memories?limit=2&offset=2")
+        response = await http_client.get(f"{MEMORIES_URL}?limit=2&offset=2")
         assert response.status_code == 200
         data = response.json()
         assert len(data["memories"]) >= 1
@@ -82,27 +131,29 @@ class TestMemoryAPIList:
         })
         project_id = project_response.json()["id"]
 
-        await http_client.post("/api/v1/memories", json={
-            "title": "High importance memory",
-            "content": "High importance content",
-            "context": "Filter test",
-            "keywords": ["filter"],
-            "tags": ["test"],
-            "importance": 9,
-            "project_ids": [project_id],
-        })
-        await http_client.post("/api/v1/memories", json={
-            "title": "Low importance memory",
-            "content": "Low importance content",
-            "context": "Filter test",
-            "keywords": ["filter"],
-            "tags": ["test"],
-            "importance": 3,
-            "project_ids": [project_id],
-        })
+        await _create_memory(
+            http_client,
+            "High importance memory",
+            "High importance content",
+            "Filter test",
+            ["filter"],
+            ["test"],
+            importance=9,
+            project_ids=[project_id],
+        )
+        await _create_memory(
+            http_client,
+            "Low importance memory",
+            "Low importance content",
+            "Filter test",
+            ["filter"],
+            ["test"],
+            importance=3,
+            project_ids=[project_id],
+        )
 
         response = await http_client.get(
-            f"/api/v1/memories?project_id={project_id}&importance_min=8&limit=1",
+            f"{MEMORIES_URL}?project_id={project_id}&importance_min=8&limit=1",
         )
 
         assert response.status_code == 200
@@ -119,15 +170,14 @@ class TestMemoryAPICreate:
     @pytest.mark.asyncio
     async def test_create_memory(self, http_client):
         """POST /api/v1/memories creates a new memory."""
-        payload = {
-            "title": "Created Memory",
-            "content": "This is the content of the created memory.",
-            "context": "Testing memory creation via API",
-            "keywords": ["create", "test"],
-            "tags": ["api"],
-            "importance": 7,
-        }
-        response = await http_client.post("/api/v1/memories", json=payload)
+        response = await _create_memory(
+            http_client,
+            "Created Memory",
+            "This is the content of the created memory.",
+            "Testing memory creation via API",
+            ["create", "test"],
+            ["api"],
+        )
         assert response.status_code == 201
         data = response.json()
         assert data["id"] > 0
@@ -137,16 +187,15 @@ class TestMemoryAPICreate:
     async def test_create_memory_with_optional_project(self, http_client):
         """POST /api/v1/memories accepts project_ids field."""
         # Create memory without project (project_ids is optional)
-        payload = {
-            "title": "Memory without Project",
-            "content": "This memory has no project.",
-            "context": "Testing project linking as optional",
-            "keywords": ["project"],
-            "tags": ["test"],
-            "importance": 7,
-            "project_ids": [],  # Empty list is valid
-        }
-        response = await http_client.post("/api/v1/memories", json=payload)
+        response = await _create_memory(
+            http_client,
+            "Memory without Project",
+            "This memory has no project.",
+            "Testing project linking as optional",
+            ["project"],
+            ["test"],
+            project_ids=[],  # Empty list is valid
+        )
         assert response.status_code == 201
         data = response.json()
         assert data["project_ids"] == []
@@ -156,7 +205,7 @@ class TestMemoryAPICreate:
         """POST /api/v1/memories returns 400 for invalid body."""
         # Missing required fields
         payload = {"title": "Only Title"}
-        response = await http_client.post("/api/v1/memories", json=payload)
+        response = await http_client.post(MEMORIES_URL, json=payload)
         assert response.status_code == 400
 
 
@@ -167,19 +216,18 @@ class TestMemoryAPIGet:
     async def test_get_memory(self, http_client):
         """GET /api/v1/memories/{id} returns the memory."""
         # Create a memory first
-        payload = {
-            "title": "Memory to Get",
-            "content": "Content for get test.",
-            "context": "Testing get endpoint",
-            "keywords": ["get"],
-            "tags": ["test"],
-            "importance": 7,
-        }
-        create_response = await http_client.post("/api/v1/memories", json=payload)
+        create_response = await _create_memory(
+            http_client,
+            "Memory to Get",
+            "Content for get test.",
+            "Testing get endpoint",
+            ["get"],
+            ["test"],
+        )
         memory_id = create_response.json()["id"]
 
         # Get the memory
-        response = await http_client.get(f"/api/v1/memories/{memory_id}")
+        response = await http_client.get(f"{MEMORIES_URL}/{memory_id}")
         assert response.status_code == 200
         data = response.json()
         assert data["id"] == memory_id
@@ -188,7 +236,7 @@ class TestMemoryAPIGet:
     @pytest.mark.asyncio
     async def test_get_memory_not_found(self, http_client):
         """GET /api/v1/memories/{id} returns 404 for missing memory."""
-        response = await http_client.get("/api/v1/memories/99999")
+        response = await http_client.get(f"{MEMORIES_URL}/99999")
         assert response.status_code == 404
 
 
@@ -199,21 +247,21 @@ class TestMemoryAPIUpdate:
     async def test_update_memory(self, http_client):
         """PUT /api/v1/memories/{id} updates the memory."""
         # Create a memory
-        payload = {
-            "title": "Memory to Update",
-            "content": "Original content.",
-            "context": "Testing update",
-            "keywords": ["update"],
-            "tags": ["test"],
-            "importance": 5,
-        }
-        create_response = await http_client.post("/api/v1/memories", json=payload)
+        create_response = await _create_memory(
+            http_client,
+            "Memory to Update",
+            "Original content.",
+            "Testing update",
+            ["update"],
+            ["test"],
+            importance=5,
+        )
         memory_id = create_response.json()["id"]
 
         # Update the memory
         update_payload = {"title": "Updated Title", "importance": 9}
         response = await http_client.put(
-            f"/api/v1/memories/{memory_id}",
+            f"{MEMORIES_URL}/{memory_id}",
             json=update_payload,
         )
         assert response.status_code == 200
@@ -225,7 +273,7 @@ class TestMemoryAPIUpdate:
     async def test_update_memory_not_found(self, http_client):
         """PUT /api/v1/memories/{id} returns 404 for missing memory."""
         response = await http_client.put(
-            "/api/v1/memories/99999",
+            f"{MEMORIES_URL}/99999",
             json={"title": "Updated"},
         )
         assert response.status_code == 404
@@ -238,33 +286,27 @@ class TestMemoryAPIDelete:
     async def test_delete_memory(self, http_client):
         """DELETE /api/v1/memories/{id} marks memory as obsolete."""
         # Create a memory
-        payload = {
-            "title": "Memory to Delete",
-            "content": "Content to delete.",
-            "context": "Testing delete",
-            "keywords": ["delete"],
-            "tags": ["test"],
-            "importance": 7,
-        }
-        create_response = await http_client.post("/api/v1/memories", json=payload)
+        create_response = await _create_memory(
+            http_client,
+            "Memory to Delete",
+            "Content to delete.",
+            "Testing delete",
+            ["delete"],
+            ["test"],
+        )
         memory_id = create_response.json()["id"]
 
         # Delete the memory
-        response = await http_client.request(
-            "DELETE",
-            f"/api/v1/memories/{memory_id}",
-            json={"reason": "Test deletion"},
-        )
+        response = await _delete_memory(http_client, memory_id, "Test deletion")
         assert response.status_code == 200
         assert response.json()["success"] is True
 
         # Verify it's not in default list (include_obsolete=false)
-        list_response = await http_client.get("/api/v1/memories")
-        memory_ids = [m["id"] for m in list_response.json()["memories"]]
+        memory_ids = await _memory_ids(http_client)
         assert memory_id not in memory_ids
 
         # Verify we can still GET the obsolete memory directly
-        get_response = await http_client.get(f"/api/v1/memories/{memory_id}")
+        get_response = await http_client.get(f"{MEMORIES_URL}/{memory_id}")
         assert get_response.status_code == 200
         assert get_response.json()["is_obsolete"] is True
         assert get_response.json()["obsolete_reason"] == "Test deletion"
@@ -277,15 +319,15 @@ class TestMemoryAPISearch:
     async def test_search_memories(self, http_client):
         """POST /api/v1/memories/search performs semantic search."""
         # Create a memory to search for
-        payload = {
-            "title": "Python Logging Best Practices",
-            "content": "Use QueueHandler for async logging to prevent blocking.",
-            "context": "Documenting Python logging patterns",
-            "keywords": ["python", "logging", "async"],
-            "tags": ["pattern"],
-            "importance": 8,
-        }
-        await http_client.post("/api/v1/memories", json=payload)
+        await _create_memory(
+            http_client,
+            "Python Logging Best Practices",
+            "Use QueueHandler for async logging to prevent blocking.",
+            "Documenting Python logging patterns",
+            ["python", "logging", "async"],
+            ["pattern"],
+            importance=8,
+        )
 
         # Search for it
         search_payload = {
@@ -293,7 +335,7 @@ class TestMemoryAPISearch:
             "query_context": "Looking for logging best practices",
             "k": 5,
         }
-        response = await http_client.post("/api/v1/memories/search", json=search_payload)
+        response = await http_client.post(f"{MEMORIES_URL}/search", json=search_payload)
         assert response.status_code == 200
         data = response.json()
         assert "primary_memories" in data
@@ -305,7 +347,7 @@ class TestMemoryAPISearch:
         """POST /api/v1/memories/search returns 400 for invalid body."""
         # Missing required query_context
         response = await http_client.post(
-            "/api/v1/memories/search",
+            f"{MEMORIES_URL}/search",
             json={"query": "test"},
         )
         assert response.status_code == 400
@@ -318,35 +360,30 @@ class TestMemoryAPILinks:
     async def test_link_memories(self, http_client):
         """POST /api/v1/memories/{id}/links creates links."""
         # Create two memories with very different content to avoid auto-linking
-        m1 = await http_client.post("/api/v1/memories", json={
-            "title": "Astronomy Star Gazing",
-            "content": "Observing celestial objects through telescopes.",
-            "context": "Hobby related to space",
-            "keywords": ["astronomy", "stars"],
-            "tags": ["hobby"],
-            "importance": 7,
-        })
-        m2 = await http_client.post("/api/v1/memories", json={
-            "title": "Baking Bread Recipe",
-            "content": "Mix flour, water, yeast, and salt. Knead and bake.",
-            "context": "Cooking techniques",
-            "keywords": ["baking", "bread"],
-            "tags": ["cooking"],
-            "importance": 7,
-        })
-
-        m1_id = m1.json()["id"]
-        m2_id = m2.json()["id"]
+        m1_id, m2_id = await _create_memory_pair(
+            http_client,
+            (
+                "Astronomy Star Gazing",
+                "Observing celestial objects through telescopes.",
+                "Hobby related to space",
+                ["astronomy", "stars"],
+                ["hobby"],
+            ),
+            (
+                "Baking Bread Recipe",
+                "Mix flour, water, yeast, and salt. Knead and bake.",
+                "Cooking techniques",
+                ["baking", "bread"],
+                ["cooking"],
+            ),
+        )
 
         # Link them - response indicates newly created links
-        response = await http_client.post(
-            f"/api/v1/memories/{m1_id}/links",
-            json={"related_ids": [m2_id]},
-        )
+        response = await _link(http_client, m1_id, m2_id)
         assert response.status_code == 200
 
         # Verify the link exists by checking the memory's linked_memory_ids
-        get_response = await http_client.get(f"/api/v1/memories/{m1_id}")
+        get_response = await http_client.get(f"{MEMORIES_URL}/{m1_id}")
         assert get_response.status_code == 200
         assert m2_id in get_response.json()["linked_memory_ids"]
 
@@ -354,34 +391,29 @@ class TestMemoryAPILinks:
     async def test_get_memory_links(self, http_client):
         """GET /api/v1/memories/{id}/links returns linked memories."""
         # Create and link memories
-        m1 = await http_client.post("/api/v1/memories", json={
-            "title": "Memory with Links",
-            "content": "Has linked memories",
-            "context": "Testing get links",
-            "keywords": ["link"],
-            "tags": ["test"],
-            "importance": 7,
-        })
-        m2 = await http_client.post("/api/v1/memories", json={
-            "title": "Linked Memory",
-            "content": "Is linked to first",
-            "context": "Testing get links",
-            "keywords": ["link"],
-            "tags": ["test"],
-            "importance": 7,
-        })
-
-        m1_id = m1.json()["id"]
-        m2_id = m2.json()["id"]
-
-        # Create link
-        await http_client.post(
-            f"/api/v1/memories/{m1_id}/links",
-            json={"related_ids": [m2_id]},
+        m1_id, m2_id = await _create_memory_pair(
+            http_client,
+            (
+                "Memory with Links",
+                "Has linked memories",
+                "Testing get links",
+                ["link"],
+                ["test"],
+            ),
+            (
+                "Linked Memory",
+                "Is linked to first",
+                "Testing get links",
+                ["link"],
+                ["test"],
+            ),
         )
 
+        # Create link
+        await _link(http_client, m1_id, m2_id)
+
         # Get links
-        response = await http_client.get(f"/api/v1/memories/{m1_id}/links")
+        response = await http_client.get(f"{MEMORIES_URL}/{m1_id}/links")
         assert response.status_code == 200
         data = response.json()
         assert data["memory_id"] == m1_id
@@ -392,18 +424,13 @@ class TestMemoryAPILinks:
     async def test_link_missing_related_ids(self, http_client):
         """POST /api/v1/memories/{id}/links returns 400 without related_ids."""
         # Create a memory
-        m = await http_client.post("/api/v1/memories", json={
-            "title": "Memory",
-            "content": "Content",
-            "context": "Test",
-            "keywords": ["test"],
-            "tags": ["test"],
-            "importance": 7,
-        })
+        m = await _create_memory(
+            http_client, "Memory", "Content", "Test", ["test"], ["test"],
+        )
         m_id = m.json()["id"]
 
         response = await http_client.post(
-            f"/api/v1/memories/{m_id}/links",
+            f"{MEMORIES_URL}/{m_id}/links",
             json={},
         )
         assert response.status_code == 400
@@ -412,44 +439,39 @@ class TestMemoryAPILinks:
     async def test_delete_link_success(self, http_client):
         """DELETE /api/v1/memories/{id}/links/{target_id} removes the link."""
         # Create two memories with very different content to avoid auto-linking
-        m1 = await http_client.post("/api/v1/memories", json={
-            "title": "Mountain Hiking Adventures",
-            "content": "Exploring trails in the Rocky Mountains during summer.",
-            "context": "Outdoor adventure hobby",
-            "keywords": ["hiking", "mountains"],
-            "tags": ["outdoor"],
-            "importance": 7,
-        })
-        m2 = await http_client.post("/api/v1/memories", json={
-            "title": "Pasta Carbonara Recipe",
-            "content": "Eggs, guanciale, pecorino romano, and black pepper.",
-            "context": "Italian cooking",
-            "keywords": ["cooking", "pasta"],
-            "tags": ["food"],
-            "importance": 7,
-        })
-
-        m1_id = m1.json()["id"]
-        m2_id = m2.json()["id"]
-
-        # Create link
-        await http_client.post(
-            f"/api/v1/memories/{m1_id}/links",
-            json={"related_ids": [m2_id]},
+        m1_id, m2_id = await _create_memory_pair(
+            http_client,
+            (
+                "Mountain Hiking Adventures",
+                "Exploring trails in the Rocky Mountains during summer.",
+                "Outdoor adventure hobby",
+                ["hiking", "mountains"],
+                ["outdoor"],
+            ),
+            (
+                "Pasta Carbonara Recipe",
+                "Eggs, guanciale, pecorino romano, and black pepper.",
+                "Italian cooking",
+                ["cooking", "pasta"],
+                ["food"],
+            ),
         )
 
+        # Create link
+        await _link(http_client, m1_id, m2_id)
+
         # Verify link exists
-        get_response = await http_client.get(f"/api/v1/memories/{m1_id}")
+        get_response = await http_client.get(f"{MEMORIES_URL}/{m1_id}")
         assert m2_id in get_response.json()["linked_memory_ids"]
 
         # Delete the link
-        response = await http_client.delete(f"/api/v1/memories/{m1_id}/links/{m2_id}")
+        response = await http_client.delete(f"{MEMORIES_URL}/{m1_id}/links/{m2_id}")
         assert response.status_code == 200
         assert response.json()["success"] is True
 
         # Verify link is removed from both sides
-        m1_after = await http_client.get(f"/api/v1/memories/{m1_id}")
-        m2_after = await http_client.get(f"/api/v1/memories/{m2_id}")
+        m1_after = await http_client.get(f"{MEMORIES_URL}/{m1_id}")
+        m2_after = await http_client.get(f"{MEMORIES_URL}/{m2_id}")
         assert m2_id not in m1_after.json()["linked_memory_ids"]
         assert m1_id not in m2_after.json()["linked_memory_ids"]
 
@@ -457,28 +479,30 @@ class TestMemoryAPILinks:
     async def test_delete_link_not_found(self, http_client):
         """DELETE /api/v1/memories/{id}/links/{target_id} returns 404 for non-existent link."""
         # Create one memory - can't auto-link to itself
-        m1 = await http_client.post("/api/v1/memories", json={
-            "title": "Solo Memory For Unlink Test",
-            "content": "This memory exists alone with no links.",
-            "context": "Testing unlink not found",
-            "keywords": ["solo"],
-            "tags": ["test"],
-            "importance": 7,
-        })
+        m1 = await _create_memory(
+            http_client,
+            "Solo Memory For Unlink Test",
+            "This memory exists alone with no links.",
+            "Testing unlink not found",
+            ["solo"],
+            ["test"],
+        )
         m1_id = m1.json()["id"]
 
         # Use a very high non-existent memory ID that couldn't possibly exist
         non_existent_target_id = 99999
 
         # Try to delete link to non-existent memory
-        response = await http_client.delete(f"/api/v1/memories/{m1_id}/links/{non_existent_target_id}")
+        response = await http_client.delete(
+            f"{MEMORIES_URL}/{m1_id}/links/{non_existent_target_id}",
+        )
         assert response.status_code == 404
         assert "Link not found" in response.json()["error"]
 
     @pytest.mark.asyncio
     async def test_delete_link_memory_not_found(self, http_client):
         """DELETE /api/v1/memories/{id}/links/{target_id} returns 404 for non-existent memory."""
-        response = await http_client.delete("/api/v1/memories/99999/links/1")
+        response = await http_client.delete(f"{MEMORIES_URL}/99999/links/1")
         assert response.status_code == 404
         assert "Memory not found" in response.json()["error"]
 
@@ -489,35 +513,35 @@ class TestMemoryAPIValidation:
     @pytest.mark.asyncio
     async def test_list_invalid_limit_returns_400(self, http_client):
         """GET /api/v1/memories?limit=abc returns 400."""
-        response = await http_client.get("/api/v1/memories?limit=abc")
+        response = await http_client.get(f"{MEMORIES_URL}?limit=abc")
         assert response.status_code == 400
         assert "limit" in response.json()["error"].lower()
 
     @pytest.mark.asyncio
     async def test_list_invalid_offset_returns_400(self, http_client):
         """GET /api/v1/memories?offset=xyz returns 400."""
-        response = await http_client.get("/api/v1/memories?offset=xyz")
+        response = await http_client.get(f"{MEMORIES_URL}?offset=xyz")
         assert response.status_code == 400
         assert "offset" in response.json()["error"].lower()
 
     @pytest.mark.asyncio
     async def test_list_negative_offset_returns_400(self, http_client):
         """GET /api/v1/memories?offset=-5 returns 400."""
-        response = await http_client.get("/api/v1/memories?offset=-5")
+        response = await http_client.get(f"{MEMORIES_URL}?offset=-5")
         assert response.status_code == 400
         assert "offset" in response.json()["error"].lower()
 
     @pytest.mark.asyncio
     async def test_list_limit_zero_returns_400(self, http_client):
         """GET /api/v1/memories?limit=0 returns 400."""
-        response = await http_client.get("/api/v1/memories?limit=0")
+        response = await http_client.get(f"{MEMORIES_URL}?limit=0")
         assert response.status_code == 400
         assert "limit" in response.json()["error"].lower()
 
     @pytest.mark.asyncio
     async def test_list_limit_over_max_returns_400(self, http_client):
         """GET /api/v1/memories?limit=999 returns 400."""
-        response = await http_client.get("/api/v1/memories?limit=999")
+        response = await http_client.get(f"{MEMORIES_URL}?limit=999")
         assert response.status_code == 400
         assert "limit" in response.json()["error"].lower()
 
@@ -530,7 +554,7 @@ class TestMemoryAPIValidation:
     ):
         """GET /api/v1/memories requires importance_min between 1 and 10."""
         response = await http_client.get(
-            f"/api/v1/memories?importance_min={importance_min}",
+            f"{MEMORIES_URL}?importance_min={importance_min}",
         )
 
         assert response.status_code == 400
@@ -539,14 +563,14 @@ class TestMemoryAPIValidation:
     @pytest.mark.asyncio
     async def test_list_invalid_sort_by_returns_400(self, http_client):
         """GET /api/v1/memories?sort_by=invalid returns 400."""
-        response = await http_client.get("/api/v1/memories?sort_by=invalid")
+        response = await http_client.get(f"{MEMORIES_URL}?sort_by=invalid")
         assert response.status_code == 400
         assert "sort_by" in response.json()["error"].lower()
 
     @pytest.mark.asyncio
     async def test_list_invalid_sort_order_returns_400(self, http_client):
         """GET /api/v1/memories?sort_order=random returns 400."""
-        response = await http_client.get("/api/v1/memories?sort_order=random")
+        response = await http_client.get(f"{MEMORIES_URL}?sort_order=random")
         assert response.status_code == 400
         assert "sort_order" in response.json()["error"].lower()
 
@@ -558,33 +582,26 @@ class TestMemoryAPIIncludeObsolete:
     async def test_include_obsolete_returns_deleted(self, http_client):
         """GET with include_obsolete=true returns soft-deleted memories."""
         # Create a memory
-        payload = {
-            "title": "Memory to Mark Obsolete",
-            "content": "This will be soft deleted.",
-            "context": "Testing include_obsolete",
-            "keywords": ["obsolete"],
-            "tags": ["test"],
-            "importance": 7,
-        }
-        create_response = await http_client.post("/api/v1/memories", json=payload)
+        create_response = await _create_memory(
+            http_client,
+            "Memory to Mark Obsolete",
+            "This will be soft deleted.",
+            "Testing include_obsolete",
+            ["obsolete"],
+            ["test"],
+        )
         assert create_response.status_code == 201
         memory_id = create_response.json()["id"]
 
         # Delete the memory (soft delete)
-        await http_client.request(
-            "DELETE",
-            f"/api/v1/memories/{memory_id}",
-            json={"reason": "Testing obsolete"},
-        )
+        await _delete_memory(http_client, memory_id, "Testing obsolete")
 
         # Without include_obsolete, should NOT see the memory
-        response = await http_client.get("/api/v1/memories")
-        memory_ids = [m["id"] for m in response.json()["memories"]]
+        memory_ids = await _memory_ids(http_client)
         assert memory_id not in memory_ids
 
         # With include_obsolete=true, SHOULD see the memory
-        response = await http_client.get("/api/v1/memories?include_obsolete=true")
-        memory_ids = [m["id"] for m in response.json()["memories"]]
+        memory_ids = await _memory_ids(http_client, "?include_obsolete=true")
         assert memory_id in memory_ids
 
 
@@ -596,18 +613,17 @@ class TestMemoryAPIPagination:
         """GET with limit=2 shows total=5 (not total=2) when 5 memories exist."""
         # Create 5 memories
         for i in range(5):
-            payload = {
-                "title": f"Pagination Total Test {i}",
-                "content": f"Content {i}",
-                "context": "Pagination total test",
-                "keywords": ["pagination"],
-                "tags": ["pagination-test"],
-                "importance": 7,
-            }
-            await http_client.post("/api/v1/memories", json=payload)
+            await _create_memory(
+                http_client,
+                f"Pagination Total Test {i}",
+                f"Content {i}",
+                "Pagination total test",
+                ["pagination"],
+                ["pagination-test"],
+            )
 
         # Request with limit=2
-        response = await http_client.get("/api/v1/memories?limit=2&tags=pagination-test")
+        response = await http_client.get(f"{MEMORIES_URL}?limit=2&tags=pagination-test")
         data = response.json()
 
         assert len(data["memories"]) == 2
@@ -619,26 +635,25 @@ class TestMemoryAPIPagination:
     async def test_pagination_offset_works(self, http_client):
         """GET with offset=2 skips first 2 memories."""
         # Create 5 memories with unique identifiers
-        created_ids = []
         for i in range(5):
-            payload = {
-                "title": f"Offset Test Memory {i}",
-                "content": f"Content for offset test {i}",
-                "context": "Offset pagination test",
-                "keywords": ["offset-test"],
-                "tags": ["offset-test"],
-                "importance": 7,
-            }
-            resp = await http_client.post("/api/v1/memories", json=payload)
-            created_ids.append(resp.json()["id"])
+            await _create_memory(
+                http_client,
+                f"Offset Test Memory {i}",
+                f"Content for offset test {i}",
+                "Offset pagination test",
+                ["offset-test"],
+                ["offset-test"],
+            )
 
         # Get first page (no offset)
-        first_page = await http_client.get("/api/v1/memories?limit=2&offset=0&tags=offset-test")
-        first_page_ids = [m["id"] for m in first_page.json()["memories"]]
+        first_page_ids = await _memory_ids(
+            http_client, "?limit=2&offset=0&tags=offset-test",
+        )
 
         # Get second page (offset=2)
-        second_page = await http_client.get("/api/v1/memories?limit=2&offset=2&tags=offset-test")
-        second_page_ids = [m["id"] for m in second_page.json()["memories"]]
+        second_page_ids = await _memory_ids(
+            http_client, "?limit=2&offset=2&tags=offset-test",
+        )
 
         # Pages should have no overlap
         assert not set(first_page_ids).intersection(set(second_page_ids))
@@ -654,19 +669,19 @@ class TestMemoryAPISorting:
         """GET with sort_by=importance&sort_order=desc returns highest first."""
         # Create memories with different importance levels
         for importance in [3, 9, 5]:
-            payload = {
-                "title": f"Importance {importance} Memory",
-                "content": f"Memory with importance {importance}",
-                "context": "Sort by importance test",
-                "keywords": ["sort"],
-                "tags": ["sort-importance"],
-                "importance": importance,
-            }
-            await http_client.post("/api/v1/memories", json=payload)
+            await _create_memory(
+                http_client,
+                f"Importance {importance} Memory",
+                f"Memory with importance {importance}",
+                "Sort by importance test",
+                ["sort"],
+                ["sort-importance"],
+                importance=importance,
+            )
 
         # Sort by importance descending
         response = await http_client.get(
-            "/api/v1/memories?sort_by=importance&sort_order=desc&tags=sort-importance",
+            f"{MEMORIES_URL}?sort_by=importance&sort_order=desc&tags=sort-importance",
         )
         memories = response.json()["memories"]
 
@@ -680,19 +695,19 @@ class TestMemoryAPISorting:
         """GET with sort_by=importance&sort_order=asc returns lowest first."""
         # Create memories with different importance levels
         for importance in [8, 2, 6]:
-            payload = {
-                "title": f"Asc Importance {importance}",
-                "content": f"Memory with importance {importance}",
-                "context": "Sort by importance asc test",
-                "keywords": ["sort"],
-                "tags": ["sort-importance-asc"],
-                "importance": importance,
-            }
-            await http_client.post("/api/v1/memories", json=payload)
+            await _create_memory(
+                http_client,
+                f"Asc Importance {importance}",
+                f"Memory with importance {importance}",
+                "Sort by importance asc test",
+                ["sort"],
+                ["sort-importance-asc"],
+                importance=importance,
+            )
 
         # Sort by importance ascending
         response = await http_client.get(
-            "/api/v1/memories?sort_by=importance&sort_order=asc&tags=sort-importance-asc",
+            f"{MEMORIES_URL}?sort_by=importance&sort_order=asc&tags=sort-importance-asc",
         )
         memories = response.json()["memories"]
 
@@ -709,29 +724,27 @@ class TestMemoryAPITagFilter:
     async def test_filter_by_single_tag(self, http_client):
         """GET with tags=alpha returns only memories with that tag."""
         # Create memories with different tags
-        await http_client.post("/api/v1/memories", json={
-            "title": "Alpha Only",
-            "content": "Has alpha tag",
-            "context": "Tag filter test",
-            "keywords": ["tag"],
-            "tags": ["alpha", "unique-tag-test"],
-            "importance": 7,
-        })
-        await http_client.post("/api/v1/memories", json={
-            "title": "Beta Only",
-            "content": "Has beta tag",
-            "context": "Tag filter test",
-            "keywords": ["tag"],
-            "tags": ["beta", "unique-tag-test"],
-            "importance": 7,
-        })
+        await _create_memory(
+            http_client,
+            "Alpha Only",
+            "Has alpha tag",
+            "Tag filter test",
+            ["tag"],
+            ["alpha", "unique-tag-test"],
+        )
+        await _create_memory(
+            http_client,
+            "Beta Only",
+            "Has beta tag",
+            "Tag filter test",
+            ["tag"],
+            ["beta", "unique-tag-test"],
+        )
 
         # Filter by alpha tag
-        response = await http_client.get("/api/v1/memories?tags=alpha")
-        memories = response.json()["memories"]
+        titles = await _memory_titles(http_client, "?tags=alpha")
 
         # Should only include alpha-tagged memory
-        titles = [m["title"] for m in memories]
         assert "Alpha Only" in titles
         assert "Beta Only" not in titles
 
@@ -739,35 +752,33 @@ class TestMemoryAPITagFilter:
     async def test_filter_by_multiple_tags_or_logic(self, http_client):
         """GET with tags=tagA,tagB returns memories with ANY of those tags."""
         # Create memories with different tags
-        await http_client.post("/api/v1/memories", json={
-            "title": "Has TagA",
-            "content": "Has tagA",
-            "context": "Multi-tag filter test",
-            "keywords": ["multi"],
-            "tags": ["tagA", "multi-tag-test"],
-            "importance": 7,
-        })
-        await http_client.post("/api/v1/memories", json={
-            "title": "Has TagB",
-            "content": "Has tagB",
-            "context": "Multi-tag filter test",
-            "keywords": ["multi"],
-            "tags": ["tagB", "multi-tag-test"],
-            "importance": 7,
-        })
-        await http_client.post("/api/v1/memories", json={
-            "title": "Has TagC",
-            "content": "Has tagC only",
-            "context": "Multi-tag filter test",
-            "keywords": ["multi"],
-            "tags": ["tagC", "multi-tag-test"],
-            "importance": 7,
-        })
+        await _create_memory(
+            http_client,
+            "Has TagA",
+            "Has tagA",
+            "Multi-tag filter test",
+            ["multi"],
+            ["tagA", "multi-tag-test"],
+        )
+        await _create_memory(
+            http_client,
+            "Has TagB",
+            "Has tagB",
+            "Multi-tag filter test",
+            ["multi"],
+            ["tagB", "multi-tag-test"],
+        )
+        await _create_memory(
+            http_client,
+            "Has TagC",
+            "Has tagC only",
+            "Multi-tag filter test",
+            ["multi"],
+            ["tagC", "multi-tag-test"],
+        )
 
         # Filter by tagA,tagB (OR logic)
-        response = await http_client.get("/api/v1/memories?tags=tagA,tagB")
-        memories = response.json()["memories"]
-        titles = [m["title"] for m in memories]
+        titles = await _memory_titles(http_client, "?tags=tagA,tagB")
 
         # Should include tagA and tagB memories, but not tagC
         assert "Has TagA" in titles

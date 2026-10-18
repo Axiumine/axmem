@@ -65,30 +65,21 @@ def check(root):
     return result.returncode, result.stdout + result.stderr
 
 
-@pytest.mark.parametrize("contract_id,source,target", CASES, ids=[case[0] for case in CASES])
-@pytest.mark.parametrize("style", ["direct", "indirect", "type_checking", "reexport", "local"])
-def test_contract_rejects_forbidden_dependency(tmp_path, contract_id, source, target, style):
-    options = configuration()
-    contract = next(c for c in options["contracts"] if c["id"] == contract_id)
+def write_app_tree(root, options):
+    """Create every internal module that any configured contract names."""
     for configured in options["contracts"]:
         for module in configured["source_modules"] + configured["forbidden_modules"]:
             if module.startswith("app."):
-                write_module(tmp_path, module)
-    if target.startswith("app."):
-        write_module(tmp_path, target)
-    # This intermediary sits outside both endpoints and every restricted source area.
-    bridge = "app.boundary_probe.bridge"
-    write_module(tmp_path, bridge, f"import {target} as exported\n")
-    write_module(tmp_path, source)
-    # Legitimate startup wiring and service-to-protocol imports must remain allowed.
-    write_startup(tmp_path)
-    write_module(tmp_path, "app.services.allowed", "import app.protocols\n")
+                write_module(root, module)
 
-    write_config(tmp_path, options, [contract])
-    status, output = check(tmp_path)
-    assert status == 0, output
 
-    imports = {
+def contract_by_id(options, contract_id):
+    return next(c for c in options["contracts"] if c["id"] == contract_id)
+
+
+def forbidden_import(style, bridge, target):
+    """Source code that reaches ``target`` in the given style."""
+    return {
         "direct": f"import {target}\n",
         "indirect": f"import {bridge}\n",
         "type_checking": (
@@ -96,8 +87,42 @@ def test_contract_rejects_forbidden_dependency(tmp_path, contract_id, source, ta
         ),
         "reexport": f"from {bridge} import exported\n",
         "local": f"def load():\n    import {target}\n",
-    }
-    write_module(tmp_path, source, imports[style])
+    }[style]
+
+
+def write_clean_fixture(root, options, source, target, bridge):
+    """Lay out the permitted baseline: both endpoints, a bridge and legal startup wiring."""
+    write_app_tree(root, options)
+    if target.startswith("app."):
+        write_module(root, target)
+    write_module(root, bridge, f"import {target} as exported\n")
+    write_module(root, source)
+    # Legitimate startup wiring and service-to-protocol imports must remain allowed.
+    write_startup(root)
+    write_module(root, "app.services.allowed", "import app.protocols\n")
+
+
+def assert_violation_reported(output, contract, source, target, bridge, style):
+    assert f'{contract["name"]} BROKEN' in output, output
+    assert source in output and target in output, output
+    if style in ("indirect", "reexport"):
+        assert bridge in output, output
+
+
+@pytest.mark.parametrize("contract_id,source,target", CASES, ids=[case[0] for case in CASES])
+@pytest.mark.parametrize("style", ["direct", "indirect", "type_checking", "reexport", "local"])
+def test_contract_rejects_forbidden_dependency(tmp_path, contract_id, source, target, style):
+    options = configuration()
+    contract = contract_by_id(options, contract_id)
+    # This intermediary sits outside both endpoints and every restricted source area.
+    bridge = "app.boundary_probe.bridge"
+    write_clean_fixture(tmp_path, options, source, target, bridge)
+
+    write_config(tmp_path, options, [contract])
+    status, output = check(tmp_path)
+    assert status == 0, output
+
+    write_module(tmp_path, source, forbidden_import(style, bridge, target))
     # Isolate each contract because several production rules intentionally overlap.
     write_config(tmp_path, options, [])
     status, output = check(tmp_path)
@@ -106,10 +131,7 @@ def test_contract_rejects_forbidden_dependency(tmp_path, contract_id, source, ta
     write_config(tmp_path, options, [contract])
     status, output = check(tmp_path)
     assert status == 1, output
-    assert f'{contract["name"]} BROKEN' in output, output
-    assert source in output and target in output, output
-    if style in ("indirect", "reexport"):
-        assert bridge in output, output
+    assert_violation_reported(output, contract, source, target, bridge, style)
 
     write_module(tmp_path, source)
     status, output = check(tmp_path)
@@ -119,10 +141,7 @@ def test_contract_rejects_forbidden_dependency(tmp_path, contract_id, source, ta
 @pytest.mark.parametrize("startup_module", ["local_executor", "context"])
 def test_http_cannot_reach_bootstrap_through_cli(tmp_path, startup_module):
     options = configuration()
-    for configured in options["contracts"]:
-        for module in configured["source_modules"] + configured["forbidden_modules"]:
-            if module.startswith("app."):
-                write_module(tmp_path, module)
+    write_app_tree(tmp_path, options)
     write_startup(tmp_path)
     write_module(tmp_path, "app.routes.mcp.handler")
     write_config(tmp_path, options, options["contracts"])

@@ -135,6 +135,16 @@ async def test_failed_inference_does_not_block_later_reranks(encoder):
     assert results[1] == [(1, 1.0), (0, 0.0)]
 
 
+def assert_cancelled_job_isolated(results, cancel_index):
+    """Assert only the cancelled job was cancelled and every other job returned its own ranking."""
+    expected = [[(1, 1.0), (0, 0.0)], [(0, 1.0), (1, 0.0)], [(1, 1.0), (0, 0.0)]]
+    for index, result in enumerate(results):
+        if index == cancel_index:
+            assert isinstance(result, asyncio.CancelledError)
+        else:
+            assert result == expected[index]
+
+
 @pytest.mark.parametrize("cancel_index", [0, 2], ids=["running", "queued"])
 async def test_cancelled_rerank_does_not_block_later_jobs(encoder, cancel_index):
     adapter = FastEmbedCrossEncoderAdapter(workers=2)
@@ -161,12 +171,7 @@ async def test_cancelled_rerank_does_not_block_later_jobs(encoder, cancel_index)
             adapter.rerank("redis", ["postgres", "redis"]), timeout=3,
         )
 
-        expected = [[(1, 1.0), (0, 0.0)], [(0, 1.0), (1, 0.0)], [(1, 1.0), (0, 0.0)]]
-        for index, result in enumerate(results):
-            if index == cancel_index:
-                assert isinstance(result, asyncio.CancelledError)
-            else:
-                assert result == expected[index]
+        assert_cancelled_job_isolated(results, cancel_index)
         assert later_result == [(1, 1.0), (0, 0.0)]
         assert encoder.peak_active == 2
     finally:

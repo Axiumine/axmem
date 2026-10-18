@@ -3,6 +3,21 @@
 import pytest
 
 
+async def _create_list_test_skills(mcp_client, skill_names):
+    """Create one ``list-test`` tagged skill per name."""
+    for name in skill_names:
+        await mcp_client.call_tool("execute_forgetful_tool", {
+            "tool_name": "create_skill",
+            "arguments": {
+                "name": name,
+                "description": f"Description for {name}",
+                "content": f"Content for {name}",
+                "tags": ["list-test"],
+                "importance": 7,
+            },
+        })
+
+
 @pytest.mark.asyncio
 async def test_create_skill(mcp_client):
     """Test creating a skill with valid kebab-case name and all fields"""
@@ -57,17 +72,7 @@ async def test_get_skill(mcp_client):
 async def test_list_skills(mcp_client):
     """Test listing skills returns count and summaries without content"""
     skill_names = ["list-skill-1", "list-skill-2", "list-skill-3"]
-    for name in skill_names:
-        await mcp_client.call_tool("execute_forgetful_tool", {
-            "tool_name": "create_skill",
-            "arguments": {
-                "name": name,
-                "description": f"Description for {name}",
-                "content": f"Content for {name}",
-                "tags": ["list-test"],
-                "importance": 7,
-            },
-        })
+    await _create_list_test_skills(mcp_client, skill_names)
 
     list_result = await mcp_client.call_tool("execute_forgetful_tool", {
         "tool_name": "list_skills",

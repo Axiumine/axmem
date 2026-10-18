@@ -43,6 +43,25 @@ async def _create_active_plan(plan_service, user_id, project_id=1, title="Test P
     return plan
 
 
+def _assert_login_task_fields(task, plan):
+    """Assert the scalar fields of the freshly created 'Implement login' task."""
+    assert task is not None
+    assert task.id is not None
+    assert task.title == "Implement login"
+    assert task.plan_id == plan.id
+    assert task.state == TaskState.TODO
+    assert task.priority == TaskPriority.P1
+    assert task.version == 1
+
+
+def _assert_login_task_criteria(task):
+    """Assert the inline criteria and creation timestamp of the login task."""
+    assert len(task.criteria) == 2
+    assert task.criteria[0].description == "Unit tests pass"
+    assert task.criteria[1].description == "E2E test pass"
+    assert task.created_at is not None
+
+
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
@@ -67,17 +86,8 @@ async def test_create_task_basic(test_task_service):
     )
     task = await task_service.create_task(user_id=user_id, task_data=task_data)
 
-    assert task is not None
-    assert task.id is not None
-    assert task.title == "Implement login"
-    assert task.plan_id == plan.id
-    assert task.state == TaskState.TODO
-    assert task.priority == TaskPriority.P1
-    assert task.version == 1
-    assert len(task.criteria) == 2
-    assert task.criteria[0].description == "Unit tests pass"
-    assert task.criteria[1].description == "E2E test pass"
-    assert task.created_at is not None
+    _assert_login_task_fields(task, plan)
+    _assert_login_task_criteria(task)
 
 
 @pytest.mark.asyncio

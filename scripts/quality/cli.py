@@ -75,6 +75,17 @@ def run_group(names: list[str], ctx: Ctx) -> list[Result]:
     return results
 
 
+def run_stage_groups(stage: str, ctx: Ctx) -> bool:
+    """Run the stage's selected groups in order; print failures and stop at the first bad group."""
+    groups = ([n for n in group if registry.selected(n)] for group in registry.STAGES[stage])
+    for names in filter(None, groups):
+        results = run_group(names, ctx)
+        if any(r.status == "FAIL" for r in results):
+            print_failures(results)
+            return False
+    return True
+
+
 def run_stage(stage: str) -> int:
     if stage not in registry.STAGES:
         print(f"unknown stage {stage!r}; choose from {', '.join(registry.STAGES)}", file=sys.stderr)
@@ -85,13 +96,9 @@ def run_stage(stage: str) -> int:
         print(f"[{stage}] nothing staged; nothing to check")
         return 0
     print(f"[{stage}] {'staged files' if ctx.scoped else 'whole project'}", flush=True)
-    groups = ([n for n in group if registry.selected(n)] for group in registry.STAGES[stage])
-    for names in filter(None, groups):
-        results = run_group(names, ctx)
-        if any(r.status == "FAIL" for r in results):
-            print_failures(results)
-            print(f"\n[{stage}] FAILED (bypass a gate with SKIP=<gate>; see docs/quality-gates.md)")
-            return 1
+    if not run_stage_groups(stage, ctx):
+        print(f"\n[{stage}] FAILED (bypass a gate with SKIP=<gate>; see docs/quality-gates.md)")
+        return 1
     print(f"[{stage}] OK")
     return 0
 

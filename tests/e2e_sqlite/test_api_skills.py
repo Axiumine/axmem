@@ -1,11 +1,16 @@
 """E2E tests for Skill REST API endpoints.
 
 Uses in-memory SQLite for test isolation.
-Tests the /api/v1/skills endpoints.
+Tests the /api/v1/skills list, CRUD, search and import/export endpoints.
 """
-import base64
-
 import pytest
+
+from tests.e2e_sqlite.skill_api_helpers import (
+    SKILLS_URL,
+    export_skill_md,
+    post_skill,
+    post_skill_id,
+)
 
 
 class TestSkillAPIList:
@@ -14,7 +19,7 @@ class TestSkillAPIList:
     @pytest.mark.asyncio
     async def test_list_skills_empty(self, http_client):
         """GET /api/v1/skills returns empty list initially."""
-        response = await http_client.get("/api/v1/skills")
+        response = await http_client.get(SKILLS_URL)
         assert response.status_code == 200
         data = response.json()
         assert data["skills"] == []
@@ -23,17 +28,16 @@ class TestSkillAPIList:
     @pytest.mark.asyncio
     async def test_list_skills_with_data(self, http_client):
         """GET /api/v1/skills returns created skills."""
-        payload = {
-            "name": "list-test-skill",
-            "description": "A test skill for listing",
-            "content": "# List Test\n\nSteps here.",
-            "tags": ["test"],
-            "importance": 7,
-        }
-        create_response = await http_client.post("/api/v1/skills", json=payload)
+        create_response = await post_skill(
+            http_client,
+            "list-test-skill",
+            "A test skill for listing",
+            "# List Test\n\nSteps here.",
+            ["test"],
+        )
         assert create_response.status_code == 201
 
-        response = await http_client.get("/api/v1/skills")
+        response = await http_client.get(SKILLS_URL)
         assert response.status_code == 200
         data = response.json()
         assert len(data["skills"]) >= 1
@@ -42,15 +46,15 @@ class TestSkillAPIList:
     @pytest.mark.asyncio
     async def test_list_skills_filter_by_tags(self, http_client):
         """GET /api/v1/skills filters by tags."""
-        await http_client.post("/api/v1/skills", json={
-            "name": "tagged-api-skill",
-            "description": "Skill with special tag",
-            "content": "Content for tagged skill.",
-            "tags": ["special-api-tag"],
-            "importance": 7,
-        })
+        await post_skill(
+            http_client,
+            "tagged-api-skill",
+            "Skill with special tag",
+            "Content for tagged skill.",
+            ["special-api-tag"],
+        )
 
-        response = await http_client.get("/api/v1/skills?tags=special-api-tag")
+        response = await http_client.get(f"{SKILLS_URL}?tags=special-api-tag")
         assert response.status_code == 200
         data = response.json()
         assert len(data["skills"]) >= 1
@@ -58,7 +62,7 @@ class TestSkillAPIList:
     @pytest.mark.asyncio
     async def test_list_skills_invalid_project_id(self, http_client):
         """GET /api/v1/skills returns 400 for invalid project_id."""
-        response = await http_client.get("/api/v1/skills?project_id=not_a_number")
+        response = await http_client.get(f"{SKILLS_URL}?project_id=not_a_number")
         assert response.status_code == 400
         assert "Invalid project_id" in response.json()["error"]
 
@@ -69,14 +73,14 @@ class TestSkillAPICrud:
     @pytest.mark.asyncio
     async def test_create_skill_api(self, http_client):
         """POST /api/v1/skills creates a new skill."""
-        payload = {
-            "name": "api-create-skill",
-            "description": "A skill created via REST API",
-            "content": "# API Skill\n\n## Steps\n1. First step",
-            "tags": ["api", "create"],
-            "importance": 8,
-        }
-        response = await http_client.post("/api/v1/skills", json=payload)
+        response = await post_skill(
+            http_client,
+            "api-create-skill",
+            "A skill created via REST API",
+            "# API Skill\n\n## Steps\n1. First step",
+            ["api", "create"],
+            importance=8,
+        )
         assert response.status_code == 201
         data = response.json()
         assert data["id"] > 0
@@ -92,22 +96,21 @@ class TestSkillAPICrud:
             "description": "Should fail validation",
             "content": "Content",
         }
-        response = await http_client.post("/api/v1/skills", json=payload)
+        response = await http_client.post(SKILLS_URL, json=payload)
         assert response.status_code == 400
 
     @pytest.mark.asyncio
     async def test_get_skill_api(self, http_client):
         """GET /api/v1/skills/{id} returns the skill."""
-        create_response = await http_client.post("/api/v1/skills", json={
-            "name": "get-api-skill",
-            "description": "Testing get endpoint",
-            "content": "Content for getting the skill.",
-            "tags": ["test"],
-            "importance": 7,
-        })
-        skill_id = create_response.json()["id"]
+        skill_id = await post_skill_id(
+            http_client,
+            "get-api-skill",
+            "Testing get endpoint",
+            "Content for getting the skill.",
+            ["test"],
+        )
 
-        response = await http_client.get(f"/api/v1/skills/{skill_id}")
+        response = await http_client.get(f"{SKILLS_URL}/{skill_id}")
         assert response.status_code == 200
         data = response.json()
         assert data["id"] == skill_id
@@ -116,26 +119,25 @@ class TestSkillAPICrud:
     @pytest.mark.asyncio
     async def test_get_skill_not_found(self, http_client):
         """GET /api/v1/skills/{id} returns 404 for missing skill."""
-        response = await http_client.get("/api/v1/skills/99999")
+        response = await http_client.get(f"{SKILLS_URL}/99999")
         assert response.status_code == 404
 
     @pytest.mark.asyncio
     async def test_update_skill_api(self, http_client):
         """PUT /api/v1/skills/{id} updates the skill."""
-        create_response = await http_client.post("/api/v1/skills", json={
-            "name": "update-api-skill",
-            "description": "Original description",
-            "content": "Original content for the skill.",
-            "tags": ["original"],
-            "importance": 7,
-        })
-        skill_id = create_response.json()["id"]
+        skill_id = await post_skill_id(
+            http_client,
+            "update-api-skill",
+            "Original description",
+            "Original content for the skill.",
+            ["original"],
+        )
 
         update_payload = {
             "description": "Updated description via API",
             "tags": ["updated"],
         }
-        response = await http_client.put(f"/api/v1/skills/{skill_id}", json=update_payload)
+        response = await http_client.put(f"{SKILLS_URL}/{skill_id}", json=update_payload)
         assert response.status_code == 200
         data = response.json()
         assert data["description"] == "Updated description via API"
@@ -143,33 +145,32 @@ class TestSkillAPICrud:
     @pytest.mark.asyncio
     async def test_update_skill_not_found(self, http_client):
         """PUT /api/v1/skills/{id} returns 404 for missing skill."""
-        response = await http_client.put("/api/v1/skills/99999", json={"description": "Test"})
+        response = await http_client.put(f"{SKILLS_URL}/99999", json={"description": "Test"})
         assert response.status_code == 404
 
     @pytest.mark.asyncio
     async def test_delete_skill_api(self, http_client):
         """DELETE /api/v1/skills/{id} deletes the skill."""
-        create_response = await http_client.post("/api/v1/skills", json={
-            "name": "delete-api-skill",
-            "description": "Will be deleted",
-            "content": "Content that will be deleted.",
-            "tags": ["delete"],
-            "importance": 7,
-        })
-        skill_id = create_response.json()["id"]
+        skill_id = await post_skill_id(
+            http_client,
+            "delete-api-skill",
+            "Will be deleted",
+            "Content that will be deleted.",
+            ["delete"],
+        )
 
-        response = await http_client.delete(f"/api/v1/skills/{skill_id}")
+        response = await http_client.delete(f"{SKILLS_URL}/{skill_id}")
         assert response.status_code == 200
         assert response.json()["success"] is True
 
         # Verify deleted
-        get_response = await http_client.get(f"/api/v1/skills/{skill_id}")
+        get_response = await http_client.get(f"{SKILLS_URL}/{skill_id}")
         assert get_response.status_code == 404
 
     @pytest.mark.asyncio
     async def test_delete_skill_not_found(self, http_client):
         """DELETE /api/v1/skills/{id} returns 404 for missing skill."""
-        response = await http_client.delete("/api/v1/skills/99999")
+        response = await http_client.delete(f"{SKILLS_URL}/99999")
         assert response.status_code == 404
 
 
@@ -179,15 +180,16 @@ class TestSkillAPISearch:
     @pytest.mark.asyncio
     async def test_search_skills_api(self, http_client):
         """GET /api/v1/skills/search returns matching skills."""
-        await http_client.post("/api/v1/skills", json={
-            "name": "search-api-deploy",
-            "description": "Deploy application to production using Docker containers",
-            "content": "# Deploy\n\n## Steps\n1. Build image\n2. Push to registry",
-            "tags": ["deployment"],
-            "importance": 8,
-        })
+        await post_skill(
+            http_client,
+            "search-api-deploy",
+            "Deploy application to production using Docker containers",
+            "# Deploy\n\n## Steps\n1. Build image\n2. Push to registry",
+            ["deployment"],
+            importance=8,
+        )
 
-        response = await http_client.get("/api/v1/skills/search?query=deploy+docker+production")
+        response = await http_client.get(f"{SKILLS_URL}/search?query=deploy+docker+production")
         assert response.status_code == 200
         data = response.json()
         assert "skills" in data
@@ -197,7 +199,7 @@ class TestSkillAPISearch:
     @pytest.mark.asyncio
     async def test_search_skills_missing_query(self, http_client):
         """GET /api/v1/skills/search returns 400 without query param."""
-        response = await http_client.get("/api/v1/skills/search")
+        response = await http_client.get(f"{SKILLS_URL}/search")
         assert response.status_code == 400
         assert "query" in response.json()["error"].lower()
 
@@ -223,7 +225,7 @@ allowed-tools:
 1. First step
 2. Second step
 """
-        response = await http_client.post("/api/v1/skills/import", json={
+        response = await http_client.post(f"{SKILLS_URL}/import", json={
             "skill_md": skill_md,
             "importance": 8,
         })
@@ -237,17 +239,16 @@ allowed-tools:
     @pytest.mark.asyncio
     async def test_export_skill_api(self, http_client):
         """GET /api/v1/skills/{id}/export returns SKILL.md format."""
-        create_response = await http_client.post("/api/v1/skills", json={
-            "name": "api-export-skill",
-            "description": "Skill for export via API",
-            "content": "# Export\n\n## Steps\n1. Export step",
-            "license": "Apache-2.0",
-            "tags": ["export"],
-            "importance": 7,
-        })
-        skill_id = create_response.json()["id"]
+        skill_id = await post_skill_id(
+            http_client,
+            "api-export-skill",
+            "Skill for export via API",
+            "# Export\n\n## Steps\n1. Export step",
+            ["export"],
+            license="Apache-2.0",
+        )
 
-        response = await http_client.get(f"/api/v1/skills/{skill_id}/export")
+        response = await export_skill_md(http_client, skill_id)
         assert response.status_code == 200
         data = response.json()
         assert "skill_md" in data
@@ -259,318 +260,5 @@ allowed-tools:
     @pytest.mark.asyncio
     async def test_export_skill_not_found(self, http_client):
         """GET /api/v1/skills/{id}/export returns 404 for missing skill."""
-        response = await http_client.get("/api/v1/skills/99999/export")
-        assert response.status_code == 404
-
-
-class TestSkillResourceLinking:
-    """Test skill resource linking REST API endpoints."""
-
-    async def _create_skill(self, http_client):
-        """Helper to create a skill and return its ID."""
-        payload = {
-            "name": "link-test-skill",
-            "description": "A skill for testing resource linking",
-            "content": "# Link Test\n\nSteps here.",
-            "tags": ["link-test"],
-            "importance": 7,
-        }
-        response = await http_client.post("/api/v1/skills", json=payload)
-        assert response.status_code == 201
-        return response.json()["id"]
-
-    async def _create_file(self, http_client):
-        """Helper to create a file and return its ID."""
-        payload = {
-            "filename": "skill-link-test.txt",
-            "description": "File for skill linking test",
-            "data": base64.b64encode(b"test content").decode("utf-8"),
-            "mime_type": "text/plain",
-        }
-        response = await http_client.post("/api/v1/files", json=payload)
-        assert response.status_code == 201
-        return response.json()["id"]
-
-    async def _create_code_artifact(self, http_client):
-        """Helper to create a code artifact and return its ID."""
-        payload = {
-            "title": "Skill Link Test Artifact",
-            "description": "Code artifact for skill linking test",
-            "code": "def test(): pass",
-            "language": "python",
-            "tags": ["test"],
-        }
-        response = await http_client.post(
-            "/api/v1/code-artifacts", json=payload,
-        )
-        assert response.status_code == 201
-        return response.json()["id"]
-
-    async def _create_document(self, http_client):
-        """Helper to create a document and return its ID."""
-        payload = {
-            "title": "Skill Link Test Document",
-            "description": "Document for skill linking test",
-            "content": "This is a test document for skill linking.",
-            "document_type": "analysis",
-            "tags": ["test"],
-        }
-        response = await http_client.post("/api/v1/documents", json=payload)
-        assert response.status_code == 201
-        return response.json()["id"]
-
-    @pytest.mark.asyncio
-    async def test_link_skill_to_file(self, http_client):
-        """POST /api/v1/skills/{id}/files links a file to a skill."""
-        skill_id = await self._create_skill(http_client)
-        file_id = await self._create_file(http_client)
-
-        response = await http_client.post(
-            f"/api/v1/skills/{skill_id}/files",
-            json={"file_id": file_id},
-        )
-        assert response.status_code == 200
-        data = response.json()
-        assert data["skill_id"] == skill_id
-        assert data["file_id"] == file_id
-        assert data["linked"] is True
-
-    @pytest.mark.asyncio
-    async def test_unlink_skill_from_file(self, http_client):
-        """DELETE /api/v1/skills/{id}/files/{file_id} unlinks a file."""
-        skill_id = await self._create_skill(http_client)
-        file_id = await self._create_file(http_client)
-
-        await http_client.post(
-            f"/api/v1/skills/{skill_id}/files",
-            json={"file_id": file_id},
-        )
-
-        response = await http_client.delete(
-            f"/api/v1/skills/{skill_id}/files/{file_id}",
-        )
-        assert response.status_code == 200
-        data = response.json()
-        assert data["unlinked"] is True
-
-    @pytest.mark.asyncio
-    async def test_link_skill_to_code_artifact(self, http_client):
-        """POST /api/v1/skills/{id}/code-artifacts links a code artifact."""
-        skill_id = await self._create_skill(http_client)
-        ca_id = await self._create_code_artifact(http_client)
-
-        response = await http_client.post(
-            f"/api/v1/skills/{skill_id}/code-artifacts",
-            json={"code_artifact_id": ca_id},
-        )
-        assert response.status_code == 200
-        data = response.json()
-        assert data["skill_id"] == skill_id
-        assert data["code_artifact_id"] == ca_id
-        assert data["linked"] is True
-
-    @pytest.mark.asyncio
-    async def test_unlink_skill_from_code_artifact(self, http_client):
-        """DELETE /api/v1/skills/{id}/code-artifacts/{ca_id} unlinks."""
-        skill_id = await self._create_skill(http_client)
-        ca_id = await self._create_code_artifact(http_client)
-
-        await http_client.post(
-            f"/api/v1/skills/{skill_id}/code-artifacts",
-            json={"code_artifact_id": ca_id},
-        )
-
-        response = await http_client.delete(
-            f"/api/v1/skills/{skill_id}/code-artifacts/{ca_id}",
-        )
-        assert response.status_code == 200
-        data = response.json()
-        assert data["unlinked"] is True
-
-    @pytest.mark.asyncio
-    async def test_link_skill_to_document(self, http_client):
-        """POST /api/v1/skills/{id}/documents links a document."""
-        skill_id = await self._create_skill(http_client)
-        doc_id = await self._create_document(http_client)
-
-        response = await http_client.post(
-            f"/api/v1/skills/{skill_id}/documents",
-            json={"document_id": doc_id},
-        )
-        assert response.status_code == 200
-        data = response.json()
-        assert data["skill_id"] == skill_id
-        assert data["document_id"] == doc_id
-        assert data["linked"] is True
-
-    @pytest.mark.asyncio
-    async def test_unlink_skill_from_document(self, http_client):
-        """DELETE /api/v1/skills/{id}/documents/{doc_id} unlinks."""
-        skill_id = await self._create_skill(http_client)
-        doc_id = await self._create_document(http_client)
-
-        await http_client.post(
-            f"/api/v1/skills/{skill_id}/documents",
-            json={"document_id": doc_id},
-        )
-
-        response = await http_client.delete(
-            f"/api/v1/skills/{skill_id}/documents/{doc_id}",
-        )
-        assert response.status_code == 200
-        data = response.json()
-        assert data["unlinked"] is True
-
-    @pytest.mark.asyncio
-    async def test_link_skill_not_found(self, http_client):
-        """POST /api/v1/skills/{id}/files returns 404 for missing skill."""
-        response = await http_client.post(
-            "/api/v1/skills/99999/files",
-            json={"file_id": 1},
-        )
-        assert response.status_code == 404
-
-    @pytest.mark.asyncio
-    async def test_duplicate_link_idempotent(self, http_client):
-        """Bug #1: Linking same file twice should succeed (idempotent)."""
-        skill_id = await self._create_skill(http_client)
-        file_id = await self._create_file(http_client)
-
-        resp1 = await http_client.post(
-            f"/api/v1/skills/{skill_id}/files",
-            json={"file_id": file_id},
-        )
-        assert resp1.status_code == 200
-
-        resp2 = await http_client.post(
-            f"/api/v1/skills/{skill_id}/files",
-            json={"file_id": file_id},
-        )
-        assert resp2.status_code == 200
-        assert resp2.json()["linked"] is True
-
-    @pytest.mark.asyncio
-    async def test_unlink_nonexistent_returns_false(self, http_client):
-        """Bug #2: Unlinking non-existent link returns unlinked=False."""
-        skill_id = await self._create_skill(http_client)
-
-        response = await http_client.delete(
-            f"/api/v1/skills/{skill_id}/files/99999",
-        )
-        assert response.status_code == 200
-        assert response.json()["unlinked"] is False
-
-
-class TestSkillBugRegressions:
-    """Regression tests for bugs found in exploratory testing."""
-
-    @pytest.mark.asyncio
-    async def test_export_includes_tags(self, http_client):
-        """Bug #3: Exported SKILL.md should contain tags."""
-        create_response = await http_client.post("/api/v1/skills", json={
-            "name": "export-tag-bug",
-            "description": "Regression test for export tags",
-            "content": "# Content",
-            "tags": ["alpha", "beta"],
-            "importance": 7,
-        })
-        skill_id = create_response.json()["id"]
-
-        export_response = await http_client.get(
-            f"/api/v1/skills/{skill_id}/export",
-        )
-        assert export_response.status_code == 200
-        skill_md = export_response.json()["skill_md"]
-        assert "tags:" in skill_md
-        assert "- alpha" in skill_md
-        assert "- beta" in skill_md
-
-    @pytest.mark.asyncio
-    async def test_import_export_roundtrip_preserves_tags(self, http_client):
-        """Bug #3: Tags survive export→import roundtrip."""
-        create_response = await http_client.post("/api/v1/skills", json={
-            "name": "roundtrip-tag-bug",
-            "description": "Roundtrip tags regression",
-            "content": "# Content",
-            "tags": ["one", "two"],
-            "importance": 7,
-        })
-        skill_id = create_response.json()["id"]
-
-        export_response = await http_client.get(
-            f"/api/v1/skills/{skill_id}/export",
-        )
-        skill_md = export_response.json()["skill_md"]
-
-        # Delete original so re-import doesn't hit name uniqueness
-        await http_client.delete(f"/api/v1/skills/{skill_id}")
-
-        import_response = await http_client.post(
-            "/api/v1/skills/import",
-            json={"skill_md": skill_md, "importance": 7},
-        )
-        assert import_response.status_code == 201
-        reimported = import_response.json()
-        assert reimported["tags"] == ["one", "two"]
-
-    @pytest.mark.asyncio
-    async def test_duplicate_skill_name_rejected(self, http_client):
-        """Bug #4: Creating two skills with the same name returns 400."""
-        payload = {
-            "name": "unique-name-bug",
-            "description": "First skill",
-            "content": "# First",
-            "tags": [],
-            "importance": 7,
-        }
-        resp1 = await http_client.post("/api/v1/skills", json=payload)
-        assert resp1.status_code == 201
-
-        payload["description"] = "Second skill, same name"
-        resp2 = await http_client.post("/api/v1/skills", json=payload)
-        assert resp2.status_code == 400
-        assert "already exists" in resp2.json()["error"]
-
-
-class TestSkillAPILinks:
-    """Test skill link reverse-lookup endpoint (issue #51)."""
-
-    @pytest.mark.asyncio
-    async def test_get_skill_links(self, http_client):
-        """GET /api/v1/skills/{id}/links returns linked content IDs."""
-        create_response = await http_client.post("/api/v1/skills", json={
-            "name": "api-links-skill",
-            "description": "Skill for REST link lookup",
-            "content": "# Content",
-            "tags": [],
-            "importance": 7,
-        })
-        skill_id = create_response.json()["id"]
-
-        doc_response = await http_client.post("/api/v1/documents", json={
-            "title": "API Links Document",
-            "description": "Document for REST link lookup",
-            "content": "Reference content for the skill link test.",
-        })
-        document_id = doc_response.json()["id"]
-
-        link_response = await http_client.post(
-            f"/api/v1/skills/{skill_id}/documents",
-            json={"document_id": document_id},
-        )
-        assert link_response.status_code == 200
-
-        response = await http_client.get(f"/api/v1/skills/{skill_id}/links")
-        assert response.status_code == 200
-        data = response.json()
-        assert data["document_ids"] == [document_id]
-        assert data["memory_ids"] == []
-        assert data["file_ids"] == []
-        assert data["code_artifact_ids"] == []
-        assert data["total_count"] == 1
-
-    @pytest.mark.asyncio
-    async def test_get_skill_links_not_found(self, http_client):
-        """GET /api/v1/skills/{id}/links returns 404 for non-existent skill."""
-        response = await http_client.get("/api/v1/skills/999999/links")
+        response = await export_skill_md(http_client, 99999)
         assert response.status_code == 404

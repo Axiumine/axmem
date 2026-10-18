@@ -29,6 +29,89 @@ async def create_project(http_client):
     return response.json()["id"]
 
 
+async def create_plan_with_reference(http_client, project_id, reference):
+    created = await http_client.post("/api/v1/plans", json={
+        "project_id": project_id, "title": "Original", "external_ref": reference,
+    })
+    return created.json()
+
+
+async def assert_updates_preserve_reference(http_client, path, expected):
+    """Updates that omit or null the reference keep the stored one."""
+    for update in ({"title": "Renamed"}, {"title": "Null preserved", "external_ref": None}):
+        response = await http_client.put(path, json=update)
+        assert response.status_code == 200
+        assert response.json()["external_ref"] == expected
+        assert response.json()["title"] == update["title"]
+
+
+async def assert_released_reference_is_reusable(http_client, project_id):
+    """After a plan moves to another reference, the old one is free again."""
+    old = await http_client.get("/api/v1/plans", params={"external_ref": "issue:43"})
+    assert old.json()["plans"] == []
+    reused = await http_client.post("/api/v1/plans", json={
+        "project_id": project_id, "title": "Reused reference", "external_ref": "issue:43",
+    })
+    assert reused.status_code == 201
+
+
+async def assert_same_reference_updates_are_noops(http_client, path):
+    before = (await http_client.get(path)).json()
+    for fields in ({"external_ref": "issue:44"}, {"external_ref": None}):
+        same = await http_client.put(path, json=fields)
+        assert same.json() == before
+
+
+def tool_caller(mcp_client):
+    """Return ``call(tool_name, **arguments)`` going through the MCP meta-tool."""
+    async def call(tool_name, **arguments):
+        result = await mcp_client.call_tool(
+            "execute_forgetful_tool", {"tool_name": tool_name, "arguments": arguments},
+        )
+        return result.data
+
+    return call
+
+
+async def assert_mcp_duplicate_create_rejected_and_lookup(call, project_id, plan):
+    with pytest.raises(ToolError, match="external_ref already exists"):
+        await call(
+            "create_plan", project_id=project_id, title="Duplicate", external_ref="issue:42",
+        )
+    found = await call("list_plans", external_ref=" issue:42 ")
+    assert found["total_count"] == 1
+    assert found["plans"][0]["id"] == plan["id"]
+    assert found["plans"][0]["external_ref"] == "issue:42"
+
+
+async def assert_mcp_updates_preserve_replace_and_reject(call, project_id, plan):
+    for fields in ({"title": "Renamed"}, {"external_ref": None}):
+        preserved = await call("update_plan", plan_id=plan["id"], **fields)
+        assert preserved["external_ref"] == "issue:42"
+    other = await call(
+        "create_plan", project_id=project_id, title="Other plan", external_ref="issue:43",
+    )
+    with pytest.raises(ToolError, match="external_ref already exists"):
+        await call("update_plan", plan_id=other["id"], external_ref="issue:42")
+    changed = await call("update_plan", plan_id=plan["id"], external_ref=" issue:44 ")
+    assert changed["external_ref"] == "issue:44"
+
+
+async def assert_mcp_blank_reference_rejected(mcp_client, call, project_id, plan):
+    """Blank references fail validation and every tool documents the parameter."""
+    for tool_name, arguments in (
+        ("create_plan", {"project_id": project_id, "title": "Blank"}),
+        ("update_plan", {"plan_id": plan["id"]}),
+        ("list_plans", {}),
+    ):
+        with pytest.raises(ToolError, match="at least 1 character"):
+            await call(tool_name, external_ref=" \t ", **arguments)
+        info = await mcp_client.call_tool(
+            "how_to_use_forgetful_tool", {"tool_name": tool_name},
+        )
+        assert "external_ref" in {p["name"] for p in info.data["parameters"]}
+
+
 class TestPlanExternalRefAPI:
     @pytest.mark.parametrize("reference", ["", " \t\n ", "x" * 256])
     async def test_invalid_references_on_create_update_and_lookup(self, http_client, reference):
@@ -156,12 +239,10 @@ class TestPlanExternalRefAPI:
 
     async def test_external_ref_updates_preserve_replace_and_reject_duplicates(self, http_client):
         project_id = await create_project(http_client)
-        plans = []
-        for reference in ("issue:42", "issue:43"):
-            created = await http_client.post("/api/v1/plans", json={
-                "project_id": project_id, "title": "Original", "external_ref": reference,
-            })
-            plans.append(created.json())
+        plans = [
+            await create_plan_with_reference(http_client, project_id, reference)
+            for reference in ("issue:42", "issue:43")
+        ]
         path = f"/api/v1/plans/{plans[1]['id']}"
         before = (await http_client.get(path)).json()
 
@@ -170,33 +251,17 @@ class TestPlanExternalRefAPI:
         assert duplicate.status_code == 409
         unchanged = await http_client.get(path)
         assert unchanged.json() == before
-        for update in ({"title": "Renamed"}, {"title": "Null preserved", "external_ref": None}):
-            response = await http_client.put(path, json=update)
-            assert response.status_code == 200
-            assert response.json()["external_ref"] == "issue:43"
-            assert response.json()["title"] == update["title"]
+        await assert_updates_preserve_reference(http_client, path, "issue:43")
         replaced = await http_client.put(path, json={"external_ref": " issue:44 "})
         assert replaced.status_code == 200
         assert replaced.json()["external_ref"] == "issue:44"
-        old = await http_client.get("/api/v1/plans", params={"external_ref": "issue:43"})
-        assert old.json()["plans"] == []
-        reused = await http_client.post("/api/v1/plans", json={
-            "project_id": project_id, "title": "Reused reference", "external_ref": "issue:43",
-        })
-        assert reused.status_code == 201
-        before = (await http_client.get(path)).json()
-        for fields in ({"external_ref": "issue:44"}, {"external_ref": None}):
-            same = await http_client.put(path, json=fields)
-            assert same.json() == before
+        await assert_released_reference_is_reusable(http_client, project_id)
+        await assert_same_reference_updates_are_noops(http_client, path)
 
 
 class TestPlanExternalRefMCP:
     async def test_external_ref_mcp_workflow(self, mcp_client):
-        async def call(tool_name, **arguments):
-            result = await mcp_client.call_tool(
-                "execute_forgetful_tool", {"tool_name": tool_name, "arguments": arguments},
-            )
-            return result.data
+        call = tool_caller(mcp_client)
 
         project = await call(
             "create_project", name="Plan references", description="MCP reference tests",
@@ -211,35 +276,9 @@ class TestPlanExternalRefMCP:
         assert plan["external_ref"] == "issue:42"
         assert plan["source_url"] == "https://tracker.test/42"
         assert (await call("get_plan", plan_id=plan["id"]))["external_ref"] == "issue:42"
-        with pytest.raises(ToolError, match="external_ref already exists"):
-            await call(
-                "create_plan", project_id=project_id, title="Duplicate", external_ref="issue:42",
-            )
-        found = await call("list_plans", external_ref=" issue:42 ")
-        assert found["total_count"] == 1
-        assert found["plans"][0]["id"] == plan["id"]
-        assert found["plans"][0]["external_ref"] == "issue:42"
-        for fields in ({"title": "Renamed"}, {"external_ref": None}):
-            preserved = await call("update_plan", plan_id=plan["id"], **fields)
-            assert preserved["external_ref"] == "issue:42"
-        other = await call(
-            "create_plan", project_id=project_id, title="Other plan", external_ref="issue:43",
-        )
-        with pytest.raises(ToolError, match="external_ref already exists"):
-            await call("update_plan", plan_id=other["id"], external_ref="issue:42")
-        changed = await call("update_plan", plan_id=plan["id"], external_ref=" issue:44 ")
-        assert changed["external_ref"] == "issue:44"
-        for tool_name, arguments in (
-            ("create_plan", {"project_id": project_id, "title": "Blank"}),
-            ("update_plan", {"plan_id": plan["id"]}),
-            ("list_plans", {}),
-        ):
-            with pytest.raises(ToolError, match="at least 1 character"):
-                await call(tool_name, external_ref=" \t ", **arguments)
-            info = await mcp_client.call_tool(
-                "how_to_use_forgetful_tool", {"tool_name": tool_name},
-            )
-            assert "external_ref" in {p["name"] for p in info.data["parameters"]}
+        await assert_mcp_duplicate_create_rejected_and_lookup(call, project_id, plan)
+        await assert_mcp_updates_preserve_replace_and_reject(call, project_id, plan)
+        await assert_mcp_blank_reference_rejected(mcp_client, call, project_id, plan)
 
 
 @pytest.fixture

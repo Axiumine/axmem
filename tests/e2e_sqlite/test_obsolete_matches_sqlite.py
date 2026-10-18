@@ -22,6 +22,55 @@ async def _create(mcp_client, title: str, content: str, keywords: list[str]):
     )
 
 
+async def _re_embed_all_memories(sqlite_app):
+    """Run a full re-embedding rebuild and assert it processed and validated both memories."""
+    repo = sqlite_app.memory_service.memory_repo
+    progress = []
+    result = await ReEmbeddingService(
+        memory_repository=repo,
+        embedding_adapter=repo.embedding_adapter,
+        batch_size=1,
+    ).re_embed_all(progress_callback=lambda done, total: progress.append((done, total)))
+    assert result.total_memories == result.total_processed == 2
+    assert progress == [(1, 2), (2, 2)]
+    assert result.validation.all_passed
+
+
+def _assert_reports_superseded_match(a_prime, a_id, b_id):
+    """Assert re-creating the obsolete memory reports it as a match superseded by ``b_id``."""
+    matches = a_prime.data.get("obsolete_matches") or []
+    assert matches
+    assert matches[0]["id"] == a_id
+    assert matches[0]["superseded_by"] == b_id
+    assert matches[0]["similarity"] >= settings.OBSOLETE_WARNING_THRESHOLD
+
+
+async def _assert_obsolete_hidden_from_reads(mcp_client, a_prime, a_id):
+    """Assert the obsolete memory is neither linked from ``a_prime`` nor returned by a query."""
+    got = await mcp_client.call_tool(
+        "execute_forgetful_tool",
+        {"tool_name": "get_memory", "arguments": {"memory_id": a_prime.data["id"]}},
+    )
+    linked = got.data.get("linked_memory_ids") or []
+    assert a_id not in linked
+
+    queried = await mcp_client.call_tool(
+        "execute_forgetful_tool",
+        {
+            "tool_name": "query_memory",
+            "arguments": {
+                "query": "Policy X requires weekly backups for all tenant databases.",
+                "query_context": "Check current backup policy after rebuilding embeddings",
+                "k": 5,
+                "include_links": True,
+            },
+        },
+    )
+    returned = queried.data["primary_memories"] + queried.data["linked_memories"]
+    assert returned
+    assert a_id not in {memory["id"] for memory in returned}
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("re_embed", [False, True], ids=["original", "after-full-rebuild"])
 async def test_recreating_superseded_memory_reports_match(mcp_client, sqlite_app, re_embed):
@@ -51,16 +100,7 @@ async def test_recreating_superseded_memory_reports_match(mcp_client, sqlite_app
         },
     )
     if re_embed:
-        repo = sqlite_app.memory_service.memory_repo
-        progress = []
-        result = await ReEmbeddingService(
-            memory_repository=repo,
-            embedding_adapter=repo.embedding_adapter,
-            batch_size=1,
-        ).re_embed_all(progress_callback=lambda done, total: progress.append((done, total)))
-        assert result.total_memories == result.total_processed == 2
-        assert progress == [(1, 2), (2, 2)]
-        assert result.validation.all_passed
+        await _re_embed_all_memories(sqlite_app)
 
     a_prime = await _create(
         mcp_client,
@@ -68,34 +108,8 @@ async def test_recreating_superseded_memory_reports_match(mcp_client, sqlite_app
         "Policy X requires weekly backups for all tenant databases.",
         ["policy", "backup", "tenant"],
     )
-    matches = a_prime.data.get("obsolete_matches") or []
-    assert matches
-    assert matches[0]["id"] == a_id
-    assert matches[0]["superseded_by"] == b_id
-    assert matches[0]["similarity"] >= settings.OBSOLETE_WARNING_THRESHOLD
-
-    got = await mcp_client.call_tool(
-        "execute_forgetful_tool",
-        {"tool_name": "get_memory", "arguments": {"memory_id": a_prime.data["id"]}},
-    )
-    linked = got.data.get("linked_memory_ids") or []
-    assert a_id not in linked
-
-    queried = await mcp_client.call_tool(
-        "execute_forgetful_tool",
-        {
-            "tool_name": "query_memory",
-            "arguments": {
-                "query": "Policy X requires weekly backups for all tenant databases.",
-                "query_context": "Check current backup policy after rebuilding embeddings",
-                "k": 5,
-                "include_links": True,
-            },
-        },
-    )
-    returned = queried.data["primary_memories"] + queried.data["linked_memories"]
-    assert returned
-    assert a_id not in {memory["id"] for memory in returned}
+    _assert_reports_superseded_match(a_prime, a_id, b_id)
+    await _assert_obsolete_hidden_from_reads(mcp_client, a_prime, a_id)
 
 
 @pytest.mark.asyncio

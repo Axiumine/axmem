@@ -64,6 +64,34 @@ def valid_report(skill="forgetful-recall"):
     return {"skill": skill, "verdict": "pass", "steps": [], "issues": []}
 
 
+def _assert_session_driven_with_skill_prompt(runner):
+    """Assert the session was driven with the skill's prompt and timeout."""
+    assert runner.seen["skill"] == "forgetful-recall"
+    assert runner.seen["timeout"] == 900
+    assert report_contract_example() in runner.seen["prompt"]
+
+
+def _assert_outcome_derived_from_event_file(result):
+    """Assert the outcome was derived from the event file the runner wrote."""
+    assert result.status == "completed"
+    assert result.report_load.status == "ok"
+    assert result.cost == pytest.approx(0.01)
+    assert result.output_tokens == 42
+    assert result.session_id == "s-1"
+
+
+def _assert_artifacts_written(walkthrough, runner):
+    """Assert prompt.txt and meta.json were written into the skill directory."""
+    skill_dir = walkthrough.run_dir / "skills" / "forgetful-recall"
+    assert runner.seen["skill_dir"] == skill_dir
+    assert (skill_dir / "prompt.txt").read_text() == runner.seen["prompt"]
+    meta = json.loads((skill_dir / "meta.json").read_text())
+    assert meta["skill"] == "forgetful-recall"
+    assert meta["status"] == "completed"
+    assert meta["report_status"] == "ok"
+    assert meta["model"] == "opencode-go/deepseek-v4-flash"
+
+
 async def test_run_skill_writes_artifacts_and_collects_report(tmp_path):
     # Arrange
     events = [
@@ -78,26 +106,10 @@ async def test_run_skill_writes_artifacts_and_collects_report(tmp_path):
     # Act
     result = await walkthrough.run_skill("forgetful-recall")
 
-    # Assert: session driven with the skill's prompt and timeout
-    assert runner.seen["skill"] == "forgetful-recall"
-    assert runner.seen["timeout"] == 900
-    assert report_contract_example() in runner.seen["prompt"]
-
-    # Assert: outcome derived from the event file the runner wrote
-    assert result.status == "completed"
-    assert result.report_load.status == "ok"
-    assert result.cost == pytest.approx(0.01)
-    assert result.output_tokens == 42
-    assert result.session_id == "s-1"
-
-    skill_dir = walkthrough.run_dir / "skills" / "forgetful-recall"
-    assert runner.seen["skill_dir"] == skill_dir
-    assert (skill_dir / "prompt.txt").read_text() == runner.seen["prompt"]
-    meta = json.loads((skill_dir / "meta.json").read_text())
-    assert meta["skill"] == "forgetful-recall"
-    assert meta["status"] == "completed"
-    assert meta["report_status"] == "ok"
-    assert meta["model"] == "opencode-go/deepseek-v4-flash"
+    # Assert
+    _assert_session_driven_with_skill_prompt(runner)
+    _assert_outcome_derived_from_event_file(result)
+    _assert_artifacts_written(walkthrough, runner)
 
 
 async def test_missing_report_is_finding_not_crash(tmp_path):

@@ -2,6 +2,7 @@
 import asyncio
 import hashlib
 import random
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from uuid import uuid4
 
@@ -156,6 +157,40 @@ async def test_unobsolete_active_memory_emits_no_activity_event(test_memory_serv
     assert event_bus.collected_events == []
 
 
+async def _restore_twice_concurrently(service, user_id, memory_id):
+    """Fire two overlapping unobsolete_memory calls and return both outcomes."""
+    return await asyncio.gather(
+        service.unobsolete_memory(user_id=user_id, memory_id=memory_id),
+        service.unobsolete_memory(user_id=user_id, memory_id=memory_id),
+        return_exceptions=True,
+    )
+
+
+def _split_restore_outcomes(results):
+    """Split concurrent restore outcomes into (successes, invalid-state errors)."""
+    successes = [r for r in results if r is True]
+    invalid = [r for r in results if isinstance(r, InvalidStateTransitionError)]
+    return successes, invalid
+
+
+def _updated_events(event_bus, memory_id):
+    """Return collected UPDATED activity events for the given entity id."""
+    return [
+        e
+        for e in event_bus.collected_events
+        if e.entity_id == memory_id and e.action == ActionType.UPDATED
+    ]
+
+
+def _memory_updated_events(event_bus, memory_id):
+    """Return collected UPDATED events whose entity type is MEMORY."""
+    return [
+        e
+        for e in _updated_events(event_bus, memory_id)
+        if e.entity_type == EntityType.MEMORY
+    ]
+
+
 @pytest.mark.asyncio
 async def test_unobsolete_concurrent_restore_one_success_one_invalid_state(
     test_memory_service_with_event_bus,
@@ -180,23 +215,12 @@ async def test_unobsolete_concurrent_restore_one_success_one_invalid_state(
     )
     event_bus.collected_events.clear()
 
-    results = await asyncio.gather(
-        service.unobsolete_memory(user_id=user_id, memory_id=mem.id),
-        service.unobsolete_memory(user_id=user_id, memory_id=mem.id),
-        return_exceptions=True,
-    )
+    results = await _restore_twice_concurrently(service, user_id, mem.id)
 
-    successes = [r for r in results if r is True]
-    invalid = [r for r in results if isinstance(r, InvalidStateTransitionError)]
+    successes, invalid = _split_restore_outcomes(results)
     assert len(successes) == 1
     assert len(invalid) == 1
-    restore_events = [
-        e
-        for e in event_bus.collected_events
-        if e.entity_type == EntityType.MEMORY
-        and e.entity_id == mem.id
-        and e.action == ActionType.UPDATED
-    ]
+    restore_events = _memory_updated_events(event_bus, mem.id)
     assert len(restore_events) == 1
 
 
@@ -233,9 +257,9 @@ async def _sqlite_user(db_adapter, user_id):
         )
 
 
-@pytest.mark.asyncio
-async def test_unobsolete_concurrent_restore_sqlite_atomic():
-    """SQLite conditional UPDATE: concurrent restores yield one winner."""
+@asynccontextmanager
+async def _sqlite_memory_stack():
+    """Yield (db_adapter, repo, service, event_bus) on in-memory SQLite, restoring settings on exit."""
     original_sqlite_memory = settings.SQLITE_MEMORY
     original_database = settings.DATABASE
     original_dims = settings.EMBEDDING_DIMENSIONS
@@ -256,6 +280,21 @@ async def test_unobsolete_concurrent_restore_sqlite_atomic():
     service = MemoryService(repo, event_bus=event_bus)
 
     try:
+        yield db_adapter, repo, service, event_bus
+    finally:
+        try:
+            await db_adapter.dispose()
+        except Exception:  # noqa: BLE001
+            pass
+        settings.DATABASE = original_database
+        settings.SQLITE_MEMORY = original_sqlite_memory
+        settings.EMBEDDING_DIMENSIONS = original_dims
+
+
+@pytest.mark.asyncio
+async def test_unobsolete_concurrent_restore_sqlite_atomic():
+    """SQLite conditional UPDATE: concurrent restores yield one winner."""
+    async with _sqlite_memory_stack() as (db_adapter, repo, service, event_bus):
         user_id = uuid4()
         await _sqlite_user(db_adapter, user_id)
         mem = await repo.create_memory(
@@ -271,27 +310,10 @@ async def test_unobsolete_concurrent_restore_sqlite_atomic():
         )
         await repo.mark_obsolete(user_id, mem.id, "test", None)
 
-        results = await asyncio.gather(
-            service.unobsolete_memory(user_id=user_id, memory_id=mem.id),
-            service.unobsolete_memory(user_id=user_id, memory_id=mem.id),
-            return_exceptions=True,
-        )
+        results = await _restore_twice_concurrently(service, user_id, mem.id)
 
-        successes = [r for r in results if r is True]
-        invalid = [r for r in results if isinstance(r, InvalidStateTransitionError)]
+        successes, invalid = _split_restore_outcomes(results)
         assert len(successes) == 1
         assert len(invalid) == 1
-        restore_events = [
-            e
-            for e in event_bus.collected_events
-            if e.entity_id == mem.id and e.action == ActionType.UPDATED
-        ]
+        restore_events = _updated_events(event_bus, mem.id)
         assert len(restore_events) == 1
-    finally:
-        try:
-            await db_adapter.dispose()
-        except Exception:  # noqa: BLE001
-            pass
-        settings.DATABASE = original_database
-        settings.SQLITE_MEMORY = original_sqlite_memory
-        settings.EMBEDDING_DIMENSIONS = original_dims
