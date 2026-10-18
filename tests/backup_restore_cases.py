@@ -69,7 +69,7 @@ async def assert_originals_restored(repo, user_id, originals):
     assert obsolete[0][1] == pytest.approx(1.0)
 
 
-async def run_reembed_cli(failure):
+async def run_reembed_cli(failure, encoding):
     """Run the public CLI in its own process, including its real backup and restore."""
     env = os.environ.copy()
     # Pass the fixture's configuration, not the developer's default database location.
@@ -79,6 +79,7 @@ async def run_reembed_cli(failure):
     ):
         env[name] = str(getattr(settings, name))
     env["RERANKING_ENABLED"] = "false"
+    env["PYTHONIOENCODING"] = encoding
     process = await asyncio.create_subprocess_exec(
         sys.executable, "-m", "tests.backup_restore_cases", failure,
         cwd=Path(__file__).resolve().parents[1], env=env,
@@ -90,7 +91,7 @@ async def run_reembed_cli(failure):
         if process.returncode is None:
             process.kill()
             await process.wait()
-    return process.returncode, stdout.decode(), stderr.decode()
+    return process.returncode, stdout.decode(encoding), stderr.decode(encoding)
 
 
 class BackupRestoreCases:
@@ -120,14 +121,15 @@ class BackupRestoreCases:
         await assert_originals_restored(repo, user_id, originals)
 
     @pytest.mark.parametrize("failure", ["provider_error", "search_error"])
-    async def test_failed_cli_rebuild_restores_backup(self, backup_database, failure):
+    @pytest.mark.parametrize("encoding", ["utf-8", "cp1252"])
+    async def test_failed_cli_rebuild_restores_backup(self, backup_database, failure, encoding):
         # Arrange: the child process uses real repositories and backup tools.
         adapter, repos = backup_database
         user_id, originals = await seed_memories(repos)
         await adapter.dispose()
 
         # Act: save a changed batch, then fail in generation or final validation.
-        returncode, stdout, stderr = await run_reembed_cli(failure)
+        returncode, stdout, stderr = await run_reembed_cli(failure, encoding)
 
         # Assert: failure is reported and automatic recovery restores the original data.
         assert returncode != 0, stdout + stderr

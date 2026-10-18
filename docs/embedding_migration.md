@@ -126,7 +126,7 @@ Processes all active and obsolete memories in batches:
 
 ```
 [4/5] Re-embedding memories...
-  [████████████████████░░░░░] 102/127 memories (80%)
+  [####################-----] 102/127 memories (80%)
 ```
 
 ### Step 5: Validate
@@ -139,9 +139,9 @@ Runs three automated checks:
 
 ```
 [5/5] Validating...
-  Count check: 127 memories, 127 embeddings ✓
-  Dimension check: ✓
-  Search check: ✓
+  Count check: 127 memories, 127 embeddings OK
+  Dimension check: OK
+  Search check: OK
 ```
 
 ---

@@ -250,7 +250,7 @@ async def _run_reembed(args):
         def progress(processed, total_count):
             pct = int((processed / total_count) * 100) if total_count > 0 else 100
             bar_filled = int(pct / 4)
-            bar = "\u2588" * bar_filled + "\u2591" * (25 - bar_filled)
+            bar = "#" * bar_filled + "-" * (25 - bar_filled)
             print(f"\r  [{bar}] {processed}/{total_count} memories ({pct}%)", end="", flush=True)
 
         service = ReEmbeddingService(
@@ -267,18 +267,19 @@ async def _run_reembed(args):
         if result.validation:
             print(f"  Count check: {result.total_memories} memories, "
                   f"{result.total_processed} embeddings "
-                  f"{'✓' if result.validation.count_ok else '✗'}")
-            print(f"  Dimension check: {'✓' if result.validation.dimensions_ok else '✗'}")
-            print(f"  Search check: {'✓' if result.validation.search_ok else '✗'}")
+                  f"{'OK' if result.validation.count_ok else 'FAILED'}")
+            print(f"  Dimension check: {'OK' if result.validation.dimensions_ok else 'FAILED'}")
+            print(f"  Search check: {'OK' if result.validation.search_ok else 'FAILED'}")
 
             if not result.validation.all_passed:
                 print("\n  Validation FAILED!")
+                # Release SQLite file handles before replacing database/WAL files.
+                await db_adapter.dispose()
                 if backup_path:
                     print("  Restoring from backup...")
                     await backup_service.restore_backup(backup_path)
                     print(f"  Restored: {backup_path}")
                     print("  Database returned to pre-migration state.")
-                await db_adapter.dispose()
                 sys.exit(1)
 
         print(f"\n  Successfully re-embedded {result.total_processed} memories")
@@ -288,12 +289,13 @@ async def _run_reembed(args):
 
     except Exception as e:
         print(f"\n  ERROR: {e}")
+        # Release SQLite file handles before replacing database/WAL files.
+        await db_adapter.dispose()
         if backup_path:
             print("\n  Restoring from backup...")
             await backup_service.restore_backup(backup_path)
             print(f"  Restored: {backup_path}")
             print("  Database returned to pre-migration state.")
-        await db_adapter.dispose()
         raise
     finally:
         # Restore original signal handlers
