@@ -397,6 +397,8 @@ def test_broken_git_fails_the_run_up_front_with_exit_code_2(tmp_path, monkeypatc
         raise AssertionError("preflight should have failed before the image check")
 
     monkeypatch.setattr("test_harness.__main__.ensure_image", docker_must_not_be_touched)
+    # The SDK check also runs up front; an environment without docker-py must still reach git
+    monkeypatch.setattr("test_harness.__main__.docker_sdk", lambda: None)
     output = tmp_path / "runs"
     output.mkdir()
 
