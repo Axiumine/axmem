@@ -30,8 +30,9 @@ def trivy_cmd() -> list[str]:
     if Path(found).exists():
         return [found, "--cache-dir", str(cache)]
     if docker_ready():
+        user = ["--user", f"{os.getuid()}:{os.getgid()}"] if hasattr(os, "getuid") else []
         return [
-            "docker", "run", "--rm", "--user", f"{os.getuid()}:{os.getgid()}",
+            "docker", "run", "--rm", *user,
             "-v", f"{ROOT}:/src", "-v", f"{cache}:/cache", "-w", "/src",
             TRIVY_IMAGE, "--cache-dir", "/cache",
         ]
