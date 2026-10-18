@@ -11,6 +11,7 @@ from fastmcp import Client
 from httpx import ASGITransport, AsyncClient
 
 BIG = 10**30
+INT32_MAX = 2**31 - 1
 INT64_MAX = 2**63 - 1
 JSON_HEADERS = {"content-type": "application/json"}
 
@@ -53,6 +54,13 @@ def _assert_validation_error(response, label):
     assert isinstance(errors, list) and errors, f"{label}: {errors!r}"
     for error in errors:
         assert {"type", "loc", "msg"} <= set(error), f"{label}: {error!r}"
+
+
+def _assert_rejected_by_body_parser(response, label):
+    """NaN, Infinity and 1e400 are refused by the shared body parser before any model sees them."""
+    assert response.status_code == 400, f"{label}: {response.status_code} {response.text[:200]}"
+    # The memories routes prefix their catch-all "Invalid request body: " to the message
+    assert response.json()["error"].endswith("Invalid JSON body"), label
 
 
 class TestCustomValidatorErrors:
@@ -155,7 +163,7 @@ class TestCustomValidatorErrors:
 
 
 class TestNonFiniteNumbers:
-    """json.loads accepts NaN/Infinity/1e400; echoing them back must not break the 400."""
+    """json.loads accepts NaN/Infinity/1e400; the body parser answers 400 instead of letting a model echo them."""
 
     async def _post_raw(self, api, url, raw, method="POST"):
         return await api.request(method, url, content=raw, headers=JSON_HEADERS)
@@ -168,7 +176,7 @@ class TestNonFiniteNumbers:
             f'"importance":5,"confidence":{token}}}'
         )
         response = await self._post_raw(api, "/api/v1/memories", raw)
-        _assert_validation_error(response, f"POST /memories confidence={token}")
+        _assert_rejected_by_body_parser(response, f"POST /memories confidence={token}")
 
     @pytest.mark.asyncio
     async def test_memory_routes_non_finite_values_return_400(self, api):
@@ -176,7 +184,7 @@ class TestNonFiniteNumbers:
             '{"title":"x","content":"c","context":"x","keywords":["a"],"tags":["t"],'
             '"importance":5,"project_ids":[1e400]}'
         ))
-        _assert_validation_error(create, "POST /memories project_ids=[1e400]")
+        _assert_rejected_by_body_parser(create, "POST /memories project_ids=[1e400]")
 
         memory_id = await _create(api, "/api/v1/memories", {
             "title": "m", "content": "c", "context": "x", "keywords": ["a"],
@@ -185,34 +193,34 @@ class TestNonFiniteNumbers:
         update = await self._post_raw(
             api, f"/api/v1/memories/{memory_id}", '{"confidence":NaN}', method="PUT",
         )
-        _assert_validation_error(update, "PUT /memories confidence=NaN")
+        _assert_rejected_by_body_parser(update, "PUT /memories confidence=NaN")
 
         search = await self._post_raw(
             api, "/api/v1/memories/search", '{"query":"x","project_ids":[1e400]}',
         )
-        _assert_validation_error(search, "POST /memories/search project_ids=[1e400]")
+        _assert_rejected_by_body_parser(search, "POST /memories/search project_ids=[1e400]")
 
     @pytest.mark.asyncio
     async def test_other_resources_non_finite_values_return_400(self, api):
         project = await self._post_raw(api, "/api/v1/projects", (
             '{"name":NaN,"description":"d","project_type":"development"}'
         ))
-        _assert_validation_error(project, "POST /projects name=NaN")
+        _assert_rejected_by_body_parser(project, "POST /projects name=NaN")
 
         plan = await self._post_raw(
             api, "/api/v1/plans", '{"title":"t","goal":"g","confidence":NaN}',
         )
-        _assert_validation_error(plan, "POST /plans confidence=NaN")
+        _assert_rejected_by_body_parser(plan, "POST /plans confidence=NaN")
 
         task = await self._post_raw(
             api, "/api/v1/tasks", '{"plan_id":1,"title":"t","confidence":Infinity}',
         )
-        _assert_validation_error(task, "POST /tasks confidence=Infinity")
+        _assert_rejected_by_body_parser(task, "POST /tasks confidence=Infinity")
 
         document = await self._post_raw(api, "/api/v1/documents", (
             '{"title":"t","description":"d","content":"c","confidence":NaN}'
         ))
-        _assert_validation_error(document, "POST /documents confidence=NaN")
+        _assert_rejected_by_body_parser(document, "POST /documents confidence=NaN")
 
 
 class TestIntegerQueryParams:
@@ -240,6 +248,8 @@ class TestIntegerQueryParams:
             f"/api/v1/entities?offset={2**63}",
             f"/api/v1/memories?offset={2**63}",
             f"/api/v1/memories?project_id=-{BIG}",
+            # row ids are INTEGER columns on PostgreSQL: one past int32 is out of range
+            f"/api/v1/documents?project_id={INT32_MAX + 1}",
         ]
         for url in urls:
             response = await api.get(url)
@@ -249,7 +259,7 @@ class TestIntegerQueryParams:
     @pytest.mark.asyncio
     async def test_boundary_values_and_empty_filters_still_accepted(self, api):
         urls = [
-            f"/api/v1/documents?project_id={INT64_MAX}",
+            f"/api/v1/documents?project_id={INT32_MAX}",
             "/api/v1/documents?project_id=",
             "/api/v1/files?project_id=",
             "/api/v1/code-artifacts?project_id=",
