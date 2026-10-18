@@ -2,18 +2,25 @@
 
 File-backed SQLite (in-memory dies at the process boundary), all feature flags on, no
 auth, FastEmbed with the default (warm) model cache. Env is injected at launch because
-settings freeze at import time in the child; cwd is the run directory so no repo-local
-.env leaks in. Readiness = GET /health -> 200 (503 while initialising).
+settings freeze at import time in the child. The instance must not depend on whoever
+runs the harness: cwd is the run directory so no repo-local dotenv file leaks in, but
+the absolute user-config dotenv file (and the shell) still reach the child, so every
+Forgetful setting is pinned to its declared default (a real env var outranks every
+dotenv file). The server is the `forgetful` of the interpreter running the harness, and
+harness-to-server traffic is direct (loopback must never go through HTTP(S)_PROXY).
+Readiness = GET /health -> 200 (503 while initialising).
 
 Everything here is harness-side infrastructure: failures raise (trust boundary — never
 misreported as agent findings). Seeding and state inspection reuse the CLI's own
 RemoteExecutor with a plain no-auth client, which dogfoods the meta-tool path and its
 object-root wire handling.
 """
+import json
 import os
 import shutil
 import socket
 import subprocess
+import sys
 import time
 from collections.abc import Iterable
 from pathlib import Path
@@ -28,10 +35,80 @@ class HarnessInfraError(RuntimeError):
     """The harness itself failed - not a finding about the agent or the docs."""
 
 
+# Machine plumbing rather than instance behaviour: the warm model cache (and whether to
+# stay offline) is wherever the developer keeps it, so these keep resolving as usual.
+_HOST_PASSTHROUGH = frozenset({
+    "FASTEMBED_CACHE_DIR",
+    "FASTEMBED_LOCAL_FILES_ONLY",
+    "EMBEDDING_ONNX_PROVIDERS",
+})
+
+
+def _direct_http_client(
+    headers: dict[str, str] | None = None,
+    timeout: httpx.Timeout | None = None,
+    auth: httpx.Auth | None = None,
+    **_: Any,
+) -> httpx.AsyncClient:
+    """httpx client that ignores HTTP(S)_PROXY / NO_PROXY: the throwaway server lives on
+    this host's loopback, which a proxy cannot reach."""
+    return httpx.AsyncClient(
+        headers=headers,
+        auth=auth,
+        timeout=httpx.Timeout(30.0, read=300.0) if timeout is None else timeout,
+        follow_redirects=True,
+        trust_env=False,
+    )
+
+
 def _plain_client_factory(url: str, token: str | None):
     from fastmcp import Client
+    from fastmcp.client.transports import StreamableHttpTransport
 
-    return Client(url)
+    return Client(StreamableHttpTransport(url, httpx_client_factory=_direct_http_client))
+
+
+def _server_executable() -> str:
+    """The `forgetful` console script of the environment running the harness.
+
+    PATH is only the fallback (a system python with a globally installed forgetful):
+    a different venv's `forgetful` earlier on PATH must not silently stand in for the
+    interpreter under test, and the harness must also work from an un-activated venv.
+    """
+    own = Path(sys.executable).with_name("forgetful" + (".exe" if os.name == "nt" else ""))
+    if own.is_file():
+        return str(own)
+    on_path = shutil.which("forgetful")
+    if on_path is None:
+        raise HarnessInfraError(
+            f"forgetful console script is neither next to {sys.executable} nor on PATH "
+            "- run the harness via `uv run`",
+        )
+    return on_path
+
+
+def _host_env_with_default_settings() -> dict[str, str]:
+    """The host env with every Forgetful setting reset to its declared default.
+
+    Settings also reads the absolute user-config dotenv file whatever the cwd, but a
+    real env var outranks every dotenv file, so each setting is pinned here. Host
+    spellings are dropped first: setting names are case-insensitive, so a lower-case
+    shell variable would otherwise compete with the pin.
+    """
+    from app.config.settings import Settings
+
+    fields = Settings.model_fields
+    env = {
+        key: value for key, value in os.environ.items()
+        if key.upper() not in fields or key.upper() in _HOST_PASSTHROUGH
+    }
+    for name, field in fields.items():
+        if name in _HOST_PASSTHROUGH or field.is_required():
+            continue
+        default = field.get_default(call_default_factory=True)
+        if default is not None:  # no env spelling for "unset"
+            env[name] = default if isinstance(default, str) else json.dumps(default)
+    return env
 
 
 def _ephemeral_port() -> int:
@@ -57,7 +134,7 @@ class ThrowawayForgetful:
         return f"{self.url}/mcp"
 
     def _child_env(self) -> dict[str, str]:
-        env = dict(os.environ)
+        env = _host_env_with_default_settings()
         env.update({
             "DATABASE": "SQLite",
             "SQLITE_MEMORY": "false",
@@ -78,11 +155,7 @@ class ThrowawayForgetful:
         return env
 
     def start(self) -> None:
-        binary = shutil.which("forgetful")
-        if binary is None:
-            raise HarnessInfraError(
-                "forgetful console script not on PATH - run the harness via `uv run`",
-            )
+        binary = _server_executable()
         self.port = _ephemeral_port()
         self._log_file = (self.run_dir / "server.log").open("w")
         self.process = subprocess.Popen(
@@ -103,7 +176,9 @@ class ThrowawayForgetful:
                     f"throwaway server exited during boot - see {self.run_dir / 'server.log'}",
                 )
             try:
-                if httpx.get(f"{self.url}/health", timeout=2).status_code == 200:
+                if httpx.get(
+                    f"{self.url}/health", timeout=2, trust_env=False,
+                ).status_code == 200:
                     return
             except httpx.HTTPError:
                 pass
