@@ -1,0 +1,557 @@
+"""Integration tests for the harness container's image build, bind mounts and credentials.
+
+Covers the host-side mechanics of `test_harness/container.py` that decide whether a run can
+start at all: where the mount sources point, which user the container runs as and who can
+read the staged credentials, how a forced image rebuild behaves, and how a missing tool or
+SDK is reported. The docker SDK and every subprocess are faked at the edge, so no daemon,
+network or model is involved; the real container round-trip stays with live harness runs.
+"""
+import asyncio
+import importlib
+import os
+import re
+import shutil
+import stat
+import subprocess
+import sys
+import types
+from pathlib import Path
+
+import pytest
+
+from test_harness import __main__ as harness_main
+from test_harness import container as container_mod
+from test_harness.__main__ import config_from_argv, main
+from test_harness.config import HarnessConfig
+from test_harness.container import (
+    AgentContainer,
+    ensure_image,
+    export_requirements,
+    provision_agent,
+    staged_mount,
+)
+from test_harness.server import HarnessInfraError
+
+SERVER_URL = "http://host.docker.internal:59999"
+posix_only = pytest.mark.skipif(sys.platform == "win32", reason="POSIX modes and uids")
+
+
+class _StopRun(Exception):
+    """Raised by the fake containers.run so a run ends once the mounts are handed over."""
+
+
+@pytest.fixture
+def staged():
+    """Staging registry that cleans up its /tmp dirs (in production stop() owns this)."""
+    dirs: list[Path] = []
+    yield dirs
+    for staging in dirs:
+        shutil.rmtree(staging, ignore_errors=True)
+
+
+@pytest.fixture
+def fake_docker(monkeypatch):
+    """Stand-in for docker-py (an optional dependency group): only what container.py uses."""
+    errors = types.SimpleNamespace()
+    errors.DockerException = type("DockerException", (Exception,), {})
+    errors.NotFound = type("NotFound", (errors.DockerException,), {})
+    errors.ImageNotFound = type("ImageNotFound", (errors.NotFound,), {})
+    state = types.SimpleNamespace(image_labels=None, runs=[], run_error=None)
+
+    class _Images:
+        def get(self, name):
+            if state.image_labels is None:
+                raise errors.ImageNotFound(name)
+            return types.SimpleNamespace(labels=state.image_labels)
+
+    class _Containers:
+        def get(self, name):
+            raise errors.NotFound(name)
+
+        def run(self, **kwargs):
+            state.runs.append(kwargs)
+            if state.run_error is not None:
+                raise state.run_error
+            return types.SimpleNamespace(
+                id="fake-container", stop=lambda timeout=0: None, remove=lambda: None,
+            )
+
+    client = types.SimpleNamespace(images=_Images(), containers=_Containers())
+    module = types.ModuleType("docker")
+    module.errors = errors
+    module.from_env = lambda: client
+    monkeypatch.setitem(sys.modules, "docker", module)
+    return state
+
+
+@pytest.fixture
+def host_home(tmp_path, monkeypatch):
+    """A HOME holding the opencode auth file, so provisioning finds credentials."""
+    home = tmp_path / "home"
+    auth = home / ".local" / "share" / "opencode" / "auth.json"
+    auth.parent.mkdir(parents=True)
+    auth.write_text("{}")
+    monkeypatch.setenv("HOME", str(home))
+    return home
+
+
+def _fake_uv_build(repo_root: Path):
+    """subprocess.run stand-in whose `uv build -o X` resolves a relative X against the
+    child's cwd, exactly like the real uv does."""
+
+    def fake_run(cmd, *args, cwd=None, **kwargs):
+        assert cmd[:2] == ["uv", "build"], cmd
+        out = Path(cwd or os.getcwd()) / cmd[cmd.index("-o") + 1]
+        out.mkdir(parents=True, exist_ok=True)
+        (out / "forgetful-0.0.0-py3-none-any.whl").write_text("wheel")
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    return fake_run
+
+
+# --- relative paths must not reach dockerd or uv ------------------------------------
+
+
+def test_relative_output_flag_is_resolved_to_an_absolute_path(tmp_path, monkeypatch):
+    # Arrange: harness launched from an arbitrary cwd with a relative artifacts root
+    monkeypatch.chdir(tmp_path)
+
+    # Act
+    config = config_from_argv(["--output", "uat-runs"])
+
+    # Assert: dockerd reads a bind source that doesn't start with "/" as a named volume
+    assert config.output_dir.is_absolute()
+    assert config.output_dir == (tmp_path / "uat-runs").resolve()
+
+
+def test_relative_env_dirs_are_resolved_and_home_is_expanded(tmp_path, monkeypatch):
+    # Arrange
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("TEST_HARNESS_OUTPUT_DIR", "rel/out")
+    monkeypatch.setenv("TEST_HARNESS_SKILLS_DIR", "~/skills")
+
+    # Act
+    config = HarnessConfig()
+
+    # Assert
+    assert config.output_dir == (tmp_path / "rel" / "out").resolve()
+    assert config.skills_dir == (tmp_path / "home" / "skills").resolve()
+
+
+def test_run_with_relative_output_mounts_absolute_dirs_holding_the_wheel(
+    tmp_path, monkeypatch, fake_docker, host_home,
+):
+    # Arrange: launched from a cwd that is not the repo root, `--output runs`; only the
+    # edges are faked (image build, throwaway server, uv build)
+    work = tmp_path / "work"
+    work.mkdir()
+    fake_repo = tmp_path / "repo"
+    fake_repo.mkdir()
+    monkeypatch.chdir(work)
+    monkeypatch.setattr(container_mod, "_REPO_ROOT", fake_repo)
+    monkeypatch.setattr(harness_main, "ensure_image", lambda rebuild=False, log=print: None)
+
+    class _FakeServer:
+        url = "http://127.0.0.1:59999"
+
+        def __init__(self, run_dir):
+            self.run_dir = run_dir
+
+        def start(self):
+            pass
+
+        async def seed_skills(self, skills_dir, catalog):
+            pass
+
+        def stop(self):
+            pass
+
+    monkeypatch.setattr(harness_main, "ThrowawayForgetful", _FakeServer)
+    monkeypatch.setattr(container_mod.subprocess, "run", _fake_uv_build(fake_repo))
+    fake_docker.run_error = _StopRun()
+    config = config_from_argv(["--output", "runs", "--skills", "forgetful-remember"])
+
+    # Act
+    with pytest.raises(_StopRun):
+        asyncio.run(harness_main._run(config))
+
+    # Assert: every bind source is absolute, and the dir mounted at /harness is the one
+    # `uv build -o` wrote the wheel into (it runs with cwd=<repo root>)
+    (kwargs,) = fake_docker.runs
+    sources = list(kwargs["volumes"])
+    assert all(os.path.isabs(source) for source in sources), sources
+    harness_src = next(s for s, spec in kwargs["volumes"].items() if spec["bind"] == "/harness")
+    assert list(Path(harness_src).glob("*.whl"))
+    assert (Path(harness_src) / "runner.py").exists()
+
+
+def test_container_given_a_relative_run_dir_still_mounts_absolute_dirs(
+    tmp_path, monkeypatch, fake_docker, host_home,
+):
+    # Arrange: AgentContainer used directly, so the config never had a chance to resolve
+    work = tmp_path / "work"
+    work.mkdir()
+    fake_repo = tmp_path / "repo"
+    fake_repo.mkdir()
+    monkeypatch.chdir(work)
+    monkeypatch.setattr(container_mod, "_REPO_ROOT", fake_repo)
+    monkeypatch.setattr(container_mod.subprocess, "run", _fake_uv_build(fake_repo))
+    monkeypatch.setattr(AgentContainer, "_exec", lambda self, cmd, log_path=None: (0, ""))
+    (work / "runs" / "run1").mkdir(parents=True)
+    agent = AgentContainer(HarnessConfig(), Path("runs/run1"), SERVER_URL)
+
+    # Act
+    agent.start()
+    agent.stop()
+
+    # Assert
+    (kwargs,) = fake_docker.runs
+    assert all(os.path.isabs(source) for source in kwargs["volumes"])
+    harness_src = next(s for s, spec in kwargs["volumes"].items() if spec["bind"] == "/harness")
+    assert list(Path(harness_src).glob("*.whl"))
+
+
+# --- tool and SDK failures are infra failures (exit 2), not tracebacks ---------------
+
+
+def _spawn_failure(tool):
+    return FileNotFoundError(2, "No such file or directory", tool)
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        _spawn_failure("uv"),
+        subprocess.CalledProcessError(1, ["uv", "export"], output="", stderr="lock stale"),
+    ],
+    ids=["uv-missing", "uv-export-fails"],
+)
+def test_export_requirements_failure_is_an_infra_error(monkeypatch, error):
+    # Arrange
+    def fake_run(cmd, *args, **kwargs):
+        raise error
+
+    monkeypatch.setattr(container_mod.subprocess, "run", fake_run)
+
+    # Act / Assert
+    with pytest.raises(HarnessInfraError, match="uv"):
+        export_requirements()
+
+
+def test_export_failure_message_carries_uv_stderr(monkeypatch):
+    # Arrange
+    def fake_run(cmd, *args, **kwargs):
+        raise subprocess.CalledProcessError(2, cmd, output="", stderr="lock out of date")
+
+    monkeypatch.setattr(container_mod.subprocess, "run", fake_run)
+
+    # Act / Assert
+    with pytest.raises(HarnessInfraError, match="lock out of date"):
+        export_requirements()
+
+
+def test_missing_docker_cli_during_image_build_is_an_infra_error(
+    tmp_path, monkeypatch, fake_docker,
+):
+    # Arrange: uv export works, the docker CLI cannot even be spawned
+    monkeypatch.setattr(container_mod, "_DOCKER_DIR", tmp_path)
+    monkeypatch.setattr(container_mod, "export_requirements", lambda: "pkg==1\n")
+
+    def fake_run(cmd, *args, **kwargs):
+        raise _spawn_failure(cmd[0])
+
+    monkeypatch.setattr(container_mod.subprocess, "run", fake_run)
+
+    # Act / Assert
+    with pytest.raises(HarnessInfraError, match="docker"):
+        ensure_image(rebuild=True, log=lambda *_: None)
+
+
+def test_missing_uv_while_building_the_wheel_is_an_infra_error(tmp_path, monkeypatch):
+    # Arrange
+    def fake_run(cmd, *args, **kwargs):
+        raise _spawn_failure(cmd[0])
+
+    monkeypatch.setattr(container_mod.subprocess, "run", fake_run)
+
+    # Act / Assert
+    with pytest.raises(HarnessInfraError, match="uv"):
+        container_mod._prepare_harness_mount(tmp_path)
+
+
+def test_main_exits_2_when_uv_cannot_be_spawned(tmp_path, monkeypatch, fake_docker, capsys):
+    # Arrange: documented contract - 1 means partial UAT, 2 means the harness is broken
+    def fake_run(cmd, *args, **kwargs):
+        raise _spawn_failure(cmd[0])
+
+    monkeypatch.setattr(container_mod.subprocess, "run", fake_run)
+
+    # Act
+    code = main(["--output", str(tmp_path / "runs")])
+
+    # Assert
+    assert code == 2
+    assert "infra error" in capsys.readouterr().err
+
+
+# --- a missing docker SDK is reported clearly, even with the repo's docker/ dir ------
+
+
+@pytest.fixture
+def no_docker_sdk(tmp_path, monkeypatch):
+    """`import docker` as seen after `uv sync` without the harness group: the SDK is gone
+    but the repo's top-level docker/ dir (compose files, no __init__.py) is importable as
+    an empty namespace package."""
+    shadow = tmp_path / "shadow"
+    (shadow / "docker").mkdir(parents=True)
+    (shadow / "docker" / "docker-compose.yml").write_text("services: {}\n")
+
+    def real_sdk_dir(entry):
+        return os.path.isfile(os.path.join(entry or ".", "docker", "__init__.py"))
+
+    monkeypatch.setattr(sys, "path", [str(shadow), *(p for p in sys.path if not real_sdk_dir(p))])
+    for name in [m for m in sys.modules if m == "docker" or m.startswith("docker.")]:
+        monkeypatch.delitem(sys.modules, name)
+    importlib.invalidate_caches()
+    assert "docker" not in sys.modules
+    return shadow
+
+
+def test_missing_sdk_shadowed_by_repo_docker_dir_is_an_infra_error(no_docker_sdk):
+    # Act / Assert: not an AttributeError from `docker.errors` / `docker.from_env`
+    with pytest.raises(HarnessInfraError, match="--group harness"):
+        container_mod._docker_client()
+
+
+def test_missing_sdk_without_any_docker_dir_is_an_infra_error(no_docker_sdk, monkeypatch):
+    # Arrange: nothing named docker anywhere on the path -> plain ModuleNotFoundError
+    monkeypatch.setattr(
+        sys, "path",
+        [p for p in sys.path if not os.path.isdir(os.path.join(p or ".", "docker"))],
+    )
+    importlib.invalidate_caches()
+
+    # Act / Assert
+    with pytest.raises(HarnessInfraError, match="--group harness"):
+        container_mod._docker_client()
+
+
+def test_run_checks_the_sdk_before_creating_the_run_dir_or_building(
+    no_docker_sdk, tmp_path, monkeypatch,
+):
+    # Arrange: without the SDK the container step fails anyway, but only after the image
+    # build, the server boot and the skill seeding have been paid for
+    def unexpected(*args, **kwargs):
+        raise AssertionError("work was started before the SDK was verified")
+
+    monkeypatch.setattr(harness_main, "ensure_image", unexpected)
+    monkeypatch.setattr(harness_main, "ThrowawayForgetful", unexpected)
+    config = config_from_argv(["--output", str(tmp_path / "runs")])
+
+    # Act / Assert
+    with pytest.raises(HarnessInfraError, match="--group harness"):
+        asyncio.run(harness_main._run(config))
+    assert not (tmp_path / "runs").exists()
+
+
+def test_container_start_without_sdk_is_an_infra_error_and_stop_is_safe(
+    no_docker_sdk, tmp_path,
+):
+    # Arrange
+    agent = AgentContainer(HarnessConfig(), tmp_path, SERVER_URL)
+
+    # Act / Assert
+    with pytest.raises(HarnessInfraError, match="--group harness"):
+        agent.start()
+    agent.stop()  # runs from a finally; must not raise a second time
+
+
+def test_main_exits_2_with_install_hint_when_sdk_is_missing(no_docker_sdk, tmp_path, capsys):
+    # Act
+    code = main(["--output", str(tmp_path / "runs")])
+
+    # Assert
+    assert code == 2
+    assert "--group harness" in capsys.readouterr().err
+
+
+# --- --rebuild-image really rebuilds -------------------------------------------------
+
+
+@pytest.fixture
+def build_calls(tmp_path, monkeypatch):
+    """Capture the `docker build` argv; the build context is a throwaway dir."""
+    monkeypatch.setattr(container_mod, "_DOCKER_DIR", tmp_path)
+    monkeypatch.setattr(container_mod, "export_requirements", lambda: "pkg==1\n")
+    calls: list[list[str]] = []
+
+    def fake_run(cmd, *args, **kwargs):
+        calls.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0)
+
+    monkeypatch.setattr(container_mod.subprocess, "run", fake_run)
+    return calls
+
+
+def test_forced_rebuild_bypasses_the_layer_cache(build_calls, fake_docker):
+    # Arrange: floating steps (opencode-ai@latest, agent-shell-py>=) have unchanged
+    # instruction text, so a cached build would keep serving the old versions
+
+    # Act
+    ensure_image(rebuild=True, log=lambda *_: None)
+
+    # Assert
+    (cmd,) = build_calls
+    assert cmd[:2] == ["docker", "build"]
+    assert "--no-cache" in cmd
+
+
+def test_forced_rebuild_does_not_need_the_sdk(no_docker_sdk, build_calls):
+    # Act: the image build shells out to the docker CLI; only the label check uses the SDK
+    ensure_image(rebuild=True, log=lambda *_: None)
+
+    # Assert
+    assert "--no-cache" in build_calls[0]
+
+
+def test_automatic_rebuilds_keep_using_the_layer_cache(build_calls, fake_docker):
+    # Arrange: image absent (first build) and image baked against an older lock
+    for labels in (None, {container_mod._HASH_LABEL: "stale"}):
+        fake_docker.image_labels = labels
+
+        # Act
+        ensure_image(log=lambda *_: None)
+
+    # Assert: the lock hash already invalidates the dependency layers
+    assert len(build_calls) == 2
+    assert all("--no-cache" not in cmd for cmd in build_calls)
+
+
+def test_matching_image_is_not_rebuilt(build_calls, fake_docker):
+    # Arrange
+    digest = container_mod.requirements_hash("pkg==1\n")
+    fake_docker.image_labels = {container_mod._HASH_LABEL: digest}
+
+    # Act
+    ensure_image(log=lambda *_: None)
+
+    # Assert
+    assert build_calls == []
+
+
+# --- credentials stay private; the container runs as the invoking user ---------------
+
+
+@posix_only
+@pytest.mark.parametrize("source_mode", [0o600, 0o644], ids=["host-0600", "host-0644"])
+def test_staged_credentials_are_private_to_the_invoking_user(tmp_path, staged, source_mode):
+    # Arrange: the host original is a secret (opencode writes it 0600; a loosened 0644
+    # original must not leak further through the copy)
+    secret = tmp_path / "auth.json"
+    secret.write_text('{"anthropic": {"type": "api", "key": "sk-real"}}')
+    secret.chmod(source_mode)
+
+    # Act
+    staged_mount([secret], "/home/node/.local/share/opencode", staged)
+
+    # Assert: owner-only dir and file, no group/other bits at all
+    (staging,) = staged
+    copy = staging / "auth.json"
+    assert stat.S_IMODE(staging.stat().st_mode) == 0o700
+    assert stat.S_IMODE(copy.stat().st_mode) == 0o600
+    assert copy.read_text() == secret.read_text()
+    assert stat.S_IMODE(secret.stat().st_mode) == source_mode  # original untouched
+
+
+@posix_only
+def test_provisioned_opencode_mounts_are_all_private(tmp_path, staged):
+    # Arrange
+    auth = tmp_path / "auth.json"
+    auth.write_text("{}")
+
+    # Act
+    provision_agent("opencode", staged, auth_path=auth)
+
+    # Assert
+    assert len(staged) == 2
+    for staging in staged:
+        assert stat.S_IMODE(staging.stat().st_mode) == 0o700
+        for item in staging.iterdir():
+            assert stat.S_IMODE(item.stat().st_mode) == 0o600
+
+
+@pytest.fixture
+def started_container(tmp_path, monkeypatch, fake_docker, host_home):
+    """Real AgentContainer.start() against the fake SDK; returns the containers.run kwargs."""
+    monkeypatch.setattr(container_mod, "_prepare_harness_mount", lambda run_dir: run_dir)
+    monkeypatch.setattr(AgentContainer, "_exec", lambda self, cmd, log_path=None: (0, ""))
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+
+    def start():
+        agent = AgentContainer(HarnessConfig(), run_dir, SERVER_URL)
+        agent.start()
+        agent.stop()
+        return fake_docker.runs[-1]
+
+    return start
+
+
+@posix_only
+def test_container_runs_as_the_invoking_host_user(started_container, monkeypatch):
+    # Arrange: bind mounts keep host ownership, so a fixed image uid (node = 1000) can
+    # neither write the rw skills tree nor read 0600 credentials when the host uid differs
+    monkeypatch.setattr(os, "getuid", lambda: 4242)
+    monkeypatch.setattr(os, "getgid", lambda: 4343)
+
+    # Act
+    kwargs = started_container()
+
+    # Assert
+    assert kwargs["user"] == "4242:4343"
+
+
+@posix_only
+def test_container_home_is_pinned_so_a_passwd_less_uid_finds_its_credentials(
+    started_container,
+):
+    # Act
+    kwargs = started_container()
+
+    # Assert: an arbitrary uid has no /etc/passwd entry, and docker then defaults HOME to /
+    assert kwargs["environment"]["HOME"] == "/home/node"
+    binds = {spec["bind"] for spec in kwargs["volumes"].values()}
+    assert "/home/node/.local/share/opencode" in binds
+
+
+def test_container_keeps_the_image_user_where_the_platform_has_no_uids(
+    started_container, monkeypatch,
+):
+    # Arrange: e.g. a Windows host driving Docker Desktop
+    monkeypatch.delattr(os, "getuid", raising=False)
+    monkeypatch.delattr(os, "getgid", raising=False)
+
+    # Act
+    kwargs = started_container()
+
+    # Assert
+    assert kwargs.get("user") is None
+
+
+def test_image_is_writable_by_an_arbitrary_uid():
+    # Arrange: with the container running as the host uid, the venv the working-tree
+    # wheel installs into and HOME must not depend on the image's node uid
+    dockerfile = (
+        Path(__file__).resolve().parents[2] / "test_harness" / "docker" / "Dockerfile"
+    ).read_text()
+
+    # Act: continuation lines folded, so each RUN is one logical line
+    instructions = dockerfile.replace("\\\n", " ").splitlines()
+    chmod_runs = [i for i in instructions if i.startswith("RUN ") and "chmod -R a+rwX" in i]
+
+    # Assert: the chmod lives in the RUN that creates the files; a separate trailing
+    # `RUN chmod -R` layer would copy every file up and bloat the image by ~0.9 GB
+    assert any("/opt/venv" in i and "pip install" in i for i in chmod_runs)
+    assert any("/home/node" in i and "npm install" in i for i in chmod_runs)
+    assert not [i for i in instructions if re.fullmatch(r"RUN\s+chmod\b.*", i)]

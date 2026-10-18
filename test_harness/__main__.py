@@ -12,7 +12,7 @@ import time
 from pathlib import Path
 
 from test_harness.config import HarnessConfig
-from test_harness.container import AgentContainer, ensure_image
+from test_harness.container import AgentContainer, docker_sdk, ensure_image
 from test_harness.server import HarnessInfraError, ThrowawayForgetful
 from test_harness.walkthrough import SkillRunResult, Walkthrough
 
@@ -32,8 +32,9 @@ def config_from_argv(argv: list[str]) -> HarnessConfig:
     parser.add_argument("--output", type=Path, help="artifacts root (default: test_harness/runs)")
     parser.add_argument(
         "--rebuild-image", action="store_true",
-        help="force a rebuild of the sandbox image (it also rebuilds itself when "
-        "locked dependencies change)",
+        help="force a rebuild of the sandbox image without the layer cache, e.g. to pick "
+        "up a new opencode release (it also rebuilds itself when locked dependencies "
+        "change)",
     )
     args = parser.parse_args(argv)
 
@@ -64,6 +65,9 @@ def _print_summary(results: list[SkillRunResult], run_dir: Path) -> None:
 
 
 async def _run(config: HarnessConfig) -> int:
+    # Fail before any work: the container step would only hit a missing SDK after the
+    # image build, the server boot and the skill seeding.
+    docker_sdk()
     run_dir = config.output_dir / f"{time.strftime('%Y%m%d-%H%M%S')}-{config.agent_type}"
     run_dir.mkdir(parents=True, exist_ok=False)
 

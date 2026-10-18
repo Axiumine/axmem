@@ -11,13 +11,17 @@ The image bakes the locked dependency tree (rebuilt automatically when the lock
 drifts); the working tree itself is installed as a wheel at container start, so every
 run walks the current checkout without an image rebuild. Docker imports stay lazy:
 this module is importable without the `harness` dependency group.
+
+The container runs as the invoking host user, so the bind mounts (staged credentials,
+the rw skills tree) stay private to that user and writable by the process that needs
+them whatever the host uid is; the image is built writable for an arbitrary uid.
 """
 import asyncio
 import hashlib
+import os
 import shutil
 import subprocess
 import tempfile
-from os import chmod
 from pathlib import Path
 
 from test_harness.config import HarnessConfig
@@ -31,8 +35,10 @@ _OPENCODE_AUTH = Path("~/.local/share/opencode/auth.json")
 _INSTALL_TIMEOUT = 300
 _HEALTH_TIMEOUT = 180
 _HOST_EXEC_GRACE = 120
+_MISSING_SDK = "docker SDK (docker-py) is not installed - run `uv sync --group harness`"
 
 IMAGE = "forgetful-test-harness:latest"
+CONTAINER_HOME = "/home/node"
 SKILLS_MOUNT = "/skills"
 HARNESS_MOUNT = "/harness"
 DECOY_DB = "/tmp/local-decoy.db"  # noqa: S108 - container-side path, dies with the container
@@ -70,14 +76,15 @@ def staged_mount(
     """Copy files into a throwaway dir and bind that dir read-write.
 
     Writable because agent-shell rewrites config files in place; copies so the host
-    originals are never touched. 0o777/0o644 lets the container's non-root user
-    traverse a cross-UID bind. Caller cleans up everything appended to `staged`.
+    originals are never touched. Owner-only (0o700 dir, 0o600 files): the container runs
+    as the invoking user (`_host_user`), so it needs no wider access and no other local
+    account can read the credentials. Caller cleans up everything appended to `staged`.
     """
     staging = Path(tempfile.mkdtemp(prefix="uat-mount-"))
-    chmod(staging, 0o777)  # noqa: S103 - required for cross-UID Docker binds
+    os.chmod(staging, 0o700)
     for source in files:
         shutil.copy2(source, staging / source.name)
-        chmod(staging / source.name, 0o644)
+        os.chmod(staging / source.name, 0o600)
     staged.append(staging)
     return {str(staging): {"bind": container_dir, "mode": "rw"}}
 
@@ -101,8 +108,39 @@ def provision_agent(
     return volumes
 
 
+def _host_user() -> str | None:
+    """`uid:gid` of the invoking user, or None where the platform has no such ids.
+
+    Bind mounts keep host ownership, so the container must run as the user that owns
+    them: the image's own `node` (uid 1000) could neither write the rw skills tree nor
+    read 0o600 credentials on a host with any other uid.
+    """
+    if not hasattr(os, "getuid"):
+        return None
+    return f"{os.getuid()}:{os.getgid()}"
+
+
+def _run_tool(cmd: list[str], **kwargs) -> subprocess.CompletedProcess:
+    """`subprocess.run` that reports a tool failing to run as a harness infra failure.
+
+    A missing binary or a `check=True` non-zero exit would otherwise escape `main()` as
+    a traceback with exit code 1, which the CLI reserves for "partial UAT".
+    """
+    try:
+        return subprocess.run(cmd, **kwargs)
+    except subprocess.CalledProcessError as exc:
+        detail = (exc.stderr or "").strip()
+        raise HarnessInfraError(
+            f"`{' '.join(cmd[:2])}` failed (exit {exc.returncode}):\n{detail}",
+        ) from exc
+    except OSError as exc:
+        raise HarnessInfraError(
+            f"could not run `{cmd[0]}` ({exc}) - is it installed and on PATH?",
+        ) from exc
+
+
 def export_requirements() -> str:
-    result = subprocess.run(
+    result = _run_tool(
         [
             "uv", "export", "--frozen", "--no-dev", "--no-emit-project",
             "--format", "requirements-txt",
@@ -116,8 +154,24 @@ def requirements_hash(requirements: str) -> str:
     return hashlib.sha256(requirements.encode()).hexdigest()[:16]
 
 
+def docker_sdk():
+    """Import docker-py, or fail as an infra error naming the missing dependency group.
+
+    Without the SDK, `import docker` can still succeed: the repo's top-level `docker/`
+    directory (compose files, no __init__.py) resolves as an empty namespace package
+    that has no `errors` or `from_env`.
+    """
+    try:
+        import docker
+    except ImportError as exc:
+        raise HarnessInfraError(_MISSING_SDK) from exc
+    if not hasattr(docker, "errors"):
+        raise HarnessInfraError(_MISSING_SDK)
+    return docker
+
+
 def _docker_client():
-    import docker
+    docker = docker_sdk()
 
     try:
         return docker.from_env()
@@ -130,12 +184,14 @@ def _docker_client():
 def ensure_image(rebuild: bool = False, log=print) -> None:
     """Build the harness image when it is absent or its baked dependency tree no
     longer matches the lock file - stale images have burned real runs before
-    (eval-harness mem 1622), so the lock hash is checked, not assumed."""
-    import docker
-
+    (eval-harness mem 1622), so the lock hash is checked, not assumed. A forced rebuild
+    also bypasses the layer cache: the image's floating installs (opencode-ai@latest,
+    agent-shell-py>=) keep their instruction text, so a cached build would re-stamp the
+    label and keep the old versions."""
     requirements = export_requirements()
     digest = requirements_hash(requirements)
     if not rebuild:
+        docker = docker_sdk()
         try:
             image = _docker_client().images.get(IMAGE)
             if image.labels.get(_HASH_LABEL) == digest:
@@ -146,22 +202,20 @@ def ensure_image(rebuild: bool = False, log=print) -> None:
 
     (_DOCKER_DIR / "requirements.lock").write_text(requirements)
     log(f"building {IMAGE} ...")
-    build = subprocess.run(
-        [
-            "docker", "build", "-t", IMAGE,
-            "--label", f"{_HASH_LABEL}={digest}", str(_DOCKER_DIR),
-        ],
-        check=False,
-    )
+    build_cmd = ["docker", "build", "-t", IMAGE, "--label", f"{_HASH_LABEL}={digest}"]
+    if rebuild:
+        build_cmd.append("--no-cache")
+    build = _run_tool([*build_cmd, str(_DOCKER_DIR)], check=False)
     if build.returncode != 0:
         raise HarnessInfraError(f"docker build failed (exit {build.returncode})")
 
 
 def _prepare_harness_mount(run_dir: Path) -> Path:
     """Stage the read-only /harness mount: the working-tree wheel plus the runner."""
-    harness_dir = run_dir / "harness"
+    # absolute: `uv build` runs with cwd=_REPO_ROOT, so a relative -o would land there
+    harness_dir = run_dir.resolve() / "harness"
     harness_dir.mkdir(exist_ok=True)
-    build = subprocess.run(
+    build = _run_tool(
         ["uv", "build", "--wheel", "-o", str(harness_dir)],
         cwd=_REPO_ROOT, capture_output=True, text=True, check=False,
     )
@@ -182,14 +236,14 @@ class AgentContainer:
 
     def __init__(self, config: HarnessConfig, run_dir: Path, server_url: str):
         self.config = config
-        self.run_dir = run_dir
+        self.run_dir = run_dir.resolve()  # bind sources must be absolute host paths
         self.server_url = server_url
         self._staged: list[Path] = []
         self._client = None
         self._container = None
 
     def start(self) -> None:
-        import docker
+        docker = docker_sdk()
 
         self._client = _docker_client()
         volumes = provision_agent(self.config.agent_type, self._staged)
@@ -208,6 +262,8 @@ class AgentContainer:
 
         environment = {
             **build_container_env(self.server_url),
+            # an arbitrary uid has no passwd entry, and docker then defaults HOME to "/"
+            "HOME": CONTAINER_HOME,
             "AGENT_TYPE": self.config.agent_type,
             "AGENT_MODEL": self.config.model,
             "AGENT_EFFORT": self.config.effort or "",
@@ -221,6 +277,7 @@ class AgentContainer:
                 environment=environment,
                 detach=True,
                 name=name,
+                user=_host_user(),
             )
         except docker.errors.DockerException as exc:
             raise HarnessInfraError(f"could not start {IMAGE}: {exc}") from exc
@@ -293,9 +350,8 @@ class AgentContainer:
         return self._client.api.exec_inspect(exec_id)["ExitCode"], buffer
 
     def stop(self) -> None:
-        import docker
-
         if self._container is not None:
+            docker = docker_sdk()
             try:
                 self._container.stop(timeout=5)
                 self._container.remove()
