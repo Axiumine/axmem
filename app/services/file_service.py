@@ -299,6 +299,15 @@ class FileService:
             input_model=file_data, existing_model=existing_file,
         )
 
+        if not changed_fields:
+            logger.info(
+                "no changes detected, returning existing file",
+                extra={"file_id": file_id, "user_id": str(user_id)},
+            )
+            return existing_file
+
+        previous_size_bytes = existing_file.size_bytes
+
         file = await self.file_repo.update_file(
             user_id=user_id,
             file_id=file_id,
@@ -313,22 +322,26 @@ class FileService:
             },
         )
 
-        if changed_fields:
-            # Exclude 'data' from changes to avoid bloating events
-            changes_dict = {
-                field: {"old": old, "new": new}
-                for field, (old, new) in changed_fields.items()
-                if field != "data"
+        # Exclude 'data' from changes to avoid bloating events; report the new
+        # size instead so a content-only replacement is still visible.
+        changes_dict = {
+            field: {"old": old, "new": new}
+            for field, (old, new) in changed_fields.items()
+            if field != "data"
+        }
+        if "data" in changed_fields:
+            changes_dict["size_bytes"] = {
+                "old": previous_size_bytes,
+                "new": file.size_bytes,
             }
-            if changes_dict:
-                await self._emit_event(
-                    user_id=user_id,
-                    entity_type=EntityType.FILE,
-                    entity_id=file_id,
-                    action=ActionType.UPDATED,
-                    snapshot=self._snapshot_without_data(file),
-                    changes=changes_dict,
-                )
+        await self._emit_event(
+            user_id=user_id,
+            entity_type=EntityType.FILE,
+            entity_id=file_id,
+            action=ActionType.UPDATED,
+            snapshot=self._snapshot_without_data(file),
+            changes=changes_dict,
+        )
 
         return file
 
