@@ -3,7 +3,8 @@
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import select
+from sqlalchemy.orm import defer
 
 from app.config.logging_config import logging
 from app.exceptions import NotFoundError
@@ -14,6 +15,7 @@ from app.models.document_models import (
     DocumentUpdate,
 )
 from app.repositories.sqlite.sqlite_adapter import SqliteDatabaseAdapter
+from app.repositories.sqlite.sqlite_json_filters import json_array_overlaps
 from app.repositories.sqlite.sqlite_tables import DocumentsTable
 
 logger = logging.getLogger(__name__)
@@ -154,9 +156,11 @@ class SqliteDocumentRepository:
         """
         try:
             async with self.db_adapter.session(user_id) as session:
-                # Build query with filters
-                stmt = select(DocumentsTable).where(
-                    DocumentsTable.user_id == str(user_id),
+                # Build query with filters (content is not part of DocumentSummary)
+                stmt = (
+                    select(DocumentsTable)
+                    .options(defer(DocumentsTable.content))
+                    .where(DocumentsTable.user_id == str(user_id))
                 )
 
                 if project_id is not None:
@@ -167,11 +171,7 @@ class SqliteDocumentRepository:
 
                 if tags:
                     # SQLite JSON array search - finds documents with ANY of the provided tags
-                    tag_conditions = [
-                        func.json_extract(DocumentsTable.tags, "$").like(f'%"{tag}"%')
-                        for tag in tags
-                    ]
-                    stmt = stmt.where(or_(*tag_conditions))
+                    stmt = stmt.where(json_array_overlaps(DocumentsTable.tags, tags))
 
                 # Order by creation date (newest first)
                 stmt = stmt.order_by(DocumentsTable.created_at.desc())

@@ -4,12 +4,14 @@ import base64
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import select
+from sqlalchemy.orm import defer
 
 from app.config.logging_config import logging
 from app.exceptions import NotFoundError
 from app.models.file_models import File, FileCreate, FileSummary, FileUpdate
 from app.repositories.sqlite.sqlite_adapter import SqliteDatabaseAdapter
+from app.repositories.sqlite.sqlite_json_filters import json_array_overlaps
 from app.repositories.sqlite.sqlite_tables import FilesTable
 
 logger = logging.getLogger(__name__)
@@ -145,8 +147,11 @@ class SqliteFileRepository:
         """
         try:
             async with self.db_adapter.session(user_id) as session:
-                stmt = select(FilesTable).where(
-                    FilesTable.user_id == str(user_id),
+                # Skip the binary payload (FileSummary never exposes it)
+                stmt = (
+                    select(FilesTable)
+                    .options(defer(FilesTable.data))
+                    .where(FilesTable.user_id == str(user_id))
                 )
 
                 if project_id is not None:
@@ -157,11 +162,7 @@ class SqliteFileRepository:
 
                 if tags:
                     # SQLite JSON array search - finds files with ANY of the provided tags
-                    tag_conditions = [
-                        func.json_extract(FilesTable.tags, "$").like(f'%"{tag}"%')
-                        for tag in tags
-                    ]
-                    stmt = stmt.where(or_(*tag_conditions))
+                    stmt = stmt.where(json_array_overlaps(FilesTable.tags, tags))
 
                 stmt = stmt.order_by(FilesTable.created_at.desc())
 
