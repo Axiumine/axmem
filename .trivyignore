@@ -1,0 +1,6 @@
+# Accepted findings: one ID per line, each with a reason and a review date.
+
+# docker/Dockerfile runs as root. Existing deployments bind-mount ./data and the offline
+# model cache owned by root; switching to a non-root USER needs a migration note and
+# volume-ownership handling, so it is tracked as a separate change. Revisit 2026-12-01.
+AVD-DS-0002

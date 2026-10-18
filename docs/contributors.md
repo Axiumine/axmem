@@ -30,6 +30,19 @@ analysis, keep the JSON outside the repository, and export full detail to
 [mycelium-mermaid]:
   https://github.com/ScottRBK/mycelium/blob/master/skills/mycelium-mermaid/SKILL.md
 
+## Quality gates and Git hooks
+
+Install the toolchain and hooks once:
+
+```bash
+uv sync --locked --all-extras --dev
+uv run python -m scripts.quality install
+```
+
+`pre-commit` checks staged files (lint, security, complexity, types, snapshots, fast tests);
+`pre-push` runs the full pipeline including 100% coverage, PostgreSQL e2e, Python 3.14, trivy and
+Qodana (`QODANA_TOKEN` in your git-ignored dotenv file). See [quality-gates.md](quality-gates.md).
+
 ## Running with Docker with source 
 This will approach will fall back to using the build and as such allow you to check any changes you have made inside of a container. 
 

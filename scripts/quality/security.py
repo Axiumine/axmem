@@ -1,0 +1,77 @@
+"""Supply-chain, deep-analysis and code-graph gates: trivy, Qodana, GitNexus."""
+
+from __future__ import annotations
+
+import os
+import shutil
+from pathlib import Path
+
+from .core import (
+    ROOT,
+    Ctx,
+    Skip,
+    check,
+    docker_ready,
+    git_lines,
+    load_dotenv_values,
+    run,
+)
+
+QODANA_LINTER = "jetbrains/qodana-python:2026.2"
+TRIVY_IMAGE = "aquasec/trivy:latest"
+
+
+def trivy_cmd() -> list[str]:
+    # A dedicated, user-owned cache: the default one is often root-owned after docker runs.
+    cache = Path.home() / ".cache" / "forgetful-trivy"
+    cache.mkdir(parents=True, exist_ok=True)
+    explicit = os.environ.get("TRIVY_BIN")
+    found = explicit or shutil.which("trivy") or str(Path.home() / ".local/bin/trivy-bin/trivy")
+    if Path(found).exists():
+        return [found, "--cache-dir", str(cache)]
+    if docker_ready():
+        return [
+            "docker", "run", "--rm", "--user", f"{os.getuid()}:{os.getgid()}",
+            "-v", f"{ROOT}:/src", "-v", f"{cache}:/cache", "-w", "/src",
+            TRIVY_IMAGE, "--cache-dir", "/cache",
+        ]
+    raise Skip("trivy unavailable (install trivy or docker)")
+
+
+def gate_trivy(_ctx: Ctx) -> tuple[bool, str]:
+    return check([*trivy_cmd(), "fs", "--config", "trivy.yaml", "--ignorefile", ".trivyignore", "."])
+
+
+def gate_qodana(_ctx: Ctx) -> tuple[bool, str]:
+    if not shutil.which("qodana"):
+        raise Skip("qodana CLI not installed")
+    secrets = load_dotenv_values(("QODANA_TOKEN",))
+    if "QODANA_TOKEN" not in secrets:
+        return False, "QODANA_TOKEN is not set (put it in the git-ignored dotenv file or the environment)"
+    return check(
+        ["qodana", "scan", "--linter", QODANA_LINTER, "--project-dir", str(ROOT),
+         "--results-dir", str(ROOT / ".qodana-results"),
+         "--cache-dir", str(Path.home() / ".cache" / "qodana")],
+        env=secrets,
+        timeout=3600,
+    )
+
+
+def gate_gitnexus(ctx: Ctx) -> tuple[bool, str]:
+    runner = ROOT / ".gitnexus" / "run.cjs"
+    if not runner.exists() or not shutil.which("node"):
+        raise Skip("no local GitNexus index (.gitnexus/run.cjs) or node")
+    scope = ["--scope", "staged"] if ctx.stage == "pre-commit" else ["--scope", "all"]
+    if ctx.stage == "pre-push":
+        has_main = git_lines("rev-parse", "--verify", "-q", "origin/main")
+        scope = ["--scope", "compare", "--base-ref", "origin/main" if has_main else "HEAD~1"]
+    out = ""
+    for _ in range(2):  # a partial/truncated answer is "unseen", not "clean": retry once
+        code, out = run(
+            ["node", str(runner), "detect-changes", *scope, "--repo", str(ROOT)], timeout=300,
+        )
+        if code != 0:
+            return False, out
+        if "partial" not in out.lower() and "truncated" not in out.lower():
+            return True, out
+    return False, "GitNexus change analysis stayed partial/truncated:\n" + out

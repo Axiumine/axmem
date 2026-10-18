@@ -1,0 +1,6 @@
+#!/bin/sh
+# Full pipeline: static gates, 100% coverage (SQLite + PostgreSQL e2e), Python 3.14
+# compatibility, memory budgets, trivy, Qodana, GitNexus.
+# Bypass a gate:  SKIP=qodana,trivy git push ...   (see docs/quality-gates.md)
+cd "$(git rev-parse --show-toplevel)" || exit 1
+exec uv run --frozen python -m scripts.quality stage pre-push

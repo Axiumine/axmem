@@ -1,0 +1,38 @@
+#-------------------------------------------------------------------------------#
+#            Qodana analysis is configured by qodana.yaml file                  #
+#            https://www.jetbrains.com/help/qodana/qodana-yaml.html             #
+#                                                                               #
+#  Never put QODANA_TOKEN here: it lives in the git-ignored .env file locally   #
+#  and in the QODANA_TOKEN repository secret in CI.                             #
+#-------------------------------------------------------------------------------#
+version: "1.0"
+
+# Qodana Ultimate Plus (Python): inspections + taint/vulnerable-dependency + licence audit.
+linter: jetbrains/qodana-python:2026.2
+
+profile:
+  name: qodana.recommended
+
+include:
+  - name: VulnerableLibrariesLocal
+  - name: CheckDependencyLicenses
+
+bootstrap: pip install uv && uv sync --locked --all-extras --dev
+
+exclude:
+  - name: All
+    paths:
+      - .venv
+      - .venv314
+      - .gitnexus
+      - .idea
+      - .qodana-results
+      - node_modules
+      - test_harness/runs
+      - docs/assets
+      - app/_version.py
+
+failureConditions:
+  severityThresholds:
+    critical: 0
+    high: 0

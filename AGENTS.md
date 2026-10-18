@@ -69,6 +69,14 @@ uv run pytest -m e2e
 **Remember**: rebuild docker image if running local container service, not required however for e2e tests.
 
 
+## Quality gates
+Commits and pushes are gated by `.githooks/` (enable with `uv run python -m scripts.quality install`).
+The pipeline (ruff, import-linter, bandit, semgrep, vulture, radon cc/mi, mypy, pylint, snapshot
+tests, coverage at 100%, PostgreSQL e2e, Python 3.12 + 3.14, memray, trivy, Qodana, mutmut,
+GitNexus) and how to run or bypass single gates is documented in
+[docs/quality-gates.md](docs/quality-gates.md). Run `uv run python -m scripts.quality stage pre-commit`
+before committing; do not weaken a threshold to make a gate pass, fix the code or justify the exception.
+
 ## Linting
 Ensure that you run ruff following any changes and address any issues raised
 ```bash
