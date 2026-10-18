@@ -6,6 +6,7 @@ configured embedding provider. Knows nothing about SQLite/PostgreSQL specifics.
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import datetime
 from uuid import UUID
 
 from app.config.settings import settings
@@ -31,6 +32,10 @@ class TargetedRebuildResult:
     Distinguishes successful rebuilds from skipped (not owned / no-op) and
     failed (embedding generation or write error) memories so callers can
     surface partial success without re-running the whole rebuild.
+
+    `failed[].reason` is a stable machine-readable code (`embedding_failed`,
+    `persistence_failed`, `auto_link_failed`, `not_found_or_not_owned`); exception
+    details go to the server log only, never to the caller.
     """
     rebuilt_ids: list[int] = field(default_factory=list)
     skipped_ids: list[int] = field(default_factory=list)
@@ -127,7 +132,16 @@ class ReEmbeddingService:
                 "pass null for global scope",
             )
 
-        if memory_ids is None or project_id is None:
+        if memory_ids is None:
+            if project_id is not None and not await self.memory_repository.project_exists_for_user(
+                user_id=user_id,
+                project_id=project_id,
+            ):
+                # One message for missing and foreign projects: do not reveal which ids exist.
+                raise ValueError(f"project_id={project_id} not found or not owned")
+            return
+
+        if project_id is None:
             return
 
         requested_count = len(set(memory_ids))
@@ -210,37 +224,33 @@ class ReEmbeddingService:
                 break
 
             updates: list[tuple[int, list[float]]] = []
+            expected_updated_at: dict[int, datetime] = {}
             for memory in memories:
                 try:
                     embedding_text = build_embedding_text(memory)
                     embedding = await self.embedding_adapter.generate_embedding(embedding_text)
                     updates.append((memory.id, embedding))
-                except Exception as exc:  # noqa: BLE001 - intentional broad capture
+                    expected_updated_at[memory.id] = memory.updated_at
+                except Exception:  # noqa: BLE001 - intentional broad capture
                     logger.exception("rebuild_embeddings: embedding failed", extra={
                         "memory_id": memory.id,
                         "user_id": str(user_id),
                     })
-                    result.failed.append({"memory_id": memory.id, "reason": str(exc)})
+                    result.failed.append({"memory_id": memory.id, "reason": "embedding_failed"})
 
             if updates:
-                try:
-                    written_ids = await self.memory_repository.upsert_targeted_embeddings(
-                        user_id=user_id,
-                        updates=updates,
-                    )
-                    written_set = set(written_ids)
-                    result.rebuilt_ids.extend(written_ids)
-                    for memory_id, _ in updates:
-                        if memory_id not in written_set:
-                            result.skipped_ids.append(memory_id)
-                    await self._recompute_auto_links(user_id=user_id, memory_ids=written_ids, result=result)
-                except Exception as exc:  # noqa: BLE001
-                    logger.exception("rebuild_embeddings: persistence failed", extra={
-                        "user_id": str(user_id),
-                        "batch_size": len(updates),
-                    })
-                    for memory_id, _ in updates:
-                        result.failed.append({"memory_id": memory_id, "reason": str(exc)})
+                written_ids, failed_ids = await self._persist_batch(
+                    user_id=user_id,
+                    updates=updates,
+                    expected_updated_at=expected_updated_at,
+                    result=result,
+                )
+                written_set = set(written_ids)
+                result.rebuilt_ids.extend(written_ids)
+                for memory_id, _ in updates:
+                    if memory_id not in written_set and memory_id not in failed_ids:
+                        result.skipped_ids.append(memory_id)
+                await self._recompute_auto_links(user_id=user_id, memory_ids=written_ids, result=result)
 
             processed += len(memories)
             if progress_callback:
@@ -263,6 +273,68 @@ class ReEmbeddingService:
             },
         )
         return result
+
+    async def _persist_batch(
+        self,
+        user_id: UUID,
+        updates: list[tuple[int, list[float]]],
+        expected_updated_at: dict[int, datetime],
+        result: TargetedRebuildResult,
+    ) -> tuple[list[int], set[int]]:
+        """Write one batch; after a batch failure retry row by row.
+
+        The repository writes a batch in a single transaction, so one bad row fails
+        them all. Retrying each row on its own attributes the failure to the memory
+        that caused it. A memory edited since it was read is not written (the
+        repository omits it), which the caller reports as skipped.
+
+        The retry also runs when the failure is not row specific (a locked or
+        unreachable database). That is bounded by one extra attempt per row of the
+        batch (at most `batch_size`, each waiting out the driver's busy timeout), so
+        a persistent outage ends in `persistence_failed` for the batch rather than
+        in an unbounded loop.
+
+        Returns:
+            (ids written, ids recorded as `persistence_failed` in `result.failed`)
+        """
+        try:
+            written = await self.memory_repository.upsert_targeted_embeddings(
+                user_id=user_id,
+                updates=updates,
+                expected_updated_at=expected_updated_at,
+            )
+            return list(written), set()
+        except Exception:  # noqa: BLE001
+            logger.exception("rebuild_embeddings: persistence failed", extra={
+                "user_id": str(user_id),
+                "batch_size": len(updates),
+            })
+
+        if len(updates) == 1:
+            memory_id = updates[0][0]
+            result.failed.append({"memory_id": memory_id, "reason": "persistence_failed"})
+            return [], {memory_id}
+
+        written_ids: list[int] = []
+        failed_ids: set[int] = set()
+        for update in updates:
+            memory_id = update[0]
+            try:
+                written_ids.extend(
+                    await self.memory_repository.upsert_targeted_embeddings(
+                        user_id=user_id,
+                        updates=[update],
+                        expected_updated_at={memory_id: expected_updated_at[memory_id]},
+                    ),
+                )
+            except Exception:  # noqa: BLE001
+                logger.exception("rebuild_embeddings: persistence failed", extra={
+                    "memory_id": memory_id,
+                    "user_id": str(user_id),
+                })
+                failed_ids.add(memory_id)
+                result.failed.append({"memory_id": memory_id, "reason": "persistence_failed"})
+        return written_ids, failed_ids
 
     def _record_unresolved_memory_ids(
         self,
@@ -311,7 +383,7 @@ class ReEmbeddingService:
                     source_id=memory_id,
                     target_ids=[memory.id for memory in similar_memories],
                 )
-            except Exception as exc:  # noqa: BLE001 - link failures are per-memory partial failures
+            except Exception:  # noqa: BLE001 - link failures are per-memory partial failures
                 logger.exception("rebuild_embeddings: auto-link failed", extra={
                     "memory_id": memory_id,
                     "user_id": str(user_id),
@@ -319,7 +391,7 @@ class ReEmbeddingService:
                 result.failed.append({
                     "memory_id": memory_id,
                     "phase": "auto_link",
-                    "reason": str(exc),
+                    "reason": "auto_link_failed",
                 })
 
     async def validate(self) -> ValidationResult:

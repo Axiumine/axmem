@@ -266,21 +266,33 @@ class MemoryRepository(Protocol):
             self,
             user_id: UUID,
             updates: list[tuple[int, list[float]]],
+            expected_updated_at: dict[int, datetime] | None = None,
     ) -> list[int]:
         """Idempotently write a batch of new embeddings for `user_id`.
 
         Unlike `bulk_update_embeddings`, this method:
         - is user-scoped (rejects ids not owned by `user_id`),
         - never resets vector storage,
-        - is idempotent for repeated calls on the same memory id.
+        - is idempotent for repeated calls on the same memory id,
+        - MUST NOT mutate `updated_at` (an embedding refresh is not an edit).
 
         Args:
             user_id: Authenticated user id; ownership filter, never optional.
             updates: list of (memory_id, embedding) tuples.
+            expected_updated_at: Optional memory id -> `updated_at` observed when the
+                embedding input was read. A memory whose `updated_at` no longer matches
+                was edited (and re-embedded) meanwhile: its stored vector is left alone
+                and its id is not returned. Ids without an entry are written unconditionally.
+                Implementations MUST make the check part of the write itself, so an edit
+                that commits after the check cannot be overwritten.
 
         Returns:
             list of memory ids whose embedding was actually written.
         """
+        ...
+
+    async def project_exists_for_user(self, user_id: UUID, project_id: int) -> bool:
+        """Return True only if `project_id` exists and is owned by `user_id`."""
         ...
 
     async def reset_embedding_storage(self) -> None:
@@ -291,7 +303,7 @@ class MemoryRepository(Protocol):
         ...
 
     async def bulk_update_embeddings(self, updates: list[tuple[int, list[float]]]) -> None:
-        """Write new embeddings for a batch of memory IDs"""
+        """Write new embeddings for a batch of memory IDs. MUST NOT mutate `updated_at`."""
         ...
 
     async def validate_embedding_count(self) -> bool:

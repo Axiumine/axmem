@@ -1240,6 +1240,16 @@ class SqliteMemoryRepository:
             count_stmt = select(func.count()).select_from(base.subquery())
             return (await session.execute(count_stmt)).scalar() or 0
 
+    async def project_exists_for_user(self, user_id: UUID, project_id: int) -> bool:
+        async with self.db_adapter.system_session() as session:
+            found = await session.execute(
+                select(ProjectsTable.id).where(
+                    ProjectsTable.id == project_id,
+                    ProjectsTable.user_id == str(user_id),
+                ),
+            )
+            return found.first() is not None
+
     async def get_memories_for_targeted_rebuild(
         self,
         user_id: UUID,
@@ -1278,43 +1288,53 @@ class SqliteMemoryRepository:
         self,
         user_id: UUID,
         updates: list[tuple[int, list[float]]],
+        expected_updated_at: dict[int, datetime] | None = None,
     ) -> list[int]:
         """Idempotently write embeddings for memories owned by `user_id`.
 
         Implementation note: SQLite-vec's `vec_memories` virtual table is
         keyed by `memory_id` and rejects duplicate inserts. We delete the
-        existing row (if any) before inserting the new embedding. We also
-        verify ownership of every memory id against the canonical `memories`
-        table so a malicious caller cannot poison another user's vector.
+        existing row (if any) before inserting the new embedding.
+
+        Every row is guarded by a no-op UPDATE of its `memories` row that also
+        checks ownership, `is_obsolete` and, when given, `expected_updated_at`.
+        The UPDATE is the first write of the transaction, so it takes SQLite's
+        write lock and holds it until commit: a concurrent `update_memory` has
+        to wait for this batch instead of slipping between check and write, and
+        a row it already committed fails the check. A plain SELECT is not
+        enough here, because pysqlite opens its transaction only at the first
+        DML statement, leaving a SELECT outside it.
+
+        `expected_updated_at` maps a memory id to the `updated_at` observed when
+        its embedding input was read. A memory whose row no longer carries that
+        value was edited (and re-embedded) in the meantime, so its vector is left
+        alone and its id is omitted from the result.
         """
         if not updates:
             return []
-        ids = [mid for mid, _ in updates]
+        expected_updated_at = expected_updated_at or {}
         async with self.db_adapter.system_session() as session:
-            owned_rows = await session.execute(
-                select(MemoryTable.id).where(
-                    MemoryTable.user_id == str(user_id),
-                    MemoryTable.is_obsolete.is_(False),
-                    MemoryTable.id.in_(ids),
-                ),
-            )
-            owned_ids = {row[0] for row in owned_rows}
             written: list[int] = []
             for memory_id, embedding in updates:
-                if memory_id not in owned_ids:
+                guard = (
+                    update(MemoryTable)
+                    .where(
+                        MemoryTable.id == memory_id,
+                        MemoryTable.user_id == str(user_id),
+                        MemoryTable.is_obsolete.is_(False),
+                    )
+                    # Explicit value keeps the column's `onupdate` from bumping updated_at.
+                    .values(updated_at=MemoryTable.updated_at)
+                )
+                if memory_id in expected_updated_at:
+                    guard = guard.where(MemoryTable.updated_at == expected_updated_at[memory_id])
+                guarded = await session.execute(guard)
+                if guarded.rowcount == 0:
                     continue
                 embedding_bytes = sqlite_vec.serialize_float32(embedding)
                 await session.execute(
-                    text(
-                        "DELETE FROM vec_memories WHERE memory_id = :memory_id "
-                        "AND EXISTS ("
-                        "SELECT 1 FROM memories "
-                        "WHERE memories.id = CAST(:memory_id AS INTEGER) "
-                        "AND memories.user_id = :user_id "
-                        "AND memories.is_obsolete = 0"
-                        ")",
-                    ),
-                    {"memory_id": str(memory_id), "user_id": str(user_id)},
+                    text("DELETE FROM vec_memories WHERE memory_id = :memory_id"),
+                    {"memory_id": str(memory_id)},
                 )
                 await session.execute(
                     text("INSERT INTO vec_memories (memory_id, embedding) VALUES (:memory_id, :embedding)"),
@@ -2233,6 +2253,8 @@ class SqliteMemoryRepository:
                 .values(
                     access_count=MemoryTable.access_count + 1,
                     last_accessed_at=ts,
+                    # Explicit value: suppresses the column `onupdate` so reads do not look like edits.
+                    updated_at=MemoryTable.updated_at,
                 )
             )
             result = await session.execute(stmt)
