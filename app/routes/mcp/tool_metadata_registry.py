@@ -1061,9 +1061,17 @@ def register_project_tools_metadata(
         },
         {
             "name": "list_projects",
-            "description": "List projects with optional status/repository filtering",
+            "description": "List projects with optional name/status/repository filtering",
             "parameters": [
                 {"name": "ctx", "type": "Context", "description": "FastMCP Context (automatically injected)", "required": True},
+                {
+                    "name": "name",
+                    "type": "Optional[str]",
+                    "description": "Filter by project name (case-insensitive partial match)",
+                    "required": False,
+                    "default": None,
+                    "example": "forgetful",
+                },
                 {"name": "status", "type": "Optional[ProjectStatus]", "description": "Filter by status (active, archived, completed)", "required": False, "default": None, "example": "active"},
                 {
                     "name": "repo_name",
@@ -1080,13 +1088,17 @@ def register_project_tools_metadata(
             "returns": "Dictionary with projects list and count",
             "examples": [
                 'execute_forgetful_tool("list_projects", {})',
+                'execute_forgetful_tool("list_projects", {"name": "forgetful"})',
                 'execute_forgetful_tool("list_projects", {"status": "active"})',
             ],
             "tags": ["project", "list", "query"],
         },
         {
             "name": "get_project",
-            "description": "Retrieve complete project details by ID",
+            "description": (
+                "Retrieve complete project details by integer project_id. "
+                "To find a project by name, use list_projects with the name filter first."
+            ),
             "parameters": [
                 {"name": "project_id", "type": "int", "description": "ID of the project to retrieve", "required": True, "example": 1},
                 {"name": "ctx", "type": "Context", "description": "FastMCP Context (automatically injected)", "required": True},

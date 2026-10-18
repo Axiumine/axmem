@@ -894,6 +894,7 @@ class ProjectToolAdapters:
         agent_model: str | None = None,
     ) -> Project:
         """Adapter for update_project tool"""
+        project_id = _coerce_int_id(project_id, "project_id")
         user = await get_user_from_auth(ctx)
 
         updated_dict = filter_none_values(
@@ -927,6 +928,7 @@ class ProjectToolAdapters:
 
     async def delete_project(self, project_id: int, ctx: Context) -> dict:
         """Adapter for delete_project tool"""
+        project_id = _coerce_int_id(project_id, "project_id")
         user = await get_user_from_auth(ctx)
 
         result = await self.project_service.delete_project(
@@ -965,6 +967,7 @@ class ProjectToolAdapters:
 
     async def get_project(self, project_id: int, ctx: Context) -> Project:
         """Adapter for get_project tool"""
+        project_id = _coerce_int_id(project_id, "project_id")
         user = await get_user_from_auth(ctx)
 
         project = await self.project_service.get_project(

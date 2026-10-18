@@ -1,8 +1,75 @@
-"""E2E tests for project MCP tools with real PostgreSQL database
+"""E2E tests for project MCP tools with in-memory SQLite
 """
 
 import pytest
 from fastmcp.exceptions import ToolError
+
+
+@pytest.mark.asyncio
+async def test_project_name_lookup_is_discoverable(mcp_client):
+    """Discovery and detailed help guide name lookups to list_projects."""
+    discovery = await mcp_client.call_tool("discover_forgetful_tools", {"category": "project"})
+    project_tools = {
+        tool["name"]: tool for tool in discovery.data["tools_by_category"]["project"]
+    }
+
+    name_parameter = project_tools["list_projects"]["parameters"]["name"]
+    assert name_parameter["required"] is False
+    assert "case-insensitive" in name_parameter["description"]
+    assert "partial" in name_parameter["description"]
+    assert "list_projects" in project_tools["get_project"]["description"]
+    assert "name" not in project_tools["get_project"]["parameters"]
+
+    documentation = await mcp_client.call_tool(
+        "how_to_use_forgetful_tool", {"tool_name": "list_projects"},
+    )
+    assert documentation.data["json_schema"]["properties"]["name"]["type"] == "string"
+    assert "name" not in documentation.data["json_schema"].get("required", [])
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "arguments", [{"name": "example"}, {"project_id": 1, "name": "example"}],
+)
+async def test_get_project_rejects_name_argument(mcp_client, arguments):
+    """A name is not silently substituted for the required project ID."""
+    with pytest.raises(ToolError, match="unexpected keyword argument 'name'"):
+        await mcp_client.call_tool(
+            "execute_forgetful_tool", {"tool_name": "get_project", "arguments": arguments},
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("tool_name", ["get_project", "update_project", "delete_project"])
+@pytest.mark.parametrize("invalid_id", ["not-an-id", True, 1.9, None])
+async def test_project_tools_reject_invalid_ids(mcp_client, tool_name, invalid_id):
+    """Invalid IDs give a parameter error and leave the existing project unchanged."""
+    created = await mcp_client.call_tool(
+        "execute_forgetful_tool",
+        {
+            "tool_name": "create_project",
+            "arguments": {
+                "name": "unchanged-project",
+                "description": "Project protected from invalid IDs",
+                "project_type": "development",
+            },
+        },
+    )
+    arguments = {"project_id": invalid_id}
+    if tool_name == "update_project":
+        arguments["name"] = "should-not-change"
+
+    with pytest.raises(ToolError, match="project_id (must|cannot)"):
+        await mcp_client.call_tool(
+            "execute_forgetful_tool",
+            {"tool_name": tool_name, "arguments": arguments},
+        )
+
+    retrieved = await mcp_client.call_tool(
+        "execute_forgetful_tool",
+        {"tool_name": "get_project", "arguments": {"project_id": created.data["id"]}},
+    )
+    assert retrieved.data["name"] == "unchanged-project"
 
 
 @pytest.mark.asyncio
@@ -42,8 +109,9 @@ async def test_create_project_basic_e2e(mcp_client):
 
 
 @pytest.mark.asyncio
-async def test_get_project_e2e(mcp_client):
-    """Test creating then retrieving a project"""
+@pytest.mark.parametrize("string_id", [False, True], ids=["integer-id", "string-id"])
+async def test_get_project_e2e(mcp_client, string_id):
+    """Retrieve a project whether the client sends its ID as a number or string."""
     create_result = await mcp_client.call_tool(
         "execute_forgetful_tool",
         {
@@ -58,7 +126,10 @@ async def test_get_project_e2e(mcp_client):
     project_id = create_result.data["id"]
     get_result = await mcp_client.call_tool(
         "execute_forgetful_tool",
-        {"tool_name": "get_project", "arguments": {"project_id": project_id}},
+        {
+            "tool_name": "get_project",
+            "arguments": {"project_id": str(project_id) if string_id else project_id},
+        },
     )
     assert get_result.data is not None
     assert get_result.data["id"] == project_id
@@ -97,7 +168,8 @@ async def test_list_projects_e2e(mcp_client):
 
 
 @pytest.mark.asyncio
-async def test_update_project_e2e(mcp_client):
+@pytest.mark.parametrize("string_id", [False, True], ids=["integer-id", "string-id"])
+async def test_update_project_e2e(mcp_client, string_id):
     """Test updating a project"""
     create_result = await mcp_client.call_tool(
         "execute_forgetful_tool",
@@ -116,7 +188,7 @@ async def test_update_project_e2e(mcp_client):
         {
             "tool_name": "update_project",
             "arguments": {
-                "project_id": project_id,
+                "project_id": str(project_id) if string_id else project_id,
                 "name": "updated-name",
                 "description": "Updated description with new information",
             },
@@ -137,7 +209,8 @@ async def test_update_project_e2e(mcp_client):
 
 
 @pytest.mark.asyncio
-async def test_delete_project_e2e(mcp_client):
+@pytest.mark.parametrize("string_id", [False, True], ids=["integer-id", "string-id"])
+async def test_delete_project_e2e(mcp_client, string_id):
     """Test deleting a project"""
     create_result = await mcp_client.call_tool(
         "execute_forgetful_tool",
@@ -153,7 +226,10 @@ async def test_delete_project_e2e(mcp_client):
     project_id = create_result.data["id"]
     delete_result = await mcp_client.call_tool(
         "execute_forgetful_tool",
-        {"tool_name": "delete_project", "arguments": {"project_id": project_id}},
+        {
+            "tool_name": "delete_project",
+            "arguments": {"project_id": str(project_id) if string_id else project_id},
+        },
     )
     assert delete_result.data is not None
     assert delete_result.data["success"] is True

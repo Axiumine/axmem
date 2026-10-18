@@ -8,6 +8,39 @@ pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 
 @pytest.mark.e2e
+@pytest.mark.parametrize("tool_name", ["get_project", "update_project", "delete_project"])
+@pytest.mark.parametrize("invalid_id", ["not-an-id", True, 1.9, None])
+async def test_project_tools_reject_invalid_ids(mcp_client, tool_name, invalid_id):
+    """Invalid IDs give a parameter error and leave the existing project unchanged."""
+    created = await mcp_client.call_tool(
+        "execute_forgetful_tool",
+        {
+            "tool_name": "create_project",
+            "arguments": {
+                "name": "unchanged-project",
+                "description": "Project protected from invalid IDs",
+                "project_type": "development",
+            },
+        },
+    )
+    arguments = {"project_id": invalid_id}
+    if tool_name == "update_project":
+        arguments["name"] = "should-not-change"
+
+    with pytest.raises(ToolError, match="project_id (must|cannot)"):
+        await mcp_client.call_tool(
+            "execute_forgetful_tool",
+            {"tool_name": tool_name, "arguments": arguments},
+        )
+
+    retrieved = await mcp_client.call_tool(
+        "execute_forgetful_tool",
+        {"tool_name": "get_project", "arguments": {"project_id": created.data["id"]}},
+    )
+    assert retrieved.data["name"] == "unchanged-project"
+
+
+@pytest.mark.e2e
 async def test_create_project_basic_e2e(mcp_client):
     """Test creating a project with all fields"""
     result = await mcp_client.call_tool(
@@ -44,8 +77,9 @@ async def test_create_project_basic_e2e(mcp_client):
 
 
 @pytest.mark.e2e
-async def test_get_project_e2e(mcp_client):
-    """Test creating then retrieving a project"""
+@pytest.mark.parametrize("string_id", [False, True], ids=["integer-id", "string-id"])
+async def test_get_project_e2e(mcp_client, string_id):
+    """Retrieve a project whether the client sends its ID as a number or string."""
     create_result = await mcp_client.call_tool(
         "execute_forgetful_tool",
         {
@@ -60,7 +94,10 @@ async def test_get_project_e2e(mcp_client):
     project_id = create_result.data["id"]
     get_result = await mcp_client.call_tool(
         "execute_forgetful_tool",
-        {"tool_name": "get_project", "arguments": {"project_id": project_id}},
+        {
+            "tool_name": "get_project",
+            "arguments": {"project_id": str(project_id) if string_id else project_id},
+        },
     )
     assert get_result.data is not None
     assert get_result.data["id"] == project_id
@@ -101,7 +138,8 @@ async def test_list_projects_e2e(mcp_client, _repeat):
 
 
 @pytest.mark.e2e
-async def test_update_project_e2e(mcp_client):
+@pytest.mark.parametrize("string_id", [False, True], ids=["integer-id", "string-id"])
+async def test_update_project_e2e(mcp_client, string_id):
     """Test updating a project"""
     create_result = await mcp_client.call_tool(
         "execute_forgetful_tool",
@@ -120,7 +158,7 @@ async def test_update_project_e2e(mcp_client):
         {
             "tool_name": "update_project",
             "arguments": {
-                "project_id": project_id,
+                "project_id": str(project_id) if string_id else project_id,
                 "name": "updated-name",
                 "description": "Updated description with new information",
             },
@@ -144,7 +182,8 @@ async def test_update_project_e2e(mcp_client):
 
 
 @pytest.mark.e2e
-async def test_delete_project_e2e(mcp_client):
+@pytest.mark.parametrize("string_id", [False, True], ids=["integer-id", "string-id"])
+async def test_delete_project_e2e(mcp_client, string_id):
     """Test deleting a project"""
     create_result = await mcp_client.call_tool(
         "execute_forgetful_tool",
@@ -160,7 +199,10 @@ async def test_delete_project_e2e(mcp_client):
     project_id = create_result.data["id"]
     delete_result = await mcp_client.call_tool(
         "execute_forgetful_tool",
-        {"tool_name": "delete_project", "arguments": {"project_id": project_id}},
+        {
+            "tool_name": "delete_project",
+            "arguments": {"project_id": str(project_id) if string_id else project_id},
+        },
     )
     assert delete_result.data is not None
     assert delete_result.data["success"] is True
