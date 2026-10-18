@@ -611,7 +611,9 @@ class TaskService:
         move the plan back to active once the task change succeeded.
         """
         try:
-            plan = await self.plan_service.get_plan(user_id=user_id, plan_id=plan_id)
+            plan = await self.plan_service.get_plan(
+                user_id=user_id, plan_id=plan_id, track_read=False,
+            )
         except NotFoundError:
             return False
 
