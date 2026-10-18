@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
+from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.config.settings import settings
 
@@ -243,6 +244,18 @@ class MemoryUpdate(BaseModel):
         max_length=100,
         description="New LLM model. Unchanged if null.",
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def ignore_null_fields(cls, data: Any) -> Any:
+        """Treat null as omitted for every caller, including REST and direct service calls.
+
+        Every field is documented as "Unchanged if null". Dropping the key keeps it out of
+        model_fields_set, so exclude_unset never turns a null into a column write.
+        """
+        if isinstance(data, dict):
+            return {key: value for key, value in data.items() if value is not None}
+        return data
 
     @field_validator("keywords", "tags")
     @classmethod
