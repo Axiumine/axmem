@@ -11,7 +11,7 @@ from pydantic import ValidationError
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-from app.exceptions import NotFoundError
+from app.exceptions import ConflictError, NotFoundError
 from app.middleware.auth import get_user_from_request
 from app.models.entity_models import (
     EntityCreate,
@@ -151,10 +151,13 @@ def register(mcp: FastMCP):
         except ValidationError as e:
             return JSONResponse({"error": e.errors()}, status_code=400)
 
-        entity = await mcp.entity_service.create_entity(
-            user_id=user.id,
-            entity_data=entity_data,
-        )
+        try:
+            entity = await mcp.entity_service.create_entity(
+                user_id=user.id,
+                entity_data=entity_data,
+            )
+        except NotFoundError as e:
+            return JSONResponse({"error": str(e)}, status_code=404)
 
         return JSONResponse(entity.model_dump(mode="json"), status_code=201)
 
@@ -180,8 +183,14 @@ def register(mcp: FastMCP):
                 entity_id=entity_id,
                 entity_data=update_data,
             )
-        except NotFoundError:
-            return JSONResponse({"error": "Entity not found"}, status_code=404)
+        except NotFoundError as e:
+            return JSONResponse({"error": str(e)}, status_code=404)
+        except ValidationError:
+            # A stored row that fails model validation is a server-side data
+            # fault, not a bad request (ValidationError is a ValueError subclass)
+            raise
+        except ValueError as e:
+            return JSONResponse({"error": str(e)}, status_code=400)
 
         return JSONResponse(entity.model_dump(mode="json"))
 
@@ -376,6 +385,8 @@ def register(mcp: FastMCP):
             )
         except NotFoundError as e:
             return JSONResponse({"error": str(e)}, status_code=404)
+        except ConflictError as e:
+            return JSONResponse({"error": str(e)}, status_code=409)
 
         return JSONResponse(relationship.model_dump(mode="json"), status_code=201)
 
@@ -403,6 +414,8 @@ def register(mcp: FastMCP):
             )
         except NotFoundError:
             return JSONResponse({"error": "Relationship not found"}, status_code=404)
+        except ConflictError as e:
+            return JSONResponse({"error": str(e)}, status_code=409)
 
         return JSONResponse(relationship.model_dump(mode="json"))
 

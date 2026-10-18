@@ -42,6 +42,8 @@ class EntityRepository(Protocol):
             Created Entity with generated ID and timestamps
 
         Raises:
+            NotFoundError: If a project in entity_data.project_ids does not exist
+                or is not owned by user
             ValidationError: If entity_data is invalid
         """
         ...
@@ -131,7 +133,8 @@ class EntityRepository(Protocol):
             Updated Entity
 
         Raises:
-            NotFoundError: If entity not found or not owned by user
+            NotFoundError: If entity not found or not owned by user, or a project in
+                entity_data.project_ids does not exist or is not owned by user
             ValidationError: If update data is invalid
         """
         ...
@@ -254,6 +257,7 @@ class EntityRepository(Protocol):
 
         Raises:
             NotFoundError: If source or target entity not found or not owned by user
+            ConflictError: If a relationship of the same type already exists between them
             ValidationError: If relationship_data is invalid
         """
         ...
@@ -302,6 +306,7 @@ class EntityRepository(Protocol):
 
         Raises:
             NotFoundError: If relationship not found or not owned by user
+            ConflictError: If the new relationship_type already exists between the same entities
             ValidationError: If update data is invalid
         """
         ...
