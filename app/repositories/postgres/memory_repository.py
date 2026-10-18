@@ -33,6 +33,19 @@ from app.utils.embedding_helpers import (
 
 logger = logging.getLogger(__name__)
 
+# Embedding attempts update_memory makes while other writers keep changing the same memory
+MAX_EMBEDDING_ATTEMPTS = 5
+
+# memories.id is an INTEGER column. asyncpg refuses to encode a larger value instead of matching
+# no row, which would surface as a DataError (HTTP 500) where SQLite simply reports "not found".
+_INT4_MIN = -(2**31)
+_INT4_MAX = 2**31 - 1
+
+
+def _fits_int4(*values: int) -> bool:
+    return all(_INT4_MIN <= value <= _INT4_MAX for value in values)
+
+
 class PostgresMemoryRepository:
     """Repository for Memory entity operations in Postgres
     """
@@ -161,6 +174,7 @@ class PostgresMemoryRepository:
                 selectinload(MemoryTable.code_artifacts),
                 selectinload(MemoryTable.documents),
                 selectinload(MemoryTable.files),
+                selectinload(MemoryTable.skills),
             )
             .where(
                 MemoryTable.user_id == user_id,
@@ -250,42 +264,103 @@ class PostgresMemoryRepository:
     ) -> Memory:
         """Update a memory
 
+        The embedding is generated before a database session is opened, so no pooled connection
+        is held (idle in transaction) while the provider call is in flight. Another writer may
+        change a search field in the meantime, so the write verifies that the row still produces
+        the text that was embedded and, if it does not, embeds again from the current row. After
+        MAX_EMBEDDING_ATTEMPTS attempts the last embedding is written as is rather than failing
+        the update.
+
         Args:
             user_id: User ID
             memory_id: Memory ID
             updated_memory: MemoryUpdate object containing the changes to be applied
-        
+            existing_memory: Existing Memory object
+            search_fields_changed: Whether search-relevant fields changed (requires embedding update)
+
         Returns:
             Updated Memory object
-            
+
         Raises:
             NotFoundError: If memory not found
         """
-        async with self.db_adapter.session(user_id) as session:
+        update_data = updated_memory.model_dump(
+            exclude_unset=True,
+            exclude={"project_ids", "code_artifact_ids", "document_ids", "file_ids", "skill_ids"},
+        )
 
-            update_data = updated_memory.model_dump(
-                exclude_unset=True,
-                exclude={"project_ids", "code_artifact_ids", "document_ids", "file_ids"},
-                )
-
+        base_memory = existing_memory
+        attempt = 1
+        while True:
             update_data["updated_at"] = datetime.now(UTC)
 
+            embedding_text = None
+            embeddings = None
             if search_fields_changed:
-                merged_memory = existing_memory.model_copy(update=update_data)
+                merged_memory = base_memory.model_copy(update=update_data)
                 embedding_text = build_embedding_text(memory_data=merged_memory)
                 embeddings = await self._generate_embeddings(embedding_text)
-                update_data["embedding"] = embeddings
 
+            is_last_attempt = attempt >= MAX_EMBEDDING_ATTEMPTS
+            if embedding_text is not None and is_last_attempt:
+                logger.warning("memory kept changing while its embedding was generated, writing without verification", extra={
+                    "memory_id": memory_id,
+                    "user_id": user_id,
+                    "attempts": attempt,
+                })
+
+            memory = await self._write_memory_update(
+                user_id=user_id,
+                memory_id=memory_id,
+                updated_memory=updated_memory,
+                update_data=update_data,
+                embeddings=embeddings,
+                verify_embedding_text=None if is_last_attempt else embedding_text,
+            )
+            if memory is not None:
+                return memory
+
+            logger.info("memory changed while its embedding was generated, embedding again", extra={
+                "memory_id": memory_id,
+                "user_id": user_id,
+                "attempt": attempt,
+            })
+            attempt += 1
+            base_memory = await self.get_memory_by_id(user_id=user_id, memory_id=memory_id)
+
+    async def _write_memory_update(
+            self,
+            user_id: UUID,
+            memory_id: int,
+            updated_memory: MemoryUpdate,
+            update_data: dict[str, Any],
+            embeddings: list[float] | None,
+            verify_embedding_text: str | None,
+    ) -> Memory | None:
+        """Apply one update attempt in a single transaction.
+
+        Returns None, with nothing written, when verify_embedding_text is given and the stored row
+        no longer produces that text.
+        """
+        column_values = update_data if embeddings is None else {**update_data, "embedding": embeddings}
+
+        async with self.db_adapter.session(user_id) as session:
             stmt = (
                 update(MemoryTable)
                 .where(MemoryTable.user_id==user_id, MemoryTable.id==memory_id)
-                .values(**update_data)
+                .values(**column_values)
                 .returning(MemoryTable)
             )
 
             try:
                 result = await session.execute(stmt)
                 memory_orm = result.scalar_one()
+
+                if verify_embedding_text is not None:
+                    stored_text = build_embedding_text(memory_data=Memory.model_validate(memory_orm))
+                    if stored_text != verify_embedding_text:
+                        await session.rollback()
+                        return None
 
                 # Handle relationship updates if provided
                 if updated_memory.project_ids is not None:
@@ -315,6 +390,12 @@ class PostgresMemoryRepository:
                     if updated_memory.file_ids:
                         await self._link_files(session, memory_orm, updated_memory.file_ids, user_id)
 
+                if updated_memory.skill_ids is not None:
+                    await session.refresh(memory_orm, attribute_names=["id", "skills"])
+                    memory_orm.skills.clear()
+                    if updated_memory.skill_ids:
+                        await self._link_skills(session, memory_orm, updated_memory.skill_ids, user_id)
+
                 # Re-query with selectinload to ensure all relationships are properly loaded
                 # This is the recommended async pattern per SQLAlchemy docs
                 stmt = (
@@ -325,6 +406,7 @@ class PostgresMemoryRepository:
                         selectinload(MemoryTable.code_artifacts),
                         selectinload(MemoryTable.documents),
                         selectinload(MemoryTable.files),
+                        selectinload(MemoryTable.skills),
                         selectinload(MemoryTable.linked_memories),
                         selectinload(MemoryTable.linking_memories),
                     )
@@ -364,6 +446,9 @@ class PostgresMemoryRepository:
         Returns:
             Memory Table object or None if not found
         """
+        if not _fits_int4(memory_id):
+            raise NotFoundError(f"Memory with id {memory_id} not found")
+
         stmt = (
             select(MemoryTable)
             .where(MemoryTable.user_id==user_id, MemoryTable.id==memory_id)
@@ -374,6 +459,7 @@ class PostgresMemoryRepository:
                 selectinload(MemoryTable.code_artifacts),
                 selectinload(MemoryTable.documents),
                 selectinload(MemoryTable.files),
+                selectinload(MemoryTable.skills),
             )
         )
 
@@ -407,6 +493,11 @@ class PostgresMemoryRepository:
             NotFoundError: If memory not found or doesn't belong to user
             NotFoundError: If superseded_by memory not found or doesn't belong to user
         """
+        if not _fits_int4(memory_id):
+            raise NotFoundError(f"Memory {memory_id} not found")
+        if superseded_by and not _fits_int4(superseded_by):
+            raise NotFoundError(f"Superseding memory {superseded_by} not found")
+
         async with self.db_adapter.session(user_id) as session:
             if superseded_by:
                 superseding_stmt = select(MemoryTable).where(
@@ -445,6 +536,9 @@ class PostgresMemoryRepository:
 
         Returns True only when exactly one obsolete row was updated.
         """
+        if not _fits_int4(memory_id):
+            return False
+
         async with self.db_adapter.session(user_id) as session:
             stmt = (
                 update(MemoryTable)
@@ -497,6 +591,7 @@ class PostgresMemoryRepository:
                 selectinload(MemoryTable.code_artifacts),
                 selectinload(MemoryTable.documents),
                 selectinload(MemoryTable.files),
+                selectinload(MemoryTable.skills),
             )
             .where(
                 MemoryTable.user_id == user_id,
@@ -540,6 +635,7 @@ class PostgresMemoryRepository:
                 selectinload(MemoryTable.code_artifacts),
                 selectinload(MemoryTable.documents),
                 selectinload(MemoryTable.files),
+                selectinload(MemoryTable.skills),
             )
             .where(
                 MemoryTable.user_id == user_id,
@@ -590,6 +686,7 @@ class PostgresMemoryRepository:
                 selectinload(MemoryTable.code_artifacts),
                 selectinload(MemoryTable.documents),
                 selectinload(MemoryTable.files),
+                selectinload(MemoryTable.skills),
             )
             .where(MemoryTable.user_id==user_id, MemoryTable.id!=memory_id, MemoryTable.is_obsolete.is_(False))
         )
@@ -631,6 +728,11 @@ class PostgresMemoryRepository:
             NotFoundError: If source or target memory not found
             IntegrityError: If link already exists
         """
+        if not _fits_int4(source_id):
+            raise NotFoundError(f"Source memory with id {source_id} not found")
+        if not _fits_int4(target_id):
+            raise NotFoundError(f"Target memory with id {target_id} not found")
+
         # Use a single session for the entire operation to avoid detached object issues
         async with self.db_adapter.session(user_id) as session:
             # Both endpoints must belong to this user. session.get() has no user
@@ -747,6 +849,9 @@ class PostgresMemoryRepository:
             True if link was removed, False if link didn't exist
         """
         from sqlalchemy import and_, delete, or_
+
+        if not _fits_int4(source_id, target_id):
+            return False
 
         async with self.db_adapter.session(user_id) as session:
             # Delete both directions (source→target and target→source)
@@ -1025,6 +1130,7 @@ class PostgresMemoryRepository:
                     selectinload(MemoryTable.code_artifacts),
                     selectinload(MemoryTable.documents),
                     selectinload(MemoryTable.files),
+                    selectinload(MemoryTable.skills),
                 )
                 .order_by(MemoryTable.id.asc())
                 .offset(offset)
@@ -1131,6 +1237,7 @@ class PostgresMemoryRepository:
                     selectinload(MemoryTable.code_artifacts),
                     selectinload(MemoryTable.documents),
                     selectinload(MemoryTable.files),
+                    selectinload(MemoryTable.skills),
                 )
                 .order_by(MemoryTable.id.asc())
                 .limit(limit)
