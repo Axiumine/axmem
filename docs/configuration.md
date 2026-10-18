@@ -840,15 +840,16 @@ REST listing does not emit those events.
 Some internal lookups check that an object exists or hydrate a response, and do not count as
 reads. These emit no `read`/`queried` events and do not touch `access_count`:
 
-- `GraphService.get_subgraph` (`GET /api/v1/graph/subgraph` and the MCP graph path)
+- `GraphService.get_subgraph` (`GET /api/v1/graph/subgraph`)
 - linking and unlinking memories, and linking and unlinking skills
 - `create_task` and plan auto-completion after a task transition or deletion
 
 This does not cover the legacy graph endpoints `GET /api/v1/graph` and
-`GET /api/v1/graph/memory/{memory_id}`. They still read through the public service methods, so
-with `ACTIVITY_TRACK_READS=true` they can emit `read`/`queried` events (for example
-`file.queried` from `GET /api/v1/graph`, and `memory.read` with an `access_count` bump for each
-memory returned by `GET /api/v1/graph/memory/{memory_id}`).
+`GET /api/v1/graph/memory/{memory_id}`, nor `GET /api/v1/memories/{memory_id}/links`. They still
+read through the public service methods, so with `ACTIVITY_TRACK_READS=true` they can emit
+`read`/`queried` events (for example `file.queried` from `GET /api/v1/graph`, and `memory.read`
+with an `access_count` bump for each memory returned by `GET /api/v1/graph/memory/{memory_id}`
+or `GET /api/v1/memories/{memory_id}/links`).
 
 ### SSE Streaming Configuration
 
