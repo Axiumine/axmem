@@ -4,6 +4,7 @@ from uuid import UUID
 
 import sqlite_vec
 from sqlalchemy import select, text
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.exc import IntegrityError
 
 from app.config.logging_config import logging
@@ -598,7 +599,7 @@ class SqliteSkillRepository:
             memory_id: Memory ID to link.
 
         Returns:
-            Dict confirming the link was created.
+            Dict confirming the link exists (created now or already present).
 
         Raises:
             NotFoundError: If skill or memory not found or not
@@ -628,21 +629,13 @@ class SqliteSkillRepository:
                     msg = f"Memory {memory_id} not found"
                     raise NotFoundError(msg)
 
-                # Check if link already exists (idempotent)
-                existing = await session.execute(
-                    select(memory_skill_association).where(
-                        memory_skill_association.c.skill_id == skill_id,
-                        memory_skill_association.c.memory_id == memory_id,
-                    ),
+                # Insert atomically so concurrent identical requests stay idempotent
+                await session.execute(
+                    sqlite_insert(memory_skill_association)
+                    .values(skill_id=skill_id, memory_id=memory_id)
+                    .on_conflict_do_nothing(),
                 )
-                if existing.first() is None:
-                    await session.execute(
-                        memory_skill_association.insert().values(
-                            skill_id=skill_id,
-                            memory_id=memory_id,
-                        ),
-                    )
-                    await session.commit()
+                await session.commit()
 
                 return {
                     "skill_id": skill_id,
@@ -728,7 +721,7 @@ class SqliteSkillRepository:
             file_id: File ID to link.
 
         Returns:
-            Dict confirming the link was created.
+            Dict confirming the link exists (created now or already present).
 
         Raises:
             NotFoundError: If skill or file not found or not
@@ -754,21 +747,13 @@ class SqliteSkillRepository:
                     msg = f"File {file_id} not found"
                     raise NotFoundError(msg)
 
-                # Check if link already exists (idempotent)
-                existing = await session.execute(
-                    select(skill_file_association).where(
-                        skill_file_association.c.skill_id == skill_id,
-                        skill_file_association.c.file_id == file_id,
-                    ),
+                # Insert atomically so concurrent identical requests stay idempotent
+                await session.execute(
+                    sqlite_insert(skill_file_association)
+                    .values(skill_id=skill_id, file_id=file_id)
+                    .on_conflict_do_nothing(),
                 )
-                if existing.first() is None:
-                    await session.execute(
-                        skill_file_association.insert().values(
-                            skill_id=skill_id,
-                            file_id=file_id,
-                        ),
-                    )
-                    await session.commit()
+                await session.commit()
 
                 return {
                     "skill_id": skill_id,
@@ -854,7 +839,7 @@ class SqliteSkillRepository:
             code_artifact_id: Code artifact ID to link.
 
         Returns:
-            Dict confirming the link was created.
+            Dict confirming the link exists (created now or already present).
 
         Raises:
             NotFoundError: If skill or code artifact not found or not
@@ -880,21 +865,13 @@ class SqliteSkillRepository:
                     msg = f"Code artifact {code_artifact_id} not found"
                     raise NotFoundError(msg)
 
-                # Check if link already exists (idempotent)
-                existing = await session.execute(
-                    select(skill_code_artifact_association).where(
-                        skill_code_artifact_association.c.skill_id == skill_id,
-                        skill_code_artifact_association.c.code_artifact_id == code_artifact_id,
-                    ),
+                # Insert atomically so concurrent identical requests stay idempotent
+                await session.execute(
+                    sqlite_insert(skill_code_artifact_association)
+                    .values(skill_id=skill_id, code_artifact_id=code_artifact_id)
+                    .on_conflict_do_nothing(),
                 )
-                if existing.first() is None:
-                    await session.execute(
-                        skill_code_artifact_association.insert().values(
-                            skill_id=skill_id,
-                            code_artifact_id=code_artifact_id,
-                        ),
-                    )
-                    await session.commit()
+                await session.commit()
 
                 return {
                     "skill_id": skill_id,
@@ -980,7 +957,7 @@ class SqliteSkillRepository:
             document_id: Document ID to link.
 
         Returns:
-            Dict confirming the link was created.
+            Dict confirming the link exists (created now or already present).
 
         Raises:
             NotFoundError: If skill or document not found or not
@@ -1006,21 +983,13 @@ class SqliteSkillRepository:
                     msg = f"Document {document_id} not found"
                     raise NotFoundError(msg)
 
-                # Check if link already exists (idempotent)
-                existing = await session.execute(
-                    select(skill_document_association).where(
-                        skill_document_association.c.skill_id == skill_id,
-                        skill_document_association.c.document_id == document_id,
-                    ),
+                # Insert atomically so concurrent identical requests stay idempotent
+                await session.execute(
+                    sqlite_insert(skill_document_association)
+                    .values(skill_id=skill_id, document_id=document_id)
+                    .on_conflict_do_nothing(),
                 )
-                if existing.first() is None:
-                    await session.execute(
-                        skill_document_association.insert().values(
-                            skill_id=skill_id,
-                            document_id=document_id,
-                        ),
-                    )
-                    await session.commit()
+                await session.commit()
 
                 return {
                     "skill_id": skill_id,

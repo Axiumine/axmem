@@ -8,8 +8,11 @@ from tests.integration.stubs.helpers import find_item, require_item
 
 
 def _add_link(links: dict[int, set[int]], entity_id: int, target_id: int) -> bool:
-    """Add target to the entity's link set (created on demand)."""
-    links.setdefault(entity_id, set()).add(target_id)
+    """Add target to the entity's link set (created on demand); False if already linked."""
+    targets = links.setdefault(entity_id, set())
+    if target_id in targets:
+        return False
+    targets.add(target_id)
     return True
 
 
