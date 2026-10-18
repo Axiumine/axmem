@@ -180,6 +180,8 @@ Create a new memory.
   "project_ids": [1],
   "code_artifact_ids": [],
   "document_ids": [],
+  "file_ids": [],
+  "skill_ids": [],
   "similar_memories": []
 }
 ```
