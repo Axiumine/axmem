@@ -1,0 +1,269 @@
+"""E2E tests for entity listing and obsolete-memory visibility with in-memory SQLite.
+
+Covers:
+- list_entities pagination over DISTINCT entities when filtering by project_ids
+- project_ids=[] behaving as "no project filter" (as memory listing does)
+- soft-deleted (obsolete) memories being hidden from the entity memory lookup,
+  the skill link reverse lookup and the project memory_count
+"""
+import pytest
+
+from app.config.settings import settings
+from app.models.user_models import UserCreate
+
+
+async def _default_user_id(sqlite_app):
+    """Resolve the default (no-auth) user the HTTP/MCP front doors act as."""
+    user = await sqlite_app.user_service.get_or_create_user(
+        UserCreate(
+            external_id=settings.DEFAULT_USER_ID,
+            name=settings.DEFAULT_USER_NAME,
+            email=settings.DEFAULT_USER_EMAIL,
+        ),
+    )
+    return user.id
+
+
+async def _create_project(http_client, name: str) -> int:
+    response = await http_client.post("/api/v1/projects", json={
+        "name": name,
+        "description": f"{name} description",
+        "project_type": "development",
+    })
+    assert response.status_code == 201, response.text
+    return response.json()["id"]
+
+
+async def _create_entity(http_client, name: str, project_ids: list[int]) -> int:
+    response = await http_client.post("/api/v1/entities", json={
+        "name": name,
+        "entity_type": "Organization",
+        "project_ids": project_ids,
+    })
+    assert response.status_code == 201, response.text
+    return response.json()["id"]
+
+
+async def _create_memory(http_client, title: str, project_ids: list[int] | None = None) -> int:
+    payload = {
+        "title": title,
+        "content": f"content of {title}",
+        "context": "obsolete visibility test",
+        "keywords": ["visibility"],
+        "tags": ["visibility"],
+        "importance": 7,
+    }
+    if project_ids:
+        payload["project_ids"] = project_ids
+    response = await http_client.post("/api/v1/memories", json=payload)
+    assert response.status_code == 201, response.text
+    return response.json()["id"]
+
+
+async def _call(mcp_client, tool_name: str, arguments: dict):
+    return await mcp_client.call_tool("execute_forgetful_tool", {
+        "tool_name": tool_name, "arguments": arguments,
+    })
+
+
+# ============================================================================
+# list_entities: project filter pagination and empty filter
+# ============================================================================
+
+@pytest.mark.asyncio
+async def test_list_entities_project_filter_paginates_distinct_entities(sqlite_app, http_client):
+    """Entities linked to several requested projects occupy one slot, not one per project."""
+    p1 = await _create_project(http_client, "page-p1")
+    p2 = await _create_project(http_client, "page-p2")
+    p3 = await _create_project(http_client, "page-p3")
+
+    # Created oldest -> newest; listing is newest first.
+    a = await _create_entity(http_client, "A both", [p1, p2])
+    b = await _create_entity(http_client, "B both", [p1, p2])
+    c = await _create_entity(http_client, "C all three", [p1, p2, p3])
+    await _create_entity(http_client, "D other project", [p3])
+    e = await _create_entity(http_client, "E one", [p2])
+
+    user_id = await _default_user_id(sqlite_app)
+    service = sqlite_app.entity_service
+
+    pages = []
+    offset = 0
+    total = None
+    while total is None or offset < total:
+        entities, total = await service.list_entities(
+            user_id, project_ids=[p1, p2], limit=2, offset=offset,
+        )
+        pages.append([entity.id for entity in entities])
+        offset += 2
+
+    assert total == 4
+    assert pages == [[e, c], [b, a]]
+
+
+@pytest.mark.asyncio
+async def test_list_entities_project_filter_single_page_returns_each_entity_once(
+    sqlite_app, http_client,
+):
+    """A page large enough for every entity returns each exactly once, sized to total."""
+    p1 = await _create_project(http_client, "once-p1")
+    p2 = await _create_project(http_client, "once-p2")
+    ids = [await _create_entity(http_client, f"Both {i}", [p1, p2]) for i in range(3)]
+
+    user_id = await _default_user_id(sqlite_app)
+    entities, total = await sqlite_app.entity_service.list_entities(
+        user_id, project_ids=[p1, p2], limit=3, offset=0,
+    )
+
+    assert total == 3
+    assert sorted(entity.id for entity in entities) == sorted(ids)
+
+
+@pytest.mark.asyncio
+async def test_list_entities_empty_project_ids_is_no_filter(http_client, mcp_client):
+    """project_ids=[] is treated like an omitted filter, as it is for memories."""
+    project_id = await _create_project(http_client, "empty-filter-project")
+    await _create_entity(http_client, "Linked entity", [project_id])
+    await _create_entity(http_client, "Unlinked entity", [])
+
+    unfiltered = await _call(mcp_client, "list_entities", {})
+    with_empty = await _call(mcp_client, "list_entities", {"project_ids": []})
+    filtered = await _call(mcp_client, "list_entities", {"project_ids": [project_id]})
+
+    assert unfiltered.data["total_count"] == 2
+    assert with_empty.data["total_count"] == 2
+    assert len(with_empty.data["entities"]) == 2
+    # A real filter still narrows the result
+    assert filtered.data["total_count"] == 1
+
+
+# ============================================================================
+# Obsolete memories are hidden from derived views
+# ============================================================================
+
+@pytest.mark.asyncio
+async def test_entity_memories_exclude_obsolete_memory(http_client):
+    """GET /entities/{id}/memories no longer lists a soft-deleted memory."""
+    entity_id = await _create_entity(http_client, "Obsolete entity", [])
+    kept = await _create_memory(http_client, "Kept memory")
+    doomed = await _create_memory(http_client, "Doomed memory")
+    for memory_id in (kept, doomed):
+        link = await http_client.post(
+            f"/api/v1/entities/{entity_id}/memories", json={"memory_id": memory_id},
+        )
+        assert link.status_code == 200, link.text
+
+    before = (await http_client.get(f"/api/v1/entities/{entity_id}/memories")).json()
+    assert sorted(before["memory_ids"]) == sorted([kept, doomed])
+
+    deleted = await http_client.request(
+        "DELETE", f"/api/v1/memories/{doomed}", json={"reason": "no longer true"},
+    )
+    assert deleted.status_code == 200, deleted.text
+
+    after = (await http_client.get(f"/api/v1/entities/{entity_id}/memories")).json()
+    assert after["memory_ids"] == [kept]
+    assert after["count"] == 1
+    assert [m["id"] for m in after["memories"]] == [kept]
+
+
+@pytest.mark.asyncio
+async def test_entity_memories_tool_excludes_obsolete_memory(mcp_client):
+    """The get_entity_memories MCP tool hides memories marked obsolete."""
+    entity = await _call(mcp_client, "create_entity", {
+        "name": "Tool entity", "entity_type": "Organization",
+    })
+    memory = await _call(mcp_client, "create_memory", {
+        "title": "Tool memory",
+        "content": "A memory that will be marked obsolete",
+        "context": "obsolete visibility test",
+        "keywords": ["visibility"],
+        "tags": ["visibility"],
+        "importance": 7,
+    })
+    entity_id = entity.data["id"]
+    memory_id = memory.data["id"]
+    await _call(mcp_client, "link_entity_to_memory", {
+        "entity_id": entity_id, "memory_id": memory_id,
+    })
+
+    before = await _call(mcp_client, "get_entity_memories", {"entity_id": entity_id})
+    assert before.data["memory_ids"] == [memory_id]
+
+    await _call(mcp_client, "mark_memory_obsolete", {
+        "memory_id": memory_id, "reason": "superseded",
+    })
+
+    after = await _call(mcp_client, "get_entity_memories", {"entity_id": entity_id})
+    assert after.data["memory_ids"] == []
+    assert after.data["count"] == 0
+    assert after.data["memories"] == []
+
+
+@pytest.mark.asyncio
+async def test_skill_links_exclude_obsolete_memory(mcp_client):
+    """The get_skill_links reverse lookup no longer reports a memory marked obsolete."""
+    skill = await _call(mcp_client, "create_skill", {
+        "name": "obsolete-links-skill",
+        "description": "Skill used to check obsolete memory visibility",
+        "content": "# Content",
+        "tags": [],
+        "importance": 7,
+    })
+    skill_id = skill.data["id"]
+
+    memory_ids = []
+    for title in ("Kept skill memory", "Doomed skill memory"):
+        memory = await _call(mcp_client, "create_memory", {
+            "title": title,
+            "content": f"content of {title}",
+            "context": "obsolete visibility test",
+            "keywords": ["visibility"],
+            "tags": ["visibility"],
+            "importance": 7,
+        })
+        memory_ids.append(memory.data["id"])
+        await _call(mcp_client, "link_skill_to_memory", {
+            "skill_id": skill_id, "memory_id": memory.data["id"],
+        })
+    kept, doomed = memory_ids
+
+    before = await _call(mcp_client, "get_skill_links", {"skill_id": skill_id})
+    assert sorted(before.data["memory_ids"]) == sorted([kept, doomed])
+
+    await _call(mcp_client, "mark_memory_obsolete", {
+        "memory_id": doomed, "reason": "superseded",
+    })
+
+    after = await _call(mcp_client, "get_skill_links", {"skill_id": skill_id})
+    assert after.data["memory_ids"] == [kept]
+    assert after.data["total_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_project_memory_count_excludes_obsolete_memories(http_client):
+    """memory_count on project list and detail counts only non-obsolete memories."""
+    project_id = await _create_project(http_client, "count-project")
+    other_project_id = await _create_project(http_client, "count-other-project")
+    kept = await _create_memory(http_client, "Counted memory", [project_id])
+    doomed = await _create_memory(http_client, "Doomed counted memory", [project_id, other_project_id])
+
+    async def counts() -> dict[int, tuple[int, int]]:
+        listing = (await http_client.get("/api/v1/projects")).json()["projects"]
+        by_id = {p["id"]: p["memory_count"] for p in listing}
+        detail = {}
+        for pid in (project_id, other_project_id):
+            detail[pid] = (await http_client.get(f"/api/v1/projects/{pid}")).json()["memory_count"]
+        return {pid: (by_id[pid], detail[pid]) for pid in (project_id, other_project_id)}
+
+    assert await counts() == {project_id: (2, 2), other_project_id: (1, 1)}
+
+    deleted = await http_client.request(
+        "DELETE", f"/api/v1/memories/{doomed}", json={"reason": "obsolete"},
+    )
+    assert deleted.status_code == 200, deleted.text
+
+    listing = (await http_client.get("/api/v1/memories", params={"project_ids": str(project_id)})).json()
+    assert [m["id"] for m in listing["memories"]] == [kept]
+
+    assert await counts() == {project_id: (1, 1), other_project_id: (0, 0)}
