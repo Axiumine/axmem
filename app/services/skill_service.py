@@ -6,6 +6,7 @@ This service implements functionality for managing skills:
     - Import/export in Agent Skills markdown format
     - Project association
 """
+import json
 import re
 from typing import TYPE_CHECKING
 from uuid import UUID
@@ -40,33 +41,162 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Frontmatter is a handful of short fields; the cap only bounds hostile input.
+_FRONTMATTER_MAX_CHARS = 16_384
+
+_FRONTMATTER_OPEN_RE = re.compile(r"---[ \t]*\r?\n")
+_FRONTMATTER_CLOSE_RE = re.compile(r"^---[ \t]*(?:\r?\n|\Z)", re.MULTILINE)
+# YAML line breaks only; str.splitlines() also splits on U+2028, U+2029, U+0085, ...
+_YAML_LINE_BREAK_RE = re.compile(r"\r\n|\r|\n")
+_YAML_COMMENT_RE = re.compile(r"\s#")
+# One allowed tool: parenthesised patterns such as Bash(git commit:*) stay whole.
+_ALLOWED_TOOL_RE = re.compile(r"(?:\([^)]*\)|[^\s,])+")
+
+
+class _FrontmatterLoader(yaml.SafeLoader):
+    """SafeLoader for untrusted SKILL.md frontmatter.
+
+    Aliases are rejected: they turn a few hundred bytes into billions of nodes
+    once the value is serialised. ISO dates stay text, because the Agent Skills
+    format is string based and JSON columns cannot store date objects.
+    """
+
+    def compose_node(
+        self,
+        parent: yaml.Node | None,
+        index: yaml.Node | int | None,
+    ) -> yaml.Node | None:
+        if self.check_event(yaml.AliasEvent):
+            raise yaml.composer.ComposerError(
+                None,
+                None,
+                "aliases are not supported in skill frontmatter",
+                self.peek_event().start_mark,
+            )
+        return super().compose_node(parent, index)
+
+
+_FrontmatterLoader.yaml_implicit_resolvers = {
+    first_char: [
+        (tag, pattern)
+        for tag, pattern in resolvers
+        if tag != "tag:yaml.org,2002:timestamp"
+    ]
+    for first_char, resolvers in yaml.SafeLoader.yaml_implicit_resolvers.items()
+}
+
 
 def _quote_unquoted_frontmatter_scalars(raw: str) -> str:
-    """Quote scalar frontmatter values that contain unescaped colons."""
+    """Quote scalar frontmatter values that contain unescaped colons.
+
+    Trailing ``# comments`` are kept out of the quoted value, and the text is
+    only split on YAML line breaks so other characters are never altered.
+    """
     quoted_lines: list[str] = []
-    for line in raw.splitlines():
+    changed = False
+    for line in _YAML_LINE_BREAK_RE.split(raw):
         match = re.match(r"^([A-Za-z0-9_-]+):\s+(.*)$", line)
         if not match:
             quoted_lines.append(line)
             continue
 
         key, value = match.group(1), match.group(2)
-        if not value:
+        if not value or value.startswith("#"):
             quoted_lines.append(line)
             continue
 
-        stripped = value.lstrip()
-        if stripped.startswith(("[", "{", "|", ">", '"', "'")):
+        comment_match = _YAML_COMMENT_RE.search(value)
+        comment_start = comment_match.start() if comment_match else len(value)
+        scalar, comment = value[:comment_start].rstrip(), value[comment_start:]
+
+        if scalar.startswith(("[", "{", "|", ">", '"', "'")):
             quoted_lines.append(line)
             continue
 
-        if ":" in value:
-            escaped = value.replace("\\", "\\\\").replace('"', '\\"')
-            quoted_lines.append(f'{key}: "{escaped}"')
+        if ":" in scalar:
+            escaped = scalar.replace("\\", "\\\\").replace('"', '\\"')
+            quoted_lines.append(f'{key}: "{escaped}"{comment}')
+            changed = True
         else:
             quoted_lines.append(line)
 
-    return "\n".join(quoted_lines)
+    return "\n".join(quoted_lines) if changed else raw
+
+
+def _split_frontmatter(skill_md: str) -> tuple[str, str]:
+    """Split SKILL.md text into raw YAML frontmatter and markdown body.
+
+    The delimiters are lines made only of ``---``, so a ``---`` inside a value
+    or a horizontal rule in the body never ends the frontmatter. Only the line
+    breaks that separate the frontmatter from the body are removed from the body.
+    """
+    text = skill_md.lstrip("\ufeff").lstrip()
+    opening = _FRONTMATTER_OPEN_RE.match(text)
+    closing = _FRONTMATTER_CLOSE_RE.search(text, opening.end()) if opening else None
+    if opening is None or closing is None:
+        raise ValueError(
+            "Invalid skill markdown: expected YAML frontmatter between --- delimiters",
+        )
+
+    body = text[closing.end():]
+    body = re.sub(r"\A\r?\n", "", body, count=1)
+    body = re.sub(r"\r?\n\Z", "", body, count=1)
+    if not body.strip():
+        body = ""
+    return text[opening.end():closing.start()].rstrip(" \t\r\n"), body
+
+
+def _load_frontmatter(raw: str) -> object:
+    loader = _FrontmatterLoader(raw)
+    try:
+        return loader.get_single_data()
+    finally:
+        loader.dispose()
+
+
+def _parse_frontmatter(raw: str) -> object:
+    """Parse raw frontmatter, raising ValueError when it is not valid YAML.
+
+    Valid YAML is parsed as written. Only when that fails are unquoted colons
+    in scalar values quoted, to accept hand-written files such as
+    ``description: Use when X. Keywords: a, b``.
+    """
+    if len(raw) > _FRONTMATTER_MAX_CHARS:
+        raise ValueError(
+            "Invalid YAML frontmatter: frontmatter is too large "
+            f"(max {_FRONTMATTER_MAX_CHARS} characters)",
+        )
+
+    try:
+        return _load_frontmatter(raw)
+    except (yaml.YAMLError, RecursionError) as exc:
+        error = exc
+
+    quoted = _quote_unquoted_frontmatter_scalars(raw)
+    if quoted != raw:
+        try:
+            return _load_frontmatter(quoted)
+        except (yaml.YAMLError, RecursionError) as exc:
+            error = exc
+
+    detail = "nested too deeply" if isinstance(error, RecursionError) else str(error)
+    raise ValueError(f"Invalid YAML frontmatter: {detail}") from error
+
+
+def _ensure_json_compatible_metadata(metadata: object) -> None:
+    """Reject metadata the JSON column cannot store.
+
+    Covers YAML-only types such as ``!!set`` and non-finite floats (``.nan``,
+    ``.inf``): the standard encoder would emit ``NaN``/``Infinity``, which is
+    not valid JSON and which a PostgreSQL JSONB column refuses.
+    """
+    try:
+        json.dumps(metadata, allow_nan=False)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            "Invalid YAML frontmatter: metadata must contain only strings, numbers, "
+            "booleans, null, lists and mappings",
+        ) from exc
 
 
 class SkillService:
@@ -510,24 +640,15 @@ class SkillService:
             Created Skill
 
         Raises:
-            ValueError: If frontmatter is missing or malformed
+            ValueError: If frontmatter is missing, malformed or too large
         """
         logger.info(
             "importing skill from markdown",
             extra={"user_id": str(user_id)},
         )
 
-        # Parse YAML frontmatter between --- delimiters
-        parts = skill_md_content.split("---", 2)
-        if len(parts) < 3:
-            raise ValueError(
-                "Invalid skill markdown: expected YAML frontmatter between --- delimiters",
-            )
-
-        frontmatter_raw = parts[1].strip()
-        body = parts[2].strip()
-
-        frontmatter = yaml.safe_load(_quote_unquoted_frontmatter_scalars(frontmatter_raw))
+        frontmatter_raw, body = _split_frontmatter(skill_md_content)
+        frontmatter = _parse_frontmatter(frontmatter_raw)
         if not isinstance(frontmatter, dict):
             raise ValueError("Invalid YAML frontmatter: expected a mapping")
 
@@ -540,12 +661,17 @@ class SkillService:
 
         # Map allowed-tools (hyphenated standard) to allowed_tools (underscored)
         allowed_tools = frontmatter.get("allowed-tools")
+        if isinstance(allowed_tools, str):
+            # Agent Skills writes allowed-tools as a space separated string
+            allowed_tools = _ALLOWED_TOOL_RE.findall(allowed_tools)
         tags = frontmatter.get("tags", [])
 
         if not name:
             raise ValueError("Skill frontmatter must include 'name'")
         if not description:
             raise ValueError("Skill frontmatter must include 'description'")
+        if metadata is not None:
+            _ensure_json_compatible_metadata(metadata)
 
         skill_data = SkillCreate(
             name=name,
