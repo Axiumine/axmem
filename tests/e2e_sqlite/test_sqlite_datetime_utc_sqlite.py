@@ -141,6 +141,12 @@ class TestTimestampsAreAwareUtc:
 class TestActivityWindowHonoursOffsets:
     """GET /api/v1/activity since/until compare instants, whatever the offset."""
 
+    @pytest.fixture(autouse=True)
+    def keep_events_forever(self, monkeypatch):
+        # The fixed 2026-01-01 event must survive the lazy retention cleanup of a
+        # configured ACTIVITY_RETENTION_DAYS (for example from a local env file)
+        monkeypatch.setattr(settings, "ACTIVITY_RETENTION_DAYS", None)
+
     @staticmethod
     async def _seed(app):
         user = await app.user_service.get_or_create_user(
