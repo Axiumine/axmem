@@ -150,8 +150,99 @@ if settings.PLANNING_ENABLED:
 meta_tools.register(mcp)
 
 
+def _print_counts(total, skill_total):
+    print(f"  Memories to process: {total}")
+    if skill_total:
+        print(f"  Skills to process: {skill_total}")
+
+
+async def _count_without_migrating(embeddings_adapter):
+    """Count memories and skills as stored, for a dry run that must leave the database alone.
+
+    Unlike init_db(), which runs Alembic migrations and creates the database file and the
+    vector tables, this only reads. A database that does not exist yet holds nothing.
+    """
+    from app.bootstrap import (
+        create_db_adapter,
+        create_repositories,
+        create_skill_repository,
+    )
+
+    if settings.DATABASE == "SQLite" and (
+        settings.SQLITE_MEMORY or not Path(settings.SQLITE_PATH).exists()
+    ):
+        return 0, 0
+
+    db_adapter = create_db_adapter()
+    try:
+        repos = create_repositories(db_adapter, embeddings_adapter, None)
+        total = await repos["memory"].count_all_memories()
+        try:
+            skill_total = await create_skill_repository(
+                db_adapter, embeddings_adapter,
+            ).count_all_skills()
+        except Exception:  # noqa: BLE001
+            # A database from before the skills feature has no skills table, and a preview
+            # must not migrate it. It has no skills to count either.
+            skill_total = 0
+        return total, skill_total
+    finally:
+        await db_adapter.dispose()
+
+
+def _tolerate_unencodable_output():
+    """Escape, instead of failing on, characters the console codec cannot encode.
+
+    Provider errors, paths and model names can hold any text. A legacy codec (cp1252 on a
+    redirected Windows pipe, or PYTHONIOENCODING) would otherwise raise UnicodeEncodeError from
+    print(), in the middle of the recovery below.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(errors="backslashreplace")
+
+
+def _install_stop_handlers(loop, on_stop, signals=(signal.SIGINT, signal.SIGTERM)):
+    """Call on_stop on the event loop when one of the signals arrives; return an undo callable.
+
+    A plain signal.signal handler runs on the main thread while the loop is running, where it
+    cannot drive that loop. loop.add_signal_handler hands the signal to the loop instead; it is
+    not implemented on Windows, where signal.signal plus call_soon_threadsafe does the same.
+    """
+    previous = {sig: signal.getsignal(sig) for sig in signals}
+    for sig in signals:
+        try:
+            loop.add_signal_handler(sig, on_stop)
+        except NotImplementedError:
+            signal.signal(sig, lambda _signum, _frame: loop.call_soon_threadsafe(on_stop))
+
+    def restore():
+        for sig, handler in previous.items():
+            try:
+                loop.remove_signal_handler(sig)
+            except NotImplementedError:
+                pass
+            if handler is not None:
+                signal.signal(sig, handler)
+
+    return restore
+
+
+async def _restore_backup(db_adapter, backup_service, backup_path):
+    """Put the database back as it was before a failed or interrupted re-embed."""
+    # Release SQLite file handles before replacing database/WAL files.
+    await db_adapter.dispose()
+    if backup_path:
+        print("\n  Restoring from backup...")
+        await backup_service.restore_backup(backup_path)
+        print(f"  Restored: {backup_path}")
+        print("  Database returned to pre-migration state.")
+
+
 async def _run_reembed(args):
     """Run the re-embedding workflow"""
+    _tolerate_unencodable_output()
     from app.config.logging_config import configure_logging, shutdown_logging
     configure_logging(log_level="INFO", log_format="console")
     atexit.register(shutdown_logging)
@@ -160,6 +251,7 @@ async def _run_reembed(args):
         create_backup_service,
         create_db_adapter,
         create_repositories,
+        create_skill_repository,
         get_embedding_adapter,
     )
     from app.services.re_embedding_service import ReEmbeddingService
@@ -177,6 +269,14 @@ async def _run_reembed(args):
         print(f"  Database: PostgreSQL ({settings.POSTGRES_HOST}:{settings.PGPORT}/{settings.POSTGRES_DB})")
     print(f"  Batch size: {args.batch_size}")
 
+    if args.dry_run:
+        total, skill_total = await _count_without_migrating(embeddings_adapter)
+        _print_counts(total, skill_total)
+        skills_note = f" and {skill_total} skills" if skill_total else ""
+        print(f"\n[DRY RUN] Would re-embed {total} memories{skills_note} with the above configuration.")
+        print("  No changes were made.")
+        return
+
     # Initialize database
     db_adapter = create_db_adapter()
 
@@ -186,22 +286,29 @@ async def _run_reembed(args):
 
     await db_adapter.init_db()
 
-    # Create memory repository (reranker not needed for re-embedding)
+    # Create repositories (reranker not needed for re-embedding). Skills share the embedding
+    # provider and dimensions, so they are migrated even when the skills feature is switched off.
     repos = create_repositories(db_adapter, embeddings_adapter, None)
     memory_repository = repos["memory"]
+    skill_repository = create_skill_repository(db_adapter, embeddings_adapter)
 
-    # Count memories for dry run / estimation
     total = await memory_repository.count_all_memories()
-    print(f"  Memories to process: {total}")
+    skill_total = await skill_repository.count_all_skills()
+    _print_counts(total, skill_total)
 
-    if args.dry_run:
-        print(f"\n[DRY RUN] Would re-embed {total} memories with the above configuration.")
-        print("  No changes were made.")
-        await db_adapter.dispose()
-        return
+    service = ReEmbeddingService(
+        memory_repository=memory_repository,
+        embedding_adapter=embeddings_adapter,
+        batch_size=args.batch_size,
+        skill_repository=skill_repository,
+    )
 
-    if total == 0:
-        print("\n  No memories to re-embed. Done.")
+    if total == 0 and skill_total == 0:
+        # Nothing to re-embed or lose, so no backup is needed. The vector storage must still
+        # match the configured dimensions though, and init_db() never resizes existing tables.
+        print("\n  No memories to re-embed. Updating vector schema only...")
+        await service.re_embed_all()
+        print(f"  Vector storage uses {settings.EMBEDDING_DIMENSIONS} dimensions. Done.")
         await db_adapter.dispose()
         return
 
@@ -214,35 +321,28 @@ async def _run_reembed(args):
         backup_path = await backup_service.create_backup()
         print(f"  Backup saved: {backup_path}")
 
-    # Set up signal handling for graceful restore
-    restore_triggered = False
+    # A signal cancels this task and the restore runs from the coroutine below: a signal
+    # handler cannot run the restore on the event loop that is currently running.
+    run_task = asyncio.current_task()
+    interrupted = False
+    restoring = False  # once a restore has begun, later signals must not cut it short
 
-    def signal_handler(signum, frame):
-        nonlocal restore_triggered
-        if restore_triggered:
-            return
-        restore_triggered = True
-        print("\n\nInterrupted! Restoring from backup...")
-        if backup_path:
-            asyncio.get_event_loop().run_until_complete(
-                backup_service.restore_backup(backup_path),
-            )
-            print(f"  Restored: {backup_path}")
-        sys.exit(1)
+    def stop_requested():
+        nonlocal interrupted, restoring
+        if not restoring:
+            interrupted = restoring = True
+            run_task.cancel()
 
-    original_sigint = signal.getsignal(signal.SIGINT)
-    original_sigterm = signal.getsignal(signal.SIGTERM)
-    signal.signal(signal.SIGINT, signal_handler)
-    signal.signal(signal.SIGTERM, signal_handler)
+    restore_signal_handlers = _install_stop_handlers(asyncio.get_running_loop(), stop_requested)
 
     try:
         # Reset schema
         print("\n[3/5] Updating vector schema...")
-        await memory_repository.reset_embedding_storage()
+        await service.reset_vector_storage()
         if settings.DATABASE == "SQLite":
-            print(f"  Recreated vec_memories table with {settings.EMBEDDING_DIMENSIONS} dimensions")
+            print(f"  Recreated vec_memories and vec_skills tables with {settings.EMBEDDING_DIMENSIONS} dimensions")
         else:
-            print(f"  Altered embedding column to vector({settings.EMBEDDING_DIMENSIONS})")
+            print(f"  Altered embedding columns to vector({settings.EMBEDDING_DIMENSIONS})")
 
         # Re-embed
         print("\n[4/5] Re-embedding memories...")
@@ -253,13 +353,7 @@ async def _run_reembed(args):
             bar = "#" * bar_filled + "-" * (25 - bar_filled)
             print(f"\r  [{bar}] {processed}/{total_count} memories ({pct}%)", end="", flush=True)
 
-        service = ReEmbeddingService(
-            memory_repository=memory_repository,
-            embedding_adapter=embeddings_adapter,
-            batch_size=args.batch_size,
-        )
-
-        result = await service.re_embed_all(progress_callback=progress)
+        result = await service.re_embed_all(progress_callback=progress, reset_storage=False)
         print()  # newline after progress bar
 
         # Validate
@@ -270,37 +364,41 @@ async def _run_reembed(args):
                   f"{'OK' if result.validation.count_ok else 'FAILED'}")
             print(f"  Dimension check: {'OK' if result.validation.dimensions_ok else 'FAILED'}")
             print(f"  Search check: {'OK' if result.validation.search_ok else 'FAILED'}")
+            if result.total_skills:
+                print(f"  Skills: {result.skills_processed}/{result.total_skills} re-embedded")
 
             if not result.validation.all_passed:
                 print("\n  Validation FAILED!")
-                # Release SQLite file handles before replacing database/WAL files.
-                await db_adapter.dispose()
-                if backup_path:
-                    print("  Restoring from backup...")
-                    await backup_service.restore_backup(backup_path)
-                    print(f"  Restored: {backup_path}")
-                    print("  Database returned to pre-migration state.")
+                restoring = True
+                await _restore_backup(db_adapter, backup_service, backup_path)
                 sys.exit(1)
 
-        print(f"\n  Successfully re-embedded {result.total_processed} memories")
+        skills_note = f" and {result.skills_processed} skills" if result.total_skills else ""
+        print(f"\n  Successfully re-embedded {result.total_processed} memories{skills_note}")
         if backup_path:
             print(f"  Backup retained at: {backup_path}")
             print("  (Delete manually when satisfied with results)")
 
+    except asyncio.CancelledError:
+        # Stopped by a signal (or cancelled from outside) with the vector storage half rebuilt.
+        restoring = True
+        if interrupted:
+            run_task.uncancel()  # handled here: restore, then exit instead of propagating
+            print("\n\nInterrupted!")
+        await _restore_backup(db_adapter, backup_service, backup_path)
+        if interrupted:
+            sys.exit(1)
+        raise
     except Exception as e:
-        print(f"\n  ERROR: {e}")
-        # Release SQLite file handles before replacing database/WAL files.
-        await db_adapter.dispose()
-        if backup_path:
-            print("\n  Restoring from backup...")
-            await backup_service.restore_backup(backup_path)
-            print(f"  Restored: {backup_path}")
-            print("  Database returned to pre-migration state.")
+        restoring = True
+        try:
+            print(f"\n  ERROR: {e}")
+        finally:
+            # Report first, but a report that fails (closed pipe, console) must not skip the restore.
+            await _restore_backup(db_adapter, backup_service, backup_path)
         raise
     finally:
-        # Restore original signal handlers
-        signal.signal(signal.SIGINT, original_sigint)
-        signal.signal(signal.SIGTERM, original_sigterm)
+        restore_signal_handlers()
 
     await db_adapter.dispose()
 
