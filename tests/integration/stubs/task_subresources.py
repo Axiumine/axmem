@@ -66,6 +66,12 @@ class TaskSubresourceMixin:
     async def delete_criterion(self, user_id: UUID, criterion_id: int) -> bool:
         return remove_item(self._criteria, user_id, criterion_id)
 
+    async def get_criterion_by_id(
+        self, user_id: UUID, criterion_id: int,
+    ) -> Criterion | None:
+        criterion = find_item(self._criteria, user_id, criterion_id)
+        return criterion.model_copy() if criterion else None  # a snapshot, like a database read
+
     async def get_criteria_for_task(
         self, user_id: UUID, task_id: int,
     ) -> list[Criterion]:

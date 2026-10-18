@@ -1,3 +1,4 @@
+import asyncio
 from typing import TYPE_CHECKING
 from uuid import UUID
 
@@ -60,6 +61,9 @@ class TaskService:
         self.task_repo = task_repo
         self.plan_service = plan_service
         self._event_bus = event_bus
+        # Orders dependency writers inside this process; the repository re-checks the
+        # graph in the inserting transaction to cover other processes.
+        self._dependency_lock = asyncio.Lock()
         logger.info("Task service initialised")
 
     async def _emit_event(
@@ -86,6 +90,26 @@ class TaskService:
         )
         await self._event_bus.emit(event)
 
+    async def _emit_task_changed(self, user_id: UUID, task_id: int, changes: dict) -> None:
+        """Announce a criterion/dependency change as a TASK update with the refreshed snapshot.
+
+        criteria_met, criteria_total and blocked all derive from these rows, so activity and
+        SSE consumers need the new task state, not only the sibling row that changed.
+        """
+        if self._event_bus is None:
+            return
+        task = await self.task_repo.get_task_by_id(user_id=user_id, task_id=task_id)
+        if task is None:
+            return
+        await self._emit_event(
+            user_id=user_id,
+            entity_type=EntityType.TASK,
+            entity_id=task_id,
+            action=ActionType.UPDATED,
+            snapshot=task.model_dump(mode="json"),
+            changes=changes,
+        )
+
     async def create_task(self, user_id: UUID, task_data: TaskCreate) -> Task:
         """Create task with optional inline criteria and dependencies."""
         logger.info("creating task", extra={"user_id": str(user_id), "plan_id": task_data.plan_id, "title": task_data.title})
@@ -101,25 +125,42 @@ class TaskService:
                 f"Cannot add tasks to plan in {plan_status.value} status",
             )
 
+        # Validate every dependency before anything is persisted so a bad id cannot
+        # leave a half-built task behind. A brand new task cannot be part of a cycle.
+        dependency_ids = task_data.dependency_ids or []
+        # Single pass: the list is caller supplied and unbounded, so a per-item count()
+        # would turn a large request into quadratic CPU time on the event loop.
+        seen: set[int] = set()
+        repeated: set[int] = set()
+        for dep_id in dependency_ids:
+            if dep_id in seen:
+                repeated.add(dep_id)
+            seen.add(dep_id)
+        duplicates = sorted(repeated)
+        if duplicates:
+            raise ValueError(f"dependency_ids lists the same task more than once: {duplicates}")
+        for dep_id in dependency_ids:
+            await self._validate_same_plan(user_id, dep_id, task_data.plan_id)
+
         # Create the task (without criteria/deps - repo handles basic creation)
         task_data = apply_provenance_defaults(task_data)
         task = await self.task_repo.create_task(user_id=user_id, task_data=task_data)
 
-        # Create inline criteria
-        if task_data.criteria:
-            for criterion_data in task_data.criteria:
+        try:
+            # Create inline criteria
+            for criterion_data in task_data.criteria or []:
                 await self.task_repo.create_criterion(
                     user_id=user_id, task_id=task.id, criterion_data=criterion_data,
                 )
 
-        # Add dependencies with cycle detection
-        if task_data.dependency_ids:
-            for dep_id in task_data.dependency_ids:
-                await self._validate_same_plan(user_id, task.id, dep_id, task.plan_id)
-                await self._validate_no_cycle(user_id, task.id, dep_id)
+            for dep_id in dependency_ids:
                 await self.task_repo.add_dependency(
                     user_id=user_id, task_id=task.id, depends_on_task_id=dep_id,
                 )
+        except BaseException:
+            # BaseException so a cancelled request (client disconnect) cannot orphan the task.
+            await self._discard_partial_task(user_id, task.id)
+            raise
 
         # Re-fetch to get full task with criteria and deps
         task = await self.task_repo.get_task_by_id(user_id=user_id, task_id=task.id)
@@ -261,8 +302,12 @@ class TaskService:
                 f"Valid transitions: {[s.value for s in valid_targets]}",
             )
 
-        # If → doing: validate all dependencies are done
-        if new_state == TaskState.DOING:
+        # A finished plan only takes back work by reopening one of its finished tasks
+        reopens_plan = await self._check_plan_accepts_task_change(user_id, task.plan_id, current_state)
+
+        # If → doing or done: validate all dependencies are done. Re-checked on done because
+        # an edge can be added, or a prerequisite reopened, while the task is in progress.
+        if new_state in (TaskState.DOING, TaskState.DONE):
             await self._validate_dependencies_met(user_id, task)
 
         # If → done: validate all criteria are met (tasks with zero criteria CAN be marked done)
@@ -294,6 +339,9 @@ class TaskService:
         # If task → done/cancelled: check plan auto-completion
         if new_state in (TaskState.DONE, TaskState.CANCELLED):
             await self._check_plan_auto_completion(user_id, task.plan_id)
+
+        if reopens_plan:
+            await self._reopen_plan(user_id, task.plan_id)
 
         return updated
 
@@ -330,6 +378,8 @@ class TaskService:
             raise InvalidStateTransitionError(
                 f"Cannot claim task in {current_state.value} state. Must be todo or waiting.",
             )
+
+        await self._check_plan_accepts_task_change(user_id, task.plan_id, current_state)
 
         # Validate dependencies met
         await self._validate_dependencies_met(user_id, task)
@@ -373,21 +423,46 @@ class TaskService:
             user_id=user_id, task_id=task_id, criterion_data=criterion_data,
         )
         logger.info("criterion added", extra={"criterion_id": criterion.id, "task_id": task_id})
+        await self._emit_task_changed(
+            user_id, task_id, {"criterion": {"old": None, "new": criterion.model_dump(mode="json")}},
+        )
         return criterion
 
     async def update_criterion(
         self, user_id: UUID, criterion_id: int, criterion_data: CriterionUpdate,
     ) -> Criterion:
+        existing = await self._get_editable_criterion(user_id, criterion_id)
+        if existing is None:
+            raise NotFoundError(f"Criterion with id {criterion_id} not found")
+
         criterion = await self.task_repo.update_criterion(
             user_id=user_id, criterion_id=criterion_id, criterion_data=criterion_data,
         )
         logger.info("criterion updated", extra={"criterion_id": criterion_id})
+        if (criterion.description, criterion.met) != (existing.description, existing.met):
+            await self._emit_task_changed(
+                user_id,
+                existing.task_id,
+                {"criterion": {
+                    "old": existing.model_dump(mode="json"),
+                    "new": criterion.model_dump(mode="json"),
+                }},
+            )
         return criterion
 
     async def delete_criterion(self, user_id: UUID, criterion_id: int) -> bool:
+        existing = await self._get_editable_criterion(user_id, criterion_id)
+        if existing is None:
+            return False
+
         success = await self.task_repo.delete_criterion(user_id=user_id, criterion_id=criterion_id)
         if success:
             logger.info("criterion deleted", extra={"criterion_id": criterion_id})
+            await self._emit_task_changed(
+                user_id,
+                existing.task_id,
+                {"criterion": {"old": existing.model_dump(mode="json"), "new": None}},
+            )
         return success
 
     # ---- Dependencies ----
@@ -404,16 +479,26 @@ class TaskService:
         if not dep_task:
             raise NotFoundError(f"Task with id {depends_on_task_id} not found")
 
+        if TaskState(task.state) == TaskState.DONE:
+            raise InvalidStateTransitionError("Cannot add dependencies to a completed task")
+
         # Validate same plan
-        await self._validate_same_plan(user_id, task_id, depends_on_task_id, task.plan_id)
+        await self._validate_same_plan(user_id, depends_on_task_id, task.plan_id)
 
-        # Cycle detection
-        await self._validate_no_cycle(user_id, task_id, depends_on_task_id)
+        if depends_on_task_id in task.dependency_ids:
+            raise ConflictError(f"Task {task_id} already depends on task {depends_on_task_id}")
 
-        dep = await self.task_repo.add_dependency(
-            user_id=user_id, task_id=task_id, depends_on_task_id=depends_on_task_id,
-        )
+        # Cycle detection and insert must not interleave with another writer: two
+        # opposite edges that each pass the check would otherwise both be stored.
+        async with self._dependency_lock:
+            await self._validate_no_cycle(user_id, task_id, depends_on_task_id)
+            dep = await self.task_repo.add_dependency(
+                user_id=user_id, task_id=task_id, depends_on_task_id=depends_on_task_id,
+            )
         logger.info("dependency added", extra={"task_id": task_id, "depends_on": depends_on_task_id})
+        await self._emit_task_changed(
+            user_id, task_id, {"dependency": {"old": None, "new": depends_on_task_id}},
+        )
         return dep
 
     async def remove_dependency(
@@ -424,9 +509,25 @@ class TaskService:
         )
         if success:
             logger.info("dependency removed", extra={"task_id": task_id, "depends_on": depends_on_task_id})
+            await self._emit_task_changed(
+                user_id, task_id, {"dependency": {"old": depends_on_task_id, "new": None}},
+            )
         return success
 
     # ---- Private Helpers ----
+
+    async def _get_editable_criterion(self, user_id: UUID, criterion_id: int) -> Criterion | None:
+        """Return the criterion, or None if missing; refuse if its task is already DONE.
+
+        Mirrors add_criterion: a completed task keeps the criteria it was completed with.
+        """
+        criterion = await self.task_repo.get_criterion_by_id(user_id=user_id, criterion_id=criterion_id)
+        if criterion is None:
+            return None
+        task = await self.task_repo.get_task_by_id(user_id=user_id, task_id=criterion.task_id)
+        if task is not None and TaskState(task.state) == TaskState.DONE:
+            raise InvalidStateTransitionError("Cannot modify criteria of a completed task")
+        return criterion
 
     async def _validate_dependencies_met(self, user_id: UUID, task: Task) -> None:
         """Check all dependencies are in done state."""
@@ -480,8 +581,15 @@ class TaskService:
                     )
                 queue.append(dep_id)
 
+    async def _discard_partial_task(self, user_id: UUID, task_id: int) -> None:
+        """Remove a task whose creation failed part-way (criteria and edges cascade)."""
+        try:
+            await self.task_repo.delete_task(user_id=user_id, task_id=task_id)
+        except Exception:
+            logger.exception("failed to roll back partially created task", extra={"task_id": task_id})
+
     async def _validate_same_plan(
-        self, user_id: UUID, task_id: int, dep_task_id: int, expected_plan_id: int,
+        self, user_id: UUID, dep_task_id: int, expected_plan_id: int,
     ) -> None:
         """Validate that the dependency task belongs to the same plan."""
         dep_task = await self.task_repo.get_task_by_id(user_id=user_id, task_id=dep_task_id)
@@ -492,6 +600,43 @@ class TaskService:
                 f"Task {dep_task_id} belongs to plan {dep_task.plan_id}, "
                 f"not plan {expected_plan_id}. Dependencies must be within the same plan.",
             )
+
+    async def _check_plan_accepts_task_change(
+        self, user_id: UUID, plan_id: int, current_state: TaskState,
+    ) -> bool:
+        """Refuse task state changes in archived or completed plans, like create_task does.
+
+        A completed plan still accepts the reopening of one of its finished (done or
+        cancelled) tasks; the return value is True when that happens and the caller must
+        move the plan back to active once the task change succeeded.
+        """
+        try:
+            plan = await self.plan_service.get_plan(user_id=user_id, plan_id=plan_id)
+        except NotFoundError:
+            return False
+
+        plan_status = PlanStatus(plan.status)
+        if plan_status == PlanStatus.ARCHIVED:
+            raise InvalidStateTransitionError(
+                f"Cannot change task state in plan in {plan_status.value} status",
+            )
+        if plan_status == PlanStatus.COMPLETED:
+            if current_state in (TaskState.DONE, TaskState.CANCELLED):
+                return True
+            raise InvalidStateTransitionError(
+                f"Cannot change task state in plan in {plan_status.value} status. "
+                f"Reopen a done or cancelled task first to resume work.",
+            )
+        return False
+
+    async def _reopen_plan(self, user_id: UUID, plan_id: int) -> None:
+        """Move a completed plan back to active after one of its tasks was reopened."""
+        logger.info("reopening plan", extra={"plan_id": plan_id})
+        await self.plan_service.update_plan(
+            user_id=user_id,
+            plan_id=plan_id,
+            plan_data=PlanUpdate(status=PlanStatus.ACTIVE),
+        )
 
     async def _check_plan_auto_completion(self, user_id: UUID, plan_id: int) -> None:
         """If all tasks in the plan are done/cancelled (with at least one done),

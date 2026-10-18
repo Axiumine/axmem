@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 import sqlite_vec
-from sqlalchemy import func, or_, select, text
+from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 
 from app.config.logging_config import logging

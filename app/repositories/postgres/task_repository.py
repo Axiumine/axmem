@@ -3,11 +3,18 @@
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import case, delete, literal, or_, select, update
-from sqlalchemy.orm import selectinload
+from sqlalchemy import case, delete, literal, or_, select, text, update
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import aliased, selectinload
 
 from app.config.logging_config import logging
-from app.exceptions import ConflictError, NotFoundError
+from app.exceptions import (
+    ConflictError,
+    CyclicDependencyError,
+    DependencyNotMetError,
+    InvalidStateTransitionError,
+    NotFoundError,
+)
 from app.models.plan_models import (
     Criterion,
     CriterionCreate,
@@ -235,13 +242,22 @@ class PostgresTaskRepository:
             if assigned_agent is not None:
                 values["assigned_agent"] = assigned_agent
 
+            conditions = [
+                TasksTable.user_id == user_id,
+                TasksTable.id == task_id,
+                TasksTable.version == expected_version,
+            ]
+            # The version only covers the task row. Criteria and dependencies live in other
+            # tables, so their preconditions are part of the same UPDATE: a row written after
+            # the service validated them can no longer slip a task into DOING/DONE.
+            if new_state in (TaskState.DOING, TaskState.DONE):
+                conditions.append(~self._unfinished_dependencies().exists())
+            if new_state == TaskState.DONE:
+                conditions.append(~self._unmet_criteria().exists())
+
             stmt = (
                 update(TasksTable)
-                .where(
-                    TasksTable.user_id == user_id,
-                    TasksTable.id == task_id,
-                    TasksTable.version == expected_version,
-                )
+                .where(*conditions)
                 .values(**values)
                 .returning(TasksTable)
             )
@@ -258,13 +274,79 @@ class PostgresTaskRepository:
                 exists = check.scalar_one_or_none()
                 if not exists:
                     raise NotFoundError(f"Task with id {task_id} not found")
-                raise ConflictError(
-                    f"Version conflict for task {task_id}: expected {expected_version}, "
-                    f"current is {exists.version}",
-                )
+                if exists.version != expected_version:
+                    raise ConflictError(
+                        f"Version conflict for task {task_id}: expected {expected_version}, "
+                        f"current is {exists.version}",
+                    )
+                await self._raise_unmet_precondition(session, task_id, new_state)
 
             await session.refresh(task_orm, attribute_names=["criteria", "depends_on"])
             return Task.model_validate(task_orm)
+
+    @staticmethod
+    def _unfinished_dependencies():
+        """Subquery selecting the prerequisites of tasks.id that are not done yet."""
+        prerequisite = aliased(TasksTable, name="prerequisite")
+        return (
+            select(TaskDependenciesTable.id)
+            .join(prerequisite, prerequisite.id == TaskDependenciesTable.depends_on_task_id)
+            .where(
+                TaskDependenciesTable.task_id == TasksTable.id,
+                prerequisite.state != TaskState.DONE.value,
+            )
+            .correlate(TasksTable)
+        )
+
+    @staticmethod
+    def _unmet_criteria():
+        """Subquery selecting the acceptance criteria of tasks.id that are not met."""
+        return (
+            select(CriteriaTable.id)
+            .where(CriteriaTable.task_id == TasksTable.id, CriteriaTable.met.is_(False))
+            .correlate(TasksTable)
+        )
+
+    async def _raise_unmet_precondition(
+        self, session, task_id: int, new_state: TaskState,
+    ) -> None:
+        """Explain why the guarded UPDATE matched nothing although the version was current."""
+        if new_state in (TaskState.DOING, TaskState.DONE):
+            prerequisite = aliased(TasksTable, name="prerequisite")
+            result = await session.execute(
+                select(prerequisite.id, prerequisite.state)
+                .join(
+                    TaskDependenciesTable,
+                    TaskDependenciesTable.depends_on_task_id == prerequisite.id,
+                )
+                .where(
+                    TaskDependenciesTable.task_id == task_id,
+                    prerequisite.state != TaskState.DONE.value,
+                )
+                .order_by(prerequisite.id)
+                .limit(1),
+            )
+            unfinished = result.first()
+            if unfinished is not None:
+                raise DependencyNotMetError(
+                    f"Dependency task {unfinished.id} is not done (state: {unfinished.state})",
+                )
+        if new_state == TaskState.DONE:
+            result = await session.execute(
+                select(CriteriaTable.description).where(
+                    CriteriaTable.task_id == task_id,
+                    CriteriaTable.met.is_(False),
+                ),
+            )
+            unmet = [description for (description,) in result.all()]
+            if unmet:
+                raise InvalidStateTransitionError(
+                    f"Cannot mark task as done: {len(unmet)} acceptance criteria not met. "
+                    f"Unmet: {[description[:50] for description in unmet]}",
+                )
+        raise ConflictError(
+            f"Task {task_id} changed while moving to {new_state.value}; reload it and retry",
+        )
 
     # ---- Criteria CRUD ----
 
@@ -336,6 +418,20 @@ class PostgresTaskRepository:
             result = await session.execute(stmt)
             return result.rowcount > 0
 
+    async def get_criterion_by_id(
+        self, user_id: UUID, criterion_id: int,
+    ) -> Criterion | None:
+        async with self.db_adapter.session(user_id) as session:
+            stmt = select(CriteriaTable).where(
+                CriteriaTable.user_id == user_id,
+                CriteriaTable.id == criterion_id,
+            )
+            result = await session.execute(stmt)
+            criterion_orm = result.scalar_one_or_none()
+            if criterion_orm:
+                return Criterion.model_validate(criterion_orm)
+            return None
+
     async def get_criteria_for_task(
         self, user_id: UUID, task_id: int,
     ) -> list[Criterion]:
@@ -356,15 +452,62 @@ class PostgresTaskRepository:
     async def add_dependency(
         self, user_id: UUID, task_id: int, depends_on_task_id: int,
     ) -> TaskDependency:
-        async with self.db_adapter.session(user_id) as session:
-            dep = TaskDependenciesTable(
-                user_id=user_id,
-                task_id=task_id,
-                depends_on_task_id=depends_on_task_id,
+        try:
+            async with self.db_adapter.session(user_id) as session:
+                # Serialise this user's dependency writers until commit/rollback, so two
+                # opposite edges cannot both pass the cycle re-check below.
+                await session.execute(
+                    text("SELECT pg_advisory_xact_lock(hashtextextended(:lock_key, 0))"),
+                    {"lock_key": f"task_dependencies:{user_id}"},
+                )
+                dep = TaskDependenciesTable(
+                    user_id=user_id,
+                    task_id=task_id,
+                    depends_on_task_id=depends_on_task_id,
+                )
+                session.add(dep)
+                await session.flush()
+                if await self._closes_cycle(session, user_id, task_id, depends_on_task_id):
+                    raise CyclicDependencyError(
+                        f"Adding dependency {task_id} -> {depends_on_task_id} would create a cycle "
+                        f"(path exists from {depends_on_task_id} back to {task_id})",
+                    )
+                return TaskDependency.model_validate(dep)
+        except IntegrityError as exc:
+            if getattr(exc.orig.__cause__, "constraint_name", None) == "ix_task_deps_unique":
+                raise ConflictError(
+                    f"Task {task_id} already depends on task {depends_on_task_id}",
+                ) from exc
+            raise
+
+    async def _closes_cycle(
+        self, session, user_id: UUID, task_id: int, depends_on_task_id: int,
+    ) -> bool:
+        """True if depends_on_task_id reaches task_id through the stored edges.
+
+        Called after the new edge task_id -> depends_on_task_id was flushed, so a hit
+        means that edge closed a cycle (a self-edge is its own one-step cycle).
+        """
+        reachable = (
+            select(TaskDependenciesTable.depends_on_task_id.label("node"))
+            .where(
+                TaskDependenciesTable.user_id == user_id,
+                TaskDependenciesTable.task_id == depends_on_task_id,
             )
-            session.add(dep)
-            await session.flush()
-            return TaskDependency.model_validate(dep)
+            .cte("reachable", recursive=True)
+        )
+        via = aliased(reachable, name="via")
+        edge = aliased(TaskDependenciesTable, name="edge")
+        reachable = reachable.union(
+            select(edge.depends_on_task_id).where(
+                edge.user_id == user_id,
+                edge.task_id == via.c.node,
+            ),
+        )
+        result = await session.execute(
+            select(reachable.c.node).where(reachable.c.node == task_id).limit(1),
+        )
+        return result.first() is not None
 
     async def remove_dependency(
         self, user_id: UUID, task_id: int, depends_on_task_id: int,

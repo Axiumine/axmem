@@ -107,6 +107,8 @@ def register(mcp: FastMCP):
             return JSONResponse({"error": str(e)}, status_code=422)
         except CyclicDependencyError as e:
             return JSONResponse({"error": str(e)}, status_code=400)
+        except ValueError as e:
+            return JSONResponse({"error": str(e)}, status_code=400)
 
         return JSONResponse(task.model_dump(mode="json"), status_code=201)
 
@@ -275,6 +277,8 @@ def register(mcp: FastMCP):
             )
         except NotFoundError as e:
             return JSONResponse({"error": str(e)}, status_code=404)
+        except InvalidStateTransitionError as e:
+            return JSONResponse({"error": str(e)}, status_code=422)
 
         return JSONResponse(criterion.model_dump(mode="json"))
 
@@ -288,9 +292,12 @@ def register(mcp: FastMCP):
             return JSONResponse({"error": str(e)}, status_code=401)
 
         criterion_id = path_id(request, "criterion_id")
-        success = await mcp.task_service.delete_criterion(
-            user_id=user.id, criterion_id=criterion_id,
-        )
+        try:
+            success = await mcp.task_service.delete_criterion(
+                user_id=user.id, criterion_id=criterion_id,
+            )
+        except InvalidStateTransitionError as e:
+            return JSONResponse({"error": str(e)}, status_code=422)
         if not success:
             return JSONResponse({"error": "Criterion not found"}, status_code=404)
         return JSONResponse({"success": True})
@@ -322,6 +329,10 @@ def register(mcp: FastMCP):
             return JSONResponse({"error": str(e)}, status_code=404)
         except CyclicDependencyError as e:
             return JSONResponse({"error": str(e)}, status_code=400)
+        except ConflictError as e:
+            return JSONResponse({"error": str(e)}, status_code=409)
+        except InvalidStateTransitionError as e:
+            return JSONResponse({"error": str(e)}, status_code=422)
         except ValueError as e:
             return JSONResponse({"error": str(e)}, status_code=400)
 
