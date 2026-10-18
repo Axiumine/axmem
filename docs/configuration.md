@@ -451,6 +451,9 @@ directory; the server-side session is untouched.
 
 These settings control the atomic memory system's behavior and constraints.
 
+The length and count limits below are checked when a memory is created or updated. Lowering
+one later does not make memories that were stored under the old limit unreadable.
+
 ### `MEMORY_TITLE_MAX_LENGTH`
 - **Default**: `200`
 - **Description**: Maximum characters for memory titles
