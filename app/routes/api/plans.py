@@ -16,6 +16,7 @@ from app.routes.api.request_utils import (
     query_int,
     read_json_object,
 )
+from app.routes.api.validation import validation_error_response
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +53,7 @@ def register(mcp: FastMCP):
                 external_ref=params.get("external_ref"),
             )
         except ValidationError as e:
-            return JSONResponse({"error": e.errors()}, status_code=400)
+            return validation_error_response(e)
         return JSONResponse({
             "plans": [p.model_dump(mode="json") for p in plans],
             "total": len(plans),
@@ -87,7 +88,7 @@ def register(mcp: FastMCP):
             body = await read_json_object(request)
             plan_data = PlanCreate(**body)
         except ValidationError as e:
-            return JSONResponse({"error": e.errors()}, status_code=400)
+            return validation_error_response(e)
 
         try:
             plan = await mcp.plan_service.create_plan(user_id=user.id, plan_data=plan_data)
@@ -112,7 +113,7 @@ def register(mcp: FastMCP):
             body = await read_json_object(request)
             update_data = PlanUpdate(**body)
         except ValidationError as e:
-            return JSONResponse({"error": e.errors()}, status_code=400)
+            return validation_error_response(e)
 
         try:
             plan = await mcp.plan_service.update_plan(

@@ -21,6 +21,10 @@ from app.routes.api.request_utils import (
     path_id,
     read_json_object,
 )
+from app.routes.api.validation import (
+    parse_optional_id_query,
+    validation_error_response,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -44,19 +48,13 @@ def register(mcp: FastMCP):
             return JSONResponse({"error": str(e)}, status_code=401)
 
         params = request.query_params
-        project_id_str = params.get("project_id")
         language = params.get("language")
         tags_str = params.get("tags")
 
-        project_id = None
-        if project_id_str:
-            try:
-                project_id = int(project_id_str)
-            except ValueError:
-                return JSONResponse(
-                    {"error": f"Invalid project_id: {project_id_str}. Must be an integer."},
-                    status_code=400,
-                )
+        try:
+            project_id = parse_optional_id_query(params, "project_id")
+        except ValueError as e:
+            return JSONResponse({"error": str(e)}, status_code=400)
         tags = [t.strip() for t in tags_str.split(",")] if tags_str else None
 
         artifacts = await mcp.code_artifact_service.list_code_artifacts(
@@ -105,7 +103,7 @@ def register(mcp: FastMCP):
             body = await read_json_object(request)
             artifact_data = CodeArtifactCreate(**body)
         except ValidationError as e:
-            return JSONResponse({"error": e.errors()}, status_code=400)
+            return validation_error_response(e)
 
         try:
             artifact = await mcp.code_artifact_service.create_code_artifact(
@@ -132,7 +130,7 @@ def register(mcp: FastMCP):
             body = await read_json_object(request)
             update_data = CodeArtifactUpdate(**body)
         except ValidationError as e:
-            return JSONResponse({"error": e.errors()}, status_code=400)
+            return validation_error_response(e)
 
         try:
             artifact = await mcp.code_artifact_service.update_code_artifact(

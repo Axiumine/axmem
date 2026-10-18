@@ -31,6 +31,7 @@ from app.routes.api.request_utils import (
     query_int,
     read_json_object,
 )
+from app.routes.api.validation import validation_error_response
 
 logger = logging.getLogger(__name__)
 
@@ -97,7 +98,7 @@ def register(mcp: FastMCP):
             body = await read_json_object(request)
             task_data = TaskCreate(**body)
         except ValidationError as e:
-            return JSONResponse({"error": e.errors()}, status_code=400)
+            return validation_error_response(e)
 
         try:
             task = await mcp.task_service.create_task(user_id=user.id, task_data=task_data)
@@ -127,7 +128,7 @@ def register(mcp: FastMCP):
             body = await read_json_object(request)
             update_data = TaskUpdate(**body)
         except ValidationError as e:
-            return JSONResponse({"error": e.errors()}, status_code=400)
+            return validation_error_response(e)
 
         try:
             task = await mcp.task_service.update_task(
@@ -241,7 +242,7 @@ def register(mcp: FastMCP):
             body = await read_json_object(request)
             criterion_data = CriterionCreate(**body)
         except ValidationError as e:
-            return JSONResponse({"error": e.errors()}, status_code=400)
+            return validation_error_response(e)
 
         try:
             criterion = await mcp.task_service.add_criterion(
@@ -269,7 +270,7 @@ def register(mcp: FastMCP):
             body = await read_json_object(request)
             criterion_data = CriterionUpdate(**body)
         except ValidationError as e:
-            return JSONResponse({"error": e.errors()}, status_code=400)
+            return validation_error_response(e)
 
         try:
             criterion = await mcp.task_service.update_criterion(

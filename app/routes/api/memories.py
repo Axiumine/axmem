@@ -31,6 +31,7 @@ from app.routes.api.request_utils import (
     path_id,
     read_json_object,
 )
+from app.routes.api.validation import validation_error_response
 
 logger = logging.getLogger(__name__)
 
@@ -179,7 +180,7 @@ def register(mcp: FastMCP):
             body = await read_json_object(request)
             memory_data = MemoryCreate(**body)
         except ValidationError as e:
-            return JSONResponse({"error": e.errors(include_input=False)}, status_code=400)
+            return validation_error_response(e)
         except Exception as e:
             return JSONResponse({"error": f"Invalid request body: {e!s}"}, status_code=400)
 
@@ -225,7 +226,7 @@ def register(mcp: FastMCP):
             body = await read_json_object(request)
             update_data = MemoryUpdate(**body)
         except ValidationError as e:
-            return JSONResponse({"error": e.errors(include_input=False)}, status_code=400)
+            return validation_error_response(e)
         except Exception as e:
             return JSONResponse({"error": f"Invalid request body: {e!s}"}, status_code=400)
 
@@ -299,7 +300,7 @@ def register(mcp: FastMCP):
             body = await read_json_object(request)
             query_request = MemoryQueryRequest(**body)
         except ValidationError as e:
-            return JSONResponse({"error": e.errors(include_input=False)}, status_code=400)
+            return validation_error_response(e)
         except Exception as e:
             return JSONResponse({"error": f"Invalid request body: {e!s}"}, status_code=400)
 
