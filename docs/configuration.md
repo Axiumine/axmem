@@ -892,6 +892,7 @@ ACTIVITY_TRACK_READS=false
 - **Default**: `50`
 - **Description**: Number of candidates to retrieve from dense (embedding) search before re-ranking
 - **Performance**: Higher values = better recall, slower queries
+- **Note**: A search for `k` results always fetches at least `k` candidates, so values below `k` never reduce the number of results. Reranking only reorders candidates when there are more of them than `k`
 - **Example**: `DENSE_SEARCH_CANDIDATES=100`
 
 ### Azure Embedding Provider Configuration
@@ -1042,7 +1043,7 @@ it stays available here as an optional provider. Restart the service after chang
 #### `RERANKING_URL`
 - **Default**: (empty string)
 - **Description**: HTTP endpoint URL for re-ranking requests
-- **Note**: Only used when `RERANKING_PROVIDER=HTTP`
+- **Note**: Only used when `RERANKING_PROVIDER=HTTP`, where it is required: Forgetful refuses to start with `RERANKING_ENABLED=true` and an empty URL
 - **Examples**:
   - Jina: `https://api.jina.ai/v1/rerank`
   - Cohere: `https://api.cohere.com/v2/rerank`
@@ -1056,6 +1057,13 @@ it stays available here as an optional provider. Restart the service after chang
 - **Note**: Only used when `RERANKING_PROVIDER=HTTP`. Leave empty for local servers that don't require authentication
 - **Security**: **Keep this secret** - never commit to version control
 - **Example**: `RERANKING_API_KEY=your-api-key-here`
+
+#### `RERANKING_TIMEOUT`
+- **Default**: `60`
+- **Values**: Positive number of seconds
+- **Description**: How long an HTTP re-ranking request may take (connect, send, and wait for the response) before the search fails
+- **Note**: Only used when `RERANKING_PROVIDER=HTTP`. Raise it for CPU-only rerank servers or services that load their model on first use, since each search scores up to `DENSE_SEARCH_CANDIDATES` documents in one request. Earlier versions allowed only 5 seconds and this was not configurable
+- **Example**: `RERANKING_TIMEOUT=120`
 
 ### FastEmbed Cache Configuration
 
