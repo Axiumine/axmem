@@ -572,7 +572,7 @@
       "help": "Batch size for re-embedding (default: 20)",
       "nargs": null,
       "required": false,
-      "type": "int"
+      "type": "positive_int"
     },
     {
       "choices": null,
@@ -619,7 +619,7 @@
       "flags": [
         "--host"
       ],
-      "help": "HTTP host (default: 0.0.0.0)",
+      "help": "HTTP host (default: %(default)s)",
       "nargs": null,
       "required": false,
       "type": null

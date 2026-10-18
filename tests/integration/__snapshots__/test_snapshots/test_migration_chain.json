@@ -42,5 +42,9 @@
   "20261008_add_plan_external_ref.py": {
     "down_revision": "20260822_project_encoding_point",
     "revision": "20261008_plan_external_ref"
+  },
+  "20261018_add_skills_unique_user_name.py": {
+    "down_revision": "20261008_plan_external_ref",
+    "revision": "20261018_skill_unique_name"
   }
 }

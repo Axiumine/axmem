@@ -111,7 +111,8 @@
     "CREATE INDEX ix_skills_importance ON skills (importance)",
     "CREATE INDEX ix_skills_name ON skills (name)",
     "CREATE INDEX ix_skills_project_id ON skills (project_id)",
-    "CREATE INDEX ix_skills_user_id ON skills (user_id)"
+    "CREATE INDEX ix_skills_user_id ON skills (user_id)",
+    "CREATE UNIQUE INDEX ix_skills_user_name ON skills (user_id, name)"
   ],
   "task_dependencies": [
     "CREATE TABLE task_dependencies (\n\tid INTEGER NOT NULL, \n\tuser_id VARCHAR(36) NOT NULL, \n\ttask_id INTEGER NOT NULL, \n\tdepends_on_task_id INTEGER NOT NULL, \n\tcreated_at DATETIME NOT NULL, \n\tPRIMARY KEY (id), \n\tFOREIGN KEY(user_id) REFERENCES users (id) ON DELETE CASCADE, \n\tFOREIGN KEY(task_id) REFERENCES tasks (id) ON DELETE CASCADE, \n\tFOREIGN KEY(depends_on_task_id) REFERENCES tasks (id) ON DELETE CASCADE\n)",
