@@ -211,12 +211,16 @@ class Settings(BaseSettings):
     EMBEDDING_MODEL: str = "BAAI/bge-small-en-v1.5"
     EMBEDDING_DIMENSIONS: int = 384
     EMBEDDING_ONNX_PROVIDERS: str = ""  # FastEmbed only; comma-separated ONNX Runtime providers, empty = default
+    # Per-request timeout (seconds) for the remote providers (Azure | Google | OpenAI | Ollama).
+    # The OpenAI/Azure SDK clients retry failed requests, so a call can take (retries + 1) x this value.
+    EMBEDDING_REQUEST_TIMEOUT_SECONDS: float = Field(default=60.0, gt=0, allow_inf_nan=False)
 
     # AZURE EMBEDDING PROVIDER CONFIG
     AZURE_ENDPOINT: str = ""
     AZURE_DEPLOYMENT: str = ""
     AZURE_API_VERSION: str = ""
     AZURE_API_KEY: str = ""
+    AZURE_SUPPORTS_DIMENSIONS: bool = True       # False for deployments that reject it (text-embedding-ada-002)
 
     # GOOGLE EMBEDDING PROVIDER CONFIG
     GOOGLE_AI_API_KEY: str = ""

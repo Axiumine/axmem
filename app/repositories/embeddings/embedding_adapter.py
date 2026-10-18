@@ -10,6 +10,7 @@ from openai import AzureOpenAI, OpenAI
 from app.config.settings import settings
 from app.protocols.embedding_protocol import EmbeddingsAdapter
 from app.repositories.embeddings.fastembed_offline import load_fastembed_model
+from app.utils.url_helpers import redact_url
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +51,8 @@ class FastEmbeddingAdapter(EmbeddingsAdapter):
 
     async def generate_embedding(self, text: str) -> list[float]:
         try:
-            embeddings = list(self.model.embed(text))
+            # Inference is CPU bound and synchronous: keep it off the event loop.
+            embeddings = await asyncio.to_thread(lambda: list(self.model.embed(text)))
         except Exception:
             logger.error("Error generating embeddings", exc_info=True, extra={
                 "embedding provider": "fastembed",
@@ -69,20 +71,43 @@ class AzureOpenAIAdapter(EmbeddingsAdapter):
     def __init__(self):
         logger.info("Initialising Azure Open AI embeddings adapter", extra={
             "embedding_model": settings.EMBEDDING_MODEL,
+            "supports_dimensions": settings.AZURE_SUPPORTS_DIMENSIONS,
         })
+
+        required = {
+            "AZURE_ENDPOINT": settings.AZURE_ENDPOINT,
+            "AZURE_API_KEY": settings.AZURE_API_KEY,
+            "AZURE_API_VERSION": settings.AZURE_API_VERSION,
+            "AZURE_DEPLOYMENT": settings.AZURE_DEPLOYMENT,
+        }
+        missing = [name for name, value in required.items() if not value.strip()]
+        if missing:
+            raise ValueError(
+                "AZURE_ENDPOINT, AZURE_API_KEY, AZURE_API_VERSION and AZURE_DEPLOYMENT "
+                f"must be configured for AzureOpenAIAdapter; missing: {', '.join(missing)}",
+            )
+
         self.client = AzureOpenAI(
             api_version=settings.AZURE_API_VERSION,
             azure_endpoint=settings.AZURE_ENDPOINT,
             api_key=settings.AZURE_API_KEY,
+            timeout=settings.EMBEDDING_REQUEST_TIMEOUT_SECONDS,
         )
         self.model = settings.AZURE_DEPLOYMENT
+        self.supports_dimensions = settings.AZURE_SUPPORTS_DIMENSIONS
 
     async def generate_embedding(self, text) -> list[float]:
+        kwargs = {
+            "input": [text],
+            "model": self.model,
+        }
+        if self.supports_dimensions:
+            kwargs["dimensions"] = settings.EMBEDDING_DIMENSIONS
+
         try:
-            response = self.client.embeddings.create(
-                input=[text],
-                model=self.model,
-                dimensions=settings.EMBEDDING_DIMENSIONS,
+            response = await asyncio.to_thread(
+                self.client.embeddings.create,
+                **kwargs,
             )
         except Exception:
             logger.error("Error generatring embeddings", exc_info=True, extra={
@@ -112,7 +137,12 @@ class GoogleEmbeddingsAdapter(EmbeddingsAdapter):
         if not api_key:
             raise ValueError("GOOGLE_AI_API_KEY must be configured for GoogleEmbeddingsAdapter")
 
-        self.client = genai.Client(api_key=api_key)
+        self.client = genai.Client(
+            api_key=api_key,
+            http_options=types.HttpOptions(
+                timeout=max(1, round(settings.EMBEDDING_REQUEST_TIMEOUT_SECONDS * 1000)),  # milliseconds
+            ),
+        )
 
     async def generate_embedding(self, text: str) -> list[float]:
         try:
@@ -149,7 +179,7 @@ class OpenAIEmbeddingsAdapter(EmbeddingsAdapter):
 
         logger.info("Initialising OpenAI embeddings adapter", extra={
             "embedding_model": settings.EMBEDDING_MODEL,
-            "base_url": base_url or "(default)",
+            "base_url": redact_url(base_url) if base_url else "(default)",
             "supports_dimensions": self.supports_dimensions,
         })
 
@@ -160,7 +190,10 @@ class OpenAIEmbeddingsAdapter(EmbeddingsAdapter):
             else:
                 raise ValueError("OPENAI_API_KEY must be configured for OpenAIEmbeddingsAdapter")
 
-        client_kwargs = {"api_key": api_key}
+        client_kwargs = {
+            "api_key": api_key,
+            "timeout": settings.EMBEDDING_REQUEST_TIMEOUT_SECONDS,
+        }
         if base_url:
             client_kwargs["base_url"] = base_url
 
@@ -201,9 +234,12 @@ class OllamaEmbeddingsAdapter(EmbeddingsAdapter):
 
         logger.info("Initialising Ollama embeddings adapter", extra={
             "embedding_model": settings.EMBEDDING_MODEL,
-            "base_url": settings.OLLAMA_BASE_URL,
+            "base_url": redact_url(settings.OLLAMA_BASE_URL),
         })
-        self.client = AsyncClient(host=settings.OLLAMA_BASE_URL)
+        self.client = AsyncClient(
+            host=settings.OLLAMA_BASE_URL,
+            timeout=settings.EMBEDDING_REQUEST_TIMEOUT_SECONDS,
+        )
         self.model = settings.EMBEDDING_MODEL
 
     async def generate_embedding(self, text: str) -> list[float]:

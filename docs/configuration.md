@@ -888,6 +888,13 @@ ACTIVITY_TRACK_READS=false
 - **Note**: Only used when `EMBEDDING_PROVIDER=FastEmbed`. Empty keeps FastEmbed's default provider selection. Same runtime requirements as [`RERANKING_ONNX_PROVIDERS`](#reranking_onnx_providers)
 - **Example**: `EMBEDDING_ONNX_PROVIDERS=DmlExecutionProvider,CPUExecutionProvider`
 
+### `EMBEDDING_REQUEST_TIMEOUT_SECONDS`
+- **Default**: `60`
+- **Values**: Positive number of seconds
+- **Description**: Per-request timeout for the remote embedding providers (Azure, Google, OpenAI and Ollama), so a server that accepts a connection but never answers fails the request instead of hanging it
+- **Note**: Ignored by FastEmbed (local). The OpenAI and Azure SDK clients retry failed requests twice, so a single call can take up to three times this value. Raise it if your server needs longer to answer, for example while an Ollama model is loading
+- **Example**: `EMBEDDING_REQUEST_TIMEOUT_SECONDS=120`
+
 ### `DENSE_SEARCH_CANDIDATES`
 - **Default**: `50`
 - **Description**: Number of candidates to retrieve from dense (embedding) search before re-ranking
@@ -897,7 +904,7 @@ ACTIVITY_TRACK_READS=false
 
 ### Azure Embedding Provider Configuration
 
-**Note**: These settings only apply when `EMBEDDING_PROVIDER=Azure`
+**Note**: These settings only apply when `EMBEDDING_PROVIDER=Azure`. `AZURE_ENDPOINT`, `AZURE_DEPLOYMENT`, `AZURE_API_VERSION` and `AZURE_API_KEY` are all required: startup fails with an error naming the missing ones.
 
 #### `AZURE_ENDPOINT`
 - **Default**: (empty string)
@@ -920,6 +927,12 @@ ACTIVITY_TRACK_READS=false
 - **Description**: Azure OpenAI API authentication key
 - **Security**: **Keep this secret** - never commit to version control
 - **Example**: `AZURE_API_KEY=your-azure-api-key-here`
+
+#### `AZURE_SUPPORTS_DIMENSIONS`
+- **Default**: `true`
+- **Description**: Whether the deployment supports the `dimensions` parameter (`EMBEDDING_DIMENSIONS` is sent with every request when enabled)
+- **Note**: Set to `false` for `text-embedding-ada-002` deployments, which reject the parameter with an HTTP 400. `text-embedding-3-*` deployments support it
+- **Example**: `AZURE_SUPPORTS_DIMENSIONS=false`
 
 ### Google Embedding Provider Configuration
 
