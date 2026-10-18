@@ -2,6 +2,7 @@
 
 import asyncio
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
 from alembic.config import Config
@@ -145,9 +146,11 @@ class TestSkillNameUniquenessStorage:
         assert len(names) == 2
 
     async def test_unrelated_integrity_error_is_not_a_name_conflict(self, skill_store):
-        repos, user, _ = skill_store
+        repos, _, _ = skill_store
+        # A skill of a user that does not exist violates the users foreign key. (A bad
+        # project_id no longer reaches the database: it is refused as NotFoundError first.)
         with pytest.raises(IntegrityError):
-            await repos["skill"].create_skill(user.id, make_skill("orphan", project_id=-1))
+            await repos["skill"].create_skill(uuid4(), make_skill("orphan"))
 
     async def test_repository_signals_duplicate_names_as_conflicts(self, skill_store):
         repos, user, _ = skill_store
