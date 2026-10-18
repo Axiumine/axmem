@@ -52,6 +52,7 @@ async def lifespan(app):
     _queue_listener = configure_logging(
         log_level=settings.LOG_LEVEL,
         log_format=settings.LOG_FORMAT,
+        db_logging=settings.DB_LOGGING,
     )
     atexit.register(shutdown_logging)
 
@@ -244,7 +245,7 @@ async def _run_reembed(args):
     """Run the re-embedding workflow"""
     _tolerate_unencodable_output()
     from app.config.logging_config import configure_logging, shutdown_logging
-    configure_logging(log_level="INFO", log_format="console")
+    configure_logging(log_level="INFO", log_format="console", db_logging=settings.DB_LOGGING)
     atexit.register(shutdown_logging)
 
     from app.bootstrap import (

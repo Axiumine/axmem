@@ -3,6 +3,7 @@
 Supports both Postgres and SQLite with conditional configuration.
 """
 import asyncio
+import logging
 import sys
 from logging.config import fileConfig
 from pathlib import Path
@@ -95,7 +96,9 @@ async def run_async_migrations() -> None:
     # Override the sqlalchemy.url in the alembic config
     configuration = config.get_section(config.config_ini_section, {})
     configuration["sqlalchemy.url"] = sqlalchemy_url
-    configuration["sqlalchemy.echo"] = str(settings.DB_LOGGING)
+    if settings.DB_LOGGING:
+        # Not "sqlalchemy.echo": that attaches a stdout handler; alembic.ini logs to stderr
+        logging.getLogger("sqlalchemy.engine").setLevel(logging.INFO)
 
     connectable = async_engine_from_config(
         configuration,

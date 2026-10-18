@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from app.config.settings import settings
+from app.repositories.session_logging import log_session_failure
 
 logger = logging.getLogger(__name__)
 
@@ -93,8 +94,9 @@ class SqliteDatabaseAdapter:
         # Create async engine with SQLite-specific settings
         self._engine: AsyncEngine = create_async_engine(
             url=connection_string,
-            echo=settings.DB_LOGGING,
             future=True,
+            # Never echo SQL via SQLAlchemy (it writes to stdout); DB_LOGGING drives the logging pipeline
+            hide_parameters=True,
             # SQLite-specific: disable pooling for better behavior
             poolclass=None,  # No connection pool for SQLite
             connect_args={
@@ -143,9 +145,7 @@ class SqliteDatabaseAdapter:
             yield session
             await session.commit()
         except Exception as e:
-            logger.exception(
-                msg="Database session initialization failed", extra={"error": str(e)},
-            )
+            log_session_failure(logger, e, "session")
             await session.rollback()
             raise
         finally:
@@ -159,10 +159,7 @@ class SqliteDatabaseAdapter:
             yield session
             await session.commit()
         except Exception as e:
-            logger.exception(
-                msg="Database system session initialization failed",
-                extra={"error": str(e)},
-            )
+            log_session_failure(logger, e, "system session")
             await session.rollback()
             raise
         finally:
