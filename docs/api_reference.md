@@ -1437,9 +1437,11 @@ Create a new task with optional inline criteria and dependencies.
 
 | Code | Condition |
 |------|-----------|
-| 400 | Cyclic dependency detected |
+| 400 | Cyclic dependency detected, a dependency belongs to another plan, or `dependency_ids` lists a task twice |
 | 404 | Plan or dependency task not found |
-| 422 | Invalid state transition |
+| 422 | Invalid state transition (for example the plan is completed or archived) |
+
+Creation is all-or-nothing: when any dependency is rejected, no task or criteria are stored.
 
 ### PUT /api/v1/tasks/{task_id}
 
@@ -1508,7 +1510,7 @@ Transition a task to a new state. Uses optimistic concurrency via the `version` 
 |------|-----------|
 | 404 | Task not found |
 | 409 | Version mismatch (optimistic concurrency conflict) |
-| 422 | Invalid state transition, or unmet dependencies block the transition |
+| 422 | Invalid state transition, unmet dependencies or criteria block the transition, or the plan is completed or archived (only reopening a done or cancelled task is allowed in a completed plan, and it returns the plan to `active`) |
 
 ### POST /api/v1/tasks/{task_id}/claim
 
@@ -1535,7 +1537,7 @@ Claim a task by assigning an agent and transitioning it to `doing`. Uses optimis
 |------|-----------|
 | 404 | Task not found |
 | 409 | Version mismatch (optimistic concurrency conflict) |
-| 422 | Invalid state transition, or unmet dependencies block the claim |
+| 422 | Invalid state transition, unmet dependencies block the claim, or the plan is completed or archived |
 
 ---
 
@@ -1595,6 +1597,13 @@ Update a criterion (e.g., mark it as met).
 
 **Response:** Updated criterion object
 
+**Error Responses:**
+
+| Code | Condition |
+|------|-----------|
+| 404 | Criterion not found |
+| 422 | The criterion belongs to a `done` task; reopen the task first |
+
 ### DELETE /api/v1/criteria/{criterion_id}
 
 Delete an acceptance criterion.
@@ -1605,6 +1614,13 @@ Delete an acceptance criterion.
   "success": true
 }
 ```
+
+**Error Responses:**
+
+| Code | Condition |
+|------|-----------|
+| 404 | Criterion not found |
+| 422 | The criterion belongs to a `done` task; reopen the task first |
 
 ---
 
@@ -1639,8 +1655,10 @@ Add a dependency, declaring that `task_id` depends on another task.
 
 | Code | Condition |
 |------|-----------|
-| 400 | Cyclic dependency detected, or task depends on itself |
+| 400 | Cyclic dependency detected, task depends on itself, or the tasks belong to different plans |
 | 404 | Task not found |
+| 409 | The dependency already exists |
+| 422 | The dependent task is already `done` |
 
 ### DELETE /api/v1/tasks/{task_id}/dependencies/{depends_on_task_id}
 
