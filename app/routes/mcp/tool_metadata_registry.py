@@ -1561,7 +1561,7 @@ def register_entity_tools_metadata(
             "examples": [
                 'execute_forgetful_tool("link_entity_to_memory", {"entity_id": 1, "memory_id": 5})',
             ],
-            "tags": ["entity", "memory", "link"],
+            "tags": ["entity", "memory", "link", "linking"],
         },
         {
             "name": "unlink_entity_from_memory",
@@ -1576,7 +1576,7 @@ def register_entity_tools_metadata(
             "examples": [
                 'execute_forgetful_tool("unlink_entity_from_memory", {"entity_id": 1, "memory_id": 5})',
             ],
-            "tags": ["entity", "memory", "unlink"],
+            "tags": ["entity", "memory", "unlink", "linking"],
         },
         {
             "name": "link_entity_to_project",
@@ -1591,7 +1591,7 @@ def register_entity_tools_metadata(
             "examples": [
                 'execute_forgetful_tool("link_entity_to_project", {"entity_id": 1, "project_id": 5})',
             ],
-            "tags": ["entity", "project", "link"],
+            "tags": ["entity", "project", "link", "linking"],
         },
         {
             "name": "unlink_entity_from_project",
@@ -1606,7 +1606,7 @@ def register_entity_tools_metadata(
             "examples": [
                 'execute_forgetful_tool("unlink_entity_from_project", {"entity_id": 1, "project_id": 5})',
             ],
-            "tags": ["entity", "project", "unlink"],
+            "tags": ["entity", "project", "unlink", "linking"],
         },
         {
             "name": "create_entity_relationship",
@@ -2426,7 +2426,7 @@ def register_skill_tools_metadata(
             "examples": [
                 'execute_forgetful_tool("link_skill_to_memory", {"skill_id": 1, "memory_id": 5})',
             ],
-            "tags": ["skill", "memory", "link"],
+            "tags": ["skill", "memory", "link", "linking"],
         },
         {
             "name": "unlink_skill_from_memory",
@@ -2441,7 +2441,7 @@ def register_skill_tools_metadata(
             "examples": [
                 'execute_forgetful_tool("unlink_skill_from_memory", {"skill_id": 1, "memory_id": 5})',
             ],
-            "tags": ["skill", "memory", "unlink"],
+            "tags": ["skill", "memory", "unlink", "linking"],
         },
         {
             "name": "link_skill_to_file",
@@ -2456,7 +2456,7 @@ def register_skill_tools_metadata(
             "examples": [
                 'execute_forgetful_tool("link_skill_to_file", {"skill_id": 1, "file_id": 3})',
             ],
-            "tags": ["skill", "file", "link"],
+            "tags": ["skill", "file", "link", "linking"],
         },
         {
             "name": "unlink_skill_from_file",
@@ -2471,7 +2471,7 @@ def register_skill_tools_metadata(
             "examples": [
                 'execute_forgetful_tool("unlink_skill_from_file", {"skill_id": 1, "file_id": 3})',
             ],
-            "tags": ["skill", "file", "unlink"],
+            "tags": ["skill", "file", "unlink", "linking"],
         },
         {
             "name": "link_skill_to_code_artifact",
@@ -2486,7 +2486,7 @@ def register_skill_tools_metadata(
             "examples": [
                 'execute_forgetful_tool("link_skill_to_code_artifact", {"skill_id": 1, "code_artifact_id": 2})',
             ],
-            "tags": ["skill", "code_artifact", "link"],
+            "tags": ["skill", "code_artifact", "link", "linking"],
         },
         {
             "name": "unlink_skill_from_code_artifact",
@@ -2501,7 +2501,7 @@ def register_skill_tools_metadata(
             "examples": [
                 'execute_forgetful_tool("unlink_skill_from_code_artifact", {"skill_id": 1, "code_artifact_id": 2})',
             ],
-            "tags": ["skill", "code_artifact", "unlink"],
+            "tags": ["skill", "code_artifact", "unlink", "linking"],
         },
         {
             "name": "link_skill_to_document",
@@ -2516,7 +2516,7 @@ def register_skill_tools_metadata(
             "examples": [
                 'execute_forgetful_tool("link_skill_to_document", {"skill_id": 1, "document_id": 4})',
             ],
-            "tags": ["skill", "document", "link"],
+            "tags": ["skill", "document", "link", "linking"],
         },
         {
             "name": "unlink_skill_from_document",
@@ -2531,7 +2531,7 @@ def register_skill_tools_metadata(
             "examples": [
                 'execute_forgetful_tool("unlink_skill_from_document", {"skill_id": 1, "document_id": 4})',
             ],
-            "tags": ["skill", "document", "unlink"],
+            "tags": ["skill", "document", "unlink", "linking"],
         },
         {
             "name": "get_skill_links",

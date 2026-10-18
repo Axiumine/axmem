@@ -21,6 +21,7 @@ from app.config.logging_config import logging
 from app.config.settings import settings
 from app.models.tool_registry_models import ToolCategory
 from app.routes.mcp.scope_resolver import get_effective_scopes, get_required_scope
+from app.routes.mcp.tool_errors import client_error_detail
 
 logger = logging.getLogger(__name__)
 
@@ -449,6 +450,24 @@ def build_tool_documentation(registry, permitted: set, tool_name: str) -> dict[s
     return tool.metadata.to_detailed_dict()
 
 
+def reject_invalid_argument_names(tool_name: str, arguments: dict[str, Any]) -> None:
+    """Raise ToolError if an argument name could not be a Python keyword argument.
+
+    Arguments are splatted into the tool adapters as keyword arguments. CPython copies an
+    unknown keyword verbatim into the TypeError text, so a name carrying CR, LF or ESC would
+    reach the logs (message and traceback) and the client unescaped. No tool parameter is
+    named like that, so such a call can only be malformed or hostile: it is rejected before
+    dispatch, and the offending name is never echoed or logged raw.
+    """
+    if all(isinstance(name, str) and name.isidentifier() for name in arguments):
+        return
+    logger.warning("execute_forgetful_tool: %r rejected, invalid argument name", tool_name)
+    raise ToolError(
+        "Invalid argument name: argument names must be identifiers "
+        "(letters, digits and underscores, not starting with a digit)",
+    )
+
+
 def ensure_tool_executable(registry, permitted: set, tool_name: str) -> None:
     """Raise ToolError unless tool_name exists and is permitted (execute-path checks)."""
     if not registry.tool_exists(tool_name):
@@ -489,18 +508,18 @@ def register(mcp: FastMCP):
         try:
             registry = ctx.fastmcp.registry
             permitted, _ = get_effective_scopes(ctx)
-            logger.info(f"discover_forgetful_tools: category={category}")
+            logger.info("discover_forgetful_tools: category=%r", category)
 
             result = build_discovery_payload(registry, permitted, category)
 
-            logger.info(f"discover_forgetful_tools: returned {result['total_count']} tools")
+            logger.info("discover_forgetful_tools: returned %d tools", result["total_count"])
             return result
 
         except ToolError:
             raise
         except Exception as e:
-            logger.error(f"discover_forgetful_tools failed: {e}", exc_info=True)
-            raise ToolError(f"Failed to discover tools: {e!s}")
+            logger.error("discover_forgetful_tools failed: %r", e, exc_info=True)
+            raise ToolError(f"Failed to discover tools: {client_error_detail(e)}")
 
     discover_forgetful_tools.__doc__ = discover_doc
     mcp.tool()(discover_forgetful_tools)
@@ -527,17 +546,19 @@ def register(mcp: FastMCP):
         try:
             registry = ctx.fastmcp.registry
             permitted, _ = get_effective_scopes(ctx)
-            logger.info(f"how_to_use_forgetful_tool: tool_name={tool_name}")
+            logger.info("how_to_use_forgetful_tool: tool_name=%r", tool_name)
 
             detailed_info = build_tool_documentation(registry, permitted, tool_name)
-            logger.info(f"how_to_use_forgetful_tool: returned docs for {tool_name}")
+            logger.info("how_to_use_forgetful_tool: returned docs for %r", tool_name)
             return detailed_info
 
         except ToolError:
             raise
         except Exception as e:
-            logger.error(f"how_to_use_forgetful_tool failed for {tool_name}: {e}", exc_info=True)
-            raise ToolError(f"Failed to get documentation for '{tool_name}': {e!s}")
+            logger.error("how_to_use_forgetful_tool failed for %r: %r", tool_name, e, exc_info=True)
+            raise ToolError(
+                f"Failed to get documentation for '{tool_name}': {client_error_detail(e)}",
+            )
 
     # -- execute_forgetful_tool --
     # Defined without @mcp.tool() so we can set docstring before registration
@@ -549,9 +570,11 @@ def register(mcp: FastMCP):
     ) -> Any:
         """Placeholder - set dynamically below"""
         try:
+            reject_invalid_argument_names(tool_name, arguments)
+
             registry = ctx.fastmcp.registry
             permitted, _ = get_effective_scopes(ctx)
-            logger.info(f"execute_forgetful_tool: {tool_name}, args={list(arguments.keys())}")
+            logger.info("execute_forgetful_tool: %r, args=%r", tool_name, list(arguments.keys()))
 
             ensure_tool_executable(registry, permitted, tool_name)
 
@@ -564,14 +587,14 @@ def register(mcp: FastMCP):
                 arguments=arguments,
             )
 
-            logger.info(f"execute_forgetful_tool: {tool_name} executed successfully")
+            logger.info("execute_forgetful_tool: %r executed successfully", tool_name)
             return result
 
         except ToolError:
             raise
         except Exception as e:
-            logger.error(f"execute_forgetful_tool failed for {tool_name}: {e}", exc_info=True)
-            raise ToolError(f"Failed to execute '{tool_name}': {e!s}")
+            logger.error("execute_forgetful_tool failed for %r: %r", tool_name, e, exc_info=True)
+            raise ToolError(f"Failed to execute '{tool_name}': {client_error_detail(e)}")
 
     execute_forgetful_tool.__doc__ = execute_doc
     mcp.tool()(execute_forgetful_tool)

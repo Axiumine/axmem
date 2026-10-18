@@ -144,6 +144,10 @@ class ToolRegistry:
     def get_permitted_by_category(self, category: ToolCategory, permitted: set) -> list[ToolMetadata]:
         """List tools filtered by category AND permitted set.
 
+        ``ToolCategory.LINKING`` is a cross-cutting filter: link tools are registered under
+        the category that owns them (memory, entity, skill) and carry the "linking" tag, so
+        that category selects by tag instead.
+
         Args:
             category: Category to filter by
             permitted: Set of permitted tool names
@@ -151,6 +155,12 @@ class ToolRegistry:
         Returns:
             List of tool metadata matching both filters
         """
+        if category == ToolCategory.LINKING:
+            return [
+                impl.metadata
+                for impl in self._tools.values()
+                if category.value in impl.metadata.tags and impl.metadata.name in permitted
+            ]
         return [
             impl.metadata
             for impl in self._tools.values()
@@ -209,13 +219,13 @@ class ToolRegistry:
         if not tool:
             raise ValueError(f"Tool '{name}' not found in registry")
 
-        logger.debug(f"Executing tool: {name} with args: {list(arguments.keys())}")
+        logger.debug("Executing tool: %r with args: %r", name, list(arguments.keys()))
 
         try:
             # Execute the tool implementation with arguments and context
             result = await tool.implementation(**arguments, **context)
-            logger.debug(f"Tool '{name}' executed successfully")
+            logger.debug("Tool %r executed successfully", name)
             return result
         except Exception as e:
-            logger.error(f"Tool '{name}' execution failed: {e}", exc_info=True)
+            logger.error("Tool %r execution failed: %r", name, e, exc_info=True)
             raise
