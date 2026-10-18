@@ -111,10 +111,10 @@ Displays the target provider, model, dimensions, database backend, and memory co
 
 Creates a timestamped backup of your database:
 
-- **SQLite**: Copies the `.db` file (plus WAL/SHM if present) to `forgetful.db.bak-YYYYMMDD-HHMMSS`
-- **PostgreSQL**: Runs `pg_dump` to `forgetful-pg-YYYYMMDD-HHMMSS.sql`
+- **SQLite**: Takes a consistent snapshot of the database with SQLite's online backup, including changes that are still in the WAL, and writes it as one file, `forgetful.db.bak-YYYYMMDD-HHMMSS`
+- **PostgreSQL**: Runs `pg_dump --clean --if-exists` to `forgetful-pg-YYYYMMDD-HHMMSS.sql`
 
-The backup is kept alongside your database. In-memory SQLite databases skip this step, and so do
+The backup is kept alongside your database, in the directory of `SQLITE_PATH`, unless [`BACKUP_DIR`](./configuration.md#backup_dir) points elsewhere. Backups contain all of your data, so they are created readable by their owner only (`0600`, in a `0700` directory if Forgetful creates it). In-memory SQLite databases skip this step, and so do
 databases without any memories or skills: there is nothing to lose, so only the vector storage is
 resized to the configured dimensions.
 
@@ -202,19 +202,23 @@ The backup is restored automatically in these scenarios:
   Database returned to pre-migration state.
 ```
 
+A PostgreSQL restore runs in a single transaction and stops at the first error. If the restore itself fails, the error from `psql` is reported and the database is left exactly as it was, so a half-restored database is never reported as restored.
+
 ### Manual Restore
 
 If you need to manually restore after a successful migration (e.g., you notice search quality issues):
 
 **SQLite:**
 ```bash
-# The backup path is printed at the end of the migration
+# The backup path is printed at the end of the migration. Stop Forgetful first.
 cp /path/to/forgetful.db.bak-YYYYMMDD-HHMMSS /path/to/forgetful.db
+rm -f /path/to/forgetful.db-wal /path/to/forgetful.db-shm   # leftovers of the replaced database
 ```
 
 **PostgreSQL:**
 ```bash
-psql -h localhost -p 5099 -U forgetful -d forgetful -f /path/to/forgetful-pg-YYYYMMDD-HHMMSS.sql
+psql -h localhost -p 5099 -U forgetful -d forgetful -v ON_ERROR_STOP=1 --single-transaction \
+  -f /path/to/forgetful-pg-YYYYMMDD-HHMMSS.sql
 ```
 
 ### Backup Cleanup
@@ -340,6 +344,14 @@ Make sure your updated `.env` is mounted in the container before running.
 ### PostgreSQL Backup Requirements
 
 For PostgreSQL backups to work in Docker, the container needs `pg_dump` and `psql` available. The standard Forgetful Docker image includes these tools. If using a custom image, ensure the PostgreSQL client tools are installed.
+
+### Where Docker Backups Are Kept
+
+The backup is written inside the `forgetful-service` container, so it must be on a volume to outlive the container.
+
+- `docker-compose.yml` and `docker-compose.postgres.yml` set `BACKUP_DIR=/app/backups` and mount the named volume `forgetful_backups` there, so backups survive `docker compose up --force-recreate` and image upgrades. Copy one out with `docker compose cp forgetful-service:/app/backups/. ./backups`.
+- `docker-compose.sqlite.yml` keeps SQLite backups next to the database, in the `./data` volume.
+- With your own compose file or `docker run`, mount a volume and set `BACKUP_DIR` to it, otherwise the backup is lost with the container.
 
 ---
 

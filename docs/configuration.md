@@ -152,6 +152,7 @@ Forgetful provides three Docker Compose configurations:
   - Relative paths are relative to the project root (or `/app` in Docker containers)
   - **Docker deployment**: Use `data/forgetful.db` with volume mount `./data:/app/data` to persist data across container restarts (see `docker-compose.sqlite.yml`)
   - Without volume mounting, the database will be ephemeral and lost on container removal
+  - Forgetful creates the directory (when it does not exist yet) as `0700` and keeps the database, its `-wal`/`-shm` files and backups at `0600`, so only the owning account can read your data. Group and other access is also removed from an existing database file on startup; an existing directory is never changed. Windows is left alone. With the Docker SQLite setup the container's user owns `./data/forgetful.db`, so reading it from the host needs that user (typically `sudo`).
 - **Example**: `SQLITE_PATH=data/forgetful.db`
 
 #### `SQLITE_MEMORY`
@@ -196,6 +197,14 @@ Forgetful provides three Docker Compose configurations:
 - **Example**: `POSTGRES_PASSWORD=my_secure_password_123`
 
 ### Common Database Settings
+
+#### `BACKUP_DIR`
+- **Default**: empty (next to the SQLite database, in the directory of `SQLITE_PATH`)
+- **Description**: Directory for the backups that `--re-embed` takes before changing anything (SQLite snapshot or PostgreSQL `pg_dump`)
+- **Notes**:
+  - Created as `0700` if missing; the backup files themselves are `0600`
+  - Must be persistent storage. `docker-compose.yml` and `docker-compose.postgres.yml` set it to `/app/backups`, a named volume, because the default location (`/app/data`) is not a volume in a PostgreSQL deployment
+- **Example**: `BACKUP_DIR=/var/backups/forgetful`
 
 #### `DB_LOGGING`
 - **Default**: `false`
