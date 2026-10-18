@@ -49,9 +49,9 @@ See [FastMCP Auth Documentation](https://fastmcp.wiki/en/servers/auth/authentica
 |------|-------------|
 | 200 | Success |
 | 201 | Created |
-| 400 | Bad Request (validation error, `CyclicDependencyError`) |
+| 400 | Bad Request (validation error, malformed or non-object JSON body, `NaN`/infinite numbers in a body, invalid query parameter, `CyclicDependencyError`) |
 | 401 | Unauthorized (missing/invalid token) |
-| 404 | Not Found |
+| 404 | Not Found (including a path id that is not an integer id, such as `/api/v1/tasks/abc`) |
 | 409 | Conflict (`ConflictError` -- version mismatch in optimistic concurrency) |
 | 422 | Unprocessable Entity (`InvalidStateTransitionError`, `DependencyNotMetError`) |
 | 500 | Internal Server Error |
@@ -1218,6 +1218,8 @@ List plans with optional filtering.
 | `external_ref` | string | Exact, user-scoped reference lookup |
 | `status` | string | Filter by status: `draft`, `active`, `completed`, `archived` |
 
+A non-integer `project_id` or an unknown `status` returns 400.
+
 **Response:**
 ```json
 {
@@ -1374,6 +1376,8 @@ Query tasks for a plan. The `plan_id` query parameter is required.
 | `priority` | string | no | Filter by priority: `P0`, `P1`, `P2`, `P3` |
 | `assigned_agent` | string | no | Filter by assigned agent |
 
+A non-integer `plan_id` or an unknown `state` or `priority` returns 400 (the message lists the valid values).
+
 **Response:**
 ```json
 {
@@ -1518,6 +1522,8 @@ Transition a task to a new state. Uses optimistic concurrency via the `version` 
 | `state` | string | yes | Target state: `todo`, `doing`, `waiting`, `done`, `cancelled` |
 | `version` | int | yes | Current version for optimistic concurrency |
 
+An unknown `state` or a missing or non-integer `version` returns 400.
+
 **Task State Transitions:**
 
 | From | Allowed To |
@@ -1552,7 +1558,7 @@ Claim a task by assigning an agent and transitioning it to `doing`. Uses optimis
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `agent_id` | string | yes | Identifier of the claiming agent |
+| `agent_id` | string | yes | Identifier of the claiming agent: 1 to 200 characters (`TASK_AGENT_MAX_LENGTH`), surrounding whitespace is trimmed |
 | `version` | int | yes | Current version for optimistic concurrency |
 
 **Response:** Updated task object (state set to `doing`, `assigned_agent` set, version incremented)
@@ -1561,6 +1567,7 @@ Claim a task by assigning an agent and transitioning it to `doing`. Uses optimis
 
 | Code | Condition |
 |------|-----------|
+| 400 | Invalid body: missing, non-string, empty or over-long `agent_id`, or a missing or non-integer `version` |
 | 404 | Task not found |
 | 409 | Version mismatch (optimistic concurrency conflict) |
 | 422 | Invalid state transition, or unmet dependencies block the claim |

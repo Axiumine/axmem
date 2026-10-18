@@ -20,6 +20,11 @@ from app.models.memory_models import (
     MemoryQueryRequest,
     MemoryUpdate,
 )
+from app.routes.api.request_utils import (
+    handle_request_errors,
+    path_id,
+    read_json_object,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +60,7 @@ def register(mcp: FastMCP):
     """Register memory REST routes with FastMCP"""
 
     @mcp.custom_route("/api/v1/memories", methods=["GET"])
+    @handle_request_errors
     async def list_memories(request: Request) -> JSONResponse:
         """List memories with pagination, sorting, and filtering.
 
@@ -152,6 +158,7 @@ def register(mcp: FastMCP):
         return JSONResponse(response.model_dump(mode="json"))
 
     @mcp.custom_route("/api/v1/memories/{memory_id}", methods=["GET"])
+    @handle_request_errors
     async def get_memory(request: Request) -> JSONResponse:
         """Get a single memory by ID."""
         try:
@@ -159,7 +166,7 @@ def register(mcp: FastMCP):
         except ValueError as e:
             return JSONResponse({"error": str(e)}, status_code=401)
 
-        memory_id = int(request.path_params["memory_id"])
+        memory_id = path_id(request, "memory_id")
 
         try:
             memory = await mcp.memory_service.get_memory(
@@ -175,6 +182,7 @@ def register(mcp: FastMCP):
         return JSONResponse(memory.model_dump(mode="json"))
 
     @mcp.custom_route("/api/v1/memories", methods=["POST"])
+    @handle_request_errors
     async def create_memory(request: Request) -> JSONResponse:
         """Create a new memory."""
         try:
@@ -183,7 +191,7 @@ def register(mcp: FastMCP):
             return JSONResponse({"error": str(e)}, status_code=401)
 
         try:
-            body = await request.json()
+            body = await read_json_object(request)
             memory_data = MemoryCreate(**body)
         except ValidationError as e:
             return JSONResponse({"error": e.errors()}, status_code=400)
@@ -214,6 +222,7 @@ def register(mcp: FastMCP):
         return JSONResponse(response.model_dump(mode="json"), status_code=201)
 
     @mcp.custom_route("/api/v1/memories/{memory_id}", methods=["PUT"])
+    @handle_request_errors
     async def update_memory(request: Request) -> JSONResponse:
         """Update an existing memory."""
         try:
@@ -221,10 +230,10 @@ def register(mcp: FastMCP):
         except ValueError as e:
             return JSONResponse({"error": str(e)}, status_code=401)
 
-        memory_id = int(request.path_params["memory_id"])
+        memory_id = path_id(request, "memory_id")
 
         try:
-            body = await request.json()
+            body = await read_json_object(request)
             update_data = MemoryUpdate(**body)
         except ValidationError as e:
             return JSONResponse({"error": e.errors()}, status_code=400)
@@ -246,6 +255,7 @@ def register(mcp: FastMCP):
         return JSONResponse(memory.model_dump(mode="json"))
 
     @mcp.custom_route("/api/v1/memories/{memory_id}", methods=["DELETE"])
+    @handle_request_errors
     async def delete_memory(request: Request) -> JSONResponse:
         """Mark a memory as obsolete (soft delete)."""
         try:
@@ -253,7 +263,7 @@ def register(mcp: FastMCP):
         except ValueError as e:
             return JSONResponse({"error": str(e)}, status_code=401)
 
-        memory_id = int(request.path_params["memory_id"])
+        memory_id = path_id(request, "memory_id")
 
         try:
             body = await request.json()
@@ -276,6 +286,7 @@ def register(mcp: FastMCP):
         return JSONResponse({"success": True})
 
     @mcp.custom_route("/api/v1/memories/search", methods=["POST"])
+    @handle_request_errors
     async def search_memories(request: Request) -> JSONResponse:
         """Semantic search across memories."""
         try:
@@ -284,7 +295,7 @@ def register(mcp: FastMCP):
             return JSONResponse({"error": str(e)}, status_code=401)
 
         try:
-            body = await request.json()
+            body = await read_json_object(request)
             query_request = MemoryQueryRequest(**body)
         except ValidationError as e:
             return JSONResponse({"error": e.errors()}, status_code=400)
@@ -299,6 +310,7 @@ def register(mcp: FastMCP):
         return JSONResponse(result.model_dump(mode="json"))
 
     @mcp.custom_route("/api/v1/memories/{memory_id}/links", methods=["POST"])
+    @handle_request_errors
     async def link_memories(request: Request) -> JSONResponse:
         """Link memories together (appends to existing links)."""
         try:
@@ -306,7 +318,7 @@ def register(mcp: FastMCP):
         except ValueError as e:
             return JSONResponse({"error": str(e)}, status_code=401)
 
-        memory_id = int(request.path_params["memory_id"])
+        memory_id = path_id(request, "memory_id")
 
         try:
             body = await request.json()
@@ -329,6 +341,7 @@ def register(mcp: FastMCP):
         return JSONResponse({"linked_ids": linked_ids})
 
     @mcp.custom_route("/api/v1/memories/{memory_id}/links", methods=["GET"])
+    @handle_request_errors
     async def get_memory_links(request: Request) -> JSONResponse:
         """Get memories linked to this memory."""
         try:
@@ -336,7 +349,7 @@ def register(mcp: FastMCP):
         except ValueError as e:
             return JSONResponse({"error": str(e)}, status_code=401)
 
-        memory_id = int(request.path_params["memory_id"])
+        memory_id = path_id(request, "memory_id")
 
         params = request.query_params
         limit = min(int(params.get("limit", 20)), 100)
@@ -373,6 +386,7 @@ def register(mcp: FastMCP):
         })
 
     @mcp.custom_route("/api/v1/memories/{memory_id}/links/{target_id}", methods=["DELETE"])
+    @handle_request_errors
     async def delete_memory_link(request: Request) -> JSONResponse:
         """Remove a specific link between memories."""
         try:
@@ -380,8 +394,8 @@ def register(mcp: FastMCP):
         except ValueError as e:
             return JSONResponse({"error": str(e)}, status_code=401)
 
-        memory_id = int(request.path_params["memory_id"])
-        target_id = int(request.path_params["target_id"])
+        memory_id = path_id(request, "memory_id")
+        target_id = path_id(request, "target_id")
 
         try:
             success = await mcp.memory_service.unlink_memories(

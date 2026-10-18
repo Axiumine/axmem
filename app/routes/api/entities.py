@@ -21,6 +21,11 @@ from app.models.entity_models import (
     EntityType,
     EntityUpdate,
 )
+from app.routes.api.request_utils import (
+    handle_request_errors,
+    path_id,
+    read_json_object,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +57,7 @@ def register(mcp: FastMCP):
     """Register entity REST routes with FastMCP"""
 
     @mcp.custom_route("/api/v1/entities", methods=["GET"])
+    @handle_request_errors
     async def list_entities(request: Request) -> JSONResponse:
         """List entities with optional filtering and pagination.
 
@@ -118,6 +124,7 @@ def register(mcp: FastMCP):
         return JSONResponse(response.model_dump(mode="json"))
 
     @mcp.custom_route("/api/v1/entities/{entity_id}", methods=["GET"])
+    @handle_request_errors
     async def get_entity(request: Request) -> JSONResponse:
         """Get a single entity by ID."""
         try:
@@ -125,7 +132,7 @@ def register(mcp: FastMCP):
         except ValueError as e:
             return JSONResponse({"error": str(e)}, status_code=401)
 
-        entity_id = int(request.path_params["entity_id"])
+        entity_id = path_id(request, "entity_id")
 
         try:
             entity = await mcp.entity_service.get_entity(
@@ -138,6 +145,7 @@ def register(mcp: FastMCP):
         return JSONResponse(entity.model_dump(mode="json"))
 
     @mcp.custom_route("/api/v1/entities", methods=["POST"])
+    @handle_request_errors
     async def create_entity(request: Request) -> JSONResponse:
         """Create a new entity."""
         try:
@@ -146,7 +154,7 @@ def register(mcp: FastMCP):
             return JSONResponse({"error": str(e)}, status_code=401)
 
         try:
-            body = await request.json()
+            body = await read_json_object(request)
             entity_data = EntityCreate(**body)
         except ValidationError as e:
             return JSONResponse({"error": e.errors()}, status_code=400)
@@ -162,6 +170,7 @@ def register(mcp: FastMCP):
         return JSONResponse(entity.model_dump(mode="json"), status_code=201)
 
     @mcp.custom_route("/api/v1/entities/{entity_id}", methods=["PUT"])
+    @handle_request_errors
     async def update_entity(request: Request) -> JSONResponse:
         """Update an existing entity."""
         try:
@@ -169,10 +178,10 @@ def register(mcp: FastMCP):
         except ValueError as e:
             return JSONResponse({"error": str(e)}, status_code=401)
 
-        entity_id = int(request.path_params["entity_id"])
+        entity_id = path_id(request, "entity_id")
 
         try:
-            body = await request.json()
+            body = await read_json_object(request)
             update_data = EntityUpdate(**body)
         except ValidationError as e:
             return JSONResponse({"error": e.errors()}, status_code=400)
@@ -195,6 +204,7 @@ def register(mcp: FastMCP):
         return JSONResponse(entity.model_dump(mode="json"))
 
     @mcp.custom_route("/api/v1/entities/{entity_id}", methods=["DELETE"])
+    @handle_request_errors
     async def delete_entity(request: Request) -> JSONResponse:
         """Delete an entity."""
         try:
@@ -202,7 +212,7 @@ def register(mcp: FastMCP):
         except ValueError as e:
             return JSONResponse({"error": str(e)}, status_code=401)
 
-        entity_id = int(request.path_params["entity_id"])
+        entity_id = path_id(request, "entity_id")
 
         success = await mcp.entity_service.delete_entity(
             user_id=user.id,
@@ -215,6 +225,7 @@ def register(mcp: FastMCP):
         return JSONResponse({"success": True})
 
     @mcp.custom_route("/api/v1/entities/search", methods=["POST"])
+    @handle_request_errors
     async def search_entities(request: Request) -> JSONResponse:
         """Search entities by name or description."""
         try:
@@ -258,6 +269,7 @@ def register(mcp: FastMCP):
 
     # Entity-Memory Links
     @mcp.custom_route("/api/v1/entities/{entity_id}/memories", methods=["POST"])
+    @handle_request_errors
     async def link_entity_to_memory(request: Request) -> JSONResponse:
         """Link an entity to a memory."""
         try:
@@ -265,7 +277,7 @@ def register(mcp: FastMCP):
         except ValueError as e:
             return JSONResponse({"error": str(e)}, status_code=401)
 
-        entity_id = int(request.path_params["entity_id"])
+        entity_id = path_id(request, "entity_id")
 
         try:
             body = await request.json()
@@ -288,6 +300,7 @@ def register(mcp: FastMCP):
         return JSONResponse({"success": success})
 
     @mcp.custom_route("/api/v1/entities/{entity_id}/memories/{memory_id}", methods=["DELETE"])
+    @handle_request_errors
     async def unlink_entity_from_memory(request: Request) -> JSONResponse:
         """Remove link between entity and memory."""
         try:
@@ -295,8 +308,8 @@ def register(mcp: FastMCP):
         except ValueError as e:
             return JSONResponse({"error": str(e)}, status_code=401)
 
-        entity_id = int(request.path_params["entity_id"])
-        memory_id = int(request.path_params["memory_id"])
+        entity_id = path_id(request, "entity_id")
+        memory_id = path_id(request, "memory_id")
 
         try:
             success = await mcp.entity_service.unlink_entity_from_memory(
@@ -313,6 +326,7 @@ def register(mcp: FastMCP):
         return JSONResponse({"success": True})
 
     @mcp.custom_route("/api/v1/entities/{entity_id}/memories", methods=["GET"])
+    @handle_request_errors
     async def get_entity_memories(request: Request) -> JSONResponse:
         """Get all memories linked to an entity."""
         try:
@@ -320,7 +334,7 @@ def register(mcp: FastMCP):
         except ValueError as e:
             return JSONResponse({"error": str(e)}, status_code=401)
 
-        entity_id = int(request.path_params["entity_id"])
+        entity_id = path_id(request, "entity_id")
 
         try:
             memory_ids, count, memories = await mcp.entity_service.get_entity_memories(
@@ -338,6 +352,7 @@ def register(mcp: FastMCP):
 
     # Entity Relationships
     @mcp.custom_route("/api/v1/entities/{entity_id}/relationships", methods=["GET"])
+    @handle_request_errors
     async def get_entity_relationships(request: Request) -> JSONResponse:
         """Get relationships for an entity."""
         try:
@@ -345,7 +360,7 @@ def register(mcp: FastMCP):
         except ValueError as e:
             return JSONResponse({"error": str(e)}, status_code=401)
 
-        entity_id = int(request.path_params["entity_id"])
+        entity_id = path_id(request, "entity_id")
 
         try:
             relationships = await mcp.entity_service.get_entity_relationships(
@@ -361,6 +376,7 @@ def register(mcp: FastMCP):
         })
 
     @mcp.custom_route("/api/v1/entities/{entity_id}/relationships", methods=["POST"])
+    @handle_request_errors
     async def create_entity_relationship(request: Request) -> JSONResponse:
         """Create a relationship between entities."""
         try:
@@ -368,10 +384,10 @@ def register(mcp: FastMCP):
         except ValueError as e:
             return JSONResponse({"error": str(e)}, status_code=401)
 
-        source_entity_id = int(request.path_params["entity_id"])
+        source_entity_id = path_id(request, "entity_id")
 
         try:
-            body = await request.json()
+            body = await read_json_object(request)
             # Add source_entity_id to body for validation
             body["source_entity_id"] = source_entity_id
             relationship_data = EntityRelationshipCreate(**body)
@@ -391,6 +407,7 @@ def register(mcp: FastMCP):
         return JSONResponse(relationship.model_dump(mode="json"), status_code=201)
 
     @mcp.custom_route("/api/v1/entities/relationships/{relationship_id}", methods=["PUT"])
+    @handle_request_errors
     async def update_entity_relationship(request: Request) -> JSONResponse:
         """Update an entity relationship."""
         try:
@@ -398,10 +415,10 @@ def register(mcp: FastMCP):
         except ValueError as e:
             return JSONResponse({"error": str(e)}, status_code=401)
 
-        relationship_id = int(request.path_params["relationship_id"])
+        relationship_id = path_id(request, "relationship_id")
 
         try:
-            body = await request.json()
+            body = await read_json_object(request)
             update_data = EntityRelationshipUpdate(**body)
         except ValidationError as e:
             return JSONResponse({"error": e.errors()}, status_code=400)
@@ -420,6 +437,7 @@ def register(mcp: FastMCP):
         return JSONResponse(relationship.model_dump(mode="json"))
 
     @mcp.custom_route("/api/v1/entities/relationships/{relationship_id}", methods=["DELETE"])
+    @handle_request_errors
     async def delete_entity_relationship(request: Request) -> JSONResponse:
         """Delete an entity relationship."""
         try:
@@ -427,7 +445,7 @@ def register(mcp: FastMCP):
         except ValueError as e:
             return JSONResponse({"error": str(e)}, status_code=401)
 
-        relationship_id = int(request.path_params["relationship_id"])
+        relationship_id = path_id(request, "relationship_id")
 
         success = await mcp.entity_service.delete_entity_relationship(
             user_id=user.id,
