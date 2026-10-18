@@ -11,7 +11,7 @@ from pydantic import ValidationError
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-from app.exceptions import NotFoundError
+from app.exceptions import AssociationNotFoundError, NotFoundError
 from app.middleware.auth import get_user_from_request
 from app.models.memory_models import (
     MemoryCreate,
@@ -190,10 +190,13 @@ def register(mcp: FastMCP):
         except Exception as e:
             return JSONResponse({"error": f"Invalid request body: {e!s}"}, status_code=400)
 
-        memory, similar_memories = await mcp.memory_service.create_memory(
-            user_id=user.id,
-            memory_data=memory_data,
-        )
+        try:
+            memory, similar_memories = await mcp.memory_service.create_memory(
+                user_id=user.id,
+                memory_data=memory_data,
+            )
+        except AssociationNotFoundError as e:
+            return JSONResponse({"error": str(e)}, status_code=404)
         obsolete_matches = await mcp.memory_service.find_obsolete_matches(
             user_id=user.id,
             memory_id=memory.id,
@@ -238,6 +241,8 @@ def register(mcp: FastMCP):
                 memory_id=memory_id,
                 updated_memory=update_data,
             )
+        except AssociationNotFoundError as e:
+            return JSONResponse({"error": str(e)}, status_code=404)
         except NotFoundError:
             return JSONResponse({"error": "Memory not found"}, status_code=404)
 

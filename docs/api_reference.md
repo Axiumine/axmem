@@ -186,6 +186,8 @@ Create a new memory.
 }
 ```
 
+**Errors:** `404` with a message such as `Projects not found: {999}` when an id in `project_ids`, `code_artifact_ids`, `document_ids`, `file_ids` or `skill_ids` does not exist (or belongs to another user). Nothing is created in that case.
+
 ### PUT /api/v1/memories/{id}
 
 Update an existing memory.
@@ -209,6 +211,8 @@ Update an existing memory.
 Provenance fields can be added or updated after memory creation. See POST /api/v1/memories for field descriptions.
 
 **Response:** Updated memory object
+
+**Errors:** `404` with `Memory not found` when the memory does not exist, or with a message such as `Projects not found: {999}` when an associated id does not exist.
 
 ### DELETE /api/v1/memories/{id}
 
