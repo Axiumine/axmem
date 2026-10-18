@@ -7,11 +7,14 @@ the Agent Skills open standard (agentskills.io).
 
 import re
 from datetime import UTC, datetime
+from typing import ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic_core import PydanticCustomError
 
 from app.config.settings import settings
 from app.models.patch_models import PatchModel
+from app.models.storable import StorableInput
 
 
 def _require_text(value: str, field_name: str) -> str:
@@ -38,7 +41,23 @@ def _check_allowed_tools_length(tools: list[str] | None) -> list[str] | None:
     return tools
 
 
-class SkillCreate(BaseModel):
+def _check_tag_length(tags: list[str]) -> None:
+    """Refuse tags too long to index
+
+    skills.tags carries a GIN index on PostgreSQL, which cannot index a key above roughly
+    2.7KB, so one oversized tag would fail the whole write with a driver error.
+    PydanticCustomError keeps the error context JSON serialisable for the routes.
+    """
+    limit = settings.SKILL_TAG_MAX_LENGTH
+    if any(len(tag) > limit for tag in tags):
+        raise PydanticCustomError(
+            "tag_too_long",
+            "Tags are limited to {limit} characters each",
+            {"limit": limit},
+        )
+
+
+class SkillCreate(StorableInput):
     """Request model for creating a skill
 
     Skills are what make up procedural memory and provide steps and examples
@@ -163,10 +182,13 @@ class SkillCreate(BaseModel):
         if len(cleaned) > settings.SKILL_TAGS_MAX_COUNT:
             raise ValueError(f"Maximum {settings.SKILL_TAGS_MAX_COUNT} tags allowed")
 
+        if cls.enforce_storage_limits:
+            _check_tag_length(cleaned)
+
         return cleaned
 
 
-class SkillUpdate(PatchModel):
+class SkillUpdate(PatchModel, StorableInput):
     """Request model for updating a skill.
 
     Follows PATCH semantics: only provided fields are updated.
@@ -248,6 +270,9 @@ class SkillUpdate(PatchModel):
         if len(cleaned) > settings.SKILL_TAGS_MAX_COUNT:
             raise ValueError(f"Maximum {settings.SKILL_TAGS_MAX_COUNT} tags allowed")
 
+        if cls.enforce_storage_limits:
+            _check_tag_length(cleaned)
+
         return cleaned
 
 
@@ -257,6 +282,9 @@ class Skill(SkillCreate):
     Extends SkillCreate with system-generated fields (id and timestamps).
     Used for responses that include full Skill detail.
     """
+    # Skills stored before NaN/NUL and oversized tags were refused stay readable
+    enforce_storage_limits: ClassVar[bool] = False
+
     id: int = Field(..., description="Unique identifier (auto-generated)")
     created_at: datetime = Field(default_factory=lambda: datetime.now(tz=UTC), frozen=True)
     updated_at: datetime = Field(default_factory=lambda: datetime.now(tz=UTC))

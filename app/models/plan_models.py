@@ -7,7 +7,7 @@ These are tightly coupled aggregates forming the hierarchy:
 
 from datetime import datetime
 from enum import StrEnum
-from typing import Annotated, Any
+from typing import Annotated, Any, ClassVar
 
 from pydantic import (
     BaseModel,
@@ -20,6 +20,7 @@ from pydantic import (
 from pydantic_core import PydanticCustomError
 
 from app.config.settings import settings
+from app.models.storable import StorableInput
 
 
 def _ignore_null_values(data: Any) -> Any:
@@ -111,7 +112,7 @@ def _require_text(value: str, field_name: str) -> str:
 # ============================================================================
 
 
-class CriterionCreate(BaseModel):
+class CriterionCreate(StorableInput):
     """Input model for creating an acceptance criterion."""
     description: str = Field(..., max_length=settings.CRITERION_DESCRIPTION_MAX_LENGTH)
 
@@ -121,7 +122,7 @@ class CriterionCreate(BaseModel):
         return _require_text(v, "description")
 
 
-class CriterionUpdate(BaseModel):
+class CriterionUpdate(StorableInput):
     """PATCH model for updating a criterion."""
     description: str | None = Field(None, max_length=settings.CRITERION_DESCRIPTION_MAX_LENGTH)
     met: bool | None = None
@@ -189,7 +190,7 @@ ExternalRef = Annotated[
 ]
 
 
-class PlanCreate(BaseModel):
+class PlanCreate(StorableInput):
     """Input model for creating a plan."""
     title: str = Field(..., max_length=settings.PLAN_TITLE_MAX_LENGTH)
     project_id: int
@@ -230,7 +231,7 @@ class PlanCreate(BaseModel):
         return v.strip() if v else v
 
 
-class PlanUpdate(BaseModel):
+class PlanUpdate(StorableInput):
     """PATCH model for updating a plan."""
     title: str | None = Field(None, max_length=settings.PLAN_TITLE_MAX_LENGTH)
     goal: str | None = Field(None, max_length=settings.PLAN_GOAL_MAX_LENGTH)
@@ -278,6 +279,9 @@ class PlanUpdate(BaseModel):
 
 class Plan(PlanCreate):
     """Full plan model returned from repository."""
+    # Plans stored before NUL was refused (SQLite accepted it) stay readable
+    enforce_storage_limits: ClassVar[bool] = False
+
     id: int
     task_count: int = 0
     created_at: datetime
@@ -320,7 +324,7 @@ TaskAgentId = Annotated[
 ]
 
 
-class TaskCreate(BaseModel):
+class TaskCreate(StorableInput):
     """Input model for creating a task."""
     title: str = Field(..., max_length=settings.TASK_TITLE_MAX_LENGTH)
     plan_id: int
@@ -359,7 +363,7 @@ class TaskCreate(BaseModel):
         return v.strip() if v else v
 
 
-class TaskUpdate(BaseModel):
+class TaskUpdate(StorableInput):
     """PATCH model for updating task metadata. State changes go through transition_task."""
     title: str | None = Field(None, max_length=settings.TASK_TITLE_MAX_LENGTH)
     description: str | None = Field(None, max_length=settings.TASK_DESCRIPTION_MAX_LENGTH)
