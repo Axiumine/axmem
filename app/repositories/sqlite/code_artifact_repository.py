@@ -13,6 +13,7 @@ from app.models.code_artifact_models import (
     CodeArtifactSummary,
     CodeArtifactUpdate,
 )
+from app.repositories.sqlite.project_reference import ensure_project_owned
 from app.repositories.sqlite.sqlite_adapter import SqliteDatabaseAdapter
 from app.repositories.sqlite.sqlite_json_filters import json_array_overlaps
 from app.repositories.sqlite.sqlite_tables import CodeArtifactsTable
@@ -45,9 +46,14 @@ class SqliteCodeArtifactRepository:
 
         Returns:
             Created CodeArtifact with generated ID and timestamps
+
+        Raises:
+            NotFoundError: If project_id is not one of the user's projects
         """
         try:
             async with self.db_adapter.session(user_id) as session:
+                await ensure_project_owned(session, user_id, artifact_data.project_id)
+
                 # Create ORM model from Pydantic
                 artifact_table = CodeArtifactsTable(
                     user_id=str(user_id),
@@ -75,6 +81,8 @@ class SqliteCodeArtifactRepository:
                 # Convert ORM to Pydantic
                 return CodeArtifact.model_validate(artifact_table)
 
+        except NotFoundError:
+            raise
         except Exception as e:
             logger.error(
                 "Failed to create code artifact",
@@ -204,7 +212,8 @@ class SqliteCodeArtifactRepository:
             Updated CodeArtifact
 
         Raises:
-            NotFoundError: If artifact not found or not owned by user
+            NotFoundError: If artifact not found or not owned by user,
+                or project_id is not one of the user's projects
         """
         try:
             async with self.db_adapter.session(user_id) as session:
@@ -222,6 +231,7 @@ class SqliteCodeArtifactRepository:
 
                 # Update only provided fields (PATCH)
                 update_data = artifact_data.model_dump(exclude_unset=True)
+                await ensure_project_owned(session, user_id, update_data.get("project_id"))
 
                 # Ensure language is lowercase if being updated
                 if update_data.get("language"):

@@ -18,6 +18,7 @@ from app.models.skill_models import (
 )
 from app.protocols.embedding_protocol import EmbeddingsAdapter
 from app.repositories.embeddings.reranker_adapter import RerankAdapter
+from app.repositories.sqlite.project_reference import ensure_project_owned
 from app.repositories.sqlite.sqlite_adapter import SqliteDatabaseAdapter
 from app.repositories.sqlite.sqlite_json_filters import json_array_overlaps
 from app.repositories.sqlite.sqlite_tables import (
@@ -80,6 +81,9 @@ class SqliteSkillRepository:
 
         Returns:
             Created Skill with generated ID and timestamps.
+
+        Raises:
+            NotFoundError: If project_id is not one of the user's projects
         """
         try:
             embedding_text = build_skill_embedding_text(skill_data)
@@ -90,6 +94,8 @@ class SqliteSkillRepository:
             )
 
             async with self.db_adapter.session(user_id) as session:
+                await ensure_project_owned(session, user_id, skill_data.project_id)
+
                 skill_table = SkillsTable(
                     user_id=str(user_id),
                     name=skill_data.name,
@@ -136,6 +142,8 @@ class SqliteSkillRepository:
 
                 return self._to_skill(skill_table)
 
+        except NotFoundError:
+            raise
         except Exception as exc:
             if _is_name_conflict(exc):
                 raise ConflictError(
@@ -295,7 +303,8 @@ class SqliteSkillRepository:
             Updated Skill.
 
         Raises:
-            NotFoundError: If skill not found or not owned.
+            NotFoundError: If skill not found or not owned,
+                or project_id is not one of the user's projects.
         """
         try:
             async with self.db_adapter.session(user_id) as session:
@@ -315,6 +324,7 @@ class SqliteSkillRepository:
                 update_data = skill_data.model_dump(
                     exclude_unset=True,
                 )
+                await ensure_project_owned(session, user_id, update_data.get("project_id"))
 
                 # Map metadata -> skill_metadata column
                 if "metadata" in update_data:
