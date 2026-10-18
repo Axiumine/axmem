@@ -1678,3 +1678,5 @@ For validation errors (400), the error may contain detailed field-level errors:
   ]
 }
 ```
+
+Each entry contains only `type`, `loc` and `msg`; the rejected input value is not echoed back.
