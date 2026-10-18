@@ -4,7 +4,6 @@ Phase 1 of the Web UI foundation (Issue #3).
 Provides CRUD operations for memories with pagination, filtering, and semantic search.
 """
 import logging
-from typing import Any
 
 from fastmcp import FastMCP
 from pydantic import ValidationError
@@ -26,6 +25,7 @@ from app.models.memory_models import (
     MemoryQueryRequest,
     MemoryUpdate,
 )
+from app.routes.api.query_params import INT32_MAX, INT32_MIN, parse_int_param
 from app.routes.api.request_utils import (
     handle_request_errors,
     path_id,
@@ -37,29 +37,6 @@ logger = logging.getLogger(__name__)
 # Valid values for query parameters
 VALID_SORT_BY = {"created_at", "updated_at", "importance"}
 VALID_SORT_ORDER = {"asc", "desc"}
-
-
-def parse_int_param(params: Any, name: str, default: int | None = None) -> int | None:
-    """Parse integer query parameter with strict validation.
-
-    Args:
-        params: Query params object
-        name: Parameter name
-        default: Default value if param not provided
-
-    Returns:
-        Parsed integer or default
-
-    Raises:
-        ValueError: If value is not a valid integer
-    """
-    raw = params.get(name)
-    if raw is None:
-        return default
-    try:
-        return int(raw)
-    except (ValueError, TypeError):
-        raise ValueError(f"Invalid value for '{name}': must be an integer")
 
 
 def register(mcp: FastMCP):
@@ -92,7 +69,9 @@ def register(mcp: FastMCP):
             limit = parse_int_param(params, "limit", 20)
             offset = parse_int_param(params, "offset", 0)
             importance_min = parse_int_param(params, "importance_min")
-            project_id = parse_int_param(params, "project_id")
+            project_id = parse_int_param(
+                params, "project_id", min_value=INT32_MIN, max_value=INT32_MAX,
+            )
         except ValueError as e:
             return JSONResponse({"error": str(e)}, status_code=400)
 
@@ -140,7 +119,7 @@ def register(mcp: FastMCP):
         include_obsolete = params.get("include_obsolete", "false").lower() == "true"
 
         # Convert project_id to list if provided
-        project_ids = [project_id] if project_id else None
+        project_ids = [project_id] if project_id is not None else None
 
         memories, total = await mcp.memory_service.list_memories(
             user_id=user.id,

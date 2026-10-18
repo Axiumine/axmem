@@ -15,6 +15,7 @@ from app.config.settings import settings
 from app.exceptions import NotFoundError
 from app.middleware.auth import get_user_from_request
 from app.models.memory_models import Memory
+from app.routes.api.query_params import INT32_MAX, INT32_MIN, INT64_MAX
 
 logger = logging.getLogger(__name__)
 
@@ -161,6 +162,11 @@ def register(mcp: FastMCP):
                 {"error": f"Invalid limit: {limit_str}. Must be an integer."},
                 status_code=400,
             )
+        if limit < 1:
+            return JSONResponse(
+                {"error": "limit must be at least 1"},
+                status_code=400,
+            )
 
         # Validate offset parameter
         try:
@@ -168,6 +174,11 @@ def register(mcp: FastMCP):
             if offset < 0:
                 return JSONResponse(
                     {"error": "offset must be non-negative"},
+                    status_code=400,
+                )
+            if offset > INT64_MAX:
+                return JSONResponse(
+                    {"error": f"Invalid offset: {offset_str}. Out of range."},
                     status_code=400,
                 )
         except ValueError:
@@ -200,6 +211,12 @@ def register(mcp: FastMCP):
             except ValueError:
                 return JSONResponse(
                     {"error": f"Invalid project_id: {project_id_str}. Must be an integer."},
+                    status_code=400,
+                )
+            # project ids are 32-bit INTEGER columns on PostgreSQL
+            if not INT32_MIN <= project_ids[0] <= INT32_MAX:
+                return JSONResponse(
+                    {"error": f"Invalid project_id: {project_id_str}. Out of range."},
                     status_code=400,
                 )
 
