@@ -12,6 +12,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
 
+from test_harness.safe_io import UnsafePathError, read_bytes
+
 _CONTRACT_EXAMPLE = {
     "skill": "forgetful-example",
     "verdict": "issues",
@@ -54,7 +56,9 @@ _SEVERITY_ALIASES = {"trivial": "nit", "critical": "blocker"}
 
 def _normalize_severity(value: Any) -> Any:
     value = _lowercase(value)
-    return _SEVERITY_ALIASES.get(value, value)
+    # Only a string can be an alias: a list/dict value is unhashable, and must fall
+    # through to the Literal check so it is rejected as a normal schema error
+    return _SEVERITY_ALIASES.get(value, value) if isinstance(value, str) else value
 
 
 class ReportStep(BaseModel):
@@ -104,13 +108,20 @@ def report_contract_example() -> str:
     return json.dumps(_CONTRACT_EXAMPLE, indent=2)
 
 
-def load_report(path: Path) -> ReportLoad:
-    """Read and validate an agent-produced report; failures are findings, not errors."""
-    if not path.is_file():
-        return ReportLoad(status="missing", detail=f"no report at {path}")
+def load_report(path: Path, root: Path | None = None) -> ReportLoad:
+    """Read and validate an agent-produced report; failures are findings, not errors.
+
+    `root` is the agent-writable directory the report sits in: a report reached through
+    a symlink planted below it is ignored, never read."""
     try:
-        raw = json.loads(path.read_text())
-    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raw = json.loads(read_bytes(path, root).decode("utf-8"))
+    except (FileNotFoundError, NotADirectoryError):
+        return ReportLoad(status="missing", detail=f"no report at {path}")
+    except UnsafePathError as exc:
+        return ReportLoad(status="missing", detail=f"report ignored: {exc}")
+    except (OSError, ValueError, RecursionError) as exc:
+        # ValueError covers JSONDecodeError, UnicodeDecodeError and the int digit limit;
+        # RecursionError is pathological nesting; OSError an unreadable file
         return ReportLoad(status="invalid_json", detail=str(exc))
     try:
         return ReportLoad(status="ok", report=WalkthroughReport.model_validate(raw))

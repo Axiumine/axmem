@@ -25,6 +25,7 @@ import tempfile
 from pathlib import Path
 
 from test_harness.config import HarnessConfig
+from test_harness.safe_io import write_text
 from test_harness.server import HarnessInfraError
 from test_harness.walkthrough import SessionOutcome
 
@@ -200,7 +201,7 @@ def ensure_image(rebuild: bool = False, log=print) -> None:
         except docker.errors.ImageNotFound:
             log(f"{IMAGE} not found - first build pulls node and the locked deps")
 
-    (_DOCKER_DIR / "requirements.lock").write_text(requirements)
+    (_DOCKER_DIR / "requirements.lock").write_text(requirements, encoding="utf-8")
     log(f"building {IMAGE} ...")
     build_cmd = ["docker", "build", "-t", IMAGE, "--label", f"{_HASH_LABEL}={digest}"]
     if rebuild:
@@ -346,7 +347,7 @@ class AgentContainer:
             # throws "I/O operation on closed file" at interpreter exit (mem 1645)
             stream._response.close()  # noqa: SLF001
         if log_path is not None:
-            log_path.write_text(buffer)
+            write_text(log_path, buffer, self.run_dir / "skills")
         return self._client.api.exec_inspect(exec_id)["ExitCode"], buffer
 
     def stop(self) -> None:
