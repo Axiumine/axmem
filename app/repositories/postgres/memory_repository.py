@@ -833,6 +833,14 @@ class PostgresMemoryRepository:
         if not target_ids:
             return []
 
+        # memories.id is a 32-bit INTEGER column and asyncpg refuses to encode a larger value
+        # instead of matching no row. Such ids cannot exist, so skip them like unknown ids; an error
+        # mid-loop would abort the batch after earlier links were already committed.
+        max_storable_id = 2**31 - 1
+        if not 0 < source_id <= max_storable_id:
+            return []
+        target_ids = [target_id for target_id in target_ids if 0 < target_id <= max_storable_id]
+
         links_created = []
 
         for target_id in target_ids:
@@ -1020,6 +1028,45 @@ class PostgresMemoryRepository:
             })
 
             return [Memory.model_validate(m) for m in memories], total
+
+    async def get_listed_memory_ids(
+            self,
+            user_id: UUID,
+            memory_ids: list[int],
+            project_ids: list[int] | None = None,
+    ) -> set[int]:
+        """Return the ids among memory_ids that list_memories would list.
+
+        Applies the same visibility rules as list_memories (owned by the user, not obsolete,
+        member of one of project_ids when given) without loading the memories.
+
+        Args:
+            user_id: User ID for ownership filtering
+            memory_ids: Candidate memory ids
+            project_ids: Project filter (optional)
+
+        Returns:
+            The subset of memory_ids that is listed
+        """
+        if not memory_ids:
+            return set()
+
+        conditions = [
+            MemoryTable.user_id == user_id,
+            MemoryTable.id.in_(memory_ids),
+            MemoryTable.is_obsolete.is_(False),
+        ]
+        if project_ids:
+            conditions.append(
+                select(memory_project_association.c.memory_id).where(
+                    memory_project_association.c.memory_id == MemoryTable.id,
+                    memory_project_association.c.project_id.in_(project_ids),
+                ).exists(),
+            )
+
+        async with self.db_adapter.session(user_id) as session:
+            result = await session.execute(select(MemoryTable.id).where(*conditions))
+            return set(result.scalars().all())
 
     async def _link_projects(
             self,
