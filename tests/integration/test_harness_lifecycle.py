@@ -405,6 +405,7 @@ DRIVER = textwrap.dedent(
         def write_summary(self, results):
             pass
 
+    hm.docker_sdk = lambda: None  # the container is faked, so the SDK is not needed
     hm.ensure_image = lambda rebuild=False: None
     hm.ThrowawayForgetful = FakeServer
     hm.AgentContainer = FakeContainer
