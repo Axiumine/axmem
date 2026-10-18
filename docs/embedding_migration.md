@@ -60,9 +60,11 @@ dimensions even when the database holds no memories yet.
 forgetful --re-embed [--batch-size N] [--dry-run]
 ```
 
+`--batch-size` and `--dry-run` only apply together with `--re-embed`; used alone they are rejected with a usage error instead of starting the server.
+
 ### `--batch-size N`
 
-Number of memories to process per batch. Default: `20`.
+Number of memories to process per batch. Must be a whole number of at least `1`; anything else is rejected before any backup or schema change. Default: `20`.
 
 Lower values use less memory and are safer for rate-limited APIs. Higher values are faster for local providers like FastEmbed.
 

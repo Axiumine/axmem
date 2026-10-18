@@ -440,6 +440,8 @@ def _serve(transport, host, port):
 
 def _legacy_launcher(argv):
     """Pre-subcommand argument surface, kept working indefinitely."""
+    from app.routes.cli.parser import positive_int
+
     # cli()'s KNOWN-gate sends a bare `--help` here, so this epilog is the only place
     # a top-level `forgetful --help` can surface the subcommands. Canonical per-verb
     # help lives in app/routes/cli/parser.py; this is just a discoverability pointer.
@@ -467,7 +469,9 @@ def _legacy_launcher(argv):
     parser.add_argument(
         "--host",
         default=settings.SERVER_HOST,
-        help=f"HTTP host (default: {settings.SERVER_HOST})",
+        # %(default)s, not an f-string: argparse %-expands help, and a host such as
+        # "fe80::1%eth0" would otherwise be parsed as a format directive.
+        help="HTTP host (default: %(default)s)",
     )
     parser.add_argument(
         "--port",
@@ -489,8 +493,8 @@ def _legacy_launcher(argv):
     )
     parser.add_argument(
         "--batch-size",
-        type=int,
-        default=20,
+        type=positive_int,
+        default=None,
         help="Batch size for re-embedding (default: 20)",
     )
     parser.add_argument(
@@ -502,8 +506,23 @@ def _legacy_launcher(argv):
     args = parser.parse_args(argv)
 
     if args.re_embed:
+        if args.batch_size is None:
+            args.batch_size = 20
         asyncio.run(_run_reembed(args))
         return None
+
+    # Re-embed-only flags: without --re-embed they would be silently ignored and the
+    # real server started instead, unlike `forgetful serve`, which rejects them.
+    stray = [
+        flag
+        for flag, given in (
+            ("--batch-size", args.batch_size is not None),
+            ("--dry-run", args.dry_run),
+        )
+        if given
+    ]
+    if stray:
+        parser.error(f"{', '.join(stray)} can only be used with --re-embed")
 
     return _serve(transport=args.transport, host=args.host, port=args.port)
 
