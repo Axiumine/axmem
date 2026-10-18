@@ -47,13 +47,19 @@ def gate_pylint(ctx: Ctx) -> tuple[bool, str]:
     return check([*venv_tool("pylint"), "--fail-under=8.0", *paths])
 
 
+BANDIT_BASE = [
+    "-c", "pyproject.toml", "-q", "-f", "custom",
+    "--msg-template", "{relpath}:{line}: {test_id} [{severity}/{confidence}] {msg}",
+]
+
+
 def gate_bandit(ctx: Ctx) -> tuple[bool, str]:
     if ctx.scoped:
         paths = [f for f in ctx.py_files() if not f.startswith("tests/")]
         if not paths:
             raise Skip("no non-test Python files")
-        return check([*venv_tool("bandit"), "-c", "pyproject.toml", "-q", *paths])
-    return check([*venv_tool("bandit"), "-c", "pyproject.toml", "-q", "-r", *SOURCE_PATHS])
+        return check([*venv_tool("bandit"), *BANDIT_BASE, *paths])
+    return check([*venv_tool("bandit"), *BANDIT_BASE, "-r", *SOURCE_PATHS])
 
 
 def gate_vulture(ctx: Ctx) -> tuple[bool, str]:

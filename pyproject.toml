@@ -262,8 +262,8 @@ min_confidence = 60
 exclude = ["app/_version.py", "test_harness/runs/", "alembic/versions/"]
 
 [tool.mutmut]
-paths_to_mutate = ["app/"]
-tests_dir = ["tests/architecture/", "tests/integration/", "tests/e2e_sqlite/"]
+source_paths = ["app/"]
+pytest_add_cli_args_test_selection = ["tests/architecture/", "tests/integration/", "tests/e2e_sqlite/"]
 do_not_mutate = ["app/_version.py", "app/repositories/postgres/*"]
 also_copy = ["alembic/", "alembic.ini", "pytest.ini", "main.py"]
 pytest_add_cli_args = ["-p", "no:cacheprovider", "-q"]

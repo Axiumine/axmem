@@ -5,7 +5,16 @@ from __future__ import annotations
 import os
 import shutil
 
-from .core import SUITES_SQLITE, Ctx, Skip, check, docker_ready, run, venv_tool
+from .core import (
+    SUITES_SQLITE,
+    Ctx,
+    Skip,
+    check,
+    docker_ready,
+    git_lines,
+    run,
+    venv_tool,
+)
 
 COMPAT_PYTHON = "3.14"
 CODE_PREFIXES = ("app/", "tests/", "main.py", "alembic/")
@@ -61,18 +70,32 @@ def gate_memray(_ctx: Ctx) -> tuple[bool, str]:
     return check([*venv_tool("pytest"), "tests/e2e_sqlite", "-m", "memory", "--memray", *PYTEST])
 
 
+def mutation_targets(ctx: Ctx) -> list[str]:
+    """mutmut selects mutants by dotted name pattern; whole-app runs (~33k mutants) are impractical."""
+    explicit = os.environ.get("MUTATION_TARGETS", "").split()
+    if explicit:
+        return explicit
+    if ctx.scoped:
+        changed = ctx.py_files(("app/",))
+    else:  # pre-push / ci: whatever the branch changed relative to main
+        diff = git_lines("diff", "--name-only", "--diff-filter=ACMR", "origin/main...HEAD")
+        changed = [f for f in diff if f.startswith("app/") and f.endswith(".py")]
+    if not changed:
+        raise Skip("no changed app/ modules; or set MUTATION_TARGETS='app.utils.*'")
+    return [f.removesuffix(".py").replace("/", ".") + ".*" for f in changed]
+
+
 def gate_mutation(ctx: Ctx) -> tuple[bool, str]:
     tolerated = int(os.environ.get("MUTATION_MAX_SURVIVORS", "0"))
-    targets: list[str] = []
-    if ctx.scoped:
-        targets = ctx.py_files(("app/",))
-        if not targets:
-            raise Skip("no app/ changes to mutate")
+    targets = mutation_targets(ctx)
     code, out = run([*venv_tool("mutmut"), "run", *targets], timeout=7200)
     if code not in (0, 1):
         return False, out
     _, results = run([*venv_tool("mutmut"), "results"])
-    survivors = [line for line in results.splitlines() if "survived" in line]
+    survivors = [
+        line.strip() for line in results.splitlines()
+        if "survived" in line and any(line.strip().startswith(t.removesuffix("*")) for t in targets)
+    ]
     if len(survivors) > tolerated:
         header = f"{len(survivors)} surviving mutants (tolerated {tolerated}):\n"
         return False, header + "\n".join(survivors[:200])

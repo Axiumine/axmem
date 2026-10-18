@@ -50,7 +50,7 @@ Python **3.12 and 3.14**; locally the `compat` gate runs the SQLite suites on 3.
 | `memray` | memory budgets (`@pytest.mark.limit_memory`) via pytest-memray (Linux/macOS) | `tests/e2e_sqlite/test_memory_budget_sqlite.py` |
 | `trivy` | HIGH/CRITICAL vulnerabilities, secrets and misconfigurations (`fs` scan) | `trivy.yaml`, `.trivyignore` |
 | `qodana` | Qodana Ultimate Plus (`jetbrains/qodana-python`), token from `QODANA_TOKEN` | `qodana.yaml` |
-| `mutation` | mutmut on changed `app/` modules; survivors above `MUTATION_MAX_SURVIVORS` fail. Opt-in: `MUTATION=1`; weekly in CI | `[tool.mutmut]` |
+| `mutation` | mutmut on changed `app/` modules; survivors above `MUTATION_MAX_SURVIVORS` fail. Opt-in (`MUTATION=1`, scoped by changed files or `MUTATION_TARGETS`) | `[tool.mutmut]` |
 | `gitnexus` | `detect-changes` on the staged diff / branch; partial or truncated answers fail | `.gitnexus/` (local index) |
 
 `radon cc . -a -nc` and `radon mi . -s` work from the repository root and report the same files the
