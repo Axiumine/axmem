@@ -6,7 +6,6 @@ from fastmcp.exceptions import ToolError
 from pydantic import ValidationError
 
 from app.config.logging_config import logging
-from app.config.settings import settings
 from app.exceptions import InvalidStateTransitionError, NotFoundError
 from app.middleware.auth import get_user_from_auth
 from app.models.memory_models import (
@@ -227,7 +226,7 @@ def register(mcp: FastMCP):
             scores: one {memory_id, similarity, rerank_score} per primary memory, same order
             total_count: int total count of memories
             token_count: token count of retrieved memories
-            truncated: boolean to indicate if the memories have been truncated as a result of the token budget
+            truncated: boolean to indicate if memories were dropped as a result of the token budget or the maximum memory count
         """
         try:
             logger.info("MCP Tool -> query_memory", extra={
@@ -252,7 +251,6 @@ def register(mcp: FastMCP):
                     query_context=query_context,
                     k=k,
                     include_links=include_links,
-                    token_context_threshold=settings.MEMORY_TOKEN_BUDGET,
                     max_links_per_primary=max_links_per_primary,
                     importance_threshold=importance_threshold,
                     project_ids=project_ids,

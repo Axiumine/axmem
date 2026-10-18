@@ -11,6 +11,15 @@ def _in_projects(memory: Memory, project_ids: list[int] | None) -> bool:
     return not project_ids or any(pid in memory.project_ids for pid in project_ids)
 
 
+def _is_linkable(
+    memory: Memory | None, project_ids: list[int] | None, excluded: set[int],
+) -> bool:
+    """True for a live (not obsolete), non-excluded memory inside the project filter."""
+    if memory is None or memory.is_obsolete or memory.id in excluded:
+        return False
+    return _in_projects(memory, project_ids)
+
+
 class MemoryLinkMixin:
     """Bidirectional memory links; expects ``_memories``/``_links`` from the host."""
 
@@ -53,16 +62,15 @@ class MemoryLinkMixin:
         memory_id: int,
         project_ids: list[int] | None,
         max_links: int = 5,
+        exclude_ids: list[int] | None = None,
     ) -> list[Memory]:
         """Get linked memories (1-hop neighbors)"""
+        excluded = set(exclude_ids or ())
         memories = []
         for linked_id in self._links.get(memory_id, set()):
             memory = find_item(self._memories, user_id, linked_id)
             # Obsolete memories are soft-deleted and never returned
-            if memory and memory.is_obsolete:
-                continue
-
-            if memory and _in_projects(memory, project_ids):
+            if _is_linkable(memory, project_ids, excluded):
                 memories.append(memory)
 
             if len(memories) >= max_links:

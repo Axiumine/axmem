@@ -8,6 +8,7 @@ This service implements the primary functionality for the Forgetful Memory Syste
     - Retrieval with project associations
     - Usage tracking on read paths (forgetful-hulkito fork)
 """
+import asyncio
 from datetime import datetime
 from typing import TYPE_CHECKING
 from uuid import UUID
@@ -32,7 +33,7 @@ from app.utils.provenance import (
     apply_provenance_defaults_for_update,
 )
 from app.utils.pydantic_helper import get_changed_fields
-from app.utils.token_counter import TokenCounter
+from app.utils.token_counter import get_token_counter
 
 if TYPE_CHECKING:
     from app.events import EventBus
@@ -109,6 +110,11 @@ class MemoryService:
             )
             logger.info("linked memory query completed", extra={"number of linked memories": len(linked_memories)})
 
+        # A request can lower the token budget but never exceed the server-wide limit
+        max_tokens = settings.MEMORY_TOKEN_BUDGET
+        if memory_query.token_context_threshold is not None:
+            max_tokens = min(memory_query.token_context_threshold, max_tokens)
+
         logger.info("applying token budget")
         (
             final_primaries,
@@ -118,7 +124,7 @@ class MemoryService:
         ) = await self._apply_token_budget(
             primary_memories=primary_memories,
             linked_memories=linked_memories,
-            max_tokens=settings.MEMORY_TOKEN_BUDGET,
+            max_tokens=max_tokens,
             max_memories=settings.MEMORY_MAX_MEMORIES,
         )
         logger.info("token budget applied")
@@ -595,6 +601,9 @@ class MemoryService:
     ) -> list[LinkedMemory]:
         """Fetch linked memories for each primary result
 
+        Primary results and memories already linked from an earlier primary are excluded
+        before the per-primary cap is applied, so they never consume its quota.
+
         Args:
             user_id: User ID for whom to link the memories for
             primary memories: list of the primary Memories objects to link from
@@ -613,6 +622,7 @@ class MemoryService:
                     user_id=user_id,
                     project_ids=project_ids,
                     max_links=max_links_per_primary,
+                    exclude_ids=sorted(seen_ids),
                 )
 
                 for linked_memory in links:
@@ -712,9 +722,7 @@ class MemoryService:
 
         total_text = " ".join(text_parts)
 
-        token_counter = TokenCounter()
-
-        return token_counter.count_tokens(total_text)
+        return get_token_counter().count_tokens(total_text)
 
     async def truncate_memories_by_budget(
             self,
@@ -729,12 +737,18 @@ class MemoryService:
         Args:
             memories: List of Memory Objects
             max_tokens: Maximum allowed tokens
+            max_count: Maximum number of memories to return
 
         Returns:
-            Tuple of (truncated memories, actual_token_count, was_truncated)
+            Tuple of (truncated memories, actual_token_count, was_truncated), where
+            was_truncated is set when memories were dropped by either the token budget
+            or the max_count limit
         """
         if not memories:
             return [], 0, False
+
+        # Loading the tokenizer can download it, keep that off the event loop
+        await asyncio.to_thread(get_token_counter)
 
         sorted_memories = sorted(
             memories,
@@ -742,6 +756,7 @@ class MemoryService:
             reverse=True,
         )
 
+        count_truncated = len(sorted_memories) > max_count
         sorted_memories = sorted_memories[:max_count]
 
         selected = []
@@ -765,7 +780,7 @@ class MemoryService:
             selected.append(memory)
             running_total += memory_tokens
 
-        return selected, running_total, False
+        return selected, running_total, count_truncated
 
     async def handle_memory_access_event(self, event: ActivityEvent) -> None:
         """Record memory access from memory.read / memory.queried events."""

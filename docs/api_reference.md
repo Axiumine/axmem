@@ -266,9 +266,13 @@ Semantic search across memories.
   "k": 10,
   "include_links": true,
   "importance_threshold": 5,
-  "project_ids": [1, 2]
+  "project_ids": [1, 2],
+  "token_context_threshold": 4000
 }
 ```
+
+`token_context_threshold` (optional, 4000-25000) lowers the token budget for this request. It can
+never exceed the server's `MEMORY_TOKEN_BUDGET`, which applies when the field is omitted.
 
 **Response:**
 ```json
@@ -277,6 +281,8 @@ Semantic search across memories.
   "total": 10
 }
 ```
+
+`truncated` is `true` when memories were dropped because of the token budget or `MEMORY_MAX_MEMORIES`.
 
 ### POST /api/v1/memories/{id}/links
 
