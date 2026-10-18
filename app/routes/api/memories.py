@@ -11,7 +11,11 @@ from pydantic import ValidationError
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-from app.exceptions import AssociationNotFoundError, NotFoundError
+from app.exceptions import (
+    AssociationNotFoundError,
+    InvalidStateTransitionError,
+    NotFoundError,
+)
 from app.middleware.auth import get_user_from_request
 from app.models.memory_models import (
     MemoryCreate,
@@ -283,6 +287,8 @@ def register(mcp: FastMCP):
             return JSONResponse({"error": str(e)}, status_code=404)
         except NotFoundError:
             return JSONResponse({"error": "Memory not found"}, status_code=404)
+        except InvalidStateTransitionError as e:
+            return JSONResponse({"error": str(e)}, status_code=422)
 
         if not success:
             return JSONResponse({"error": "Memory not found"}, status_code=404)
