@@ -16,6 +16,7 @@ from app.models.plan_models import (
     PlanSummary,
     PlanUpdate,
 )
+from app.repositories.sqlite.memory_queries import affected_rows
 from app.repositories.sqlite.project_reference import ensure_project_owned
 from app.repositories.sqlite.sqlite_adapter import SqliteDatabaseAdapter
 from app.repositories.sqlite.sqlite_tables import PlansTable
@@ -104,12 +105,12 @@ class SqlitePlanRepository:
             async with self.db_adapter.session(user_id) as session:
                 update_data = plan_data.model_dump(exclude_unset=True)
                 if not update_data:
-                    stmt = (
+                    select_stmt = (
                         select(PlansTable)
                         .options(selectinload(PlansTable.tasks))
                         .where(PlansTable.user_id == str(user_id), PlansTable.id == plan_id)
                     )
-                    result = await session.execute(stmt)
+                    result = await session.execute(select_stmt)
                     plan_orm = result.scalar_one_or_none()
                     if not plan_orm:
                         raise NotFoundError(f"Plan with id {plan_id} not found")
@@ -144,4 +145,4 @@ class SqlitePlanRepository:
                 PlansTable.user_id == str(user_id), PlansTable.id == plan_id,
             )
             result = await session.execute(stmt)
-            return result.rowcount > 0
+            return affected_rows(result) > 0

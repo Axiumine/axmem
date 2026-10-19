@@ -47,7 +47,7 @@ class SqliteActivityRepository:
         Returns:
             The persisted activity log entry with database ID
         """
-        async with self.db_adapter.session(str(user_id)) as session:
+        async with self.db_adapter.session(user_id) as session:
             activity_orm = ActivityLogTable(
                 user_id=str(user_id),
                 entity_type=event.entity_type,
@@ -72,12 +72,12 @@ class SqliteActivityRepository:
             return ActivityLogEntry(
                 id=activity_orm.id,
                 user_id=str(user_id),
-                entity_type=activity_orm.entity_type,
+                entity_type=EntityType(activity_orm.entity_type),
                 entity_id=activity_orm.entity_id,
-                action=activity_orm.action,
+                action=ActionType(activity_orm.action),
                 changes=activity_orm.changes,
                 snapshot=activity_orm.snapshot,
-                actor=activity_orm.actor,
+                actor=ActorType(activity_orm.actor),
                 actor_id=activity_orm.actor_id,
                 metadata=activity_orm.event_metadata,
                 created_at=activity_orm.created_at,
@@ -112,7 +112,7 @@ class SqliteActivityRepository:
             Tuple of (events, total_count) where total_count is
             the count BEFORE limit/offset applied (for pagination)
         """
-        async with self.db_adapter.session(str(user_id)) as session:
+        async with self.db_adapter.session(user_id) as session:
             # Build base query with filters
             base_query = select(ActivityLogTable).where(
                 ActivityLogTable.user_id == str(user_id),
@@ -165,12 +165,12 @@ class SqliteActivityRepository:
                 ActivityLogEntry(
                     id=activity.id,
                     user_id=activity.user_id,
-                    entity_type=activity.entity_type,
+                    entity_type=EntityType(activity.entity_type),
                     entity_id=activity.entity_id,
-                    action=activity.action,
+                    action=ActionType(activity.action),
                     changes=activity.changes,
                     snapshot=activity.snapshot,
-                    actor=activity.actor,
+                    actor=ActorType(activity.actor),
                     actor_id=activity.actor_id,
                     metadata=activity.event_metadata,
                     created_at=activity.created_at,
@@ -196,7 +196,7 @@ class SqliteActivityRepository:
         """
         cutoff_date = datetime.now(UTC) - timedelta(days=retention_days)
 
-        async with self.db_adapter.session(str(user_id)) as session:
+        async with self.db_adapter.session(user_id) as session:
             # Count events to be deleted
             count_query = select(func.count()).select_from(ActivityLogTable).where(
                 ActivityLogTable.user_id == str(user_id),
@@ -235,7 +235,7 @@ class SqliteActivityRepository:
         Returns:
             Total count of matching events
         """
-        async with self.db_adapter.session(str(user_id)) as session:
+        async with self.db_adapter.session(user_id) as session:
             query = select(func.count()).select_from(ActivityLogTable).where(
                 ActivityLogTable.user_id == str(user_id),
             )

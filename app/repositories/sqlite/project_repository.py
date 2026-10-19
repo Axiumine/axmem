@@ -17,6 +17,7 @@ from app.models.project_models import (
     ProjectSummary,
     ProjectUpdate,
 )
+from app.repositories.sqlite.memory_queries import affected_rows
 from app.repositories.sqlite.sqlite_adapter import SqliteDatabaseAdapter
 from app.repositories.sqlite.sqlite_tables import ProjectsTable
 from app.repositories.sqlite.text_matching import contains_ignore_case
@@ -241,7 +242,7 @@ class SqliteProjectRepository:
             if not update_data:
                 logger.info("No fields to update")
                 # Still need to return the project
-                stmt = (
+                select_stmt = (
                     select(ProjectsTable)
                     .options(selectinload(ProjectsTable.memories))
                     .where(
@@ -249,7 +250,7 @@ class SqliteProjectRepository:
                         ProjectsTable.id == project_id,
                     )
                 )
-                result = await session.execute(stmt)
+                result = await session.execute(select_stmt)
                 project_orm = result.scalar_one_or_none()
 
                 if not project_orm:
@@ -315,7 +316,7 @@ class SqliteProjectRepository:
             )
 
             result = await session.execute(stmt)
-            deleted = result.rowcount > 0
+            deleted = affected_rows(result) > 0
 
             if deleted:
                 logger.info(

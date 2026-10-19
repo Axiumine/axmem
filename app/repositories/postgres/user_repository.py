@@ -9,6 +9,7 @@ from sqlalchemy.exc import IntegrityError, NoResultFound
 from app.exceptions import ConflictError, NotFoundError
 from app.models.user_models import User, UserCreate, UserUpdate
 from app.repositories.postgres.postgres_adapter import PostgresDatabaseAdapter
+from app.repositories.postgres.postgres_errors import violated_constraint
 from app.repositories.postgres.postgres_tables import UsersTable
 
 
@@ -70,7 +71,7 @@ class PostgresUserRepository:
                 await session.refresh(new_user)
                 return User.model_validate(new_user)
         except IntegrityError as exc:
-            if getattr(exc.orig.__cause__, "constraint_name", None) == "ix_users_external_id":
+            if violated_constraint(exc) == "ix_users_external_id":
                 raise ConflictError("A user with this external_id already exists") from exc
             raise
 

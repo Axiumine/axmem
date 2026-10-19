@@ -10,11 +10,11 @@ array overlap.
 """
 from collections.abc import Sequence
 
-from sqlalchemy import ColumnElement, exists, func, select
+from sqlalchemy import ColumnElement, SQLColumnExpression, exists, func, select
 
 
 def json_array_overlaps(
-    column: ColumnElement,
+    column: SQLColumnExpression[list[str]],
     values: Sequence[str],
 ) -> ColumnElement[bool]:
     """Build a condition matching rows whose JSON array shares an element with values

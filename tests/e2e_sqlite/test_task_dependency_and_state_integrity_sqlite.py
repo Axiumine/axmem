@@ -29,6 +29,7 @@ from app.models.plan_models import (
     PlanUpdate,
     TaskCreate,
     TaskState,
+    TaskUpdate,
 )
 from app.models.project_models import ProjectCreate, ProjectType
 from app.models.user_models import UserCreate
@@ -655,3 +656,16 @@ async def test_rest_work_on_a_manually_completed_plan_is_unprocessable(http_clie
 
     assert (claim.status_code, transition.status_code, create.status_code) == (422, 422, 422)
     assert (await http_client.get(f"/api/v1/tasks/{task['id']}")).json()["state"] == "todo"
+
+
+async def test_repository_update_without_changes_returns_the_stored_task(stack):
+    task = await stack.new_task("t")
+
+    unchanged = await stack.task_repo.update_task(stack.user_id, task.id, TaskUpdate())
+
+    assert (unchanged.id, unchanged.title, unchanged.version) == (task.id, "t", task.version)
+
+
+async def test_repository_update_without_changes_reports_a_missing_task(stack):
+    with pytest.raises(NotFoundError, match="Task with id 999999 not found"):
+        await stack.task_repo.update_task(stack.user_id, 999999, TaskUpdate())

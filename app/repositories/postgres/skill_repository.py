@@ -19,7 +19,9 @@ from app.models.skill_models import (
 )
 from app.protocols.embedding_protocol import EmbeddingsAdapter
 from app.repositories.embeddings.reranker_adapter import RerankAdapter
+from app.repositories.postgres.memory_base import affected_rows
 from app.repositories.postgres.postgres_adapter import PostgresDatabaseAdapter
+from app.repositories.postgres.postgres_errors import violated_constraint
 from app.repositories.postgres.postgres_tables import (
     CodeArtifactsTable,
     DocumentsTable,
@@ -41,7 +43,7 @@ def _is_name_conflict(exc: Exception) -> bool:
     """True if exc is the (user_id, name) unique index rejecting a duplicate skill name."""
     return (
         isinstance(exc, IntegrityError)
-        and getattr(exc.orig.__cause__, "constraint_name", None) == "ix_skills_user_name"
+        and violated_constraint(exc) == "ix_skills_user_name"
     )
 
 
@@ -568,7 +570,7 @@ class PostgresSkillRepository:
                 return {
                     "skill_id": skill_id,
                     "memory_id": memory_id,
-                    "unlinked": result.rowcount > 0,
+                    "unlinked": affected_rows(result) > 0,
                 }
 
         except Exception as e:
@@ -681,7 +683,7 @@ class PostgresSkillRepository:
                 return {
                     "skill_id": skill_id,
                     "file_id": file_id,
-                    "unlinked": result.rowcount > 0,
+                    "unlinked": affected_rows(result) > 0,
                 }
 
         except Exception as e:
@@ -794,7 +796,7 @@ class PostgresSkillRepository:
                 return {
                     "skill_id": skill_id,
                     "code_artifact_id": code_artifact_id,
-                    "unlinked": result.rowcount > 0,
+                    "unlinked": affected_rows(result) > 0,
                 }
 
         except Exception as e:
@@ -907,7 +909,7 @@ class PostgresSkillRepository:
                 return {
                     "skill_id": skill_id,
                     "document_id": document_id,
-                    "unlinked": result.rowcount > 0,
+                    "unlinked": affected_rows(result) > 0,
                 }
 
         except Exception as e:
@@ -1121,7 +1123,8 @@ class PostgresSkillRepository:
     async def count_all_skills(self) -> int:
         """Count all skills across all users."""
         async with self.db_adapter.system_session() as session:
-            return await session.scalar(select(func.count()).select_from(SkillsTable))
+            count = await session.scalar(select(func.count()).select_from(SkillsTable))
+            return count or 0
 
     async def get_skills_for_reembedding(self, limit: int, offset: int) -> list[Skill]:
         """Fetch all skills, across all users, in batches ordered by id."""
