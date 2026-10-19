@@ -37,6 +37,12 @@ exclude:
     paths:
       - vulture_whitelist.py
 
+  # main.py: PyCharm infers that asyncio.run(_run_reembed(...)) never returns (the coroutine ends in
+  # process-exit helpers); the statement after it runs in the tests that stub those helpers.
+  - name: PyUnreachableCodeInspection
+    paths:
+      - main.py
+
 failureConditions:
   severityThresholds:
     critical: 0

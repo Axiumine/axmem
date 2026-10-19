@@ -213,12 +213,10 @@ class OpenAIEmbeddingsAdapter(EmbeddingsAdapter):
             "supports_dimensions": self.supports_dimensions,
         })
 
-        api_key = settings.OPENAI_API_KEY
+        # Endpoints that need no key (local OpenAI-compatible servers) still require a non-empty value
+        api_key = settings.OPENAI_API_KEY or ("no-key-required" if base_url else None)
         if not api_key:
-            if base_url:
-                api_key = "no-key-required"
-            else:
-                raise ValueError("OPENAI_API_KEY must be configured for OpenAIEmbeddingsAdapter")
+            raise ValueError("OPENAI_API_KEY must be configured for OpenAIEmbeddingsAdapter")
 
         client_kwargs: _OpenAIClientKwargs = {
             "api_key": api_key,

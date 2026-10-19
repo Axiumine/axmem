@@ -284,6 +284,7 @@ ignore_names = [
     "cache_ok",  # SQLAlchemy TypeDecorator class attribute, read by the statement cache
     "process_bind_param",  # SQLAlchemy TypeDecorator hooks, called when binding/reading
     "process_result_value",
+    "dialect",  # required parameter of those TypeDecorator hooks (name must match the base class)
 ]
 
 [tool.mutmut]

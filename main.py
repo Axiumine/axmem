@@ -200,7 +200,7 @@ def _tolerate_unencodable_output():
     """
     for stream in (sys.stdout, sys.stderr):
         reconfigure = getattr(stream, "reconfigure", None)
-        if reconfigure is not None:
+        if callable(reconfigure):
             reconfigure(errors="backslashreplace")
 
 
