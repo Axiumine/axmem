@@ -155,13 +155,10 @@ def register(mcp: ForgetfulMCP):
 
         project_id = path_id(request, "project_id")
 
-        try:
-            success = await mcp.project_service.delete_project(
-                user_id=user.id,
-                project_id=project_id,
-            )
-        except NotFoundError:
-            return JSONResponse({"error": "Project not found"}, status_code=404)
+        success = await mcp.project_service.delete_project(
+            user_id=user.id,
+            project_id=project_id,
+        )
 
         if not success:
             return JSONResponse({"error": "Project not found"}, status_code=404)

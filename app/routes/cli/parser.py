@@ -281,10 +281,8 @@ def dispatch(argv, *, serve_runner, reembed_runner):
         return asyncio.run(reembed_runner(args))
     if args.command in {"tools", "call", "memory", "project"}:
         return asyncio.run(_run_tool_command(args))
-    if args.command == "auth":
-        return asyncio.run(_run_auth_command(args))
-
-    parser.error(f"Subcommand '{args.command}' is not implemented yet")
+    # The subparsers are required and KNOWN lists every one of them: "auth" is what is left
+    return asyncio.run(_run_auth_command(args))
 
 
 async def _run_auth_command(args) -> int:

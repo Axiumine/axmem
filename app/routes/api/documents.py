@@ -154,13 +154,10 @@ def register(mcp: ForgetfulMCP):
 
         document_id = path_id(request, "document_id")
 
-        try:
-            success = await mcp.document_service.delete_document(
-                user_id=user.id,
-                document_id=document_id,
-            )
-        except NotFoundError:
-            return JSONResponse({"error": "Document not found"}, status_code=404)
+        success = await mcp.document_service.delete_document(
+            user_id=user.id,
+            document_id=document_id,
+        )
 
         if not success:
             return JSONResponse({"error": "Document not found"}, status_code=404)
