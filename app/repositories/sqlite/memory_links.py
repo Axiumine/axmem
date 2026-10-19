@@ -2,7 +2,7 @@
 from uuid import UUID
 
 from sqlalchemy import and_, delete, or_, select
-from sqlalchemy.exc import IntegrityError, NoResultFound
+from sqlalchemy.exc import IntegrityError
 
 from app.config.logging_config import logging
 from app.exceptions import NotFoundError
@@ -65,14 +65,9 @@ class SqliteMemoryLinkMixin(SqliteMemoryBase):
         stmt = stmt.order_by(MemoryTable.importance.desc()).limit(max_links)
 
         async with self.db_adapter.session(user_id=user_id) as session:
-            try:
-
-                result = await session.execute(stmt)
-                memories_orm = result.scalars().all()
-                return [Memory.model_validate(memory) for memory in memories_orm]
-
-            except NoResultFound:
-                raise NotFoundError(f"No linked memories retrieved for {memory_id}")
+            result = await session.execute(stmt)
+            memories_orm = result.scalars().all()
+            return [Memory.model_validate(memory) for memory in memories_orm]
 
     async def create_link(
         self,
