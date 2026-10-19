@@ -126,6 +126,16 @@ class TestSkillNameAndTags:
         with pytest.raises(ValidationError, match="name cannot be empty or whitespace only"):
             SkillUpdate(name=blank)
 
+    @pytest.mark.parametrize("name", ["My Skill", "my_skill", "-leading", "trailing-", "double--hyphen", "UPPER"])
+    def test_create_and_update_reject_names_that_are_not_kebab_case(self, name):
+        with pytest.raises(ValidationError, match="name must be kebab-case"):
+            SkillCreate(name=name, description="d", content="c")
+        with pytest.raises(ValidationError, match="name must be kebab-case"):
+            SkillUpdate(name=name)
+
+    def test_update_trims_a_kebab_case_name(self):
+        assert SkillUpdate(name="  my-skill ").name == "my-skill"
+
     def test_update_rejects_more_tags_than_the_configured_maximum(self):
         too_many = [f"tag-{i}" for i in range(settings.SKILL_TAGS_MAX_COUNT + 1)]
 
