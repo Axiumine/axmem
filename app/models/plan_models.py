@@ -249,8 +249,6 @@ class PlanUpdate(StorableInput):
     @field_validator("source_files")
     @classmethod
     def validate_source_files(cls, v):
-        if v is None:
-            return None
         return [item.strip() for item in v if item.strip()]
 
     @field_validator("title")
@@ -376,8 +374,6 @@ class TaskUpdate(StorableInput):
     @field_validator("source_files")
     @classmethod
     def validate_source_files(cls, v):
-        if v is None:
-            return None
         return [item.strip() for item in v if item.strip()]
 
     @field_validator("title")

@@ -147,9 +147,6 @@ class SkillCreate(StorableInput):
     @classmethod
     def validate_name_kebab_case(cls, v):
         """Validate name follows kebab-case format per Agent Skills standard."""
-        if v is None:
-            return None
-
         stripped = v.strip()
         if not stripped:
             raise ValueError("name cannot be empty or whitespace only")
@@ -224,17 +221,12 @@ class SkillUpdate(PatchModel, StorableInput):
     @field_validator("source_files")
     @classmethod
     def validate_source_files(cls, v):
-        if v is None:
-            return None
         return [item.strip() for item in v if item.strip()]
 
     @field_validator("name")
     @classmethod
     def validate_name_kebab_case(cls, v):
         """Validate name follows kebab-case format per Agent Skills standard."""
-        if v is None:
-            return None
-
         stripped = v.strip()
         if not stripped:
             raise ValueError("name cannot be empty or whitespace only")
@@ -252,9 +244,6 @@ class SkillUpdate(PatchModel, StorableInput):
     @classmethod
     def validate_required_text(cls, v, info):
         """Trim the description, keep the content verbatim, reject blank values."""
-        if v is None:
-            return None
-
         return _require_text(v, info.field_name, verbatim=info.field_name == "content")
 
     @field_validator("allowed_tools")
@@ -267,16 +256,12 @@ class SkillUpdate(PatchModel, StorableInput):
     @classmethod
     def validate_tags(cls, v):
         """Validate and clean tags."""
-        if v is None:
-            return None
-
         cleaned = [tag.strip() for tag in v if tag and tag.strip()]
 
         if len(cleaned) > settings.SKILL_TAGS_MAX_COUNT:
             raise ValueError(f"Maximum {settings.SKILL_TAGS_MAX_COUNT} tags allowed")
 
-        if cls.enforce_storage_limits:
-            _check_tag_length(cleaned)
+        _check_tag_length(cleaned)
 
         return cleaned
 

@@ -190,16 +190,12 @@ class ProjectUpdate(PatchModel):
     @field_validator("source_files")
     @classmethod
     def validate_source_files(cls, v):
-        if v is None:
-            return None
         return [item.strip() for item in v if item.strip()]
 
     @field_validator("last_encoding_point")
     @classmethod
     def preserve_last_encoding_point(cls, v):
         """Preserve opaque checkpoint verbatim; empty string clears the field."""
-        if v is None:
-            return v
         if v == "":
             return None
         return v
@@ -208,9 +204,6 @@ class ProjectUpdate(PatchModel):
     @classmethod
     def strip_whitespace(cls, v, info):
         """Strip whitespace from string fields"""
-        if v is None:
-            return v
-
         stripped = v.strip()
 
         # For name and description, don't allow empty after stripping (if provided)

@@ -103,9 +103,6 @@ class FileCreate(BaseModel):
     @classmethod
     def strip_whitespace(cls, v, info):
         """Strip whitespace from string fields"""
-        if v is None:
-            return v
-
         stripped = v.strip()
 
         if not stripped:
@@ -121,9 +118,6 @@ class FileCreate(BaseModel):
             return []
 
         cleaned = [tag.strip() for tag in v if tag and tag.strip()]
-
-        if len(cleaned) > settings.FILE_TAGS_MAX_COUNT:
-            raise ValueError(f"Maximum {settings.FILE_TAGS_MAX_COUNT} tags allowed")
 
         return cleaned
 
@@ -198,17 +192,12 @@ class FileUpdate(PatchModel):
     @field_validator("source_files")
     @classmethod
     def validate_source_files(cls, v):
-        if v is None:
-            return None
         return [item.strip() for item in v if item.strip()]
 
     @field_validator("filename", "description", "mime_type")
     @classmethod
     def strip_whitespace(cls, v, info):
         """Strip whitespace from string fields"""
-        if v is None:
-            return v
-
         stripped = v.strip()
 
         if not stripped:
@@ -220,16 +209,10 @@ class FileUpdate(PatchModel):
     @classmethod
     def validate_tags(cls, v):
         """Validate and clean tags"""
-        if v is None:
-            return None
-
         if not v:
             return []
 
         cleaned = [tag.strip() for tag in v if tag and tag.strip()]
-
-        if len(cleaned) > settings.FILE_TAGS_MAX_COUNT:
-            raise ValueError(f"Maximum {settings.FILE_TAGS_MAX_COUNT} tags allowed")
 
         return cleaned
 
@@ -237,9 +220,6 @@ class FileUpdate(PatchModel):
     @classmethod
     def validate_base64_data(cls, v):
         """Validate that data is valid base64 and decoded size is within limits"""
-        if v is None:
-            return v
-
         decoded = _decode_base64(v)
 
         if len(decoded) > settings.FILE_MAX_SIZE_BYTES:

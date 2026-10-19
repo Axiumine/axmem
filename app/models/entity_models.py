@@ -124,9 +124,6 @@ class EntityCreate(BaseModel):
         # Strip whitespace and remove empty strings
         cleaned = [tag.strip() for tag in v if tag and tag.strip()]
 
-        if len(cleaned) > settings.ENTITY_TAGS_MAX_COUNT:
-            raise ValueError(f"Maximum {settings.ENTITY_TAGS_MAX_COUNT} tags allowed")
-
         return cleaned
 
     @field_validator("aka")
@@ -138,9 +135,6 @@ class EntityCreate(BaseModel):
 
         # Strip whitespace and remove empty strings
         cleaned = [name.strip() for name in v if name and name.strip()]
-
-        if len(cleaned) > settings.ENTITY_AKA_MAX_COUNT:
-            raise ValueError(f"Maximum {settings.ENTITY_AKA_MAX_COUNT} alternative names allowed")
 
         return cleaned
 
@@ -217,17 +211,12 @@ class EntityUpdate(PatchModel):
     @field_validator("source_files")
     @classmethod
     def validate_source_files(cls, v):
-        if v is None:
-            return None
         return [item.strip() for item in v if item.strip()]
 
     @field_validator("name", "custom_type", "notes")
     @classmethod
     def strip_whitespace(cls, v, info):
         """Strip whitespace from string fields"""
-        if v is None:
-            return v
-
         stripped = v.strip()
 
         # Don't allow empty after stripping for name (if provided)
@@ -241,9 +230,6 @@ class EntityUpdate(PatchModel):
     @classmethod
     def validate_tags(cls, v):
         """Validate and clean tags"""
-        if v is None:
-            return None
-
         # Empty list is valid (clears tags)
         if not v:
             return []
@@ -251,27 +237,18 @@ class EntityUpdate(PatchModel):
         # Strip whitespace and remove empty strings
         cleaned = [tag.strip() for tag in v if tag and tag.strip()]
 
-        if len(cleaned) > settings.ENTITY_TAGS_MAX_COUNT:
-            raise ValueError(f"Maximum {settings.ENTITY_TAGS_MAX_COUNT} tags allowed")
-
         return cleaned
 
     @field_validator("aka")
     @classmethod
     def validate_aka(cls, v):
         """Validate and clean alternative names"""
-        if v is None:
-            return None
-
         # Empty list is valid (clears aka)
         if not v:
             return []
 
         # Strip whitespace and remove empty strings
         cleaned = [name.strip() for name in v if name and name.strip()]
-
-        if len(cleaned) > settings.ENTITY_AKA_MAX_COUNT:
-            raise ValueError(f"Maximum {settings.ENTITY_AKA_MAX_COUNT} alternative names allowed")
 
         return cleaned
 
@@ -466,9 +443,6 @@ class EntityRelationshipCreate(StorableInput):
     @classmethod
     def strip_whitespace(cls, v):
         """Strip whitespace from relationship_type"""
-        if v is None:
-            return v
-
         stripped = v.strip()
         if not stripped:
             raise ValueError("relationship_type cannot be empty or whitespace only")
@@ -530,17 +504,12 @@ class EntityRelationshipUpdate(PatchModel, StorableInput):
     @field_validator("source_files")
     @classmethod
     def validate_source_files(cls, v):
-        if v is None:
-            return None
         return [item.strip() for item in v if item.strip()]
 
     @field_validator("relationship_type")
     @classmethod
     def strip_whitespace(cls, v):
         """Strip whitespace from relationship_type"""
-        if v is None:
-            return v
-
         stripped = v.strip()
         if not stripped:
             raise ValueError("relationship_type cannot be empty or whitespace only")

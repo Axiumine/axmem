@@ -79,9 +79,6 @@ class CodeArtifactCreate(BaseModel):
     @classmethod
     def strip_whitespace(cls, v, info):
         """Strip whitespace from string fields"""
-        if v is None:
-            return v
-
         stripped = v.strip()
 
         # Ensure required fields are not empty after stripping
@@ -103,8 +100,6 @@ class CodeArtifactCreate(BaseModel):
     @classmethod
     def lowercase_language(cls, v):
         """Convert language to lowercase for consistency"""
-        if v is None or not v:
-            return v
         return v.lower()
 
     @field_validator("tags")
@@ -116,9 +111,6 @@ class CodeArtifactCreate(BaseModel):
 
         # Strip whitespace and remove empty strings
         cleaned = [tag.strip() for tag in v if tag and tag.strip()]
-
-        if len(cleaned) > settings.CODE_ARTIFACT_TAGS_MAX_COUNT:
-            raise ValueError(f"Maximum {settings.CODE_ARTIFACT_TAGS_MAX_COUNT} tags allowed")
 
         return cleaned
 
@@ -182,17 +174,12 @@ class CodeArtifactUpdate(PatchModel):
     @field_validator("source_files")
     @classmethod
     def validate_source_files(cls, v):
-        if v is None:
-            return None
         return [item.strip() for item in v if item.strip()]
 
     @field_validator("title", "description", "language")
     @classmethod
     def strip_whitespace(cls, v, info):
         """Strip whitespace from string fields"""
-        if v is None:
-            return v
-
         stripped = v.strip()
 
         # Don't allow empty after stripping (if provided)
@@ -214,26 +201,18 @@ class CodeArtifactUpdate(PatchModel):
     @classmethod
     def lowercase_language(cls, v):
         """Convert language to lowercase for consistency"""
-        if v is None or not v:
-            return v
         return v.lower()
 
     @field_validator("tags")
     @classmethod
     def validate_tags(cls, v):
         """Validate and clean tags"""
-        if v is None:
-            return None
-
         # Empty list is valid (clears tags)
         if not v:
             return []
 
         # Strip whitespace and remove empty strings
         cleaned = [tag.strip() for tag in v if tag and tag.strip()]
-
-        if len(cleaned) > settings.CODE_ARTIFACT_TAGS_MAX_COUNT:
-            raise ValueError(f"Maximum {settings.CODE_ARTIFACT_TAGS_MAX_COUNT} tags allowed")
 
         return cleaned
 
