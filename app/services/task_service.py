@@ -1,5 +1,5 @@
 import asyncio
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 from uuid import UUID
 
 from pydantic import TypeAdapter
@@ -147,8 +147,9 @@ class TaskService:
             await self._discard_partial_task(user_id, task.id)
             raise
 
-        # Re-fetch to get full task with criteria and deps
-        task = await self.task_repo.get_task_by_id(user_id=user_id, task_id=task.id)
+        # Re-fetch to get full task with criteria and deps. The row was inserted by this call
+        # and nothing deletes it before the fetch, so the repository always finds it.
+        task = cast(Task, await self.task_repo.get_task_by_id(user_id=user_id, task_id=task.id))
 
         logger.info("task created", extra={"task_id": task.id, "plan_id": task.plan_id})
         await self._emit_event(
