@@ -272,6 +272,14 @@ class _FakeSecuredServer:
         self._server.server_close()
 
 
+def _assert_no_login_attempted(server: _FakeSecuredServer, opened: list[str]) -> None:
+    """The server saw no client registration or authorize request and no browser was opened."""
+    seen = [(method, path) for method, path, _ in server.requests]
+    assert ("POST", "/register") not in seen
+    assert not any(path == "/authorize" for _, path in seen)
+    assert opened == []
+
+
 async def test_auth_status_with_rejected_cached_token_stays_read_only(
     monkeypatch, token_cache, capsys,
 ):
@@ -289,12 +297,9 @@ async def test_auth_status_with_rejected_cached_token_stays_read_only(
         code = await asyncio.wait_for(auth_commands.status(server=server.url), timeout=20)
 
     err = capsys.readouterr().err
-    seen = [(method, path) for method, path, _ in server.requests]
     assert code == 1
     assert "not authenticated" in err
-    assert ("POST", "/register") not in seen
-    assert not any(path == "/authorize" for _, path in seen)
-    assert opened == []
+    _assert_no_login_attempted(server, opened)
     assert _snapshot(token_cache) == before
     # The cached token was what got sent
     assert {auth for _, path, auth in server.requests if path == "/mcp"} == {"Bearer stale-token"}
