@@ -397,6 +397,26 @@ def _task_updates(bus, task_id):
     ]
 
 
+def _assert_criterion_events(added, met, deleted):
+    """The add, met and delete events each carry the criterion change and the new snapshot."""
+    assert added.changes["criterion"]["old"] is None
+    assert added.changes["criterion"]["new"]["description"] == "holds"
+    assert [c["met"] for c in added.snapshot["criteria"]] == [False]
+    assert met.changes["criterion"]["old"]["met"] is False
+    assert met.changes["criterion"]["new"]["met"] is True
+    assert [c["met"] for c in met.snapshot["criteria"]] == [True]
+    assert deleted.changes["criterion"]["new"] is None
+    assert deleted.snapshot["criteria"] == []
+
+
+def _assert_dependency_events(linked, unlinked, prerequisite_id):
+    """The link and unlink events each carry the dependency change and the new snapshot."""
+    assert linked.changes == {"dependency": {"old": None, "new": prerequisite_id}}
+    assert linked.snapshot["dependency_ids"] == [prerequisite_id]
+    assert unlinked.changes == {"dependency": {"old": prerequisite_id, "new": None}}
+    assert unlinked.snapshot["dependency_ids"] == []
+
+
 @pytest.mark.asyncio
 async def test_criterion_and_dependency_mutations_emit_task_updated(evented_task_service):
     service, plan_service, bus = evented_task_service
@@ -415,18 +435,8 @@ async def test_criterion_and_dependency_mutations_emit_task_updated(evented_task
     events = _task_updates(bus, task.id)
     assert len(events) == len(bus.collected_events) == 5
     added, met, linked, unlinked, deleted = events
-    assert added.changes["criterion"]["old"] is None
-    assert added.changes["criterion"]["new"]["description"] == "holds"
-    assert [c["met"] for c in added.snapshot["criteria"]] == [False]
-    assert met.changes["criterion"]["old"]["met"] is False
-    assert met.changes["criterion"]["new"]["met"] is True
-    assert [c["met"] for c in met.snapshot["criteria"]] == [True]
-    assert linked.changes == {"dependency": {"old": None, "new": prerequisite.id}}
-    assert linked.snapshot["dependency_ids"] == [prerequisite.id]
-    assert unlinked.changes == {"dependency": {"old": prerequisite.id, "new": None}}
-    assert unlinked.snapshot["dependency_ids"] == []
-    assert deleted.changes["criterion"]["new"] is None
-    assert deleted.snapshot["criteria"] == []
+    _assert_criterion_events(added, met, deleted)
+    _assert_dependency_events(linked, unlinked, prerequisite.id)
 
 
 @pytest.mark.asyncio

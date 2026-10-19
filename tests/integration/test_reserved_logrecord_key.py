@@ -16,6 +16,7 @@ affected loggers back into the state of a server whose loggers are live.
 
 import ast
 import logging
+from collections.abc import Iterator
 from pathlib import Path
 from uuid import uuid4
 
@@ -73,36 +74,53 @@ def _single_record(caplog, logger_name: str, message: str) -> logging.LogRecord:
     return matches[0]
 
 
+def _log_calls(tree: ast.AST) -> Iterator[ast.Call]:
+    """Every ``<something>.<log method>(...)`` call in ``tree``."""
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr in LOG_METHODS
+        ):
+            yield node
+
+
+def _literal_extra_keys(extra: ast.expr) -> list[str]:
+    """Keys of an ``extra`` argument written as a ``{...}`` or ``dict(...)`` literal."""
+    if isinstance(extra, ast.Dict):
+        return [
+            k.value for k in extra.keys if isinstance(k, ast.Constant) and isinstance(k.value, str)
+        ]
+    if (
+        isinstance(extra, ast.Call)
+        and isinstance(extra.func, ast.Name)
+        and extra.func.id == "dict"
+    ):
+        return [k.arg for k in extra.keywords if k.arg]
+    return []
+
+
+def _extra_keys_used(call: ast.Call) -> list[str]:
+    """Every literal key passed through ``extra=`` in a logging call."""
+    return [
+        key
+        for keyword in call.keywords
+        if keyword.arg == "extra"
+        for key in _literal_extra_keys(keyword.value)
+    ]
+
+
 def test_log_extra_never_uses_reserved_logrecord_keys():
     """No ``extra={...}`` literal under app/ may use a key reserved by LogRecord."""
     reserved = _reserved_logrecord_keys()
     offenders = []
     for path in sorted(APP_DIR.rglob("*.py")):
-        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
-            if not (
-                isinstance(node, ast.Call)
-                and isinstance(node.func, ast.Attribute)
-                and node.func.attr in LOG_METHODS
-            ):
-                continue
-            for keyword in node.keywords:
-                if keyword.arg != "extra":
-                    continue
-                if isinstance(keyword.value, ast.Dict):
-                    keys = [k.value for k in keyword.value.keys if isinstance(k, ast.Constant)]
-                elif (
-                    isinstance(keyword.value, ast.Call)
-                    and isinstance(keyword.value.func, ast.Name)
-                    and keyword.value.func.id == "dict"
-                ):
-                    keys = [k.arg for k in keyword.value.keywords if k.arg]
-                else:
-                    continue
-                offenders.extend(
-                    f"{path.relative_to(APP_DIR.parent)}:{node.lineno} uses reserved key {key!r}"
-                    for key in keys
-                    if key in reserved
-                )
+        for call in _log_calls(ast.parse(path.read_text(encoding="utf-8"))):
+            offenders.extend(
+                f"{path.relative_to(APP_DIR.parent)}:{call.lineno} uses reserved key {key!r}"
+                for key in _extra_keys_used(call)
+                if key in reserved
+            )
     assert not offenders, "\n".join(offenders)
 
 

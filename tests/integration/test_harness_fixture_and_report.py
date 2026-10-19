@@ -933,6 +933,34 @@ def test_exchanged_files_are_utf8_even_when_the_host_codec_is_not(tmp_path):
     assert out["error"] == out["meta_error"] == "boom \u2014 \u201cquoted\u201d"
 
 
+def _opens_in_binary_mode(call: ast.Call) -> bool:
+    """Whether a positional argument of ``call`` is a mode string containing ``b``."""
+    return any(isinstance(arg, ast.Constant) and "b" in str(arg.value) for arg in call.args)
+
+
+def _is_text_file_call(call: ast.Call) -> bool:
+    """A ``read_text``/``write_text``/text-mode ``open`` method call (``os.open`` is fd-level)."""
+    func = call.func
+    if not isinstance(func, ast.Attribute):
+        return False
+    if func.attr in {"read_text", "write_text"}:
+        return True
+    is_os_open = isinstance(func.value, ast.Name) and func.value.id == "os"
+    return func.attr == "open" and not is_os_open and not _opens_in_binary_mode(call)
+
+
+def _text_calls_without_encoding(source: Path) -> list[str]:
+    """``path:line`` of every text-file call in ``source`` that does not pass ``encoding=``."""
+    tree = ast.parse(source.read_text(encoding="utf-8"))
+    return [
+        f"{source.relative_to(REPO_ROOT)}:{node.lineno}"
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and _is_text_file_call(node)
+        and "encoding" not in {kw.arg for kw in node.keywords}
+    ]
+
+
 def test_every_harness_text_file_call_names_its_encoding():
     # Arrange: the call sites the child above does not reach (requirements.lock, the
     # in-container runner, server.log, run.json, fixture files) are covered statically
@@ -940,20 +968,7 @@ def test_every_harness_text_file_call_names_its_encoding():
     for source in sorted((REPO_ROOT / "test_harness").rglob("*.py")):
         if "runs" in source.relative_to(REPO_ROOT).parts:
             continue  # generated run artifacts, not harness code
-        for node in ast.walk(ast.parse(source.read_text(encoding="utf-8"))):
-            if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
-                continue
-            name, owner = node.func.attr, node.func.value
-            if name == "open" and isinstance(owner, ast.Name) and owner.id == "os":
-                continue  # os.open is fd-level
-            text_mode = name in {"read_text", "write_text"} or (
-                name == "open"
-                and not any(
-                    isinstance(arg, ast.Constant) and "b" in str(arg.value) for arg in node.args
-                )
-            )
-            if text_mode and "encoding" not in {kw.arg for kw in node.keywords}:
-                offenders.append(f"{source.relative_to(REPO_ROOT)}:{node.lineno}")
+        offenders.extend(_text_calls_without_encoding(source))
 
     # Act / Assert
     assert offenders == []

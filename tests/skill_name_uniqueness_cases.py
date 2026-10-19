@@ -1,7 +1,10 @@
 """Skill name uniqueness contracts exercised unchanged against SQLite and PostgreSQL."""
 
 import asyncio
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any
 from uuid import uuid4
 
 import pytest
@@ -61,6 +64,75 @@ def pause_after_name_check(repo, gate: asyncio.Barrier) -> None:
     repo.skill_name_exists = skill_name_exists
 
 
+@asynccontextmanager
+async def racing_repository(skill_db: Any, repo: Any) -> AsyncIterator[Any]:
+    """A second repository on its own engine, both paused so their name checks overlap.
+
+    Independent engines guarantee independent physical database connections (also on SQLite).
+    """
+    other_db = type(skill_db)()
+    other_repo = type(repo)(other_db, StubEmbeddings(), None)
+    gate = asyncio.Barrier(2)
+    pause_after_name_check(repo, gate)
+    pause_after_name_check(other_repo, gate)
+    try:
+        yield other_repo
+    finally:
+        await other_db.dispose()
+
+
+def single_winner_and_loser(results: list[Any]) -> tuple[Skill, ValueError]:
+    """Split the outcomes of a two-writer race, asserting exactly one writer won."""
+    winners = [result for result in results if isinstance(result, Skill)]
+    losers = [result for result in results if isinstance(result, ValueError)]
+    assert len(winners) == len(losers) == 1, results
+    return winners[0], losers[0]
+
+
+async def run_migration(skill_db: Any, config: Config, direction: str, revision: str) -> None:
+    """Run an Alembic ``upgrade``/``downgrade`` on the test database's connection."""
+
+    def migrate(connection: Any) -> None:
+        config.attributes["connection"] = connection
+        getattr(command, direction)(config, revision)
+
+    async with skill_db._engine.begin() as connection:
+        await connection.run_sync(migrate)
+
+
+async def create_legacy_duplicates(
+    skill_db: Any, config: Config, repo: Any, users: tuple[Any, Any], long_name: str,
+) -> tuple[list[Skill], Skill]:
+    """Store duplicate names on the pre-index schema, then migrate back to ``head``.
+
+    Returns the owner's skills in creation order and the other user's skill.
+    """
+    user, other_user = users
+    await run_migration(skill_db, config, "downgrade", PREVIOUS_REVISION)
+    try:
+        # The old schema has no unique index, so the repository can store duplicates.
+        legacy = [
+            await repo.create_skill(user.id, make_skill(name))
+            for name in ("legacy", "legacy", "legacy-2", "legacy", long_name, long_name)
+        ]
+        foreign = await repo.create_skill(other_user.id, make_skill("legacy"))
+    finally:
+        await run_migration(skill_db, config, "upgrade", "head")
+    return legacy, foreign
+
+
+def assert_duplicates_were_disambiguated(names: dict[int, str], legacy: list[Skill]) -> None:
+    """The first duplicate keeps its name; later ones get a ``-N`` suffix within the length limit."""
+    long_name = "x" * settings.SKILL_NAME_MAX_LENGTH
+    assert names[legacy[0].id] == "legacy"
+    assert names[legacy[2].id] == "legacy-2"
+    assert names[legacy[1].id] == "legacy-3"
+    assert names[legacy[3].id] == "legacy-4"
+    assert names[legacy[4].id] == long_name
+    assert names[legacy[5].id] == "x" * (settings.SKILL_NAME_MAX_LENGTH - 2) + "-2"
+    assert len(set(names.values())) == len(legacy)
+
+
 class TestSkillNameUniquenessStorage:
     async def test_rename_to_existing_name_is_rejected(self, skill_store):
         repos, user, other_user = skill_store
@@ -89,28 +161,18 @@ class TestSkillNameUniquenessStorage:
 
     async def test_concurrent_creates_on_separate_connections(self, skill_db, skill_store):
         repos, user, _ = skill_store
-        # Independent engines guarantee independent physical database connections (also on SQLite).
-        other_db = type(skill_db)()
-        other_repo = type(repos["skill"])(other_db, StubEmbeddings(), None)
-        services = [SkillService(repos["skill"]), SkillService(other_repo)]
-        gate = asyncio.Barrier(2)
-        pause_after_name_check(repos["skill"], gate)
-        pause_after_name_check(other_repo, gate)
 
-        try:
+        async with racing_repository(skill_db, repos["skill"]) as other_repo:
+            services = [SkillService(repos["skill"]), SkillService(other_repo)]
             results = await asyncio.gather(
                 *(s.create_skill(user.id, make_skill("race-skill")) for s in services),
                 return_exceptions=True,
             )
-        finally:
-            await other_db.dispose()
 
-        winners = [result for result in results if isinstance(result, Skill)]
-        losers = [result for result in results if isinstance(result, ValueError)]
-        assert len(winners) == len(losers) == 1, results
-        assert "already exists" in str(losers[0])
+        winner, loser = single_winner_and_loser(results)
+        assert "already exists" in str(loser)
         stored = [s for s in await services[0].list_skills(user.id) if s.name == "race-skill"]
-        assert [s.id for s in stored] == [winners[0].id]
+        assert [s.id for s in stored] == [winner.id]
         # A failed transaction must not poison the next request.
         created = await services[0].create_skill(user.id, make_skill("race-skill-next"))
         assert created.name == "race-skill-next"
@@ -120,14 +182,9 @@ class TestSkillNameUniquenessStorage:
         service = SkillService(repos["skill"])
         first = await service.create_skill(user.id, make_skill("rename-one"))
         second = await service.create_skill(user.id, make_skill("rename-two"))
-        other_db = type(skill_db)()
-        other_repo = type(repos["skill"])(other_db, StubEmbeddings(), None)
-        attempts = [(service, first.id), (SkillService(other_repo), second.id)]
-        gate = asyncio.Barrier(2)
-        pause_after_name_check(repos["skill"], gate)
-        pause_after_name_check(other_repo, gate)
 
-        try:
+        async with racing_repository(skill_db, repos["skill"]) as other_repo:
+            attempts = [(service, first.id), (SkillService(other_repo), second.id)]
             results = await asyncio.gather(
                 *(
                     target.update_skill(user.id, skill_id, SkillUpdate(name="rename-target"))
@@ -135,12 +192,8 @@ class TestSkillNameUniquenessStorage:
                 ),
                 return_exceptions=True,
             )
-        finally:
-            await other_db.dispose()
 
-        winners = [result for result in results if isinstance(result, Skill)]
-        losers = [result for result in results if isinstance(result, ValueError)]
-        assert len(winners) == len(losers) == 1, results
+        single_winner_and_loser(results)
         names = sorted(s.name for s in await service.list_skills(user.id))
         assert names.count("rename-target") == 1
         assert len(names) == 2
@@ -171,34 +224,14 @@ class TestSkillNameUniquenessStorage:
         repos, user, other_user = skill_store
         repo = repos["skill"]
         config = Config(str(Path(__file__).parents[1] / "alembic.ini"))
-
-        def migrate(connection, direction, revision):
-            config.attributes["connection"] = connection
-            getattr(command, direction)(config, revision)
-
-        async with skill_db._engine.begin() as connection:
-            await connection.run_sync(migrate, "downgrade", PREVIOUS_REVISION)
-
         long_name = "x" * settings.SKILL_NAME_MAX_LENGTH
-        try:
-            # The old schema has no unique index, so the repository can store duplicates.
-            legacy = [
-                await repo.create_skill(user.id, make_skill(name))
-                for name in ("legacy", "legacy", "legacy-2", "legacy", long_name, long_name)
-            ]
-            foreign = await repo.create_skill(other_user.id, make_skill("legacy"))
-        finally:
-            async with skill_db._engine.begin() as connection:
-                await connection.run_sync(migrate, "upgrade", "head")
+
+        legacy, foreign = await create_legacy_duplicates(
+            skill_db, config, repo, (user, other_user), long_name,
+        )
 
         names = {s.id: s.name for s in await repo.list_skills(user.id)}
-        assert names[legacy[0].id] == "legacy"
-        assert names[legacy[2].id] == "legacy-2"
-        assert names[legacy[1].id] == "legacy-3"
-        assert names[legacy[3].id] == "legacy-4"
-        assert names[legacy[4].id] == long_name
-        assert names[legacy[5].id] == "x" * (settings.SKILL_NAME_MAX_LENGTH - 2) + "-2"
-        assert len(set(names.values())) == len(legacy)
+        assert_duplicates_were_disambiguated(names, legacy)
         # Nothing but the colliding names changes, and other users are untouched.
         kept = await repo.get_skill_by_id(user.id, legacy[3].id)
         assert (kept.description, kept.content) == ("legacy description", "# legacy")

@@ -416,10 +416,8 @@ DRIVER = textwrap.dedent(
 ).replace("__REPO__", repr(str(REPO_ROOT)))
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="POSIX signals")
-@pytest.mark.parametrize("sig", [signal.SIGINT, signal.SIGTERM], ids=["SIGINT", "SIGTERM"])
-def test_termination_signal_runs_the_full_teardown(tmp_path, sig):
-    # Arrange: a real process, so a missing SIGTERM handler kills it for real
+def _spawn_driver(tmp_path: Path) -> tuple[subprocess.Popen[str], Path, Path]:
+    """Start the driver as a real process; return it with its events log and TMPDIR."""
     events = tmp_path / "events.log"
     events.touch()
     auth = tmp_path / "auth.json"
@@ -439,23 +437,38 @@ def test_termination_signal_runs_the_full_teardown(tmp_path, sig):
         [sys.executable, "-I", str(driver)], env=child_env, cwd=tmp_path,
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
     )
+    return proc, events, tmpdir
 
-    # Act
+
+def _signal_running_session(
+    proc: subprocess.Popen[str], events: Path, sig: signal.Signals,
+) -> int | None:
+    """Send ``sig`` once the fake session runs; return the exit code (None if it hung)."""
     try:
         deadline = time.monotonic() + 60
         while "session-in-progress" not in events.read_text():
-            assert proc.poll() is None, f"driver died early: {proc.stdout.read()}"
+            assert proc.poll() is None, f"driver died early: {proc.stdout and proc.stdout.read()}"
             assert time.monotonic() < deadline, "session never started"
             time.sleep(0.05)
         proc.send_signal(sig)
         try:
-            returncode = proc.wait(timeout=30)
+            return proc.wait(timeout=30)
         except subprocess.TimeoutExpired:
-            returncode = None
+            return None
     finally:
         if proc.poll() is None:
             proc.kill()
             proc.wait()
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX signals")
+@pytest.mark.parametrize("sig", [signal.SIGINT, signal.SIGTERM], ids=["SIGINT", "SIGTERM"])
+def test_termination_signal_runs_the_full_teardown(tmp_path, sig):
+    # Arrange: a real process, so a missing SIGTERM handler kills it for real
+    proc, events, tmpdir = _spawn_driver(tmp_path)
+
+    # Act
+    returncode = _signal_running_session(proc, events, sig)
 
     # Assert
     lines = events.read_text().splitlines()
