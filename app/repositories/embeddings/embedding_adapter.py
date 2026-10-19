@@ -2,6 +2,7 @@
 import asyncio
 import logging
 import time
+from typing import TYPE_CHECKING, NotRequired, TypedDict
 
 from google import genai
 from google.genai import types
@@ -9,10 +10,34 @@ from openai import AzureOpenAI, OpenAI
 
 from app.config.settings import settings
 from app.protocols.embedding_protocol import EmbeddingsAdapter
-from app.repositories.embeddings.fastembed_offline import load_fastembed_model
+from app.repositories.embeddings.fastembed_offline import (
+    FastEmbedKwargs,
+    FastEmbedProviderKwargs,
+    load_fastembed_model,
+)
 from app.utils.url_helpers import redact_url
 
+if TYPE_CHECKING:
+    from fastembed import TextEmbedding
+
 logger = logging.getLogger(__name__)
+
+
+class _EmbeddingsCreateKwargs(TypedDict):
+    """Keyword arguments for ``client.embeddings.create`` on the OpenAI-style clients."""
+
+    input: list[str]
+    model: str
+    dimensions: NotRequired[int]  # only sent to deployments that accept it
+
+
+class _OpenAIClientKwargs(TypedDict):
+    """Keyword arguments for the ``OpenAI`` client constructor."""
+
+    api_key: str
+    timeout: float
+    base_url: NotRequired[str]  # left out entirely to keep the library default
+
 
 class FastEmbeddingAdapter(EmbeddingsAdapter):
     """Generate embeddings using the fastembed library"""
@@ -38,10 +63,12 @@ class FastEmbeddingAdapter(EmbeddingsAdapter):
             "cache_dir": settings.FASTEMBED_CACHE_DIR,
         })
 
-    def _create_text_embedding(self, fastembed_kwargs: dict[str, bool]):
+    def _create_text_embedding(self, fastembed_kwargs: FastEmbedKwargs) -> "TextEmbedding":
         from fastembed import TextEmbedding
 
-        provider_kwargs = {"providers": self.providers} if self.providers is not None else {}
+        provider_kwargs: FastEmbedProviderKwargs = (
+            {"providers": self.providers} if self.providers is not None else {}
+        )
         return TextEmbedding(
             model_name=settings.EMBEDDING_MODEL,
             cache_dir=settings.FASTEMBED_CACHE_DIR,
@@ -96,8 +123,8 @@ class AzureOpenAIAdapter(EmbeddingsAdapter):
         self.model = settings.AZURE_DEPLOYMENT
         self.supports_dimensions = settings.AZURE_SUPPORTS_DIMENSIONS
 
-    async def generate_embedding(self, text) -> list[float]:
-        kwargs = {
+    async def generate_embedding(self, text: str) -> list[float]:
+        kwargs: _EmbeddingsCreateKwargs = {
             "input": [text],
             "model": self.model,
         }
@@ -160,9 +187,10 @@ class GoogleEmbeddingsAdapter(EmbeddingsAdapter):
             })
             raise
 
-        if not response.embeddings:
+        values = response.embeddings[0].values if response.embeddings else None
+        if values is None:
             raise RuntimeError("Google Generative AI response did not contain embedding vector")
-        return list(map(float, response.embeddings[0].values))
+        return list(map(float, values))
 
 
 class OpenAIEmbeddingsAdapter(EmbeddingsAdapter):
@@ -190,7 +218,7 @@ class OpenAIEmbeddingsAdapter(EmbeddingsAdapter):
             else:
                 raise ValueError("OPENAI_API_KEY must be configured for OpenAIEmbeddingsAdapter")
 
-        client_kwargs = {
+        client_kwargs: _OpenAIClientKwargs = {
             "api_key": api_key,
             "timeout": settings.EMBEDDING_REQUEST_TIMEOUT_SECONDS,
         }
@@ -201,7 +229,7 @@ class OpenAIEmbeddingsAdapter(EmbeddingsAdapter):
         self.model = settings.EMBEDDING_MODEL
 
     async def generate_embedding(self, text: str) -> list[float]:
-        kwargs = {
+        kwargs: _EmbeddingsCreateKwargs = {
             "input": [text],
             "model": self.model,
         }

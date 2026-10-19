@@ -1,11 +1,24 @@
 """Helpers for FastEmbed offline/cache-only startup."""
 import os
 from collections.abc import Callable
+from typing import TypedDict
 
 from app.config.settings import settings
 
 
-def get_fastembed_kwargs() -> dict[str, bool]:
+class FastEmbedKwargs(TypedDict, total=False):
+    """Offline-mode keyword arguments understood by FastEmbed model constructors."""
+
+    local_files_only: bool
+
+
+class FastEmbedProviderKwargs(TypedDict, total=False):
+    """ONNX execution providers; the key is left out entirely when none are configured."""
+
+    providers: list[str]
+
+
+def get_fastembed_kwargs() -> FastEmbedKwargs:
     """Return kwargs that constrain FastEmbed to local files when configured."""
     if not settings.FASTEMBED_LOCAL_FILES_ONLY:
         return {}
@@ -21,7 +34,7 @@ def load_fastembed_model[T](
     model_role: str,
     model_name: str,
     cache_dir: str,
-    factory: Callable[[dict[str, bool]], T],
+    factory: Callable[[FastEmbedKwargs], T],
 ) -> T:
     """Load a FastEmbed model and add actionable offline guidance on failure."""
     kwargs = get_fastembed_kwargs()

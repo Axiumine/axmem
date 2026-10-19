@@ -1,11 +1,18 @@
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 import httpx
 
 from app.config.settings import settings
-from app.repositories.embeddings.fastembed_offline import load_fastembed_model
+from app.repositories.embeddings.fastembed_offline import (
+    FastEmbedKwargs,
+    FastEmbedProviderKwargs,
+    load_fastembed_model,
+)
+
+if TYPE_CHECKING:
+    from fastembed.rerank.cross_encoder import TextCrossEncoder
 
 DIRECTML_PROVIDER = "DmlExecutionProvider"
 
@@ -63,11 +70,13 @@ class FastEmbedCrossEncoderAdapter:
             threads: int,
             cache_dir: str | None,
             providers: list[str] | None = None,
-            fastembed_kwargs: dict[str, bool],
-    ):
+            fastembed_kwargs: FastEmbedKwargs,
+    ) -> "TextCrossEncoder":
         from fastembed.rerank.cross_encoder import TextCrossEncoder
 
-        provider_kwargs = {"providers": providers} if providers is not None else {}
+        provider_kwargs: FastEmbedProviderKwargs = (
+            {"providers": providers} if providers is not None else {}
+        )
         return TextCrossEncoder(
             model_name=model,
             threads=threads,
