@@ -7,23 +7,13 @@ import pytest
 from pydantic import ValidationError
 
 from app.config.settings import settings
-from app.models.code_artifact_models import CodeArtifactCreate, CodeArtifactUpdate
-from app.models.document_models import DocumentCreate, DocumentUpdate
 from app.models.entity_models import EntityCreate, EntityType, EntityUpdate
 
 _BASE_FIELDS = {
-    CodeArtifactCreate: {"title": "t", "description": "d", "code": "x = 1", "language": "python"},
-    DocumentCreate: {"title": "t", "description": "d", "content": "c"},
     EntityCreate: {"name": "n", "entity_type": EntityType.TEAM},
-    CodeArtifactUpdate: {},
-    DocumentUpdate: {},
     EntityUpdate: {},
 }
 LIMITED_LISTS = [
-    (CodeArtifactCreate, "tags", settings.CODE_ARTIFACT_TAGS_MAX_COUNT),
-    (CodeArtifactUpdate, "tags", settings.CODE_ARTIFACT_TAGS_MAX_COUNT),
-    (DocumentCreate, "tags", settings.DOCUMENT_TAGS_MAX_COUNT),
-    (DocumentUpdate, "tags", settings.DOCUMENT_TAGS_MAX_COUNT),
     (EntityCreate, "tags", settings.ENTITY_TAGS_MAX_COUNT),
     (EntityUpdate, "tags", settings.ENTITY_TAGS_MAX_COUNT),
     (EntityCreate, "aka", settings.ENTITY_AKA_MAX_COUNT),

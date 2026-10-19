@@ -44,8 +44,6 @@ from app.repositories.postgres.postgres_tables import Base
 from app.routes.api import (
     activity,
     auth,
-    code_artifacts,
-    documents,
     entities,
     health,
     memories,
@@ -55,8 +53,6 @@ from app.routes.mcp import meta_tools
 from app.routes.mcp.tool_metadata_registry import register_all_tools_metadata
 from app.routes.mcp.tool_registry import ToolRegistry
 from app.services.activity_service import ActivityService
-from app.services.code_artifact_service import CodeArtifactService
-from app.services.document_service import DocumentService
 from app.services.entity_service import EntityService
 from app.services.memory_service import MemoryService
 from app.services.project_service import ProjectService
@@ -190,14 +186,10 @@ ALL_TABLES = [
     "activity_log",
     "memory_links",
     "memory_project_association",
-    "memory_code_artifact_association",
-    "memory_document_association",
     "memory_entity_association",
     "entity_project_association",
     "entity_relationships",
     "entities",
-    "code_artifacts",
-    "documents",
     "memories",
     "projects",
     "users",
@@ -384,15 +376,11 @@ async def postgres_app(
         if event_bus is not None:
             memory_service.register_access_tracking_handlers(event_bus)
         project_service = ProjectService(repos["project"], event_bus=event_bus)
-        code_artifact_service = CodeArtifactService(repos["code_artifact"], event_bus=event_bus)
-        document_service = DocumentService(repos["document"], event_bus=event_bus)
         entity_service = EntityService(repos["entity"], event_bus=event_bus)
 
         mcp.user_service = user_service
         mcp.memory_service = memory_service
         mcp.project_service = project_service
-        mcp.code_artifact_service = code_artifact_service
-        mcp.document_service = document_service
         mcp.entity_service = entity_service
         mcp.activity_service = activity_service
         mcp.event_bus = event_bus
@@ -406,8 +394,6 @@ async def postgres_app(
             memory_service=memory_service,
             re_embedding_service=ReEmbeddingService(repos["memory"], embedding_adapter),
             project_service=project_service,
-            code_artifact_service=code_artifact_service,
-            document_service=document_service,
             entity_service=entity_service,
         )
 
@@ -425,8 +411,6 @@ async def postgres_app(
     memories.register(mcp)
     entities.register(mcp)
     projects.register(mcp)
-    documents.register(mcp)
-    code_artifacts.register(mcp)
     activity.register(mcp)
     meta_tools.register(mcp)
 

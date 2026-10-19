@@ -13,8 +13,6 @@ class ToolCategory(StrEnum):
     USER = "user"
     MEMORY = "memory"
     PROJECT = "project"
-    CODE_ARTIFACT = "code_artifact"
-    DOCUMENT = "document"
     ENTITY = "entity"
     LINKING = "linking"
 

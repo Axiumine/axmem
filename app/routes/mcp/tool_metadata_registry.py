@@ -217,22 +217,6 @@ def register_memory_tools_metadata(
                     "example": [1, 3],
                 },
                 {
-                    "name": "code_artifact_ids",
-                    "type": "Optional[List[int]]",
-                    "description": "Code artifact IDs to link (optional)",
-                    "required": False,
-                    "default": None,
-                    "example": [5],
-                },
-                {
-                    "name": "document_ids",
-                    "type": "Optional[List[int]]",
-                    "description": "Document IDs to link (optional)",
-                    "required": False,
-                    "default": None,
-                    "example": [2],
-                },
-                {
                     "name": "source_repo",
                     "type": "Optional[str]",
                     "description": "Repository/project source (e.g., 'owner/repo') for provenance tracking",
@@ -464,22 +448,6 @@ def register_memory_tools_metadata(
                     "required": False,
                     "default": None,
                     "example": [1, 2],
-                },
-                {
-                    "name": "code_artifact_ids",
-                    "type": "Optional[List[int]]",
-                    "description": "New code artifact IDs - replaces existing links (optional)",
-                    "required": False,
-                    "default": None,
-                    "example": [5],
-                },
-                {
-                    "name": "document_ids",
-                    "type": "Optional[List[int]]",
-                    "description": "New document IDs - replaces existing links (optional)",
-                    "required": False,
-                    "default": None,
-                    "example": [3],
                 },
                 {
                     "name": "source_repo",
@@ -892,8 +860,6 @@ def register_all_tools_metadata(
     user_service: UserService,
     memory_service: MemoryService,
     project_service,
-    code_artifact_service,
-    document_service,
     entity_service,
     re_embedding_service,
 ):
@@ -904,8 +870,6 @@ def register_all_tools_metadata(
         user_service: UserService instance
         memory_service: MemoryService instance
         project_service: ProjectService instance
-        code_artifact_service: CodeArtifactService instance
-        document_service: DocumentService instance
         entity_service: EntityService instance
         re_embedding_service: ReEmbeddingService instance created at startup
     """
@@ -913,8 +877,6 @@ def register_all_tools_metadata(
 
     # Import adapter factory functions
     from app.routes.mcp.tool_adapters import (
-        create_code_artifact_adapters,
-        create_document_adapters,
         create_entity_adapters,
         create_project_adapters,
     )
@@ -923,16 +885,12 @@ def register_all_tools_metadata(
     user_adapters = create_user_adapters(user_service)
     memory_adapters = create_memory_adapters(memory_service, user_service, re_embedding_service)
     project_adapters = create_project_adapters(project_service, user_service)
-    code_artifact_adapters = create_code_artifact_adapters(code_artifact_service, user_service)
-    document_adapters = create_document_adapters(document_service, user_service)
     entity_adapters = create_entity_adapters(entity_service, user_service)
 
     # Register tools by category
     register_user_tools_metadata(registry, user_adapters)
     register_memory_tools_metadata(registry, memory_adapters)
     register_project_tools_metadata(registry, project_adapters)
-    register_code_artifact_tools_metadata(registry, code_artifact_adapters)
-    register_document_tools_metadata(registry, document_adapters)
     register_entity_tools_metadata(registry, entity_adapters)
 
     # Log summary
@@ -955,7 +913,7 @@ def register_project_tools_metadata(
         {
             "name": "create_project",
             "mutates": True,
-            "description": "Create new project for organizing memories, code artifacts, and documents by context",
+            "description": "Create new project for organizing memories by context",
             "parameters": [
                 {"name": "name", "type": "str", "description": "Project name (max 500 chars)", "required": True, "example": "forgetful"},
                 {"name": "description", "type": "str", "description": "Purpose/scope overview (max ~5000 chars)", "required": True, "example": "MIT-licensed memory service"},
@@ -1111,266 +1069,6 @@ def register_project_tools_metadata(
         )
 
     logger.info(f"Registered {len(tools)} project tools")
-
-
-# ============================================================================
-# CodeArtifact Tools Metadata
-# ============================================================================
-
-def register_code_artifact_tools_metadata(
-    registry: ToolRegistry,
-    adapters: dict[str, Any],
-):
-    """Register code artifact tool metadata and implementations"""
-    tools: list[ToolDef] = [
-        {
-            "name": "create_code_artifact",
-            "mutates": True,
-            "description": "Create code artifact for storing reusable code snippets and patterns",
-            "parameters": [
-                {"name": "title", "type": "str", "description": "Artifact title", "required": True, "example": "JWT Middleware"},
-                {"name": "description", "type": "str", "description": "What the code does and when to use it", "required": True, "example": "FastAPI middleware for JWT authentication"},
-                {"name": "code", "type": "str", "description": "The actual code content", "required": True, "example": "async def jwt_middleware(request, call_next): ..."},
-                {"name": "language", "type": "str", "description": "Programming language (python, javascript, typescript, etc.)", "required": True, "example": "python"},
-                {"name": "ctx", "type": "Context", "description": "FastMCP Context (automatically injected)", "required": True},
-                {"name": "tags", "type": "Optional[List[str]]", "description": "Tags for categorization", "required": False, "default": None, "example": ["middleware", "auth"]},
-                {"name": "project_id", "type": "Optional[int]", "description": "Link to project", "required": False, "default": None, "example": 1},
-                {"name": "source_repo", "type": "Optional[str]", "description": "Repository/project source for provenance tracking", "required": False, "default": None, "example": "owner/repo"},
-                {"name": "source_files", "type": "Optional[List[str]]", "description": "Files that informed this for provenance tracking", "required": False, "default": None, "example": ["src/main.py"]},
-                {"name": "source_url", "type": "Optional[str]", "description": "URL to source material for provenance tracking", "required": False, "default": None, "example": "https://example.com"},
-                {"name": "confidence", "type": "Optional[float]", "description": "Encoding confidence score (0.0-1.0) for provenance tracking", "required": False, "default": None, "example": 0.85},
-                {"name": "encoding_agent", "type": "Optional[str]", "description": "Software running the agent for provenance tracking", "required": False, "default": None, "example": "OpenCode"},
-                {"name": "encoding_version", "type": "Optional[str]", "description": "Version of encoding software for provenance tracking", "required": False, "default": None, "example": "1.0.0"},
-                {"name": "agent_id", "type": "Optional[str]", "description": "Agent identity for provenance tracking", "required": False, "default": None, "example": "CodeAgentUltra"},
-                {"name": "agent_version", "type": "Optional[str]", "description": "Agent version for provenance tracking", "required": False, "default": None, "example": "1.0"},
-                {"name": "agent_model", "type": "Optional[str]", "description": "LLM model used for provenance tracking", "required": False, "default": None, "example": "claude-sonnet-4-6"},
-            ],
-            "returns": "CodeArtifact with id and timestamps",
-            "examples": [
-                'execute_forgetful_tool("create_code_artifact", {"title": "Helper function", "description": "Utility helper", "code": "def helper(): pass", "language": "python"})',
-            ],
-            "tags": ["code", "create", "artifact"],
-        },
-        {
-            "name": "get_code_artifact",
-            "description": "Retrieve code artifact by ID with complete details",
-            "parameters": [
-                {"name": "artifact_id", "type": "int", "description": "ID of the artifact to retrieve", "required": True, "example": 1},
-                {"name": "ctx", "type": "Context", "description": "FastMCP Context (automatically injected)", "required": True},
-            ],
-            "returns": "Complete CodeArtifact object",
-            "examples": [
-                'execute_forgetful_tool("get_code_artifact", {"artifact_id": 1})',
-            ],
-            "tags": ["code", "retrieve", "read"],
-        },
-        {
-            "name": "list_code_artifacts",
-            "description": "List code artifacts with optional filtering by project, language, or tags",
-            "parameters": [
-                {"name": "ctx", "type": "Context", "description": "FastMCP Context (automatically injected)", "required": True},
-                {"name": "project_id", "type": "Optional[int]", "description": "Filter by project", "required": False, "default": None, "example": 1},
-                {"name": "language", "type": "Optional[str]", "description": "Filter by language", "required": False, "default": None, "example": "python"},
-                {"name": "tags", "type": "Optional[List[str]]", "description": "Filter by tags", "required": False, "default": None, "example": ["auth", "middleware"]},
-            ],
-            "returns": "Dictionary with artifacts list and count",
-            "examples": [
-                'execute_forgetful_tool("list_code_artifacts", {})',
-                'execute_forgetful_tool("list_code_artifacts", {"language": "python"})',
-            ],
-            "tags": ["code", "list", "query"],
-        },
-        {
-            "name": "update_code_artifact",
-            "mutates": True,
-            "description": "Update code artifact (PATCH semantics - only provided fields changed)",
-            "parameters": [
-                {"name": "artifact_id", "type": "int", "description": "ID of the artifact to update", "required": True, "example": 1},
-                {"name": "ctx", "type": "Context", "description": "FastMCP Context (automatically injected)", "required": True},
-                {"name": "title", "type": "Optional[str]", "description": "New title", "required": False, "default": None, "example": "Updated title"},
-                {"name": "description", "type": "Optional[str]", "description": "New description", "required": False, "default": None, "example": "Updated description"},
-                {"name": "code", "type": "Optional[str]", "description": "New code", "required": False, "default": None, "example": "def updated(): pass"},
-                {"name": "language", "type": "Optional[str]", "description": "New language", "required": False, "default": None, "example": "typescript"},
-                {"name": "tags", "type": "Optional[List[str]]", "description": "New tags (replaces existing)", "required": False, "default": None, "example": ["updated"]},
-                {"name": "project_id", "type": "Optional[int]", "description": "New project link", "required": False, "default": None, "example": 2},
-                {"name": "source_repo", "type": "Optional[str]", "description": "Repository/project source for provenance tracking", "required": False, "default": None, "example": "owner/repo"},
-                {"name": "source_files", "type": "Optional[List[str]]", "description": "Files that informed this for provenance tracking", "required": False, "default": None, "example": ["src/main.py"]},
-                {"name": "source_url", "type": "Optional[str]", "description": "URL to source material for provenance tracking", "required": False, "default": None, "example": "https://example.com"},
-                {"name": "confidence", "type": "Optional[float]", "description": "Encoding confidence score (0.0-1.0) for provenance tracking", "required": False, "default": None, "example": 0.85},
-                {"name": "encoding_agent", "type": "Optional[str]", "description": "Software running the agent for provenance tracking", "required": False, "default": None, "example": "OpenCode"},
-                {"name": "encoding_version", "type": "Optional[str]", "description": "Version of encoding software for provenance tracking", "required": False, "default": None, "example": "1.0.0"},
-                {"name": "agent_id", "type": "Optional[str]", "description": "Agent identity for provenance tracking", "required": False, "default": None, "example": "CodeAgentUltra"},
-                {"name": "agent_version", "type": "Optional[str]", "description": "Agent version for provenance tracking", "required": False, "default": None, "example": "1.0"},
-                {"name": "agent_model", "type": "Optional[str]", "description": "LLM model used for provenance tracking", "required": False, "default": None, "example": "claude-sonnet-4-6"},
-            ],
-            "returns": "Updated CodeArtifact object",
-            "examples": [
-                'execute_forgetful_tool("update_code_artifact", {"artifact_id": 1, "tags": ["updated", "refactored"]})',
-            ],
-            "tags": ["code", "update", "patch"],
-        },
-        {
-            "name": "delete_code_artifact",
-            "mutates": True,
-            "description": "Delete code artifact (cascades memory associations)",
-            "parameters": [
-                {"name": "artifact_id", "type": "int", "description": "ID of the artifact to delete", "required": True, "example": 1},
-                {"name": "ctx", "type": "Context", "description": "FastMCP Context (automatically injected)", "required": True},
-            ],
-            "returns": "Dictionary with deletion confirmation",
-            "examples": [
-                'execute_forgetful_tool("delete_code_artifact", {"artifact_id": 1})',
-            ],
-            "tags": ["code", "delete", "remove"],
-        },
-    ]
-
-    for tool_def in tools:
-        register_simplified_tool(
-            registry=registry,
-            name=tool_def["name"],
-            category=ToolCategory.CODE_ARTIFACT,
-            description=tool_def["description"],
-            parameters=tool_def["parameters"],
-            returns=tool_def["returns"],
-            implementation=adapters[tool_def["name"]],
-            examples=tool_def.get("examples", []),
-            tags=tool_def.get("tags", []),
-            mutates=tool_def.get("mutates", False),
-        )
-
-    logger.info(f"Registered {len(tools)} code artifact tools")
-
-
-# ============================================================================
-# Document Tools Metadata
-# ============================================================================
-
-def register_document_tools_metadata(
-    registry: ToolRegistry,
-    adapters: dict[str, Any],
-):
-    """Register document tool metadata and implementations"""
-    tools: list[ToolDef] = [
-        {
-            "name": "create_document",
-            "mutates": True,
-            "description": "Create document for storing long-form content and documentation",
-            "parameters": [
-                {"name": "title", "type": "str", "description": "Document title", "required": True, "example": "API Documentation"},
-                {"name": "description", "type": "str", "description": "Brief overview of the document", "required": True, "example": "REST API endpoints documentation"},
-                {"name": "content", "type": "str", "description": "The document content (long-form text)", "required": True, "example": "# API Endpoints\n\n## GET /users..."},
-                {"name": "ctx", "type": "Context", "description": "FastMCP Context (automatically injected)", "required": True},
-                {"name": "document_type", "type": "str", "description": "Document type (text, markdown, code, etc.)", "required": False, "default": "text", "example": "markdown"},
-                {"name": "filename", "type": "Optional[str]", "description": "Optional filename", "required": False, "default": None, "example": "api-docs.md"},
-                {"name": "tags", "type": "Optional[List[str]]", "description": "Tags for categorization", "required": False, "default": None, "example": ["api", "documentation"]},
-                {"name": "project_id", "type": "Optional[int]", "description": "Link to project", "required": False, "default": None, "example": 1},
-                {"name": "source_repo", "type": "Optional[str]", "description": "Repository/project source for provenance tracking", "required": False, "default": None, "example": "owner/repo"},
-                {"name": "source_files", "type": "Optional[List[str]]", "description": "Files that informed this for provenance tracking", "required": False, "default": None, "example": ["src/main.py"]},
-                {"name": "source_url", "type": "Optional[str]", "description": "URL to source material for provenance tracking", "required": False, "default": None, "example": "https://example.com"},
-                {"name": "confidence", "type": "Optional[float]", "description": "Encoding confidence score (0.0-1.0) for provenance tracking", "required": False, "default": None, "example": 0.85},
-                {"name": "encoding_agent", "type": "Optional[str]", "description": "Software running the agent for provenance tracking", "required": False, "default": None, "example": "OpenCode"},
-                {"name": "encoding_version", "type": "Optional[str]", "description": "Version of encoding software for provenance tracking", "required": False, "default": None, "example": "1.0.0"},
-                {"name": "agent_id", "type": "Optional[str]", "description": "Agent identity for provenance tracking", "required": False, "default": None, "example": "CodeAgentUltra"},
-                {"name": "agent_version", "type": "Optional[str]", "description": "Agent version for provenance tracking", "required": False, "default": None, "example": "1.0"},
-                {"name": "agent_model", "type": "Optional[str]", "description": "LLM model used for provenance tracking", "required": False, "default": None, "example": "claude-sonnet-4-6"},
-            ],
-            "returns": "Document with id and timestamps",
-            "examples": [
-                'execute_forgetful_tool("create_document", {"title": "Notes", "description": "Project notes", "content": "# Notes\\n\\nSome content..."})',
-            ],
-            "tags": ["document", "create", "content"],
-        },
-        {
-            "name": "get_document",
-            "description": "Retrieve document by ID with complete content",
-            "parameters": [
-                {"name": "document_id", "type": "int", "description": "ID of the document to retrieve", "required": True, "example": 1},
-                {"name": "ctx", "type": "Context", "description": "FastMCP Context (automatically injected)", "required": True},
-            ],
-            "returns": "Complete Document object with content",
-            "examples": [
-                'execute_forgetful_tool("get_document", {"document_id": 1})',
-            ],
-            "tags": ["document", "retrieve", "read"],
-        },
-        {
-            "name": "list_documents",
-            "description": "List documents with optional filtering by project, type, or tags",
-            "parameters": [
-                {"name": "ctx", "type": "Context", "description": "FastMCP Context (automatically injected)", "required": True},
-                {"name": "project_id", "type": "Optional[int]", "description": "Filter by project", "required": False, "default": None, "example": 1},
-                {"name": "document_type", "type": "Optional[str]", "description": "Filter by type", "required": False, "default": None, "example": "markdown"},
-                {"name": "tags", "type": "Optional[List[str]]", "description": "Filter by tags", "required": False, "default": None, "example": ["documentation"]},
-            ],
-            "returns": "Dictionary with documents list and count",
-            "examples": [
-                'execute_forgetful_tool("list_documents", {})',
-                'execute_forgetful_tool("list_documents", {"document_type": "markdown"})',
-            ],
-            "tags": ["document", "list", "query"],
-        },
-        {
-            "name": "update_document",
-            "mutates": True,
-            "description": "Update document (PATCH semantics - only provided fields changed)",
-            "parameters": [
-                {"name": "document_id", "type": "int", "description": "ID of the document to update", "required": True, "example": 1},
-                {"name": "ctx", "type": "Context", "description": "FastMCP Context (automatically injected)", "required": True},
-                {"name": "title", "type": "Optional[str]", "description": "New title", "required": False, "default": None, "example": "Updated title"},
-                {"name": "description", "type": "Optional[str]", "description": "New description", "required": False, "default": None, "example": "Updated description"},
-                {"name": "content", "type": "Optional[str]", "description": "New content", "required": False, "default": None, "example": "# Updated\\n\\nNew content..."},
-                {"name": "document_type", "type": "Optional[str]", "description": "New type", "required": False, "default": None, "example": "text"},
-                {"name": "filename", "type": "Optional[str]", "description": "New filename", "required": False, "default": None, "example": "new-file.md"},
-                {"name": "tags", "type": "Optional[List[str]]", "description": "New tags (replaces existing)", "required": False, "default": None, "example": ["updated"]},
-                {"name": "project_id", "type": "Optional[int]", "description": "New project link", "required": False, "default": None, "example": 2},
-                {"name": "source_repo", "type": "Optional[str]", "description": "Repository/project source for provenance tracking", "required": False, "default": None, "example": "owner/repo"},
-                {"name": "source_files", "type": "Optional[List[str]]", "description": "Files that informed this for provenance tracking", "required": False, "default": None, "example": ["src/main.py"]},
-                {"name": "source_url", "type": "Optional[str]", "description": "URL to source material for provenance tracking", "required": False, "default": None, "example": "https://example.com"},
-                {"name": "confidence", "type": "Optional[float]", "description": "Encoding confidence score (0.0-1.0) for provenance tracking", "required": False, "default": None, "example": 0.85},
-                {"name": "encoding_agent", "type": "Optional[str]", "description": "Software running the agent for provenance tracking", "required": False, "default": None, "example": "OpenCode"},
-                {"name": "encoding_version", "type": "Optional[str]", "description": "Version of encoding software for provenance tracking", "required": False, "default": None, "example": "1.0.0"},
-                {"name": "agent_id", "type": "Optional[str]", "description": "Agent identity for provenance tracking", "required": False, "default": None, "example": "CodeAgentUltra"},
-                {"name": "agent_version", "type": "Optional[str]", "description": "Agent version for provenance tracking", "required": False, "default": None, "example": "1.0"},
-                {"name": "agent_model", "type": "Optional[str]", "description": "LLM model used for provenance tracking", "required": False, "default": None, "example": "claude-sonnet-4-6"},
-            ],
-            "returns": "Updated Document object",
-            "examples": [
-                'execute_forgetful_tool("update_document", {"document_id": 1, "content": "Updated content"})',
-            ],
-            "tags": ["document", "update", "patch"],
-        },
-        {
-            "name": "delete_document",
-            "mutates": True,
-            "description": "Delete document (cascades memory associations)",
-            "parameters": [
-                {"name": "document_id", "type": "int", "description": "ID of the document to delete", "required": True, "example": 1},
-                {"name": "ctx", "type": "Context", "description": "FastMCP Context (automatically injected)", "required": True},
-            ],
-            "returns": "Dictionary with deletion confirmation",
-            "examples": [
-                'execute_forgetful_tool("delete_document", {"document_id": 1})',
-            ],
-            "tags": ["document", "delete", "remove"],
-        },
-    ]
-
-    for tool_def in tools:
-        register_simplified_tool(
-            registry=registry,
-            name=tool_def["name"],
-            category=ToolCategory.DOCUMENT,
-            description=tool_def["description"],
-            parameters=tool_def["parameters"],
-            returns=tool_def["returns"],
-            implementation=adapters[tool_def["name"]],
-            examples=tool_def.get("examples", []),
-            tags=tool_def.get("tags", []),
-            mutates=tool_def.get("mutates", False),
-        )
-
-    logger.info(f"Registered {len(tools)} document tools")
 
 
 # ============================================================================

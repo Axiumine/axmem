@@ -102,67 +102,6 @@ async def test_memory_provenance_roundtrip(mcp_client):
 
 
 # ============================================================================
-# Document provenance round-trip
-# ============================================================================
-
-
-@pytest.mark.asyncio
-async def test_document_provenance_roundtrip(mcp_client):
-    """Create document with all provenance fields, retrieve, verify persistence."""
-    result = await mcp_client.call_tool(
-        "execute_forgetful_tool",
-        {
-            "tool_name": "create_document",
-            "arguments": {
-                "title": "Provenance doc",
-                "description": "Testing provenance",
-                "content": "Document content for provenance test",
-                **PROVENANCE_FIELDS_9,
-            },
-        },
-    )
-    assert result.data is not None
-    doc_id = result.data["id"]
-
-    get_result = await mcp_client.call_tool(
-        "execute_forgetful_tool",
-        {"tool_name": "get_document", "arguments": {"document_id": doc_id}},
-    )
-    assert_provenance_fields(get_result.data, PROVENANCE_FIELDS_9)
-
-
-# ============================================================================
-# Code Artifact provenance round-trip
-# ============================================================================
-
-
-@pytest.mark.asyncio
-async def test_code_artifact_provenance_roundtrip(mcp_client):
-    """Create code artifact with all provenance fields, retrieve, verify persistence."""
-    result = await mcp_client.call_tool(
-        "execute_forgetful_tool",
-        {
-            "tool_name": "create_code_artifact",
-            "arguments": {
-                "title": "Provenance artifact",
-                "description": "Testing provenance",
-                "code": "print('hello')",
-                "language": "python",
-                **PROVENANCE_FIELDS_9,
-            },
-        },
-    )
-    assert result.data is not None
-    artifact_id = result.data["id"]
-
-    get_result = await mcp_client.call_tool(
-        "execute_forgetful_tool",
-        {"tool_name": "get_code_artifact", "arguments": {"artifact_id": artifact_id}},
-    )
-    assert_provenance_fields(get_result.data, PROVENANCE_FIELDS_9)
-
-
-# ============================================================================
 # Entity provenance round-trip
 # ============================================================================
 

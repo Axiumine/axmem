@@ -30,8 +30,6 @@ def _assert_get_memory_link_lists(data):
     """Relationship ID collections must always be lists."""
     assert isinstance(data["linked_memory_ids"], list)
     assert isinstance(data["project_ids"], list)
-    assert isinstance(data["code_artifact_ids"], list)
-    assert isinstance(data["document_ids"], list)
 
 
 @pytest.mark.asyncio

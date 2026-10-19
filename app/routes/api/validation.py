@@ -8,11 +8,11 @@ from typing import Any
 from pydantic import ValidationError
 from starlette.responses import JSONResponse
 
-from app.routes.api.query_params import INT32_MAX, INT32_MIN, INT64_MAX, INT64_MIN
+from app.routes.api.query_params import INT32_MAX, INT32_MIN
 
 # Integers outside the database column are rejected by the driver (OverflowError on
-# SQLite, DataError on PostgreSQL) and would surface as 500s. Counts and limits are
-# bound as BIGINT (int64); row ids are INTEGER columns on PostgreSQL (int32).
+# SQLite, DataError on PostgreSQL) and would surface as 500s. Row ids are INTEGER
+# columns on PostgreSQL (int32).
 
 
 def validation_error_response(error: ValidationError) -> JSONResponse:
@@ -34,38 +34,6 @@ def validation_error_response(error: ValidationError) -> JSONResponse:
         },
         status_code=400,
     )
-
-
-def parse_int_query(
-    raw: str, name: str, *, min_value: int = INT64_MIN, max_value: int = INT64_MAX,
-) -> int:
-    """Parse the text of an integer query parameter.
-
-    Raises:
-        ValueError: With a client-facing message if the text is not an integer
-            or the integer is outside ``min_value``..``max_value`` (int64 by default)
-    """
-    try:
-        value = int(raw)
-    except ValueError:
-        raise ValueError(f"Invalid {name}: {raw[:50]}. Must be an integer.") from None
-    if not min_value <= value <= max_value:
-        raise ValueError(f"Invalid {name}: {raw[:50]}. Value is out of range.")
-    return value
-
-
-def parse_optional_id_query(params: Any, name: str) -> int | None:
-    """Parse an optional row-id query parameter (``project_id``); empty means ``None``.
-
-    Row ids are INTEGER columns on PostgreSQL, so the accepted range is int32.
-
-    Raises:
-        ValueError: As for ``parse_int_query``
-    """
-    raw = params.get(name)
-    if not raw:
-        return None
-    return parse_int_query(raw, name, min_value=INT32_MIN, max_value=INT32_MAX)
 
 
 def validate_body_id(value: Any, name: str) -> int:

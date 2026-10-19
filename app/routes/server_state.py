@@ -22,8 +22,6 @@ if TYPE_CHECKING:
     from app.middleware.auth import TokenCache
     from app.routes.mcp.tool_registry import ToolRegistry
     from app.services.activity_service import ActivityService
-    from app.services.code_artifact_service import CodeArtifactService
-    from app.services.document_service import DocumentService
     from app.services.entity_service import EntityService
     from app.services.memory_service import MemoryService
     from app.services.project_service import ProjectService
@@ -38,8 +36,6 @@ class ForgetfulMCP(FastMCP[Any]):
     memory_service: MemoryService
     re_embedding_service: ReEmbeddingService
     project_service: ProjectService
-    code_artifact_service: CodeArtifactService
-    document_service: DocumentService
     entity_service: EntityService
     activity_service: ActivityService
     event_bus: EventBus | None

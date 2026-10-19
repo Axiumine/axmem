@@ -2,7 +2,7 @@
 
 Uses in-memory SQLite for test isolation. Covers:
 - POST/PUT /api/v1/memories with association ids that do not exist
-- POST /api/v1/memories reporting linked document and project ids
+- POST /api/v1/memories reporting linked project ids
 - DELETE /api/v1/memories/{id} (soft delete) for unknown memories, bad
   ``superseded_by`` values, self-supersede and repeated deletes
 """
@@ -25,8 +25,6 @@ MEMORY = {
 
 ASSOCIATION_FIELDS = [
     ("project_ids", "Projects"),
-    ("code_artifact_ids", "Code artifacts"),
-    ("document_ids", "Documents"),
 ]
 
 
@@ -80,14 +78,7 @@ class TestCreateMemoryResponse:
     """POST /api/v1/memories response mirrors the associations that were linked."""
 
     @pytest.mark.asyncio
-    async def test_response_reports_linked_document_and_project_ids(self, http_client):
-        document = await http_client.post("/api/v1/documents", json={
-            "title": "Memory route document",
-            "description": "Document linked from a memory",
-            "content": "# Steps\n1. Do it",
-            "tags": ["test"],
-        })
-        assert document.status_code == 201, document.text
+    async def test_response_reports_linked_project_ids(self, http_client):
         project = await http_client.post("/api/v1/projects", json={
             "name": "Memory route project",
             "description": "Project linked from a memory",
@@ -97,13 +88,11 @@ class TestCreateMemoryResponse:
 
         response = await http_client.post(API, json={
             **MEMORY,
-            "document_ids": [document.json()["id"]],
             "project_ids": [project.json()["id"]],
         })
 
         assert response.status_code == 201, response.text
         body = response.json()
-        assert body["document_ids"] == [document.json()["id"]]
         assert body["project_ids"] == [project.json()["id"]]
 
 

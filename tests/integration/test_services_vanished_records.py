@@ -11,25 +11,11 @@ from uuid import uuid4
 import pytest
 
 from app.models.activity_models import ActionType, EntityType
-from app.models.code_artifact_models import CodeArtifactCreate
-from app.models.document_models import DocumentCreate
 from app.models.entity_models import EntityCreate
 from app.models.entity_models import EntityType as EntityKind
 from app.models.project_models import ProjectCreate, ProjectType
 
 USER_ID = uuid4()
-
-
-def _create_document(service):
-    return service.create_document(
-        USER_ID, DocumentCreate(title="Doc", description="d", content="Document body text."),
-    )
-
-
-def _create_code_artifact(service):
-    return service.create_code_artifact(
-        USER_ID, CodeArtifactCreate(title="Art", description="d", code="print(1)", language="python"),
-    )
 
 
 def _create_entity(service):
@@ -39,14 +25,6 @@ def _create_entity(service):
 # fixture of the service, how it creates a record, the repository getter the snapshot comes from,
 # the service's delete method and the activity entity type of the emitted events
 RECORDS = {
-    "document": (
-        "test_document_service_with_event_bus", _create_document, "document_repo",
-        "get_document_by_id", "delete_document", EntityType.DOCUMENT,
-    ),
-    "code_artifact": (
-        "test_code_artifact_service_with_event_bus", _create_code_artifact, "artifact_repo",
-        "get_code_artifact_by_id", "delete_code_artifact", EntityType.CODE_ARTIFACT,
-    ),
     "entity": (
         "test_entity_service_with_event_bus", _create_entity, "entity_repo",
         "get_entity_by_id", "delete_entity", EntityType.ENTITY,

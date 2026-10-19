@@ -1,6 +1,6 @@
 """Keep files that hold user data readable by their owner only.
 
-Memories, documents and user records are stored in plain files (the SQLite database and
+Memories and user records are stored in plain files (the SQLite database and
 backups), so group and other access is removed where the operating system supports it.
 Windows has no equivalent mode bits and is left alone.
 """

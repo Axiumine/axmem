@@ -60,7 +60,7 @@ without the mark, with the commit that landed it, in the commit that lands it.
   `20261019_drop_skills` drops the tables and activity rows; the downgrade recreates the empty tables. The
   `forgetful-procedures` agent skill file is deleted and the other files in the `skills/` catalogue are edited;
   the catalogue stays.
-- Files: service, repositories, models, REST routes, 5 MCP tools, `FILES_ENABLED` and the `FILE_*` settings,
+- Files (`c2cbf05a`): service, repositories, models, REST routes, 5 MCP tools, `FILES_ENABLED` and the `FILE_*` settings,
   `file_ids` on memories and the `file` activity entity type, tool category and scope. Revision
   `20261019_drop_files` drops `files`, `memory_file_association` and `entity_file_association` (the stored binary
   content included) and the file activity rows; the downgrade recreates the empty tables. The `forgetful-files`
@@ -68,8 +68,14 @@ without the mark, with the commit that landed it, in the commit that lands it.
   optional feature flag is left, so the SQLite e2e feature-flag registry and its test module are gone.
 - Discord badge and banner image from the README, and the PyPI install option, because `forgetful-ai` is
   upstream's package (`b121d350`).
-- **(planned)** Documents, code artifacts, entities and relationships, and the activity bus with its SSE
-  stream.
+- Documents and code artifacts: services, repositories, models, REST routes (`/api/v1/documents`,
+  `/api/v1/code-artifacts`), 10 MCP tools, the `DOCUMENT_*` and `CODE_ARTIFACT_*` settings, `document_ids` and
+  `code_artifact_ids` on memories and the `document` and `code_artifact` activity entity types, tool categories and
+  scopes. Revision `20261019_drop_docs_artifacts` drops `documents`, `code_artifacts`, `memory_document_association`
+  and `memory_code_artifact_association` (the stored content included) and the document and code artifact activity
+  rows; the downgrade recreates the empty tables. The memory tool docs no longer point long text at documents.
+  Agent skill files and prompts in `docs/` that taught these tools are edited; the `skills/` catalogue stays.
+- **(planned)** Entities and relationships, and the activity bus with its SSE stream.
 - **(planned)** Container deployment (`docker/`, image jobs, Nix OCI image); Docker stays as a test dependency.
 - **(planned)** SQLite, PostgreSQL, pgvector and Alembic.
 - **(planned)** FastEmbed, ONNX Runtime and the local CPU embedder; GitHub and Google OAuth and the CLI browser

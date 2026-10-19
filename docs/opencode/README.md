@@ -152,7 +152,7 @@ See what's been added recently:
 
 ### Explore the Knowledge Graph
 
-Deep traversal of related memories, entities, and documents:
+Deep traversal of related memories and entities:
 
 ```
 /memory-explore payment processing

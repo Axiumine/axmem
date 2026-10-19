@@ -68,54 +68,38 @@ class TestExecuteErrorsAreSanitised:
         # driver's constraint error is raised by the repository itself.
         async def failing_insert(*args, **kwargs):
             raise IntegrityError(
-                "INSERT INTO documents (description, content) VALUES (?, ?)",
+                "INSERT INTO entities (name, notes) VALUES (?, ?)",
                 (SECRET_DESCRIPTION, SECRET_CONTENT),
                 Exception("FOREIGN KEY constraint failed"),
             )
 
-        monkeypatch.setattr(sqlite_app.document_service.document_repo, "create_document", failing_insert)
+        monkeypatch.setattr(sqlite_app.entity_service.entity_repo, "create_entity", failing_insert)
 
         message = await tool_error(
             mcp_client,
-            "create_document",
+            "create_entity",
             {
-                "title": "t",
-                "description": SECRET_DESCRIPTION,
-                "content": SECRET_CONTENT,
-                "document_type": "text",
+                "name": SECRET_DESCRIPTION,
+                "entity_type": "Organization",
+                "notes": SECRET_CONTENT,
             },
         )
 
         assert_no_leak(message)
-        assert message.startswith("Failed to execute 'create_document'")
+        assert message.startswith("Failed to execute 'create_entity'")
         assert CONSTRAINT_FAILURE in message
 
-    @pytest.mark.parametrize(
-        ("tool_name", "arguments"),
-        [
-            (
-                "create_document",
-                {
-                    "title": "t", "description": SECRET_DESCRIPTION,
-                    "content": SECRET_CONTENT, "document_type": "text",
-                },
-            ),
-            (
-                "create_code_artifact",
-                {
-                    "title": "t", "description": "d", "code": "print(1)", "language": "python",
-                },
-            ),
-        ],
-    )
-    async def test_unknown_project_is_reported_as_not_found_without_driver_text(
-        self, mcp_client, tool_name, arguments,
-    ):
-        message = await tool_error(mcp_client, tool_name, {**arguments, "project_id": 9999})
+    async def test_unknown_project_is_reported_as_not_found_without_driver_text(self, mcp_client):
+        arguments = {
+            "name": SECRET_DESCRIPTION, "entity_type": "Organization",
+            "notes": SECRET_CONTENT, "project_ids": [9999],
+        }
+
+        message = await tool_error(mcp_client, "create_entity", arguments)
 
         assert_no_leak(message)
-        assert message.startswith(f"Failed to execute '{tool_name}'")
-        assert "Project 9999 not found" in message
+        assert message.startswith("Failed to execute 'create_entity'")
+        assert "Projects not found: [9999]" in message
 
     async def test_duplicate_entity_relationship_is_sanitised(self, mcp_client):
         ids = []

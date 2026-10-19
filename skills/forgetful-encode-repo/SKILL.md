@@ -2,7 +2,7 @@
 name: forgetful-encode-repo
 description: >-
   Encode a repository into the Forgetful knowledge base — bootstrap the project, its
-  entities, memories, and documents from the codebase itself. Use when bringing a new repo
+  entities, and memories from the codebase itself. Use when bringing a new repo
   under Forgetful or refreshing a stale encoding. Re-encoding is an update pass:
   query-before-create makes it supersession, not duplication.
 license: MIT
@@ -18,7 +18,7 @@ allowed-tools:
 # Encoding a repository
 
 The goal is a knowledge base a future session can lean on: the system modelled as entities,
-the decisions and conventions as atomic memories, the long-form understanding as documents,
+the decisions and conventions and the long-form understanding as atomic memories,
 everything provenance-stamped back to the source. Encode twice and the second pass updates
 — never duplicates.
 
@@ -60,26 +60,26 @@ Done when: the architecture is walkable as a graph, components to system, depend
 
 ## Step 4 — Store the knowledge
 
-Two layers, per `forgetful-remember` (its routing, atomicity test, and importance rubric
+Atomic memories, per `forgetful-remember` (its routing, atomicity test, and importance rubric
 govern every write here):
 
-- **Documents** for long-form understanding: architecture overviews, subsystem guides,
-  design analyses.
-- **Atomic memories** as the entry points: decisions, conventions, patterns, constraints —
-  each linked to its document via `document_ids`, stamped with `source_repo` and
-  `source_files`, and linked to the entities it concerns via a separate
+- **Long-form understanding** (architecture overviews, subsystem guides, design analyses)
+  is split into several atomic memories, one per decision, fact or pattern, tied together
+  with `link_memories`.
+- **Decisions, conventions, patterns, constraints** are memories of their own, stamped with
+  `source_repo` and `source_files`, and linked to the entities they concern via a separate
   `link_entity_to_memory` call (not something `create_memory` does for you).
 
 On a refresh, query first per source area: update what drifted, mark obsolete what the code
 contradicts, create only what is new.
 
-Done when: each surveyed source area has produced its documents and entry-point memories,
+Done when: each surveyed source area has produced its memories,
 or explicitly had nothing worth encoding.
 
 ## Step 5 — Report coverage
 
 Close with a coverage report, in place of "done": project ID, entities created/updated,
-memories created/updated/obsoleted, documents written, source areas skipped and why, and
+memories created/updated/obsoleted, source areas skipped and why, and
 the areas where knowledge is thin. Note repo-level gaps the survey turned up too — missing
 docs, absent CI, and the like — not only gaps in the encoding itself. Deliver the report in
 the final response to the user; it is not written anywhere in Forgetful. The report is the

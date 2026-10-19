@@ -57,36 +57,6 @@ class TestCustomValidatorErrors:
     """Errors raised by custom validators carry an exception object and must still be 400."""
 
     @pytest.mark.asyncio
-    async def test_documents_blank_fields_return_400(self, api):
-        document_id = await _create(api, "/api/v1/documents", {
-            "title": "Doc", "description": "d", "content": "content",
-        })
-
-        create = await api.post(
-            "/api/v1/documents", json={"title": "   ", "description": "d", "content": "c"},
-        )
-        _assert_validation_error(create, "POST /documents blank title")
-
-        update = await api.put(f"/api/v1/documents/{document_id}", json={"title": "  "})
-        _assert_validation_error(update, "PUT /documents blank title")
-
-    @pytest.mark.asyncio
-    async def test_code_artifacts_blank_fields_return_400(self, api):
-        artifact_id = await _create(api, "/api/v1/code-artifacts", {
-            "title": "Snippet", "description": "d", "code": "print(1)", "language": "python",
-        })
-
-        create = await api.post("/api/v1/code-artifacts", json={
-            "title": "   ", "description": "d", "code": "print(1)", "language": "python",
-        })
-        _assert_validation_error(create, "POST /code-artifacts blank title")
-
-        update = await api.put(
-            f"/api/v1/code-artifacts/{artifact_id}", json={"description": "  "},
-        )
-        _assert_validation_error(update, "PUT /code-artifacts blank description")
-
-    @pytest.mark.asyncio
     async def test_entities_invalid_fields_return_400(self, api):
         entity_id = await _create_entity(api, "Alice")
         other_id = await _create_entity(api, "Bob")
@@ -123,11 +93,11 @@ class TestCustomValidatorErrors:
 
     @pytest.mark.asyncio
     async def test_built_in_constraint_errors_keep_documented_shape(self, api):
-        response = await api.post("/api/v1/documents", json={"title": "only title"})
-        _assert_validation_error(response, "POST /documents missing fields")
+        response = await api.post("/api/v1/projects", json={"name": "only name"})
+        _assert_validation_error(response, "POST /projects missing fields")
         locations = {tuple(error["loc"]) for error in response.json()["error"]}
         assert ("description",) in locations
-        assert ("content",) in locations
+        assert ("project_type",) in locations
 
 
 class TestNonFiniteNumbers:
@@ -175,24 +145,14 @@ class TestNonFiniteNumbers:
         ))
         _assert_rejected_by_body_parser(project, "POST /projects name=NaN")
 
-        document = await self._post_raw(api, "/api/v1/documents", (
-            '{"title":"t","description":"d","content":"c","confidence":NaN}'
-        ))
-        _assert_rejected_by_body_parser(document, "POST /documents confidence=NaN")
-
 
 class TestIntegerQueryParams:
     """Query integers must be rejected with 400 when they cannot fit the database column."""
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("path", [
-        "/api/v1/documents",
-        "/api/v1/code-artifacts",
-        "/api/v1/memories",
-    ])
-    async def test_list_project_id_out_of_range_returns_400(self, api, path):
-        response = await api.get(f"{path}?project_id={BIG}")
-        assert response.status_code == 400, f"{path}: {response.status_code}"
+    async def test_list_project_id_out_of_range_returns_400(self, api):
+        response = await api.get(f"/api/v1/memories?project_id={BIG}")
+        assert response.status_code == 400, f"memories: {response.status_code}"
         assert "project_id" in response.json()["error"]
 
     @pytest.mark.asyncio
@@ -202,7 +162,7 @@ class TestIntegerQueryParams:
             f"/api/v1/memories?offset={2**63}",
             f"/api/v1/memories?project_id=-{BIG}",
             # row ids are INTEGER columns on PostgreSQL: one past int32 is out of range
-            f"/api/v1/documents?project_id={INT32_MAX + 1}",
+            f"/api/v1/memories?project_id={INT32_MAX + 1}",
         ]
         for url in urls:
             response = await api.get(url)
@@ -210,11 +170,9 @@ class TestIntegerQueryParams:
             assert isinstance(response.json()["error"], str)
 
     @pytest.mark.asyncio
-    async def test_boundary_values_and_empty_filters_still_accepted(self, api):
+    async def test_boundary_values_still_accepted(self, api):
         urls = [
-            f"/api/v1/documents?project_id={INT32_MAX}",
-            "/api/v1/documents?project_id=",
-            "/api/v1/code-artifacts?project_id=",
+            f"/api/v1/memories?project_id={INT32_MAX}",
             f"/api/v1/entities?offset={INT64_MAX}",
         ]
         for url in urls:

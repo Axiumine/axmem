@@ -59,20 +59,6 @@ _DISCOVER_CORE_SECTIONS = """\
     - update_project: Modify project metadata
     - delete_project: Remove project (memories preserved)
 
-    **Code Artifact Tools** - Reusable code snippets and patterns
-    - create_code_artifact: Store code with language, tags, project link
-    - get_code_artifact: Retrieve code artifact by ID
-    - list_code_artifacts: List artifacts with project/language/tags filter
-    - update_code_artifact: Modify artifact fields
-    - delete_code_artifact: Remove artifact
-
-    **Document Tools** - Long-form content (>300 words)
-    - create_document: Store detailed docs, analysis, guides
-    - get_document: Retrieve document by ID
-    - list_documents: List documents with project/type/tags filter
-    - update_document: Modify document fields
-    - delete_document: Remove document
-
     **Entity Tools** - Real-world entities (people, orgs, devices)
     - create_entity: Create entity with type, aka (aliases), notes
     - get_entity: Retrieve entity by ID
@@ -122,13 +108,7 @@ _EXECUTE_CORE_EXAMPLES = """\
     - Link to memory: execute_forgetful_tool("link_entity_to_memory", {"entity_id": 1, "memory_id": 1})
     - Unlink from memory: execute_forgetful_tool("unlink_entity_from_memory", {"entity_id": 1, "memory_id": 1})
     - Link to project: execute_forgetful_tool("link_entity_to_project", {"entity_id": 1, "project_id": 1})
-    - Unlink from project: execute_forgetful_tool("unlink_entity_from_project", {"entity_id": 1, "project_id": 1})
-
-    **Documents (long-form content >300 words):**
-    - Create: execute_forgetful_tool("create_document", {"title": "Doc Title", "description": "Brief summary", "content": "Long content...", "document_type": "text", "project_id": 1})
-
-    **Code Artifacts (reusable snippets):**
-    - Create: execute_forgetful_tool("create_code_artifact", {"title": "Snippet Title", "description": "What this does", "code": "def example(): pass", "language": "python", "project_id": 1})"""
+    - Unlink from project: execute_forgetful_tool("unlink_entity_from_project", {"entity_id": 1, "project_id": 1})"""
 
 
 # ============================================================================
@@ -138,13 +118,13 @@ _EXECUTE_CORE_EXAMPLES = """\
 
 def _build_category_list() -> str:
     """Build the valid category filter list."""
-    categories = ["user", "memory", "project", "code_artifact", "document", "entity", "linking"]
+    categories = ["user", "memory", "project", "entity", "linking"]
     return ", ".join(categories)
 
 
 def _build_tool_categories_line() -> str:
     """Build the tool categories pipe-separated line for execute_forgetful_tool."""
-    categories = ["memory", "project", "entity", "document", "code_artifact", "linking", "user"]
+    categories = ["memory", "project", "entity", "linking", "user"]
     return " | ".join(categories)
 
 
@@ -249,8 +229,6 @@ Execute any registered tool dynamically. Forgetful is a semantic memory system f
 
     ## Linking Best Practices
     **Always link related items for discoverability:**
-    - When creating documents, link atomic memories: `create_memory(..., document_ids=[doc_id])`
-    - When creating code artifacts, link to memories: `create_memory(..., code_artifact_ids=[artifact_id])`
     - Link memories to each other: `link_memories(memory_id=1, related_ids=[2, 3])`
     - Link entities to memories: `link_entity_to_memory(entity_id=1, memory_id=1)`
     - Link entities to projects: `link_entity_to_project(entity_id=1, project_id=1)`

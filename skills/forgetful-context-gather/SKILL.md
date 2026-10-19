@@ -3,8 +3,8 @@ name: forgetful-context-gather
 description: >-
   Gather deep context before planning or implementing — one pass that turns a task
   description into a cited context pack: relevant decisions, patterns, constraints, code
-  pointers, and explicit gaps. Runs recall from several angles, explores the
-  graph around the strongest hits, and opens the linked material.
+  pointers, and explicit gaps. Runs recall from several angles and explores the
+  graph around the strongest hits.
 license: MIT
 disable-model-invocation: true
 tags: [context, retrieval, workflow, pre-work]
@@ -23,7 +23,7 @@ silence is never ambiguous.
 
 ## Invoking operations
 
-Operations are named by registry name (`query_memory`, `get_document`, ...). Invoke via
+Operations are named by registry name (`query_memory`, `get_memory`, ...). Invoke via
 whichever surface this agent has:
 
 - **MCP**: `execute_forgetful_tool(tool_name="query_memory", arguments={...})`
@@ -60,30 +60,14 @@ what is attached to them.
 
 Done when: the strongest hits have their neighbourhood mapped, not just their own text.
 
-## Step 4 — Open the linked material
-
-Hits point outward — follow the pointers: `get_document` for linked documents,
-`get_code_artifact` for reusable code.
-
-Done when: load-bearing linked material is read, not just listed.
-
-## Step 5 — Sweep for unlinked material
-
-Link-following only surfaces what a hit already points to — a document or code artifact
-that no surfaced memory links to stays invisible to that flow. Close the gap:
-`list_documents` and `list_code_artifacts`, scoped with `project_id` when the task is
-project-bound, then scan titles for relevance.
-
-Done when: documents and code artifacts have been swept by title, not just reached by link.
-
-## Step 6 — Synthesize the pack
+## Step 4 — Synthesize the pack
 
 Assemble, in order of usefulness to the task:
 
 - **Decisions** that constrain the work (cited by memory ID)
 - **Patterns and preferences** that shape how it should be done
 - **Constraints** — things ruled out, with the reason
-- **Code pointers** — artifacts and source references worth opening
+- **Code pointers** — source references worth opening
 - **Gaps** — every angle that came up dry, stated as "no existing knowledge about X"
 
 Done when: the pack cites its sources, states its gaps, and the task could start from it

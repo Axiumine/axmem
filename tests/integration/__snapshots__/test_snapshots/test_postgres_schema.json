@@ -10,20 +10,6 @@
     "CREATE INDEX ix_activity_log_user_entity ON activity_log (user_id, entity_type, entity_id)",
     "CREATE INDEX ix_activity_log_user_id ON activity_log (user_id)"
   ],
-  "code_artifacts": [
-    "CREATE TABLE code_artifacts (\n\tid SERIAL NOT NULL, \n\tuser_id UUID NOT NULL, \n\tproject_id INTEGER, \n\ttitle VARCHAR(500) NOT NULL, \n\tdescription TEXT NOT NULL, \n\tcode TEXT NOT NULL, \n\tlanguage VARCHAR(100) NOT NULL, \n\ttags VARCHAR[] NOT NULL, \n\tsource_repo TEXT, \n\tsource_files VARCHAR[], \n\tsource_url TEXT, \n\tconfidence FLOAT, \n\tencoding_agent TEXT, \n\tencoding_version TEXT, \n\tagent_id TEXT, \n\tagent_version TEXT, \n\tagent_model TEXT, \n\tcreated_at TIMESTAMP WITH TIME ZONE NOT NULL, \n\tupdated_at TIMESTAMP WITH TIME ZONE NOT NULL, \n\tPRIMARY KEY (id), \n\tFOREIGN KEY(user_id) REFERENCES users (id) ON DELETE CASCADE, \n\tFOREIGN KEY(project_id) REFERENCES projects (id) ON DELETE SET NULL\n)",
-    "CREATE INDEX ix_code_artifacts_language ON code_artifacts (language)",
-    "CREATE INDEX ix_code_artifacts_project_id ON code_artifacts (project_id)",
-    "CREATE INDEX ix_code_artifacts_tags ON code_artifacts USING gin (tags)",
-    "CREATE INDEX ix_code_artifacts_user_id ON code_artifacts (user_id)"
-  ],
-  "documents": [
-    "CREATE TABLE documents (\n\tid SERIAL NOT NULL, \n\tuser_id UUID NOT NULL, \n\tproject_id INTEGER, \n\ttitle VARCHAR(500) NOT NULL, \n\tdescription TEXT NOT NULL, \n\tcontent TEXT NOT NULL, \n\tdocument_type VARCHAR(100), \n\tfilename VARCHAR(500), \n\tsize_bytes INTEGER NOT NULL, \n\ttags VARCHAR[] NOT NULL, \n\tsource_repo TEXT, \n\tsource_files VARCHAR[], \n\tsource_url TEXT, \n\tconfidence FLOAT, \n\tencoding_agent TEXT, \n\tencoding_version TEXT, \n\tagent_id TEXT, \n\tagent_version TEXT, \n\tagent_model TEXT, \n\tcreated_at TIMESTAMP WITH TIME ZONE NOT NULL, \n\tupdated_at TIMESTAMP WITH TIME ZONE NOT NULL, \n\tPRIMARY KEY (id), \n\tFOREIGN KEY(user_id) REFERENCES users (id) ON DELETE CASCADE, \n\tFOREIGN KEY(project_id) REFERENCES projects (id) ON DELETE SET NULL\n)",
-    "CREATE INDEX ix_documents_document_type ON documents (document_type)",
-    "CREATE INDEX ix_documents_project_id ON documents (project_id)",
-    "CREATE INDEX ix_documents_tags ON documents USING gin (tags)",
-    "CREATE INDEX ix_documents_user_id ON documents (user_id)"
-  ],
   "entities": [
     "CREATE TABLE entities (\n\tid SERIAL NOT NULL, \n\tuser_id UUID NOT NULL, \n\tname VARCHAR(200) NOT NULL, \n\tentity_type VARCHAR(100) NOT NULL, \n\tcustom_type VARCHAR(100), \n\tnotes TEXT, \n\ttags VARCHAR[] NOT NULL, \n\taka VARCHAR[] NOT NULL, \n\tsource_repo TEXT, \n\tsource_files VARCHAR[], \n\tsource_url TEXT, \n\tconfidence FLOAT, \n\tencoding_agent TEXT, \n\tencoding_version TEXT, \n\tagent_id TEXT, \n\tagent_version TEXT, \n\tagent_model TEXT, \n\tcreated_at TIMESTAMP WITH TIME ZONE NOT NULL, \n\tupdated_at TIMESTAMP WITH TIME ZONE NOT NULL, \n\tPRIMARY KEY (id), \n\tFOREIGN KEY(user_id) REFERENCES users (id) ON DELETE CASCADE\n)",
     "CREATE INDEX ix_entities_aka ON entities USING gin (aka)",
@@ -54,12 +40,6 @@
     "CREATE INDEX ix_memories_superseded_by ON memories (superseded_by)",
     "CREATE INDEX ix_memories_tags ON memories USING gin (tags)",
     "CREATE INDEX ix_memories_user_id ON memories (user_id)"
-  ],
-  "memory_code_artifact_association": [
-    "CREATE TABLE memory_code_artifact_association (\n\tmemory_id INTEGER NOT NULL, \n\tcode_artifact_id INTEGER NOT NULL, \n\tPRIMARY KEY (memory_id, code_artifact_id), \n\tFOREIGN KEY(memory_id) REFERENCES memories (id) ON DELETE CASCADE, \n\tFOREIGN KEY(code_artifact_id) REFERENCES code_artifacts (id) ON DELETE CASCADE\n)"
-  ],
-  "memory_document_association": [
-    "CREATE TABLE memory_document_association (\n\tmemory_id INTEGER NOT NULL, \n\tdocument_id INTEGER NOT NULL, \n\tPRIMARY KEY (memory_id, document_id), \n\tFOREIGN KEY(memory_id) REFERENCES memories (id) ON DELETE CASCADE, \n\tFOREIGN KEY(document_id) REFERENCES documents (id) ON DELETE CASCADE\n)"
   ],
   "memory_entity_association": [
     "CREATE TABLE memory_entity_association (\n\tmemory_id INTEGER NOT NULL, \n\tentity_id INTEGER NOT NULL, \n\tPRIMARY KEY (memory_id, entity_id), \n\tFOREIGN KEY(memory_id) REFERENCES memories (id) ON DELETE CASCADE, \n\tFOREIGN KEY(entity_id) REFERENCES entities (id) ON DELETE CASCADE\n)"

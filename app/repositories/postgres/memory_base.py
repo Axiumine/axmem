@@ -37,8 +37,6 @@ def memory_load_options() -> list[ExecutableOption]:
         selectinload(MemoryTable.projects),
         selectinload(MemoryTable.linked_memories),
         selectinload(MemoryTable.linking_memories),
-        selectinload(MemoryTable.code_artifacts),
-        selectinload(MemoryTable.documents),
     ]
 
 

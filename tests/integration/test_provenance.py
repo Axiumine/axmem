@@ -9,8 +9,6 @@ from uuid import uuid4
 
 import pytest
 
-from app.models.code_artifact_models import CodeArtifactCreate
-from app.models.document_models import DocumentCreate
 from app.models.entity_models import EntityCreate, EntityRelationshipCreate, EntityType
 from app.models.memory_models import MemoryCreate
 from app.models.project_models import ProjectCreate, ProjectType, ProjectUpdate
@@ -138,12 +136,6 @@ class TestApplyProvenanceDefaults:
             ProjectCreate(
                 name="test", description="test", project_type=ProjectType.DEVELOPMENT,
             ),
-            DocumentCreate(
-                title="test", description="test", content="test content",
-            ),
-            CodeArtifactCreate(
-                title="test", description="test", code="print('hello')", language="python",
-            ),
             EntityCreate(
                 name="Test Entity", entity_type=EntityType.ORGANIZATION,
             ),
@@ -233,32 +225,6 @@ async def test_memory_service_applies_provenance_defaults(test_memory_service):
 
 
 @pytest.mark.asyncio
-async def test_document_service_applies_provenance_defaults(test_document_service):
-    """Document service should apply env provenance defaults on create."""
-    user_id = uuid4()
-
-    with patch("app.services.document_service.apply_provenance_defaults", wraps=apply_provenance_defaults) as mock_apply:
-        with patch("app.utils.provenance.settings") as mock_settings:
-            mock_settings.ENCODING_AGENT = "DocAgent"
-            mock_settings.ENCODING_VERSION = ""
-            mock_settings.AGENT_ID = ""
-            mock_settings.AGENT_VERSION = ""
-            mock_settings.AGENT_MODEL = ""
-            mock_settings.ENFORCE_ENV_OVERWRITE = False
-
-            doc = await test_document_service.create_document(
-                user_id=user_id,
-                document_data=DocumentCreate(
-                    title="test doc", description="test", content="content",
-                ),
-            )
-
-        mock_apply.assert_called_once()
-
-    assert doc.encoding_agent == "DocAgent"
-
-
-@pytest.mark.asyncio
 async def test_entity_service_applies_provenance_defaults(test_entity_service):
     """Entity service should apply env provenance defaults on create."""
     user_id = uuid4()
@@ -282,32 +248,6 @@ async def test_entity_service_applies_provenance_defaults(test_entity_service):
         mock_apply.assert_called_once()
 
     assert entity.encoding_agent == "EntityAgent"
-
-
-@pytest.mark.asyncio
-async def test_code_artifact_service_applies_provenance_defaults(test_code_artifact_service):
-    """Code artifact service should apply env provenance defaults on create."""
-    user_id = uuid4()
-
-    with patch("app.services.code_artifact_service.apply_provenance_defaults", wraps=apply_provenance_defaults) as mock_apply:
-        with patch("app.utils.provenance.settings") as mock_settings:
-            mock_settings.ENCODING_AGENT = "CodeAgent"
-            mock_settings.ENCODING_VERSION = ""
-            mock_settings.AGENT_ID = ""
-            mock_settings.AGENT_VERSION = ""
-            mock_settings.AGENT_MODEL = ""
-            mock_settings.ENFORCE_ENV_OVERWRITE = False
-
-            artifact = await test_code_artifact_service.create_code_artifact(
-                user_id=user_id,
-                artifact_data=CodeArtifactCreate(
-                    title="test", description="test", code="print(1)", language="python",
-                ),
-            )
-
-        mock_apply.assert_called_once()
-
-    assert artifact.encoding_agent == "CodeAgent"
 
 
 # ============================================================================

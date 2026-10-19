@@ -61,12 +61,11 @@ variable, and the [FastMCP Auth Documentation](https://fastmcp.wiki/en/servers/a
 
 ## Update Requests (PUT)
 
-`PUT` endpoints for projects, entities, entity relationships, documents and code artifacts
+`PUT` endpoints for projects, entities and entity relationships
 use PATCH semantics: send only the fields you want to change.
 
-- A field that is omitted or sent as `null` is left unchanged. For projects, entities, documents and code
-  artifacts, a body that changes nothing returns the current record and does not modify
-  `updated_at`. Entity relationships have no change detection: a body that changes nothing still refreshes
+- A field that is omitted or sent as `null` is left unchanged. For projects and entities, a body that
+  changes nothing returns the current record and does not modify `updated_at`. Entity relationships have no change detection: a body that changes nothing still refreshes
   `updated_at` and records an update event.
 - `null` never clears a field. Fields such as `project_id`, `source_url` and `confidence` therefore cannot
   be reset through a `PUT`.
@@ -202,13 +201,11 @@ blank `context`.
   "title": "Memory title",
   "linked_memory_ids": [],
   "project_ids": [1],
-  "code_artifact_ids": [],
-  "document_ids": [],
   "similar_memories": []
 }
 ```
 
-**Errors:** `404` with a message such as `Projects not found: {999}` when an id in `project_ids`, `code_artifact_ids` or `document_ids` does not exist (or belongs to another user). Nothing is created in that case.
+**Errors:** `404` with a message such as `Projects not found: {999}` when an id in `project_ids` does not exist (or belongs to another user). Nothing is created in that case.
 
 ### PUT /api/v1/memories/{id}
 
@@ -232,7 +229,7 @@ Update an existing memory.
 
 Provenance fields can be added or updated after memory creation. See POST /api/v1/memories for field descriptions.
 
-A field that is omitted or `null` is left unchanged. The link lists `project_ids`, `code_artifact_ids` and `document_ids` replace the existing links when provided, and an empty list removes them all.
+A field that is omitted or `null` is left unchanged. The link list `project_ids` replaces the existing links when provided, and an empty list removes them all.
 
 **Response:** Updated memory object
 
@@ -577,130 +574,6 @@ Delete an entity relationship.
 
 ---
 
-## Documents
-
-### GET /api/v1/documents
-
-List all documents.
-
-**Query Parameters:**
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `project_id` | int | Filter by project |
-| `document_type` | string | Filter by type |
-| `tags` | string | Comma-separated tags |
-
-**Response:**
-```json
-{
-  "documents": [
-    {
-      "id": 1,
-      "title": "Document Title",
-      "description": "Brief description",
-      "content": "Full document content...",
-      "document_type": "analysis",
-      "tags": ["tag1"],
-      "created_at": "2024-12-05T10:00:00Z"
-    }
-  ],
-  "total": 5
-}
-```
-
-**Document Types:** `analysis`, `guide`, `specification`, `report`, `note`, `reference`
-
-### GET /api/v1/documents/{id}
-
-Get a single document by ID.
-
-### POST /api/v1/documents
-
-Create a new document.
-
-**Request Body:**
-```json
-{
-  "title": "Document Title",
-  "description": "Brief description",
-  "content": "Full document content...",
-  "document_type": "analysis",
-  "tags": ["tag1"]
-}
-```
-
-### PUT /api/v1/documents/{id}
-
-Update an existing document.
-
-### DELETE /api/v1/documents/{id}
-
-Delete a document.
-
----
-
-## Code Artifacts
-
-### GET /api/v1/code-artifacts
-
-List all code artifacts.
-
-**Query Parameters:**
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `project_id` | int | Filter by project |
-| `language` | string | Filter by programming language |
-| `tags` | string | Comma-separated tags |
-
-**Response:**
-```json
-{
-  "code_artifacts": [
-    {
-      "id": 1,
-      "title": "Artifact Title",
-      "description": "What this code does",
-      "code": "def hello():\n    return 'Hello'",
-      "language": "python",
-      "tags": ["utility"],
-      "created_at": "2024-12-05T10:00:00Z"
-    }
-  ],
-  "total": 10
-}
-```
-
-### GET /api/v1/code-artifacts/{id}
-
-Get a single code artifact by ID.
-
-### POST /api/v1/code-artifacts
-
-Create a new code artifact.
-
-**Request Body:**
-```json
-{
-  "title": "Artifact Title",
-  "description": "What this code does",
-  "code": "def hello():\n    return 'Hello'",
-  "language": "python",
-  "tags": ["utility"]
-}
-```
-
-### PUT /api/v1/code-artifacts/{id}
-
-Update an existing code artifact.
-
-### DELETE /api/v1/code-artifacts/{id}
-
-Delete a code artifact.
-
----
-
 ## Activity
 
 > **Experimental Feature**
@@ -732,7 +605,7 @@ List activity events with filtering and pagination.
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `entity_type` | string | - | Filter by type: `memory`, `project`, `document`, `code_artifact`, `entity`, `link` |
+| `entity_type` | string | - | Filter by type: `memory`, `project`, `entity`, `link` |
 | `action` | string | - | Filter by action: `created`, `updated`, `deleted`, `read`, `queried` |
 | `entity_id` | int | - | Filter by specific entity ID |
 | `actor` | string | - | Filter by actor: `user`, `system`, `llm-maintenance` |
@@ -787,7 +660,7 @@ Get activity history for a specific entity.
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `entity_type` | string | Entity type: `memory`, `project`, `document`, `code_artifact`, `entity` |
+| `entity_type` | string | Entity type: `memory`, `project`, `entity` |
 | `entity_id` | int | Entity ID |
 
 **Query Parameters:**
@@ -804,8 +677,6 @@ Get activity history for a specific entity.
 **Entity Types:**
 - `memory` - Knowledge memories
 - `project` - Project containers
-- `document` - Long-form documents
-- `code_artifact` - Code snippets
 - `entity` - People, organizations, devices
 - `link` - Memory-to-memory connections
 - `entity_memory_link` - Entity-to-memory connections
@@ -958,5 +829,5 @@ For validation errors (400), the error may contain detailed field-level errors:
 
 Each entry contains only `type`, `loc` and `msg`; the rejected input value is not echoed back.
 Integer query parameters must fit in a signed 64-bit integer, and the identifiers in link request
-bodies (`document_id`, `code_artifact_id`, `memory_id`) must be JSON integers that fit
+bodies (`memory_id`) must be JSON integers that fit
 too. Anything else returns HTTP 400 instead of reaching the database.

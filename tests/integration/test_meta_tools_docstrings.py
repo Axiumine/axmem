@@ -22,7 +22,7 @@ class TestBuildCategoryList:
         result = _build_category_list()
 
         assert result.split(", ") == [
-            "user", "memory", "project", "code_artifact", "document", "entity", "linking",
+            "user", "memory", "project", "entity", "linking",
         ]
 
 
@@ -33,7 +33,7 @@ class TestBuildToolCategoriesLine:
         result = _build_tool_categories_line()
 
         assert result.split(" | ") == [
-            "memory", "project", "entity", "document", "code_artifact", "linking", "user",
+            "memory", "project", "entity", "linking", "user",
         ]
 
 

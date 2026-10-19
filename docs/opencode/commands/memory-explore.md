@@ -3,7 +3,7 @@ description: Deep exploration of the Forgetful knowledge graph
 ---
 # Memory Explore
 
-Perform deep knowledge graph traversal to find related memories, entities, and documents.
+Perform deep knowledge graph traversal to find related memories and entities.
 
 **Query**: $ARGUMENTS
 
@@ -39,7 +39,7 @@ For each primary memory found, get full details:
 execute_forgetful_tool("get_memory", {"memory_id": <id>})
 ```
 
-Extract: document_ids, code_artifact_ids, project_ids, linked_memory_ids
+Extract: project_ids, linked_memory_ids
 
 ## Phase 3: Entity Discovery
 
@@ -96,13 +96,9 @@ After exploration, provide a structured summary:
 
 - [Name] (type) - X relationships, Y linked memories
 
-### Documents & Artifacts
-
-- [Title] (type/language) - if any found
-
 ### Graph Summary
 
-- Total: X memories, Y entities, Z documents/artifacts
+- Total: X memories, Y entities
 - Key themes: [identified clusters]
 - Suggested follow-up: /memory-explore "[related query]"
 

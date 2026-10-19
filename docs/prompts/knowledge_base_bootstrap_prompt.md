@@ -70,10 +70,8 @@ Query the knowledge base for existing content:
 2. query_memory: "[project-name] overview" with include_links=true
 3. query_memory: "[project-name] patterns" to check pattern coverage
 4. list_memories: Filter by project_id to count total memories
-5. list_documents: Check for architecture/setup/API docs
-6. list_code_artifacts: Check for middleware/utilities/patterns
-7. list_entities: Check for team members, external systems
-8. Note: Check auto-linking quality (similarity ≥0.7 by default)
+5. list_entities: Check for team members, external systems
+6. Note: Check auto-linking quality (similarity ≥0.7 by default)
 ```
 
 #### Step 4: Analyze Current Codebase State
@@ -165,23 +163,11 @@ Create a gap analysis report:
 - Complex (8-12): Feature flags, multi-region, advanced config
 - Monorepo (10-15): Shared config + per-service config
 
-**Phase 7 (Code Artifacts):** Create as needed based on reusable patterns:
-- Small: 3-5 key utilities/patterns
-- Medium: 5-10 patterns/middleware/helpers
-- Large: 10-15+ reusable components
-- Monorepo: Focus on shared utilities/infrastructure
-
-**Phase 8 (Documents):** Create based on documentation needs:
-- Small: 1-2 (README expansion, architecture)
-- Medium: 3-5 (standard set)
-- Large: 5-8 (comprehensive guides)
-- Monorepo: 5-10+ (per-package + shared infrastructure docs)
-
 **Coverage Goals (Adjusted):**
-- **Small projects**: 15-30 memories, 3-5 artifacts, 1-2 documents
-- **Medium projects**: 30-70 memories, 5-10 artifacts, 3-5 documents
-- **Large projects**: 60-120 memories, 10-15 artifacts, 5-10 documents
-- **Monorepos**: 75-150+ memories, 15-25 artifacts, 8-15 documents
+- **Small projects**: 15-30 memories
+- **Medium projects**: 30-70 memories
+- **Large projects**: 60-120 memories
+- **Monorepos**: 75-150+ memories
 
 **Quality > Quantity:** Better to have fewer high-quality, well-linked memories than many superficial ones.
 
@@ -232,7 +218,7 @@ notes: Operational details (max 4000 chars):
   - Important files/directories (entry points, configs, key modules)
 ```
 
-**Save the project_id** - required for linking all memories, artifacts, documents, and entities.
+**Save the project_id** - required for linking all memories and entities.
 
 ---
 
@@ -424,9 +410,9 @@ Importance: 8-9 (for integration projects), 7 (for internal mappings)
 
 #### Mapping Documentation Formats:
 1. **Create memories** for high-level mapping categories (e.g., "PersonHistory to PersonalDetails")
-2. **Create documents** for comprehensive field mapping tables (all fields listed)
-3. **Create code artifacts** for actual mapping code (AutoMapper profiles, transformation functions)
-4. **Link them together**: Memory references document for complete list, memory references artifact for implementation
+2. **Split large field mapping tables** into one memory per field group (identity, contact, compensation...)
+3. **Point at the mapping code** (AutoMapper profiles, transformation functions) with `source_files`
+4. **Link them together**: Use `link_memories` to connect the category memory to its field-group memories
 
 #### Example Mapping Categories:
 - Contact information mappings (email, phone, mobile, addresses)
@@ -445,9 +431,9 @@ Importance: 8-9 (for integration projects), 7 (for internal mappings)
 
 **When mappings exist in documentation:**
 - Search codebase for mapping docs (Excel, CSV, Markdown tables, JSON config)
-- Create document in KB with full mapping table
-- Create 3-5 memories as semantic entry points to that document
-- Link memories to code artifacts that implement the mappings
+- Split the full mapping table into 3-5 memories, one per field group
+- Reference the code that implements the mappings with `source_files`
+- Link the memories to each other with `link_memories`
 
 ---
 
@@ -540,70 +526,7 @@ Importance: 7-8
 
 ---
 
-### Phase 7: Code Artifacts (Create as needed)
-
-Store reusable code patterns as artifacts (not memories). Use `create_code_artifact`:
-
-#### What to Capture:
-- Middleware implementations (auth, logging, error handling)
-- Utility functions (helpers, validators, formatters)
-- Configuration patterns (env setup, feature flags)
-- Database schema/migrations
-- API endpoint patterns (CRUD, pagination, filtering)
-- Test fixtures/helpers
-- Docker configurations
-- CI/CD pipeline definitions
-- Algorithm implementations
-- **Data mapping code** (AutoMapper profiles, transformation extensions, field mapping functions)
-- **Integration adapters** (external API clients, message queue handlers, data converters)
-
-#### Code Artifact Structure:
-```
-title: Descriptive name (e.g., "FastAPI JWT Authentication Middleware")
-description: What it does, when to use it, key considerations
-code: Full implementation or key snippet
-language: Programming language (python, typescript, etc.)
-tags: [middleware, authentication, security] for categorization
-project_id: Link to project entity
-```
-
-**Save artifact_ids** to link back to relevant memories in Phase 10.
-
-**Link artifacts to memories** explaining the pattern/concept they implement.
-
----
-
-### Phase 8: Documents (Create 3-5 documents)
-
-For content > 400 words, create documents and link atomic memories to them. Use `create_document`:
-
-#### Document Types:
-1. **Architecture Document**: Comprehensive architecture with diagrams (markdown)
-2. **API Reference**: Complete endpoint documentation
-3. **Deployment Guide**: Detailed deployment procedures (step-by-step)
-4. **Troubleshooting Guide**: Common issues and solutions
-5. **Onboarding Guide**: Detailed new developer guide
-6. **Design Decision Records**: ADRs for major decisions
-7. **Data Mapping Tables**: Field-by-field mapping documentation (source → target)
-8. **Integration Specifications**: External system integration contracts and data formats
-
-#### Document Structure:
-```
-title: Document name (e.g., "Forgetful Architecture Overview")
-description: Brief overview of content and purpose
-content: Full documentation (markdown supported, up to 100KB)
-document_type: "markdown", "text", "code", etc.
-tags: [architecture, guide, reference] for categorization
-project_id: Link to project entity
-```
-
-**Save document_ids** to link back to memories in Phase 10.
-
-**Create 3-7 atomic memories per document** as semantic entry points.
-
----
-
-### Phase 9: Entities (Create as discovered)
+### Phase 7: Entities (Create as discovered)
 
 Create entities for people, teams, and systems using `create_entity`:
 
@@ -624,25 +547,24 @@ Create entities for people, teams, and systems using `create_entity`:
 
 ---
 
-### Phase 10: Link Everything Together
+### Phase 8: Link Everything Together
 
-Go back and update memories to reference code artifacts and documents using `update_memory`:
+Go back and connect memories to each other and to entities using `link_memories` and `link_entity_to_memory`:
 
 #### Linking Strategy:
 ```
-Pattern memories → link to code_artifact_ids implementing them
-Setup/deployment memories → link to document_ids with detailed guides
-Architecture memories → link to architecture documents
-Feature memories → link to API/integration documents and code artifacts
-Decision memories → link to ADR documents
+Pattern memories → link to the feature and architecture memories that use them
+Setup/deployment memories → link to the configuration memories they depend on
+Architecture memories → link to the decision memories that explain them
+Feature memories → link to the architecture and pattern memories they rely on
+Decision memories → link to the memories they superseded or constrain
 ```
 
 #### Example Updates:
 ```
-update_memory({
+link_memories({
   "memory_id": <memory_id>,
-  "code_artifact_ids": [<artifact_id_1>, <artifact_id_2>],
-  "document_ids": [<doc_id>]
+  "related_ids": [<related_memory_id_1>, <related_memory_id_2>]
 })
 ```
 
@@ -664,7 +586,7 @@ Verify link quality during validation.
 
 ❌ **Don't**:
 - Combine multiple unrelated concepts
-- Exceed 2000 characters (use document instead)
+- Exceed 2000 characters (split into several atomic memories instead)
 - Assume reader has other context
 - Inflate importance scores
 
@@ -697,7 +619,7 @@ Use tags for:
 
 After completing Phase 0 gap analysis:
 
-- Execute phases in order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9
+- Execute phases in order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 - Skip phases where Phase 0 identified good existing coverage
 - Focus effort on phases with identified gaps
 - Update outdated memories as you discover them
@@ -747,8 +669,8 @@ query_memory({
 **Verify Link Quality:**
 - Foundational memories should have many incoming auto-links (high similarity to other memories)
 - Feature memories should link to architectural memories
-- Pattern memories should link to code artifacts implementing them
-- Setup/deployment memories should link to detailed documents
+- Pattern memories should link to the feature memories that use them
+- Setup/deployment memories should link to the configuration memories they depend on
 
 **Coverage Goals:**
 - See Step 6 for project-specific targets (15-150 memories depending on size/type)
@@ -794,8 +716,7 @@ query_memory({
 
 **Integration/ETL Projects:**
 - **Emphasize Phase 3.5**: 10-20 memories for data mappings
-- **Create extensive documents**: Field mapping tables, transformation specs
-- **Code artifacts**: Mapping functions, validators, transformers
+- **Split field mapping tables and transformation specs** into one memory per field group
 - **Target**: 50-90 memories total
 - **Example**: SD Connect adapter, data sync service, API aggregator
 
@@ -907,8 +828,6 @@ Then proceed with phases addressing identified gaps.
 
 Goal: Create rich, interconnected knowledge graph where:
 - Memories capture atomic concepts with automatic semantic linking
-- Code artifacts store reusable code referenced by memories
-- Documents contain long-form guides linked from memories
 - Project entity ties everything together with operational notes
 - Everything links creating navigable knowledge graph for natural language queries
 ```

@@ -493,7 +493,7 @@ These settings control the atomic memory system's behavior and constraints.
 The length and count limits below are checked when a memory is created or updated. Lowering
 one later does not make memories that were stored under the old limit unreadable.
 
-**PostgreSQL column widths**: on PostgreSQL several `*_MAX_LENGTH` settings map to fixed-width `VARCHAR` columns (code artifact and document title, file name, entity name/type and relationship type). A value above the column width is lowered to it at startup with a warning, because PostgreSQL would reject longer values. SQLite does not enforce `VARCHAR` length, so the configured value is used as is.
+**PostgreSQL column widths**: on PostgreSQL several `*_MAX_LENGTH` settings map to fixed-width `VARCHAR` columns (entity name/type and relationship type). A value above the column width is lowered to it at startup with a warning, because PostgreSQL would reject longer values. SQLite does not enforce `VARCHAR` length, so the configured value is used as is.
 
 ### `MEMORY_TITLE_MAX_LENGTH`
 - **Default**: `200`
@@ -506,7 +506,7 @@ one later does not make memories that were stored under the old limit unreadable
 - **Default**: `2000`
 - **Description**: Maximum characters for memory content (~300-400 words)
 - **Rationale**: Enforces single-concept atomic memories (Zettelkasten principle)
-- **Note**: For longer content, use Documents and link to them
+- **Note**: For longer content, split it into several atomic memories and link them
 - **Example**: `MEMORY_CONTENT_MAX_LENGTH=2000`
 
 ### `MEMORY_CONTEXT_MAX_LENGTH`
@@ -603,62 +603,6 @@ one later does not make memories that were stored under the old limit unreadable
 - **Description**: Maximum characters for project notes
 - **Purpose**: Text field with reasonable cap for project-level annotations
 - **Example**: `PROJECT_NOTES_MAX_LENGTH=4000`
-
----
-
-## Code Artifact Configuration
-
-### `CODE_ARTIFACT_TITLE_MAX_LENGTH`
-- **Default**: `500`
-- **Description**: Maximum characters for code artifact titles
-- **Note**: Database limit is String(500)
-- **Example**: `CODE_ARTIFACT_TITLE_MAX_LENGTH=500`
-
-### `CODE_ARTIFACT_DESCRIPTION_MAX_LENGTH`
-- **Default**: `5000`
-- **Description**: Maximum characters for code artifact descriptions
-- **Purpose**: Reasonable cap for text field describing the code snippet
-- **Example**: `CODE_ARTIFACT_DESCRIPTION_MAX_LENGTH=5000`
-
-### `CODE_ARTIFACT_CODE_MAX_LENGTH`
-- **Default**: `50000`
-- **Description**: Maximum characters for code artifact content (~50KB)
-- **Purpose**: Allows storage of large code snippets
-- **Example**: `CODE_ARTIFACT_CODE_MAX_LENGTH=50000`
-
-### `CODE_ARTIFACT_TAGS_MAX_COUNT`
-- **Default**: `10`
-- **Description**: Maximum number of tags per code artifact
-- **Purpose**: Categorization and filtering
-- **Example**: `CODE_ARTIFACT_TAGS_MAX_COUNT=10`
-
----
-
-## Document Configuration
-
-### `DOCUMENT_TITLE_MAX_LENGTH`
-- **Default**: `500`
-- **Description**: Maximum characters for document titles
-- **Note**: Database limit is String(500)
-- **Example**: `DOCUMENT_TITLE_MAX_LENGTH=500`
-
-### `DOCUMENT_DESCRIPTION_MAX_LENGTH`
-- **Default**: `5000`
-- **Description**: Maximum characters for document descriptions
-- **Purpose**: Reasonable cap for text field describing the document
-- **Example**: `DOCUMENT_DESCRIPTION_MAX_LENGTH=5000`
-
-### `DOCUMENT_CONTENT_MAX_LENGTH`
-- **Default**: `100000`
-- **Description**: Maximum characters for document content (~100KB)
-- **Purpose**: Allows storage of large documents
-- **Example**: `DOCUMENT_CONTENT_MAX_LENGTH=100000`
-
-### `DOCUMENT_TAGS_MAX_COUNT`
-- **Default**: `10`
-- **Description**: Maximum number of tags per document
-- **Purpose**: Categorization and filtering
-- **Example**: `DOCUMENT_TAGS_MAX_COUNT=10`
 
 ---
 

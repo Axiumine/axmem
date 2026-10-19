@@ -8,7 +8,7 @@ import logging
 
 import pytest
 
-VALID_HISTORY_TYPES = {"memory", "project", "document", "code_artifact", "entity"}
+VALID_HISTORY_TYPES = {"memory", "project", "entity"}
 
 
 class _BrokenStream:

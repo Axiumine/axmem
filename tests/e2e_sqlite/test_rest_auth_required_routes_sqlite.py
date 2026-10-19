@@ -1,7 +1,7 @@
 """E2E: REST routes of the resource families reject requests that carry no credentials.
 
 With an auth provider attached to the server, every route of the activity,
-project, document and code-artifact families must answer ``401`` with the
+and project families must answer ``401`` with the
 authentication failure message, before reading the request body or touching a
 service. Runs against the in-process SQLite app.
 """
@@ -34,8 +34,6 @@ def _crud_routes(collection: str) -> list[tuple[str, str]]:
 PROTECTED_ROUTES = [
     *ACTIVITY_ROUTES,
     *_crud_routes("projects"),
-    *_crud_routes("documents"),
-    *_crud_routes("code-artifacts"),
 ]
 
 

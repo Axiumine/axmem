@@ -59,7 +59,7 @@ In this sense **Axmem** becomes a little like Obsidian for AI agents, where the 
 
 We find, [as do others (A-MEM: Agentic Memory for LLM Agents)](https://arxiv.org/abs/2502.12110), all this helps in ensuring that when the agent requires relevant information from the memory system later, the correct information is returned.
 
-In addition to memories, **Axmem** also has the concept of entities (think organisation, people, products), projects, documents and code artifacts, all of which can be associated with one or more memories.
+In addition to memories, **Axmem** also has the concept of entities (think organisation, people, products) and projects, both of which can be associated with one or more memories.
 
 
 ![Architecture](docs/images/Forgetful%20Architecture.drawio_transparent.png)
@@ -341,7 +341,7 @@ results = execute_forgetful_tool(
 
 ### Tool Categories
 
-The catalog covers users, memories, projects, entities, code artifacts, and documents.
+The catalog covers users, memories, projects, and entities.
 
 For complete documentation with extensive examples, see [Complete Tool Reference](docs/tool_reference.md).
 
@@ -356,7 +356,7 @@ Inspired by Zettelkasten, each memory stores **one concept** in ~300-400 words:
 - **Self-contained** – Understandable without external context
 - **Linkable** – Small units enable precise knowledge graphs
 
-For detailed content, use Documents and extract 3-7 atomic memories that link to the parent document.
+For detailed content, split it into 3-7 atomic memories and link them to each other.
 
 ### Automatic Knowledge Graph
 
@@ -412,7 +412,7 @@ For all environment variables with detailed explanations, see [Configuration Gui
 
 ### Guides
 
-- [Core Concepts](docs/concepts.md) – Memories vs Entities vs Documents explained
+- [Core Concepts](docs/concepts.md) – Memories vs Entities explained
 - [Complete Tool Reference](docs/tool_reference.md) – Runtime tools and examples
 - [REST API Reference](docs/api_reference.md) – HTTP endpoints for web UI integration
 - [Configuration Guide](docs/configuration.md) – All environment variables explained

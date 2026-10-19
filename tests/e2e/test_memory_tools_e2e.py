@@ -47,8 +47,6 @@ async def test_create_memory_basic_e2e(mcp_client):
     assert isinstance(result.data["linked_memory_ids"], list)
     assert isinstance(result.data["similar_memories"], list)
     assert isinstance(result.data["project_ids"], list)
-    assert isinstance(result.data["code_artifact_ids"], list)
-    assert isinstance(result.data["document_ids"], list)
 
 
 @pytest.mark.e2e

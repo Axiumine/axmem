@@ -1,6 +1,6 @@
 """Input that the database cannot store is refused with a 400, on every backend.
 
-NaN/Infinity, NUL characters and an INTEGER overflow all fail on
+NaN/Infinity and NUL characters all fail on
 PostgreSQL with an unhandled driver error (500). SQLite accepted them instead, and a NaN
 stored in a relationship's metadata made every later relationship listing fail. These tests run
 the real REST stack on in-memory SQLite; the PostgreSQL counterpart is
@@ -12,7 +12,6 @@ import pytest
 
 JSON = {"content-type": "application/json"}
 NUL = "\u0000"
-INT32_MAX = 2_147_483_647
 
 
 def _raw_json(payload, token):
@@ -131,32 +130,3 @@ class TestRelationshipMetadata:
 
         assert updated.status_code == 200, updated.text
         await _relationships_are_healthy(http_client, a)
-
-
-class TestDocumentSizeBytes:
-    DOC = {"title": "t", "description": "d", "content": "c"}
-
-    async def test_create_above_int32_is_refused(self, http_client):
-        response = await http_client.post(
-            "/api/v1/documents", json={**self.DOC, "size_bytes": 3_000_000_000},
-        )
-
-        error = _assert_rejected(response, "size_bytes")
-        assert error["type"] == "less_than_equal"
-
-    async def test_update_above_int32_is_refused(self, http_client):
-        created = await http_client.post("/api/v1/documents", json=self.DOC)
-
-        response = await http_client.put(
-            f"/api/v1/documents/{created.json()['id']}", json={"size_bytes": 3_000_000_000},
-        )
-
-        _assert_rejected(response, "size_bytes")
-
-    async def test_largest_int32_is_accepted(self, http_client):
-        response = await http_client.post(
-            "/api/v1/documents", json={**self.DOC, "size_bytes": INT32_MAX},
-        )
-
-        assert response.status_code == 201, response.text
-        assert response.json()["size_bytes"] == INT32_MAX

@@ -9,8 +9,6 @@ test_null_update_resources.py.
 import pytest
 from pydantic import ValidationError
 
-from app.models.code_artifact_models import CodeArtifactUpdate
-from app.models.document_models import DocumentUpdate
 from app.models.entity_models import (
     EntityRelationshipCreate,
     EntityRelationshipUpdate,
@@ -21,8 +19,6 @@ from app.models.memory_models import MemoryUpdate
 from app.models.project_models import ProjectUpdate
 
 UPDATE_MODELS = [
-    CodeArtifactUpdate,
-    DocumentUpdate,
     EntityUpdate,
     EntityRelationshipUpdate,
     MemoryUpdate,
@@ -47,8 +43,6 @@ class TestSourceFilesOnUpdate:
 @pytest.mark.parametrize(
     ("model", "field"),
     [
-        (CodeArtifactUpdate, "tags"),
-        (DocumentUpdate, "tags"),
         (EntityUpdate, "tags"),
         (EntityUpdate, "aka"),
     ],

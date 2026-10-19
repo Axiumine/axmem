@@ -50,7 +50,7 @@ def register(mcp: ForgetfulMCP):
         """List activity events with filtering and pagination.
 
         Query params:
-            entity_type: Filter by entity type (memory, project, document, etc.)
+            entity_type: Filter by entity type (memory, project, entity, etc.)
             action: Filter by action (created, updated, deleted, read, queried)
             entity_id: Filter by specific entity ID
             actor: Filter by actor (user, system, llm-maintenance)
@@ -146,7 +146,7 @@ def register(mcp: ForgetfulMCP):
         """Get activity history for a specific entity.
 
         Path params:
-            entity_type: Entity type (memory, project, document, code_artifact, entity)
+            entity_type: Entity type (memory, project, entity)
             entity_id: Entity ID
 
         Query params:
@@ -170,8 +170,7 @@ def register(mcp: ForgetfulMCP):
         entity_id_str = request.path_params["entity_id"]
 
         # Convert and validate entity_type (excluding "link" for entity history)
-        valid_for_history = {EntityType.MEMORY, EntityType.PROJECT, EntityType.DOCUMENT,
-                            EntityType.CODE_ARTIFACT, EntityType.ENTITY}
+        valid_for_history = {EntityType.MEMORY, EntityType.PROJECT, EntityType.ENTITY}
         try:
             entity_type_enum = EntityType(entity_type_str)
             if entity_type_enum not in valid_for_history:

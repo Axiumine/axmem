@@ -15,8 +15,6 @@ class EntityType(StrEnum):
     """Types of entities that can generate activity events."""
     MEMORY = "memory"
     PROJECT = "project"
-    DOCUMENT = "document"
-    CODE_ARTIFACT = "code_artifact"
     ENTITY = "entity"
     LINK = "link"  # Memory-to-memory links
     ENTITY_MEMORY_LINK = "entity_memory_link"  # Entity-to-memory links

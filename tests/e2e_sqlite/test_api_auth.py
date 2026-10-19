@@ -10,10 +10,6 @@ from fastmcp import FastMCP
 from fastmcp.server.auth.providers.jwt import StaticTokenVerifier
 from httpx import ASGITransport, AsyncClient
 
-from app.repositories.sqlite.code_artifact_repository import (
-    SqliteCodeArtifactRepository,
-)
-from app.repositories.sqlite.document_repository import SqliteDocumentRepository
 from app.repositories.sqlite.entity_repository import SqliteEntityRepository
 from app.repositories.sqlite.memory_repository import SqliteMemoryRepository
 from app.repositories.sqlite.project_repository import SqliteProjectRepository
@@ -25,8 +21,6 @@ from app.routes.api import auth, health, memories
 from app.routes.mcp import meta_tools
 from app.routes.mcp.tool_metadata_registry import register_all_tools_metadata
 from app.routes.mcp.tool_registry import ToolRegistry
-from app.services.code_artifact_service import CodeArtifactService
-from app.services.document_service import DocumentService
 from app.services.entity_service import EntityService
 from app.services.memory_service import MemoryService
 from app.services.project_service import ProjectService
@@ -80,8 +74,6 @@ async def sqlite_app_with_auth(embedding_adapter):
             rerank_adapter=None,
         )
         project_repository = SqliteProjectRepository(db_adapter=db_adapter)
-        code_artifact_repository = SqliteCodeArtifactRepository(db_adapter=db_adapter)
-        document_repository = SqliteDocumentRepository(db_adapter=db_adapter)
         entity_repository = SqliteEntityRepository(db_adapter=db_adapter)
 
         @asynccontextmanager
@@ -91,16 +83,12 @@ async def sqlite_app_with_auth(embedding_adapter):
             user_service = UserService(user_repository)
             memory_service = MemoryService(memory_repository)
             project_service = ProjectService(project_repository)
-            code_artifact_service = CodeArtifactService(code_artifact_repository)
-            document_service = DocumentService(document_repository)
             entity_service = EntityService(entity_repository)
 
             # Store services on FastMCP instance
             mcp.user_service = user_service
             mcp.memory_service = memory_service
             mcp.project_service = project_service
-            mcp.code_artifact_service = code_artifact_service
-            mcp.document_service = document_service
             mcp.entity_service = entity_service
 
             # Create and attach registry
@@ -114,8 +102,6 @@ async def sqlite_app_with_auth(embedding_adapter):
                 memory_service=memory_service,
                 re_embedding_service=ReEmbeddingService(memory_repository, embedding_adapter),
                 project_service=project_service,
-                code_artifact_service=code_artifact_service,
-                document_service=document_service,
                 entity_service=entity_service,
             )
 

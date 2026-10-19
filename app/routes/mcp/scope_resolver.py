@@ -12,7 +12,7 @@ Scope tokens:
   read:<category>  -> category read tools only
   write:<category> -> category write tools only
 
-Categories: users, memories, projects, code_artifacts, documents, entities
+Categories: users, memories, projects, entities
 """
 from __future__ import annotations
 
@@ -34,8 +34,6 @@ CATEGORY_TO_SCOPE: dict[str, str] = {
     ToolCategory.USER.value: "users",
     ToolCategory.MEMORY.value: "memories",
     ToolCategory.PROJECT.value: "projects",
-    ToolCategory.CODE_ARTIFACT.value: "code_artifacts",
-    ToolCategory.DOCUMENT.value: "documents",
     ToolCategory.ENTITY.value: "entities",
     ToolCategory.LINKING.value: "entities",  # linking tools are entity-scoped
 }

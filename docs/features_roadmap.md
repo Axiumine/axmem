@@ -1,8 +1,6 @@
 ## Feature Roadmap (in order of priority)
 - [ ] Resources 
     - [x] Project 
-    - [x] Documents
-    - [x] Code Artifacts
     - [x] Entities (Organisations, individuals, team, devices etc)
     - [ ] Audio
     - [ ] Images

@@ -8,6 +8,9 @@ import pytest
 
 from app.routes.mcp.scope_resolver import parse_scopes, resolve_permitted_tools
 
+# Tools discoverable with the default wildcard scope: the floor a restricted scope must stay below.
+ALL_TOOLS_COUNT = 33
+
 # ============================================================================
 # Default wildcard scope - regression (all tools accessible)
 # ============================================================================
@@ -17,7 +20,7 @@ async def test_default_wildcard_all_tools_discoverable(mcp_client):
     """With default * scope, all tools should be discoverable (regression test)."""
     result = await mcp_client.call_tool("discover_forgetful_tools", {})
     assert result.data is not None
-    assert result.data["total_count"] >= 34
+    assert result.data["total_count"] >= ALL_TOOLS_COUNT
 
 
 @pytest.mark.asyncio
@@ -71,7 +74,7 @@ async def test_read_only_scope_discover_only_reads(mcp_client, sqlite_app):
             assert tool["mutates"] is False, f"Tool {tool['name']} is mutating but was discovered with read scope"
 
     # Should have fewer tools than wildcard
-    assert result.data["total_count"] < 34
+    assert result.data["total_count"] < ALL_TOOLS_COUNT
 
 
 @pytest.mark.asyncio

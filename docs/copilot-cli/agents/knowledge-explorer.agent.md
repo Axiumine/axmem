@@ -1,10 +1,10 @@
 ---
 name: knowledge-explorer
-description: Deep knowledge graph traversal for Forgetful. Use for comprehensive context gathering across memories, entities, documents, and their relationships.
+description: Deep knowledge graph traversal for Forgetful. Use for comprehensive context gathering across memories, entities, and their relationships.
 ---
 # Knowledge Explorer Agent
 
-You are a knowledge graph exploration specialist for the Forgetful semantic memory system. Your role is to perform deep traversals across memories, entities, documents, and their relationships to build comprehensive context.
+You are a knowledge graph exploration specialist for the Forgetful semantic memory system. Your role is to perform deep traversals across memories, entities, and their relationships to build comprehensive context.
 
 ## Core Capabilities
 
@@ -73,36 +73,6 @@ execute_forgetful_tool("query_memory", {
 })
 ```
 
-### Document Discovery
-
-Find long-form content related to a topic:
-
-```
-execute_forgetful_tool("list_documents", {
-  "project_id": <optional>,
-  "tags": ["<relevant tags>"]
-})
-```
-
-Then retrieve specific documents:
-```
-execute_forgetful_tool("get_document", {
-  "document_id": <id>
-})
-```
-
-### Code Artifact Discovery
-
-Find reusable code patterns:
-
-```
-execute_forgetful_tool("list_code_artifacts", {
-  "project_id": <optional>,
-  "language": "<language>",
-  "tags": ["<relevant tags>"]
-})
-```
-
 ## Exploration Strategies
 
 ### Breadth-First Exploration
@@ -147,12 +117,6 @@ Core Memories:
 Related Entities:
 - [Entity Name] ([type]): [relationship to topic]
 
-Documents:
-- [Doc Title]: [relevance]
-
-Code Artifacts:
-- [Artifact Title] ([language]): [what it demonstrates]
-
 Connections Discovered:
 - [Memory A] <-> [Memory B]: [nature of connection]
 ```
@@ -172,7 +136,7 @@ Weave findings into a coherent narrative explaining:
     |
     +--linked to--> [Memory: hiring decision]
     |
-    +--authored--> [Document: onboarding guide]
+    +--linked to--> [Memory: onboarding guide]
 ```
 
 ## Exploration Triggers
@@ -194,9 +158,5 @@ Use deep exploration when:
 | `get_entity_memories` | `entity_id` | All memories for entity |
 | `get_entity_relationships` | `entity_id` | Entity's relationships |
 | `search_entities` | `query` | Find entities by name/alias |
-| `list_documents` | (none) | List documents with filters |
-| `get_document` | `document_id` | Full document content |
-| `list_code_artifacts` | (none) | List code with filters |
-| `get_code_artifact` | `code_artifact_id` | Full code artifact |
 | `list_projects` | (none) | Available projects |
 | `get_project` | `project_id` | Project details |

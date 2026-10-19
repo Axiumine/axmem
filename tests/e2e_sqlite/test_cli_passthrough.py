@@ -57,7 +57,7 @@ def test_tools_list_prints_categories(cli_sqlite_env, monkeypatch, capsys):
     assert code == 0
     payload = json.loads(out)
     assert payload["total_count"] > 0
-    assert len(payload["tools_by_category"]) >= 6
+    assert len(payload["tools_by_category"]) >= 4
 
 
 def test_tools_list_category_filter(cli_sqlite_env, monkeypatch, capsys):

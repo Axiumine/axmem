@@ -24,7 +24,6 @@ Use `discover_forgetful_tools` and execute these queries:
 # Discover available tools
 discover_forgetful_tools(category="memory")
 discover_forgetful_tools(category="project")
-discover_forgetful_tools(category="document")
 discover_forgetful_tools(category="entity")
 
 # Query for project information
@@ -54,8 +53,6 @@ query_memory({
 
 # List all project content
 list_memories({"project_id": project_id})
-list_documents({"project_id": project_id})
-list_code_artifacts({"project_id": project_id})
 list_entities({"entity_type": "Individual"})
 list_entities({"entity_type": "Device/System"})
 ```
@@ -86,9 +83,8 @@ Organize findings into:
 - Advanced capabilities
 - Configuration options
 
-**E. Knowledge Artifacts**
-- Code patterns stored
-- Documentation available
+**E. Knowledge Graph**
+- Code patterns stored in memories
 - Entities and relationships
 - Historical context and evolution
 
@@ -98,7 +94,7 @@ Organize findings into:
 - Known limitations
 
 **G. Statistics**
-- Number of memories/documents/artifacts
+- Number of memories and entities
 - Coverage areas and gaps
 
 ---

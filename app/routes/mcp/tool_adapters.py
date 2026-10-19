@@ -7,14 +7,6 @@ registry, bootstrap and tests keep a single import path.
 """
 
 from app.routes.mcp.adapters import arguments
-from app.routes.mcp.adapters.code_artifact import (
-    CodeArtifactToolAdapters,
-    create_code_artifact_adapters,
-)
-from app.routes.mcp.adapters.document import (
-    DocumentToolAdapters,
-    create_document_adapters,
-)
 from app.routes.mcp.adapters.entity import EntityToolAdapters, create_entity_adapters
 from app.routes.mcp.adapters.memory import MemoryToolAdapters, create_memory_adapters
 from app.routes.mcp.adapters.project import ProjectToolAdapters, create_project_adapters
@@ -30,8 +22,6 @@ _coerce_str_list = arguments.coerce_str_list
 _reject_unknown_args = arguments.reject_unknown_args
 
 __all__ = [
-    "CodeArtifactToolAdapters",
-    "DocumentToolAdapters",
     "EntityToolAdapters",
     "MemoryToolAdapters",
     "ProjectToolAdapters",
@@ -43,8 +33,6 @@ __all__ = [
     "_coerce_optional_int_ids",
     "_coerce_str_list",
     "_reject_unknown_args",
-    "create_code_artifact_adapters",
-    "create_document_adapters",
     "create_entity_adapters",
     "create_memory_adapters",
     "create_project_adapters",

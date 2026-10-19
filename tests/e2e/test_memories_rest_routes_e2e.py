@@ -27,16 +27,11 @@ async def _obsolete(http_client, memory_id, body=None):
 
 
 @pytest.mark.e2e
-@pytest.mark.parametrize(("field", "label"), [
-    ("project_ids", "Projects"),
-    ("code_artifact_ids", "Code artifacts"),
-    ("document_ids", "Documents"),
-])
-async def test_create_with_unknown_association_id_is_404(http_client, field, label):
-    response = await http_client.post(API, json={**MEMORY, field: [999999]})
+async def test_create_with_unknown_project_id_is_404(http_client):
+    response = await http_client.post(API, json={**MEMORY, "project_ids": [999999]})
 
     assert response.status_code == 404, response.text
-    assert response.json()["error"].startswith(f"{label} not found")
+    assert response.json()["error"].startswith("Projects not found")
 
 
 @pytest.mark.e2e
@@ -50,19 +45,18 @@ async def test_update_with_unknown_project_names_the_association(http_client):
 
 
 @pytest.mark.e2e
-async def test_create_response_reports_linked_document_ids(http_client):
-    document = await http_client.post("/api/v1/documents", json={
-        "title": "pg-memory-route-document",
-        "description": "Document linked from a memory",
-        "content": "# Steps\n1. Do it",
-        "tags": ["test"],
+async def test_create_response_reports_linked_project_ids(http_client):
+    project = await http_client.post("/api/v1/projects", json={
+        "name": "pg-memory-route-project",
+        "description": "Project linked from a memory",
+        "project_type": "development",
     })
-    assert document.status_code == 201, document.text
+    assert project.status_code == 201, project.text
 
-    response = await http_client.post(API, json={**MEMORY, "document_ids": [document.json()["id"]]})
+    response = await http_client.post(API, json={**MEMORY, "project_ids": [project.json()["id"]]})
 
     assert response.status_code == 201, response.text
-    assert response.json()["document_ids"] == [document.json()["id"]]
+    assert response.json()["project_ids"] == [project.json()["id"]]
 
 
 @pytest.mark.e2e

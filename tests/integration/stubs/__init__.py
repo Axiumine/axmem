@@ -4,8 +4,6 @@ One module per domain; ``tests/integration/conftest.py`` imports these and
 exposes them to the tests as pytest fixtures.
 """
 
-from tests.integration.stubs.code_artifacts import InMemoryCodeArtifactRepository
-from tests.integration.stubs.documents import InMemoryDocumentRepository
 from tests.integration.stubs.doubles import CollectingEventBus, MockEmbeddingsAdapter
 from tests.integration.stubs.entities import InMemoryEntityRepository
 from tests.integration.stubs.memories import InMemoryMemoryRepository
@@ -14,8 +12,6 @@ from tests.integration.stubs.users import InMemoryUserRepository
 
 __all__ = [
     "CollectingEventBus",
-    "InMemoryCodeArtifactRepository",
-    "InMemoryDocumentRepository",
     "InMemoryEntityRepository",
     "InMemoryMemoryRepository",
     "InMemoryProjectRepository",

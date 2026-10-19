@@ -17,8 +17,6 @@ NULLABLE_FIELDS = [
     "tags",
     "importance",
     "project_ids",
-    "code_artifact_ids",
-    "document_ids",
     "source_repo",
     "source_files",
     "source_url",
@@ -49,11 +47,10 @@ def test_null_keeps_other_fields_in_update():
 
 def test_empty_values_are_not_treated_as_null():
     """Only None is dropped: empty lists still mean "clear this list"."""
-    update = MemoryUpdate(document_ids=[], project_ids=[], keywords=[])
+    update = MemoryUpdate(project_ids=[], keywords=[])
 
-    assert update.model_fields_set == {"document_ids", "project_ids", "keywords"}
+    assert update.model_fields_set == {"project_ids", "keywords"}
     assert update.model_dump(exclude_unset=True) == {
-        "document_ids": [],
         "project_ids": [],
         "keywords": [],
     }

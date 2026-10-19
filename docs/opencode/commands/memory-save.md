@@ -86,9 +86,8 @@ Before creating, verify the memory passes the atomicity test:
 ## If Content is Too Long
 
 If the concept requires >2000 characters:
-1. Suggest using `create_document` for the full content
-2. Extract 3-5 atomic memories from it
-3. Link memories to the document via `document_ids`
+1. Suggest splitting the content into 3-5 atomic memories
+2. Create each memory and link them to each other via `link_memories`
 
 ## Example with Curation
 

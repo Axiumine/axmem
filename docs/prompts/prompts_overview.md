@@ -109,7 +109,7 @@ KB Bootstrap includes Phase 0 that checks existing coverage—prevents duplicate
 - Specific `query_memory`, `create_memory`, `update_memory` calls
 - `discover_forgetful_tools` usage
 - Auto-linking mechanics (similarity ≥0.7 by default)
-- Project/memory/document/artifact/entity patterns
+- Project/memory/entity patterns
 
 **Phase 0 Discovery (KB Bootstrap):**
 Prevents duplicate creation by checking existing project/memories, comparing with current codebase, performing gap analysis, then creating targeted bootstrap plan.
@@ -126,10 +126,10 @@ Bootstrap is not one-time—update memories as code evolves, mark obsolete memor
 
 **Strategic Linking:**
 Let auto-linking handle semantic connections (≥0.7 similarity by default). Manually
-link memories to code artifacts and documents.
+link memories that auto-linking misses.
 
 **Atomic Memories:**
-One concept per memory (200-400 words), use documents for >400 word content.
+One concept per memory (200-400 words), split >400 word content into several linked memories.
 
 **Honest Importance:**
 Most memories should be 7-8, reserve 9-10 for foundational decisions.
@@ -161,8 +161,8 @@ Most memories should be 7-8, reserve 9-10 for foundational decisions.
 
 **KB Bootstrap:**
 - Phase 0: Discovery & Assessment (prevents duplicates)
-- Phases 1-10: Project → Architecture → Patterns → Features → Decisions → Config → Artifacts → Documents → Entities → Linking
+- Phases 1-8: Project → Architecture → Patterns → Features → Decisions → Config → Entities → Linking
 - Atomic memory creation (200-400 words)
 - Auto-linking verification (≥0.7 similarity by default)
 - Gap analysis for existing projects
-- Coverage goals: 15-25 memories, 5-10 artifacts, 3-5 documents
+- Coverage goals: 15-30 memories for a small project, more for larger ones

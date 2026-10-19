@@ -89,30 +89,6 @@ def registry_with_tools():
         implementation=noop, mutates=True,
     )
 
-    # Document tools
-    registry.register(
-        name="get_document", category=ToolCategory.DOCUMENT,
-        description="Get doc", parameters=params, returns="Doc",
-        implementation=noop, mutates=False,
-    )
-    registry.register(
-        name="create_document", category=ToolCategory.DOCUMENT,
-        description="Create doc", parameters=params, returns="Doc",
-        implementation=noop, mutates=True,
-    )
-
-    # Code artifact tools
-    registry.register(
-        name="get_code_artifact", category=ToolCategory.CODE_ARTIFACT,
-        description="Get artifact", parameters=params, returns="Artifact",
-        implementation=noop, mutates=False,
-    )
-    registry.register(
-        name="create_code_artifact", category=ToolCategory.CODE_ARTIFACT,
-        description="Create artifact", parameters=params, returns="Artifact",
-        implementation=noop, mutates=True,
-    )
-
     return registry
 
 

@@ -11,8 +11,6 @@ This guide provides comprehensive documentation for all tools available in the F
 - [User Tools](#user-tools)
 - [Memory Tools](#memory-tools)
 - [Project Tools](#project-tools)
-- [Code Artifact Tools](#code-artifact-tools)
-- [Document Tools](#document-tools)
 - [Entity Tools](#entity-tools)
 - [Cross-Category Workflows](#cross-category-workflows)
 
@@ -30,7 +28,7 @@ scopes.
 List available tools, optionally filtered by category.
 
 **Parameters:**
-- `category` (optional): Filter by category (`user`, `memory`, `project`, `code_artifact`, `document`, `entity`) or by `linking`, which is not a category of its own but selects the link and unlink tools of the memory and entity categories. An unknown value is rejected with the list of valid categories
+- `category` (optional): Filter by category (`user`, `memory`, `project`, `entity`) or by `linking`, which is not a category of its own but selects the link and unlink tools of the memory and entity categories. An unknown value is rejected with the list of valid categories
 
 **Returns:**
 - `tools_by_category`: Tools grouped by category
@@ -98,7 +96,7 @@ execute_forgetful_tool(
 
 ## Tool Categories Overview
 
-The catalog covers users, memories, projects, code artifacts, documents, and entities. Call
+The catalog covers users, memories, projects, and entities. Call
 `discover_forgetful_tools()` for the exact catalog exposed by the running server.
 
 ---
@@ -162,8 +160,6 @@ Create an atomic memory with automatic linking to related memories.
 - `keywords` (required): Search keywords (max 10, each max 100 chars)
 - `tags` (required): Categorization tags (max 10, each max 100 chars)
 - `project_ids` (optional): Project IDs to link
-- `document_ids` (optional): Document IDs to link
-- `code_artifact_ids` (optional): Code artifact IDs to link
 
 **Provenance Tracking (optional):**
 - `source_repo` (optional): Repository source (e.g., 'owner/repo', max 200 chars)
@@ -238,7 +234,7 @@ Semantic search across all memories with context-aware ranking.
 
 **Returns:**
 - List of memories ranked by semantic relevance
-- Each memory includes linked artifacts and 1-hop graph connections
+- Each memory includes its 1-hop graph connections
 - `scores`: One `MemoryScore` per primary memory (`memory_id`, `similarity`, `rerank_score`), aligned by index with `primary_memories`. Primaries are importance-sorted after retrieval, so list position is not similarity rank.
 - `access_count` / `last_accessed_at` on each returned **full** `Memory` (not on `MemorySummary`). On upstream they increment when `memory.queried` fires, which requires `ACTIVITY_TRACK_READS=true` and an EventBus. Not request parameters.
 
@@ -489,7 +485,7 @@ total = result["total_count"]   # how many matched in total
 
 ## Project Tools
 
-Organize memories, code artifacts, and documents by project context.
+Organize memories by project context.
 
 ### Project Types
 - `personal`, `work`, `learning`, `development`, `infrastructure`
@@ -600,7 +596,7 @@ execute_forgetful_tool(
 
 ### `delete_project`
 
-Delete project while preserving linked memories, artifacts, and documents.
+Delete project while preserving linked memories and entities.
 
 **Parameters:**
 - `project_id` (required): Project ID
@@ -611,297 +607,6 @@ Delete project while preserving linked memories, artifacts, and documents.
 **Example:**
 ```python
 execute_forgetful_tool("delete_project", {"project_id": 22})
-```
-
----
-
-## Code Artifact Tools
-
-Store and retrieve reusable code snippets and patterns.
-
-### `create_code_artifact`
-
-Store a reusable code snippet.
-
-**Parameters:**
-- `title` (required): Artifact title
-- `content` (required): Code content
-- `language` (required): Programming language
-- `description` (optional): Artifact description
-- `tags` (optional): Categorization tags
-- `project_id` (optional): Link to project
-- `framework` (optional): Framework name (e.g., "React", "FastAPI")
-- `version` (optional): Version string
-
-**Returns:**
-- Created artifact with `code_artifact_id`
-
-**Example:**
-```python
-artifact = execute_forgetful_tool(
-    "create_code_artifact",
-    {
-        "title": "Async Retry Decorator with Exponential Backoff",
-        "content": '''
-import asyncio
-from functools import wraps
-
-def async_retry(max_attempts=3, base_delay=1.0):
-    def decorator(func):
-        @wraps(func)
-        async def wrapper(*args, **kwargs):
-            for attempt in range(max_attempts):
-                try:
-                    return await func(*args, **kwargs)
-                except Exception as e:
-                    if attempt == max_attempts - 1:
-                        raise
-                    delay = base_delay * (2 ** attempt)
-                    await asyncio.sleep(delay)
-        return wrapper
-    return decorator
-        ''',
-        "language": "python",
-        "description": "Reusable retry logic for async operations - use for API calls",
-        "tags": ["async", "retry", "decorator", "resilience"],
-        "project_id": 12
-    }
-)
-# Returns: {"code_artifact_id": 45, ...}
-```
-
-### `list_code_artifacts`
-
-List code artifacts with optional filtering.
-
-**Parameters:**
-- `project_id` (optional): Filter by project
-- `language` (optional): Filter by programming language
-- `tags` (optional): Filter by tags
-
-**Returns:**
-- List of matching code artifacts
-
-**Example:**
-```python
-# Find all Python utilities
-python_utils = execute_forgetful_tool(
-    "list_code_artifacts",
-    {"language": "python", "tags": ["utility"]}
-)
-```
-
-### `get_code_artifact`
-
-Retrieve complete code artifact by ID.
-
-**Parameters:**
-- `code_artifact_id` (required): Artifact ID
-
-**Returns:**
-- Complete artifact object with code content
-
-**Example:**
-```python
-artifact = execute_forgetful_tool("get_code_artifact", {"code_artifact_id": 45})
-```
-
-### `update_code_artifact`
-
-Update code artifact (PATCH semantics).
-
-**Parameters:**
-- `code_artifact_id` (required): Artifact ID
-- `title`, `content`, `language`, `description`, `tags`, `framework`, `version` (all optional)
-
-**Returns:**
-- Updated artifact object
-
-**Example:**
-```python
-execute_forgetful_tool(
-    "update_code_artifact",
-    {
-        "code_artifact_id": 45,
-        "version": "2.0.0",
-        "tags": ["async", "retry", "decorator", "resilience", "production"]
-    }
-)
-```
-
-### `delete_code_artifact`
-
-Delete code artifact (cascades memory associations).
-
-**Parameters:**
-- `code_artifact_id` (required): Artifact ID
-
-**Returns:**
-- Confirmation of deletion
-
-**Example:**
-```python
-execute_forgetful_tool("delete_code_artifact", {"code_artifact_id": 45})
-```
-
----
-
-## Document Tools
-
-Store long-form content (>400 words) like architecture decision records, research notes, and detailed documentation.
-
-### Document Types
-- `text` - Plain text documents
-- `markdown` - Markdown-formatted documents
-- `code` - Code documentation
-- Custom types - Define your own
-
-### `create_document`
-
-Create a document for long-form content.
-
-**Parameters:**
-- `title` (required): Document title
-- `content` (required): Document content (no character limit)
-- `document_type` (optional): Document type (default: `text`)
-- `description` (optional): Document description
-- `tags` (optional): Categorization tags
-- `project_id` (optional): Link to project
-
-**Returns:**
-- Created document with `document_id`
-
-**Example:**
-```python
-doc = execute_forgetful_tool(
-    "create_document",
-    {
-        "title": "ADR-003: Migration to Event-Driven Architecture",
-        "content": '''
-# Architecture Decision Record: Event-Driven Architecture
-
-## Status
-Accepted
-
-## Context
-Our monolithic architecture faces scaling challenges:
-- Tight coupling between services creates deployment bottlenecks
-- Database contention during peak loads
-- Difficulty adding new features without affecting existing systems
-
-[... 2000+ words of detailed analysis ...]
-
-## Decision
-Adopt event-driven architecture using Apache Kafka as message broker.
-
-## Consequences
-### Positive
-- Loose coupling enables independent service scaling
-- Event sourcing provides audit trail
-- Easier to add new consumers
-
-### Negative
-- Increased operational complexity
-- Eventual consistency requires careful handling
-- Team needs training on distributed systems
-
-## Implementation Plan
-[... detailed steps ...]
-        ''',
-        "document_type": "markdown",
-        "tags": ["adr", "architecture", "event-driven", "kafka"],
-        "project_id": 22
-    }
-)
-# Returns: {"id": 89, ...}
-
-# Extract atomic memories from this document
-memory1 = execute_forgetful_tool(
-    "create_memory",
-    {
-        "title": "Architecture decision: Event-driven with Kafka",
-        "content": "Adopted event-driven architecture using Kafka.",
-        "context": "Capturing the decision from the architecture document",
-        "keywords": ["architecture", "kafka", "events"],
-        "tags": ["architecture", "decision"],
-        "importance": 10,
-        "document_ids": [89],
-        "project_ids": [22]
-    }
-)
-```
-
-### `list_documents`
-
-List documents with optional filtering.
-
-**Parameters:**
-- `project_id` (optional): Filter by project
-- `document_type` (optional): Filter by type
-- `tags` (optional): Filter by tags
-
-**Returns:**
-- List of matching documents
-
-**Example:**
-```python
-# Find all ADRs
-adrs = execute_forgetful_tool(
-    "list_documents",
-    {"tags": ["adr"], "document_type": "markdown"}
-)
-```
-
-### `get_document`
-
-Retrieve complete document by ID.
-
-**Parameters:**
-- `document_id` (required): Document ID
-
-**Returns:**
-- Complete document object with full content
-
-**Example:**
-```python
-doc = execute_forgetful_tool("get_document", {"document_id": 89})
-```
-
-### `update_document`
-
-Update document (PATCH semantics).
-
-**Parameters:**
-- `document_id` (required): Document ID
-- `title`, `content`, `document_type`, `description`, `tags` (all optional)
-
-**Returns:**
-- Updated document object
-
-**Example:**
-```python
-execute_forgetful_tool(
-    "update_document",
-    {
-        "document_id": 89,
-        "tags": ["adr", "architecture", "event-driven", "kafka", "implemented"]
-    }
-)
-```
-
-### `delete_document`
-
-Delete document (cascades memory associations).
-
-**Parameters:**
-- `document_id` (required): Document ID
-
-**Returns:**
-- Confirmation of deletion
-
-**Example:**
-```python
-execute_forgetful_tool("delete_document", {"document_id": 89})
 ```
 
 ---
@@ -1335,7 +1040,7 @@ execute_forgetful_tool("delete_entity_relationship", {"relationship_id": 12})
 
 Real-world scenarios demonstrating how tools work together.
 
-### Scenario 1: Documenting a Complete Feature
+### Scenario 1: Capturing a Complete Feature
 
 **Context:** You've implemented a new authentication system and want to capture all knowledge.
 
@@ -1351,19 +1056,7 @@ project = execute_forgetful_tool(
 )
 project_id = project["id"]
 
-# 2. Store architecture decision document
-adr = execute_forgetful_tool(
-    "create_document",
-    {
-        "title": "ADR-001: OAuth2 + JWT Authentication Strategy",
-        "content": "[... full 3000-word architecture decision record ...]",
-        "document_type": "markdown",
-        "tags": ["adr", "authentication", "oauth2", "jwt"],
-        "project_id": project_id
-    }
-)
-
-# 3. Extract key decision as atomic memory
+# 2. Store the key decision as an atomic memory
 decision_memory = execute_forgetful_tool(
     "create_memory",
     {
@@ -1373,36 +1066,29 @@ decision_memory = execute_forgetful_tool(
         "keywords": ["authentication", "oauth2", "jwt"],
         "tags": ["authentication", "decision"],
         "importance": 10,
-        "project_ids": [project_id],
-        "document_ids": [adr["id"]]
+        "project_ids": [project_id]
     }
 )
 
-# 4. Store reusable JWT middleware
-middleware = execute_forgetful_tool(
-    "create_code_artifact",
+# 3. Store the supporting detail as a second atomic memory and link the two
+middleware_memory = execute_forgetful_tool(
+    "create_memory",
     {
-        "title": "JWT Authentication Middleware",
-        "description": "FastAPI middleware that validates JWT bearer tokens",
-        "code": '''
-from fastapi import Request, HTTPException
-from jose import jwt, JWTError
-
-async def verify_jwt(request: Request):
-    token = request.headers.get("Authorization", "").replace("Bearer ", "")
-    try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
-        return payload
-    except JWTError:
-        raise HTTPException(status_code=401, detail="Invalid token")
-        ''',
-        "language": "python",
+        "title": "JWT middleware: validate the bearer token in a FastAPI dependency",
+        "content": "A FastAPI dependency reads the Authorization header, decodes the JWT with the shared secret (HS256) and answers 401 on a JWTError.",
+        "context": "Implementation detail of the authentication strategy",
+        "keywords": ["authentication", "jwt", "middleware", "fastapi"],
         "tags": ["authentication", "jwt", "middleware"],
-        "project_id": project_id
+        "importance": 8,
+        "project_ids": [project_id]
     }
 )
+execute_forgetful_tool(
+    "link_memories",
+    {"memory_id": decision_memory["id"], "related_ids": [middleware_memory["id"]]}
+)
 
-# 5. Create entity for the engineer who implemented it
+# 4. Create entity for the engineer who implemented it
 engineer = execute_forgetful_tool(
     "create_entity",
     {
@@ -1414,7 +1100,7 @@ engineer = execute_forgetful_tool(
     }
 )
 
-# 6. Link engineer to the decision memory
+# 5. Link engineer to the decision memory
 execute_forgetful_tool(
     "link_entity_to_memory",
     {
@@ -1423,7 +1109,7 @@ execute_forgetful_tool(
     }
 )
 
-# 7. Later, query everything about auth
+# 6. Later, query everything about auth
 results = execute_forgetful_tool(
     "query_memory",
     {
@@ -1432,7 +1118,7 @@ results = execute_forgetful_tool(
         "project_ids": [project_id]
     }
 )
-# Returns decision_memory + auto-linked memories + linked document + code artifact + entity
+# Returns decision_memory + auto-linked memories + linked entity
 ```
 
 ### Scenario 2: New Team Member Onboarding
@@ -1516,9 +1202,9 @@ for memory in payment_memories["primary_memories"]:
     )
 ```
 
-### Scenario 3: Infrastructure Incident Documentation
+### Scenario 3: Infrastructure Incident Capture
 
-**Context:** Redis server failed, you resolved it and want to document for future reference.
+**Context:** Redis server failed, you resolved it and want to record it for future reference.
 
 ```python
 # 1. Get the server entity (can also search by alias like "redis-primary")
@@ -1559,48 +1245,29 @@ execute_forgetful_tool(
     }
 )
 
-# 5. Create code artifact for monitoring script
-monitoring_script = execute_forgetful_tool(
-    "create_code_artifact",
-    {
-        "title": "Redis Memory Monitoring Script",
-        "code": '''
-import redis
-import os
-
-def check_redis_memory(threshold=0.8):
-    r = redis.Redis(host='cache-server-01', port=6379)
-    info = r.info('memory')
-    used = info['used_memory']
-    max_mem = info['maxmemory']
-
-    if max_mem > 0 and (used / max_mem) > threshold:
-        send_alert(f"Redis memory at {(used/max_mem)*100:.1f}%")
-        ''',
-        "language": "python",
-        "tags": ["monitoring", "redis", "alerting"],
-        "description": "Alert when Redis memory usage exceeds threshold"
-    }
-)
-
-# 6. Link monitoring script to incident memory
-execute_forgetful_tool(
+# 5. Record the follow-up as a memory
+followup = execute_forgetful_tool(
     "create_memory",
     {
         "title": "Implemented Redis memory monitoring",
-        "content": "Added an alert at 80% memory usage to prevent future incidents.",
+        "content": "A check compares used_memory with maxmemory every minute and alerts at 80% usage to prevent future incidents.",
         "context": "Follow-up action from the Redis memory exhaustion incident",
         "keywords": ["redis", "memory", "monitoring", "alert"],
         "tags": ["monitoring", "prevention", "redis"],
-        "importance": 8,
-        "code_artifact_ids": [monitoring_script["id"]]
+        "importance": 8
     }
+)
+
+# 6. Link the follow-up to the incident memory
+execute_forgetful_tool(
+    "link_memories",
+    {"memory_id": incident["id"], "related_ids": [followup["id"]]}
 )
 ```
 
 ### Scenario 4: Research and Decision Making
 
-**Context:** Researching database options, documenting findings, and making a decision.
+**Context:** Researching database options, recording findings, and making a decision.
 
 ```python
 # 1. Create research project
@@ -1614,20 +1281,7 @@ research_project = execute_forgetful_tool(
 )
 project_id = research_project["id"]
 
-# 2. Create comprehensive research document
-research_doc = execute_forgetful_tool(
-    "create_document",
-    {
-        "title": "Vector Database Comparison: pgvector vs Qdrant vs Weaviate",
-        "description": "Comparison of vector database options",
-        "content": "[... 5000-word detailed comparison of features, performance, costs ...]",
-        "document_type": "markdown",
-        "tags": ["research", "database", "vector-db", "embeddings"],
-        "project_id": project_id
-    }
-)
-
-# 3. Extract atomic insights as memories
+# 2. Capture atomic insights as memories
 insight1 = execute_forgetful_tool(
     "create_memory",
     {
@@ -1637,8 +1291,7 @@ insight1 = execute_forgetful_tool(
         "keywords": ["pgvector", "postgresql", "vector-database"],
         "tags": ["database", "pgvector", "vectors"],
         "importance": 8,
-        "project_ids": [project_id],
-        "document_ids": [research_doc["id"]]
+        "project_ids": [project_id]
     }
 )
 
@@ -1651,12 +1304,11 @@ insight2 = execute_forgetful_tool(
         "keywords": ["qdrant", "vector-database", "performance"],
         "tags": ["database", "qdrant", "vectors"],
         "importance": 8,
-        "project_ids": [project_id],
-        "document_ids": [research_doc["id"]]
+        "project_ids": [project_id]
     }
 )
 
-# 4. Make decision and create decision memory
+# 3. Make decision and create decision memory
 decision = execute_forgetful_tool(
     "create_memory",
     {
@@ -1666,12 +1318,11 @@ decision = execute_forgetful_tool(
         "keywords": ["pgvector", "postgresql", "database-decision"],
         "tags": ["decision", "database", "pgvector", "forgetful"],
         "importance": 10,
-        "project_ids": [project_id],
-        "document_ids": [research_doc["id"]]
+        "project_ids": [project_id]
     }
 )
 
-# 5. Manually link related insights to decision
+# 4. Manually link related insights to decision
 execute_forgetful_tool(
     "link_memories",
     {"memory_id": decision["id"], "related_ids": [insight1["id"]]}
@@ -1682,7 +1333,7 @@ execute_forgetful_tool(
     {"memory_id": decision["id"], "related_ids": [insight2["id"]]}
 )
 
-# 6. Mark project as completed
+# 5. Mark project as completed
 execute_forgetful_tool(
     "update_project",
     {
@@ -1716,11 +1367,10 @@ execute_forgetful_tool(
 - **Use metadata liberally** - Capture temporal and contextual information
 - **Link entities to relevant memories** - Creates rich context for queries
 
-### Code Artifacts & Documents
-- **Code artifacts for reusable snippets (<200 lines)** - Utilities, patterns, configs
-- **Documents for detailed content (>400 words)** - ADRs, research, specifications
-- **Always extract atomic memories** - Documents are storage, memories are searchable knowledge
-- **Link atoms to documents** - Preserve connection to detailed source
+### Long-form Knowledge
+- **Split detailed content (>400 words) into atomic memories** - ADRs, research and specifications become several memories, one concept each
+- **Link the atoms to each other** - Use `link_memories` to preserve the connection between related pieces
+- **Keep code snippets short** - A memory holds ~2000 characters, so store the idea and point at the source file with `source_files`
 
 ### Search & Retrieval
 - **Query early and often** - Check existing knowledge before creating duplicates

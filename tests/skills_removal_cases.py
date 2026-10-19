@@ -6,12 +6,11 @@ from sqlalchemy import text
 
 from app.bootstrap import create_repositories
 from app.config.settings import settings
-from app.models.code_artifact_models import CodeArtifactCreate
-from app.models.document_models import DocumentCreate
 from app.models.memory_models import MemoryCreate
 from app.models.project_models import ProjectCreate, ProjectType
 from app.models.user_models import UserCreate
 from app.repositories.vector_ddl import create_vec0_table_sql
+from tests.docs_artifacts_removal_cases import INSERT_CODE_ARTIFACT, INSERT_DOCUMENT
 from tests.migration_helpers import (
     alembic_config,
     run_migration,
@@ -66,12 +65,6 @@ async def store_skill_rows_and_events(db: Any) -> dict[str, Any]:
         owner,
         MemoryCreate(title="Kept memory", content="c", context="x", keywords=["k"], tags=["t"], importance=7),
     )
-    document = await repos["document"].create_document(
-        owner, DocumentCreate(title="t", description="d", content="body"),
-    )
-    code_artifact = await repos["code_artifact"].create_code_artifact(
-        owner, CodeArtifactCreate(title="t", description="d", code="print(1)", language="python"),
-    )
 
     # PostgreSQL stores the skill embedding in the row and has array tags; SQLite keeps the
     # embedding in vec_skills and stores the tags as JSON.
@@ -86,11 +79,10 @@ async def store_skill_rows_and_events(db: Any) -> dict[str, Any]:
         "owner": str(owner),
         "project": project.id,
         "memory": memory.id,
-        "document": document.id,
-        "code_artifact": code_artifact.id,
         "embedding": str([0.1] * settings.EMBEDDING_DIMENSIONS),
     }
-    # The files table is not part of the application any more: its revision brings it back.
+    # The files, documents and code artifacts tables are not part of the application any more:
+    # their revisions bring them back.
     insert_file = (
         "INSERT INTO files (id, user_id, filename, description, data, mime_type, size_bytes, tags) "
         "VALUES (1, :owner, 'a.txt', 'd', 'hello', 'text/plain', 5, '{}')"
@@ -98,13 +90,16 @@ async def store_skill_rows_and_events(db: Any) -> dict[str, Any]:
         "INSERT INTO files (id, user_id, filename, description, data, mime_type, size_bytes, tags) "
         "VALUES (1, :owner, 'a.txt', 'd', 'hello', 'text/plain', 5, '[]')"
     )
+    dialect = "postgresql" if is_postgres(db) else "sqlite"
     statements = [
+        INSERT_DOCUMENT[dialect],
+        INSERT_CODE_ARTIFACT[dialect],
         insert_file,
         insert_skill,
         "INSERT INTO memory_skill_association (memory_id, skill_id) VALUES (:memory, 1)",
         "INSERT INTO skill_file_association (skill_id, file_id) VALUES (1, 1)",
-        "INSERT INTO skill_code_artifact_association (skill_id, code_artifact_id) VALUES (1, :code_artifact)",
-        "INSERT INTO skill_document_association (skill_id, document_id) VALUES (1, :document)",
+        "INSERT INTO skill_code_artifact_association (skill_id, code_artifact_id) VALUES (1, 1)",
+        "INSERT INTO skill_document_association (skill_id, document_id) VALUES (1, 1)",
     ]
     event = text(
         "INSERT INTO activity_log (user_id, entity_type, entity_id, action, snapshot, actor, created_at) "
@@ -115,7 +110,7 @@ async def store_skill_rows_and_events(db: Any) -> dict[str, Any]:
             await session.execute(text(statement), parameters)
         for entity_type in ("skill", *KEPT_EVENT_TYPES):
             await session.execute(event, {"owner": str(owner), "entity_type": entity_type})
-    return {"owner": str(owner), "memory": memory.id, "document": document.id}
+    return {"owner": str(owner), "memory": memory.id}
 
 
 async def create_vec_skills(db: Any) -> None:
@@ -156,10 +151,8 @@ class TestSkillsRemoval:
                 text("SELECT name FROM projects WHERE user_id = :owner"), {"owner": kept["owner"]},
             )
             memories = await session.execute(text("SELECT id FROM memories WHERE id = :id"), {"id": kept["memory"]})
-            documents = await session.execute(text("SELECT id FROM documents WHERE id = :id"), {"id": kept["document"]})
             assert [row[0] for row in projects] == ["Kept"]
             assert [row[0] for row in memories] == [kept["memory"]]
-            assert [row[0] for row in documents] == [kept["document"]]
 
     async def test_downgrade_recreates_the_schema_the_earlier_revisions_produce(self, skills_db):
         config = alembic_config()

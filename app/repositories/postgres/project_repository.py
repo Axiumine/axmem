@@ -30,7 +30,7 @@ class PostgresProjectRepository:
     """Repository for Project entity operations in Postgres
 
     Handles CRUD operations for projects with PostgreSQL backend.
-    Projects organize memories, code artifacts, and documents by context.
+    Projects organize memories by context.
     Simpler than MemoryRepository - no embeddings, auto-linking, or lifecycle.
     """
 
@@ -292,8 +292,8 @@ class PostgresProjectRepository:
     async def delete_project(self, user_id: UUID, project_id: int) -> bool:
         """Delete project
 
-        Removes project metadata. Linked entities (memories, code artifacts,
-        documents) are preserved - only associations are removed (CASCADE).
+        Removes project metadata. Linked memories and entities are
+        preserved - only associations are removed (CASCADE).
 
         Args:
             user_id: User ID for RLS

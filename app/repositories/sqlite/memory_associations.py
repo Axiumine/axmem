@@ -1,4 +1,4 @@
-"""Association of a memory with projects, code artifacts and documents"""
+"""Association of a memory with projects"""
 from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
@@ -9,8 +9,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.exceptions import AssociationNotFoundError
 from app.models.memory_models import MemoryCreate, MemoryUpdate
 from app.repositories.sqlite.sqlite_tables import (
-    CodeArtifactsTable,
-    DocumentsTable,
     MemoryTable,
     ProjectsTable,
 )
@@ -28,8 +26,6 @@ class MemoryAssociation:
 
 MEMORY_ASSOCIATIONS = (
     MemoryAssociation("project_ids", "projects", ProjectsTable, "Projects"),
-    MemoryAssociation("code_artifact_ids", "code_artifacts", CodeArtifactsTable, "Code artifacts"),
-    MemoryAssociation("document_ids", "documents", DocumentsTable, "Documents"),
 )
 
 

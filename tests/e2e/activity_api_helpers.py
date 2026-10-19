@@ -29,28 +29,6 @@ async def create_project(http_client, name, description):
     })
 
 
-async def create_document(http_client, title, description, content, tags):
-    """POST a text document and return the raw response."""
-    return await http_client.post("/api/v1/documents", json={
-        "title": title,
-        "description": description,
-        "content": content,
-        "document_type": "text",
-        "tags": tags,
-    })
-
-
-async def create_code_artifact(http_client, title, description, code, tags):
-    """POST a python code artifact and return the raw response."""
-    return await http_client.post("/api/v1/code-artifacts", json={
-        "title": title,
-        "description": description,
-        "code": code,
-        "language": "python",
-        "tags": tags,
-    })
-
-
 async def create_entity(http_client, name, entity_type="Individual", **extra):
     """POST an entity (test tag included) and return the raw response."""
     return await http_client.post("/api/v1/entities", json={

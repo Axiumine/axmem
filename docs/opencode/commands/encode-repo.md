@@ -87,14 +87,14 @@ Report gap analysis before proceeding.
 
 ## Memory Targets by Project Profile
 
-| Profile | Phase 1 | Phase 2 | Phase 2B | Phase 3 | Phase 4 | Phase 5 | Phase 6 | Total Memories |
-|---------|---------|---------|----------|---------|---------|---------|---------|----------------|
-| Small Simple | 3-5 | 3-5 | 3+ entities | 3-5 | 2-4 | 0-3 | 3+ artifacts | 15-27 |
-| Small Complex | 5-7 | 5-8 | 5+ entities | 5-8 | 4-6 | 0-5 | 3-5 artifacts | 26-42 |
-| Medium Standard | 5-10 | 10-15 | 8+ entities | 8-12 | 5-10 | 0-8 | 5-10 artifacts | 35-60 |
-| Large | 8-12 | 15-20 | 12+ entities | 12-18 | 10-15 | 0-12 | 8-15 artifacts | 60-100 |
+| Profile | Phase 1 | Phase 2 | Phase 2B | Phase 3 | Phase 4 | Phase 5 | Total Memories |
+|---------|---------|---------|----------|---------|---------|---------|----------------|
+| Small Simple | 3-5 | 3-5 | 3+ entities | 3-5 | 2-4 | 0-3 | 15-27 |
+| Small Complex | 5-7 | 5-8 | 5+ entities | 5-8 | 4-6 | 0-5 | 26-42 |
+| Medium Standard | 5-10 | 10-15 | 8+ entities | 8-12 | 5-10 | 0-8 | 35-60 |
+| Large | 8-12 | 15-20 | 12+ entities | 12-18 | 10-15 | 0-12 | 60-100 |
 
-**Note**: Phase 5 shows "0-X" because decision memories are ONLY created when explicit documentation exists. Phase 2B and Phase 6 are **MANDATORY** with minimum counts.
+**Note**: Phase 5 shows "0-X" because decision memories are ONLY created when explicit documentation exists. Phase 2B is **MANDATORY** with a minimum count.
 
 ---
 
@@ -105,7 +105,7 @@ Report gap analysis before proceeding.
 After each phase, report:
 ```
 Phase [N] Complete:
-- Created: [X] memories, [Y] entities, [Z] artifacts
+- Created: [X] memories, [Y] entities
 - Minimum required: [targets from table above]
 - Status: ✅ Met / ❌ Not met (explain gaps)
 ```
@@ -119,7 +119,6 @@ Phase [N] Complete:
 | 2: Architecture | Layer memories | 1 memory per identified layer |
 | **2B: Entities** | **3+ entities** | **Entity count met** |
 | 3: Patterns | 3+ pattern memories | Pattern count met |
-| **6: Artifacts** | **3+ code artifacts** | **Artifact count met** |
 
 ### Conditional Phases (Skip if criteria not met)
 
@@ -127,7 +126,6 @@ Phase [N] Complete:
 |-------|-----------|--------------|
 | 4: Features | Features exist | "No distinct features beyond core architecture" |
 | 5: Decisions | Explicit documentation exists | "No explicit decision documentation found" |
-| 7: Documents | Content >400 words needed | "No long-form documentation needed"
 
 ---
 
@@ -469,110 +467,6 @@ Phase 5 Complete:
 
 ---
 
-## Phase 6: Code Artifacts (MANDATORY, minimum 3)
-
-**Purpose**: Store reusable code patterns that enable an agent to understand HOW the codebase works, not just WHAT exists.
-
-**THIS PHASE IS MANDATORY** - Minimum 3 artifacts for any project.
-
-### Why Code Artifacts Matter
-
-Without artifacts, an agent knows components exist but cannot:
-- Write code that integrates with existing patterns
-- Understand implementation details
-- See actual syntax and conventions used
-- Learn project-specific idioms
-
-### Minimum Artifact Requirements
-
-| Project Size | Minimum Artifacts | Recommended |
-|--------------|-------------------|-------------|
-| Small | 3 | 3-5 |
-| Medium | 5 | 5-10 |
-| Large | 8 | 8-15 |
-
-### What to Capture as Artifacts
-
-1. **Configuration Patterns** - How settings/config is loaded
-2. **Database Connection** - Connection pooling, session management
-3. **API Route Patterns** - Standard endpoint structure
-4. **Error Handling** - Custom exception handling
-5. **Authentication Flow** - Token validation, middleware
-6. **Testing Patterns** - Fixture setup, mocking patterns
-7. **Logging/Monitoring** - Standard logging setup
-8. **Background Tasks** - Worker/job patterns
-
-### Artifact Template
-
-```
-execute_forgetful_tool("create_code_artifact", {
-  "title": "[Project] - [Pattern Name]",
-  "description": "What it does, when to use, key integration points",
-  "code": "<actual implementation code>",
-  "language": "python",
-  "tags": ["pattern-type", "layer"],
-  "project_id": <project_id>
-})
-```
-
-### Link Artifacts to Memories
-
-After creating artifacts, link them to related memories:
-
-```
-execute_forgetful_tool("update_memory", {
-  "memory_id": <architecture_memory_id>,
-  "code_artifact_ids": [<artifact_id>]
-})
-```
-
-**Checkpoint**:
-```
-Phase 6 Complete:
-- Code artifacts created: [count]
-- Categories covered: [list]
-- Minimum required: 3 artifacts
-- Status: ✅ Met / ❌ Not met
-```
-
----
-
-## Phase 7: Documents (as needed)
-
-For long-form content (>400 words), create documents with atomic memory entry points:
-
-```
-execute_forgetful_tool("create_document", {
-  "title": "[Project] - [Document Topic]",
-  "description": "Overview and purpose",
-  "content": "<full documentation>",
-  "document_type": "markdown",
-  "tags": ["documentation", "topic-area"],
-  "project_id": <project_id>
-})
-```
-
-After creating a document:
-1. Create 3-5 atomic memories as entry points
-2. Link memories to document via `document_ids`
-
-### When to Create Documents
-
-- Architecture overview (comprehensive)
-- API reference
-- Deployment guide
-- Symbol/Class index
-
-**Checkpoint**:
-```
-Phase 7 Complete:
-- Documents created: [count]
-- Entry point memories: [count]
-- Status: ✅ Complete / ⏭️ Skipped (not needed)
-```
-
----
-
 ## Execution Guidelines
 
 ### Mandatory Phases (CANNOT SKIP)
@@ -584,7 +478,6 @@ Phase 7 Complete:
 | 2: Architecture | Layer memories | 1 per identified layer |
 | **2B: Entities** | **3+ entities** | **Entity count met** |
 | 3: Patterns | 3+ memories | Pattern count met |
-| **6: Artifacts** | **3+ artifacts** | **Artifact count met** |
 
 ### Conditional Phases (Skip if criteria not met)
 
@@ -592,15 +485,14 @@ Phase 7 Complete:
 |-------|-----------------|--------------|
 | 4: Features | Distinct features exist | "No distinct features beyond core architecture" |
 | 5: Decisions | Explicit docs exist | "No explicit decision documentation found" |
-| 7: Documents | Long-form needed | "No long-form documentation needed" |
 
 ### Execution Rules
 
-1. **Execute phases in order**: 0 → 1 → 2 → 2B → 3 → 4 → 5 → 6 → 7
+1. **Execute phases in order**: 0 → 1 → 2 → 2B → 3 → 4 → 5
 2. **Check gates**: Each mandatory phase must meet minimums before proceeding
 3. **Report checkpoints**: Use checkpoint format after each phase
 4. **Skip conditionals**: Only if skip criteria explicitly met
-5. **Never skip mandatories**: Phases 0, 1, 2, 2B, 3, 6 must always run
+5. **Never skip mandatories**: Phases 0, 1, 2, 2B, 3 must always run
 6. **Update outdated memories** as discovered
 7. **Mark obsolete** memories that reference removed code
 8. **Link new memories** to existing related memories
@@ -652,15 +544,13 @@ When encoding is complete, provide a summary in this format:
 ```
 # [Project] Encoding Complete
 
-## Artifacts Created
+## Items Created
 
 | Type | Count | Minimum | Status |
 |------|-------|---------|--------|
 | Memories | [X] | [per profile] | ✅/❌ |
 | Entities | [Y] | 3+ | ✅/❌ |
 | Relationships | [Z] | - | - |
-| Code Artifacts | [W] | 3+ | ✅/❌ |
-| Documents | [V] | 0 | ✅ |
 
 ## Phase Completion
 
@@ -673,8 +563,6 @@ When encoding is complete, provide a summary in this format:
 | 3: Patterns | ✅ | [X] memories |
 | 4: Features | ✅/⏭️ | [X] memories |
 | 5: Decisions | ✅/⏭️ | [X] memories |
-| 6: Artifacts | ✅/❌ | [X] artifacts |
-| 7: Documents | ✅/⏭️ | [X] documents |
 
 ## Entity Graph Summary
 
@@ -700,7 +588,7 @@ Relationships:
 
 After each phase, report:
 - Checkpoint status (using checkpoint format)
-- Memories/entities/artifacts created
+- Memories and entities created
 - Gaps remaining
 - Next phase to execute
 

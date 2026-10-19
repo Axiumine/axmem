@@ -34,8 +34,8 @@ class ProjectService:
     """Service layer for project operations
 
     Orchestrates business logic for project management including creation,
-    updates, filtering, and lifecycle management. Projects organize memories,
-    code artifacts, and documents by context.
+    updates, filtering, and lifecycle management. Projects organize memories
+    by context.
 
     This service is simpler than MemoryService - primarily CRUD operations
     with filtering. No embeddings, auto-linking, or token budget management.
@@ -343,8 +343,8 @@ class ProjectService:
     async def delete_project(self, user_id: UUID, project_id: int) -> bool:
         """Delete project
 
-        Removes project metadata. Linked entities (memories, code artifacts,
-        documents) are preserved - only associations are removed.
+        Removes project metadata. Linked memories and entities are
+        preserved - only associations are removed.
 
         Args:
             user_id: User ID for RLS

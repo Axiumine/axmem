@@ -3,8 +3,8 @@ name: forgetful-remember
 description: >-
   Remember knowledge worth keeping — a decision made, a solution found, a preference stated,
   a pattern confirmed. Use when work surfaces something future sessions will need, or the
-  user asks to remember something. Routes content to the right store (memory, document, code
-  artifact, entity, file) and enforces query-before-create.
+  user asks to remember something. Routes content to the right store (memory or entity) and
+  enforces query-before-create.
 license: MIT
 tags: [memory, capture, curation, knowledge-management]
 allowed-tools:
@@ -37,8 +37,7 @@ Get any operation's schema at runtime: `how_to_use_forgetful_tool` (MCP) or
 | The content is... | Store as | Where |
 |---|---|---|
 | A single fact, decision, or preference | Memory | this skill, step 4 |
-| Detailed analysis or a guide (>300 words) | Document + entry memories | this skill, step 4 |
-| Reusable code | Code artifact | this skill, step 4 |
+| Detailed analysis or a guide (>300 words) | Several linked atomic memories | this skill, step 4 |
 | A person, org, device, product, component | Entity | `forgetful-entities` |
 | A goal decomposing into steps / a work item | Plan / Task | feature-flagged; check discovery |
 
@@ -91,10 +90,9 @@ overview" fails the test — split it.
 - Stamp provenance when derived from source material: `source_repo`, `source_files`,
   `source_url`.
 
-Long-form variant: content over ~300 words becomes `create_document`, then 3–7 atomic
-memories as entry points, each linked to the document via `document_ids`. Reusable code
-becomes `create_code_artifact`, with a memory pointing at it when the *decision* behind the
-code matters too.
+Long-form variant: content over ~300 words becomes 3–7 atomic memories, one per decision,
+fact or pattern, tied together with `link_memories`. Reusable code is stored in a memory too:
+name the language and the purpose in the title, and keep the snippet short.
 
 Done when: the object exists, atomic, scored, and provenance-stamped where applicable.
 

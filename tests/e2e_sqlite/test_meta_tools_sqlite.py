@@ -459,13 +459,11 @@ async def test_discover_all_categories_e2e(mcp_client):
     assert result.data is not None
     categories = result.data["categories_available"]
 
-    # Should have all 6 categories
+    # Should have all 4 categories
     assert "user" in categories
     assert "memory" in categories
     assert "project" in categories
-    assert "code_artifact" in categories
-    assert "document" in categories
     assert "entity" in categories
 
     # Should have significant number of total tools
-    assert result.data["total_count"] >= 34  # At least 34 tools total
+    assert result.data["total_count"] >= 33  # At least 33 tools total

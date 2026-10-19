@@ -11,8 +11,6 @@ import pytest
 
 from app.config.settings import settings
 from app.models.activity_models import ActionType, EntityType
-from app.models.code_artifact_models import CodeArtifactCreate
-from app.models.document_models import DocumentCreate
 from app.models.entity_models import (
     EntityCreate,
     EntityRelationshipCreate,
@@ -151,112 +149,6 @@ async def test_project_list_emits_queried_event(test_project_service_with_event_
     assert event.entity_type == EntityType.PROJECT
     assert event.action == ActionType.QUERIED
     assert event.entity_id == 0  # Query spans multiple
-
-
-# ============================================================================
-# Document Service Activity Event Tests
-# ============================================================================
-
-
-@pytest.mark.asyncio
-async def test_document_create_emits_event(test_document_service_with_event_bus):
-    """create_document() emits CREATED event."""
-    service, event_bus = test_document_service_with_event_bus
-    user_id = uuid4()
-
-    doc_data = DocumentCreate(
-        title="Test Document",
-        description="Test description",
-        content="Document content",
-        document_type="text",
-        tags=["test"],
-    )
-    doc = await service.create_document(user_id, doc_data)
-
-    assert len(event_bus.collected_events) == 1
-    event = event_bus.collected_events[0]
-    assert event.entity_type == EntityType.DOCUMENT
-    assert event.entity_id == doc.id
-    assert event.action == ActionType.CREATED
-
-
-@pytest.mark.asyncio
-async def test_document_delete_emits_event(test_document_service_with_event_bus):
-    """delete_document() emits DELETED event."""
-    service, event_bus = test_document_service_with_event_bus
-    user_id = uuid4()
-
-    # Create document
-    doc_data = DocumentCreate(
-        title="To Delete",
-        description="Test",
-        content="Content",
-        document_type="text",
-        tags=["test"],
-    )
-    doc = await service.create_document(user_id, doc_data)
-    event_bus.collected_events.clear()
-
-    # Delete
-    await service.delete_document(user_id, doc.id)
-
-    assert len(event_bus.collected_events) == 1
-    event = event_bus.collected_events[0]
-    assert event.entity_type == EntityType.DOCUMENT
-    assert event.action == ActionType.DELETED
-
-
-# ============================================================================
-# Code Artifact Service Activity Event Tests
-# ============================================================================
-
-
-@pytest.mark.asyncio
-async def test_code_artifact_create_emits_event(test_code_artifact_service_with_event_bus):
-    """create_code_artifact() emits CREATED event."""
-    service, event_bus = test_code_artifact_service_with_event_bus
-    user_id = uuid4()
-
-    artifact_data = CodeArtifactCreate(
-        title="Test Artifact",
-        description="Test description",
-        code="def test(): pass",
-        language="python",
-        tags=["test"],
-    )
-    artifact = await service.create_code_artifact(user_id, artifact_data)
-
-    assert len(event_bus.collected_events) == 1
-    event = event_bus.collected_events[0]
-    assert event.entity_type == EntityType.CODE_ARTIFACT
-    assert event.entity_id == artifact.id
-    assert event.action == ActionType.CREATED
-
-
-@pytest.mark.asyncio
-async def test_code_artifact_delete_emits_event(test_code_artifact_service_with_event_bus):
-    """delete_code_artifact() emits DELETED event."""
-    service, event_bus = test_code_artifact_service_with_event_bus
-    user_id = uuid4()
-
-    # Create artifact
-    artifact_data = CodeArtifactCreate(
-        title="To Delete",
-        description="Test",
-        code="print('hello')",
-        language="python",
-        tags=["test"],
-    )
-    artifact = await service.create_code_artifact(user_id, artifact_data)
-    event_bus.collected_events.clear()
-
-    # Delete
-    await service.delete_code_artifact(user_id, artifact.id)
-
-    assert len(event_bus.collected_events) == 1
-    event = event_bus.collected_events[0]
-    assert event.entity_type == EntityType.CODE_ARTIFACT
-    assert event.action == ActionType.DELETED
 
 
 # ============================================================================

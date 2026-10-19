@@ -44,8 +44,6 @@ from app.models.user_models import UserCreate
 from app.repositories.embeddings import embedding_adapter as embedding_module
 from app.repositories.embeddings import reranker_adapter as reranker_module
 from app.repositories.postgres.postgres_tables import (
-    CodeArtifactsTable,
-    DocumentsTable,
     EntitiesTable,
     EntityRelationshipsTable,
 )
@@ -331,8 +329,6 @@ def test_provenance_default_at_the_cap_is_accepted(monkeypatch, setting):
 # ============================================================================
 
 POSTGRES_COLUMNS = {
-    "CODE_ARTIFACT_TITLE_MAX_LENGTH": (CodeArtifactsTable, "title"),
-    "DOCUMENT_TITLE_MAX_LENGTH": (DocumentsTable, "title"),
     "ENTITY_NAME_MAX_LENGTH": (EntitiesTable, "name"),
     "ENTITY_TYPE_MAX_LENGTH": (EntitiesTable, "custom_type"),
     "ENTITY_RELATIONSHIP_TYPE_MAX_LENGTH": (EntityRelationshipsTable, "relationship_type"),
@@ -371,29 +367,29 @@ def test_clamp_warning_reaches_stderr_at_real_startup(tmp_path):
         "PYTHONPATH": str(Path(__file__).resolve().parents[2]),
         "XDG_CONFIG_HOME": str(tmp_path / "config"),
         "DATABASE": "Postgres",
-        "DOCUMENT_TITLE_MAX_LENGTH": "1000",
+        "ENTITY_NAME_MAX_LENGTH": "1000",
     }
 
     result = subprocess.run(
-        [sys.executable, "-c", "from app.config.settings import settings; print(settings.DOCUMENT_TITLE_MAX_LENGTH)"],
+        [sys.executable, "-c", "from app.config.settings import settings; print(settings.ENTITY_NAME_MAX_LENGTH)"],
         cwd=tmp_path, env=env, capture_output=True, text=True, check=True,
     )
 
-    assert result.stdout.strip() == "500"
-    assert "DOCUMENT_TITLE_MAX_LENGTH" in result.stderr
+    assert result.stdout.strip() == "200"
+    assert "ENTITY_NAME_MAX_LENGTH" in result.stderr
 
 
 def test_postgres_keeps_max_lengths_within_the_column_width(monkeypatch):
-    loaded = _settings(monkeypatch, DATABASE="Postgres", DOCUMENT_TITLE_MAX_LENGTH="120")
+    loaded = _settings(monkeypatch, DATABASE="Postgres", ENTITY_NAME_MAX_LENGTH="120")
 
-    assert loaded.DOCUMENT_TITLE_MAX_LENGTH == 120
+    assert loaded.ENTITY_NAME_MAX_LENGTH == 120
 
 
 def test_sqlite_does_not_clamp_max_lengths(monkeypatch):
     """SQLite does not enforce VARCHAR length, so the tunable value stays authoritative."""
-    loaded = _settings(monkeypatch, DATABASE="SQLite", DOCUMENT_TITLE_MAX_LENGTH="1000")
+    loaded = _settings(monkeypatch, DATABASE="SQLite", ENTITY_NAME_MAX_LENGTH="1000")
 
-    assert loaded.DOCUMENT_TITLE_MAX_LENGTH == 1000
+    assert loaded.ENTITY_NAME_MAX_LENGTH == 1000
 
 
 # ============================================================================

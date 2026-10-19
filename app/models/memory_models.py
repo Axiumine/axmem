@@ -118,8 +118,8 @@ class MemoryCreate(BaseModel):
     
     Follows atomic memory principles (Zettlekasten)
     - ONE concept per memory (easily titled, understood at first glance)
-    - for detailed analysis > 300 words, use create_document instead and
-    create a smaller memory linking to the document
+    - for detailed analysis > 300 words, split it into several atomic memories
+    and link them
 
     Examples:
         Good (atomic): "TTS engine preferences: XTTS-v2"
@@ -131,7 +131,7 @@ class MemoryCreate(BaseModel):
     )
     content: _Content = Field(
         ...,
-        description="ONE concept, self-contained (max ~400 words). If >300 words, use create_document and extract atomic memories instead.",
+        description="ONE concept, self-contained (max ~400 words). If >300 words, split it into several atomic memories.",
     )
     context: str = Field(
         ...,
@@ -157,14 +157,6 @@ class MemoryCreate(BaseModel):
     project_ids: list[int] | None = Field(
         default=None,
         description="Link to project(s) for scoped queries. Enables 'show memories for Project X' filtering.",
-    )
-    code_artifact_ids: list[int] | None = Field(
-        default=None,
-        description="Code artifact IDs to link (create artifacts first). Links implementation examples to this memory.",
-    )
-    document_ids: list[int] | None = Field(
-        default=None,
-        description="Document IDs to link (create documents first). Links detailed analysis/narrative to this atomic memory.",
     )
 
     # Provenance tracking fields (optional) - for tracing AI-generated content
@@ -265,14 +257,6 @@ class MemoryUpdate(BaseModel):
         None,
         description="New project associations. Replaces existing if provided, unchanged if null.",
     )
-    code_artifact_ids: list[int] | None = Field(
-        None,
-        description="New code artifact links. Replaces existing if provided, unchanged if null.",
-    )
-    document_ids: list[int] | None = Field(
-        None,
-        description="New document links. Replaces existing if provided, unchanged if null.",
-    )
 
     # Provenance tracking fields (optional) - for tracing AI-generated content
     source_repo: str | None = Field(
@@ -366,8 +350,6 @@ class Memory(MemoryCreate):
     updated_at: datetime = Field(default_factory=lambda: datetime.now(tz=UTC))
     project_ids: list[int] = Field(default_factory=list)
     linked_memory_ids: list[int] = Field(default_factory=list)
-    code_artifact_ids: list[int] = Field(default_factory=list, description="Linked code artifact IDs")
-    document_ids: list[int] = Field(default_factory=list, description="Linked document IDs")
 
     # Lifecycle management fields
     is_obsolete: bool = Field(default=False, description="Whether this memory has been marked obsolete")
@@ -432,8 +414,6 @@ class MemoryCreateResponse(BaseModel):
     title: str
     linked_memory_ids: list[int] = Field(default_factory=list)
     project_ids: list[int] = Field(default_factory=list)
-    code_artifact_ids: list[int] = Field(default_factory=list)
-    document_ids: list[int] = Field(default_factory=list)
     similar_memories: list[MemorySummary] = Field(
         default_factory=list,
         description="Summaries of similar memories that were auto-linked for review",

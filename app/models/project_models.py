@@ -35,8 +35,8 @@ class ProjectCreate(BaseModel):
     """Request model for creating a project
 
     Projects organize memories by context, enabling scoped queries like
-    "show memories for Project X". Each project tracks memories, code artifacts,
-    and documents related to a specific initiative, codebase, or area of work.
+    "show memories for Project X". Each project tracks the memories
+    related to a specific initiative, codebase, or area of work.
 
     Examples:
         Development project: name="forgetful", type="development", description="MIT-licensed memory service with A-MEM principles"

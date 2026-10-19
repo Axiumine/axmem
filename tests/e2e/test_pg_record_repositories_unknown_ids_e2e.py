@@ -2,7 +2,7 @@
 
 The services check existence before they call a repository, but the repositories are a
 contract of their own: a concurrent delete can still remove a record between the check and
-the write. For code artifacts, documents, projects and users the repository itself
+the write. For projects and users the repository itself
 reports an unknown id with the documented exception or return value.
 """
 from uuid import uuid4
@@ -11,14 +11,8 @@ import pytest
 import pytest_asyncio
 
 from app.exceptions import NotFoundError
-from app.models.code_artifact_models import CodeArtifactUpdate
-from app.models.document_models import DocumentUpdate
 from app.models.project_models import ProjectCreate, ProjectType, ProjectUpdate
 from app.models.user_models import UserCreate, UserUpdate
-from app.repositories.postgres.code_artifact_repository import (
-    PostgresCodeArtifactRepository,
-)
-from app.repositories.postgres.document_repository import PostgresDocumentRepository
 from app.repositories.postgres.project_repository import PostgresProjectRepository
 from app.repositories.postgres.user_repository import PostgresUserRepository
 
@@ -38,30 +32,6 @@ async def owner(user_repo):
         UserCreate(external_id="unknown-ids-e2e", name="Owner", email="owner@example.com"),
     )
     return user.id
-
-
-@pytest.mark.parametrize(
-    ("repository_class", "method", "arguments", "message"),
-    [
-        pytest.param(
-            PostgresCodeArtifactRepository, "update_code_artifact",
-            {"artifact_id": UNKNOWN_ID, "artifact_data": CodeArtifactUpdate(title="renamed")},
-            f"Code artifact {UNKNOWN_ID} not found", id="code-artifact",
-        ),
-        pytest.param(
-            PostgresDocumentRepository, "update_document",
-            {"document_id": UNKNOWN_ID, "document_data": DocumentUpdate(title="renamed")},
-            f"Document {UNKNOWN_ID} not found", id="document",
-        ),
-    ],
-)
-async def test_updating_an_unknown_record_raises_not_found(
-    db_adapter, owner, repository_class, method, arguments, message,
-):
-    repository = repository_class(db_adapter)
-
-    with pytest.raises(NotFoundError, match=message):
-        await getattr(repository, method)(user_id=owner, **arguments)
 
 
 async def test_project_update_without_fields_returns_the_stored_project(db_adapter, owner):

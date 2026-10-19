@@ -1,6 +1,6 @@
 """PostgreSQL E2E coverage for update_memory consistency
 
-Covers document_ids on every memory read path, replacing document links through PUT, and
+Covers project_ids on every memory read path, replacing project links through PUT, and
 how update_memory uses pooled connections while an embedding is being generated.
 """
 
@@ -33,14 +33,13 @@ CREATE_BODY = {
 }
 
 
-async def _create_document(http_client, title):
+async def _create_project(http_client, name):
     response = await http_client.post(
-        "/api/v1/documents",
+        "/api/v1/projects",
         json={
-            "title": title,
-            "description": f"Document {title}",
-            "content": "# Steps\n1. Do the thing",
-            "tags": ["test"],
+            "name": name,
+            "description": f"Project {name}",
+            "project_type": "development",
         },
     )
     assert response.status_code == 201, response.text
@@ -60,68 +59,68 @@ async def _get_memory(http_client, memory_id):
 
 
 # ============================================================================
-# document_ids round trip
+# project_ids round trip
 # ============================================================================
 
 
 @pytest.mark.e2e
-async def test_get_memory_reports_linked_document_ids(http_client):
-    document_id = await _create_document(http_client, "pg-get-doc")
-    memory_id = await _create_memory(http_client, document_ids=[document_id])
+async def test_get_memory_reports_linked_project_ids(http_client):
+    project_id = await _create_project(http_client, "pg-get-project")
+    memory_id = await _create_memory(http_client, project_ids=[project_id])
 
-    assert (await _get_memory(http_client, memory_id))["document_ids"] == [document_id]
+    assert (await _get_memory(http_client, memory_id))["project_ids"] == [project_id]
 
 
 @pytest.mark.e2e
-async def test_put_replaces_and_clears_document_ids(http_client):
-    first = await _create_document(http_client, "pg-first-doc")
-    second = await _create_document(http_client, "pg-second-doc")
-    memory_id = await _create_memory(http_client, document_ids=[first])
+async def test_put_replaces_and_clears_project_ids(http_client):
+    first = await _create_project(http_client, "pg-first-project")
+    second = await _create_project(http_client, "pg-second-project")
+    memory_id = await _create_memory(http_client, project_ids=[first])
 
-    replaced = await http_client.put(f"/api/v1/memories/{memory_id}", json={"document_ids": [second]})
+    replaced = await http_client.put(f"/api/v1/memories/{memory_id}", json={"project_ids": [second]})
     assert replaced.status_code == 200, replaced.text
-    assert replaced.json()["document_ids"] == [second]
-    assert (await _get_memory(http_client, memory_id))["document_ids"] == [second]
+    assert replaced.json()["project_ids"] == [second]
+    assert (await _get_memory(http_client, memory_id))["project_ids"] == [second]
 
-    cleared = await http_client.put(f"/api/v1/memories/{memory_id}", json={"document_ids": []})
+    cleared = await http_client.put(f"/api/v1/memories/{memory_id}", json={"project_ids": []})
     assert cleared.status_code == 200, cleared.text
-    assert cleared.json()["document_ids"] == []
-    assert (await _get_memory(http_client, memory_id))["document_ids"] == []
+    assert cleared.json()["project_ids"] == []
+    assert (await _get_memory(http_client, memory_id))["project_ids"] == []
 
 
 @pytest.mark.e2e
-async def test_put_other_field_keeps_document_links(http_client):
-    document_id = await _create_document(http_client, "pg-kept-doc")
-    memory_id = await _create_memory(http_client, document_ids=[document_id])
+async def test_put_other_field_keeps_project_links(http_client):
+    project_id = await _create_project(http_client, "pg-kept-project")
+    memory_id = await _create_memory(http_client, project_ids=[project_id])
 
     response = await http_client.put(f"/api/v1/memories/{memory_id}", json={"title": "Renamed"})
 
     assert response.status_code == 200, response.text
-    assert response.json()["document_ids"] == [document_id]
-    assert (await _get_memory(http_client, memory_id))["document_ids"] == [document_id]
+    assert response.json()["project_ids"] == [project_id]
+    assert (await _get_memory(http_client, memory_id))["project_ids"] == [project_id]
 
 
 @pytest.mark.e2e
-async def test_put_unknown_document_id_is_not_found_and_keeps_links(http_client):
-    document_id = await _create_document(http_client, "pg-survivor-doc")
-    memory_id = await _create_memory(http_client, document_ids=[document_id])
+async def test_put_unknown_project_id_is_not_found_and_keeps_links(http_client):
+    project_id = await _create_project(http_client, "pg-survivor-project")
+    memory_id = await _create_memory(http_client, project_ids=[project_id])
 
     response = await http_client.put(
-        f"/api/v1/memories/{memory_id}", json={"document_ids": [document_id + 1000]},
+        f"/api/v1/memories/{memory_id}", json={"project_ids": [project_id + 1000]},
     )
 
     assert response.status_code == 404, response.text
-    assert (await _get_memory(http_client, memory_id))["document_ids"] == [document_id]
+    assert (await _get_memory(http_client, memory_id))["project_ids"] == [project_id]
 
 
 @pytest.mark.e2e
-async def test_search_and_linked_memories_report_document_ids(http_client):
-    document_id = await _create_document(http_client, "pg-search-doc")
-    documented_id = await _create_memory(
+async def test_search_and_linked_memories_report_project_ids(http_client):
+    project_id = await _create_project(http_client, "pg-search-project")
+    grouped_id = await _create_memory(
         http_client,
-        title="Documented memory about espresso machines",
+        title="Grouped memory about espresso machines",
         content="Descaling an espresso machine every three months keeps it healthy.",
-        document_ids=[document_id],
+        project_ids=[project_id],
     )
     primary_id = await _create_memory(
         http_client,
@@ -129,7 +128,7 @@ async def test_search_and_linked_memories_report_document_ids(http_client):
         content="Waterproof boots with a stiff sole are best for volcano trails.",
     )
     linked = await http_client.post(
-        f"/api/v1/memories/{primary_id}/links", json={"related_ids": [documented_id]},
+        f"/api/v1/memories/{primary_id}/links", json={"related_ids": [grouped_id]},
     )
     assert linked.status_code == 200, linked.text
 
@@ -146,8 +145,8 @@ async def test_search_and_linked_memories_report_document_ids(http_client):
     assert response.status_code == 200, response.text
     body = response.json()
     assert [m["id"] for m in body["primary_memories"]] == [primary_id]
-    assert [(lm["memory"]["id"], lm["memory"]["document_ids"]) for lm in body["linked_memories"]] == [
-        (documented_id, [document_id]),
+    assert [(lm["memory"]["id"], lm["memory"]["project_ids"]) for lm in body["linked_memories"]] == [
+        (grouped_id, [project_id]),
     ]
 
     primary_hit = await http_client.post(
@@ -160,8 +159,8 @@ async def test_search_and_linked_memories_report_document_ids(http_client):
         },
     )
     assert primary_hit.status_code == 200, primary_hit.text
-    assert [(m["id"], m["document_ids"]) for m in primary_hit.json()["primary_memories"]] == [
-        (documented_id, [document_id]),
+    assert [(m["id"], m["project_ids"]) for m in primary_hit.json()["primary_memories"]] == [
+        (grouped_id, [project_id]),
     ]
 
 

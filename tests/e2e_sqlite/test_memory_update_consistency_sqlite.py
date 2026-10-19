@@ -1,6 +1,6 @@
 """E2E tests (SQLite) for update_memory consistency
 
-Covers REST null handling, document_ids round-tripping on every read path, and the
+Covers REST null handling, project_ids round-tripping on every read path, and the
 embedding written by update_memory.
 """
 import asyncio
@@ -76,18 +76,17 @@ async def test_put_with_null_next_to_a_real_change_applies_only_the_change(http_
 
 
 # ============================================================================
-# document_ids round trip
+# project_ids round trip
 # ============================================================================
 
 
-async def _create_document(http_client, title):
+async def _create_project(http_client, name):
     response = await http_client.post(
-        "/api/v1/documents",
+        "/api/v1/projects",
         json={
-            "title": title,
-            "description": f"Document {title}",
-            "content": "# Steps\n1. Do the thing",
-            "tags": ["test"],
+            "name": name,
+            "description": f"Project {name}",
+            "project_type": "development",
         },
     )
     assert response.status_code == 201, response.text
@@ -100,87 +99,87 @@ async def _get_memory(http_client, memory_id):
     return response.json()
 
 
-async def _listed_document_ids(http_client, memory_id):
+async def _listed_project_ids(http_client, memory_id):
     response = await http_client.get("/api/v1/memories")
     assert response.status_code == 200, response.text
-    return next(m["document_ids"] for m in response.json()["memories"] if m["id"] == memory_id)
+    return next(m["project_ids"] for m in response.json()["memories"] if m["id"] == memory_id)
 
 
-async def test_get_memory_reports_linked_document_ids(http_client):
-    document_id = await _create_document(http_client, "get-doc")
-    memory_id = await _create_memory(http_client, document_ids=[document_id])
+async def test_get_memory_reports_linked_project_ids(http_client):
+    project_id = await _create_project(http_client, "get-project")
+    memory_id = await _create_memory(http_client, project_ids=[project_id])
 
-    assert (await _get_memory(http_client, memory_id))["document_ids"] == [document_id]
-    assert await _listed_document_ids(http_client, memory_id) == [document_id]
+    assert (await _get_memory(http_client, memory_id))["project_ids"] == [project_id]
+    assert await _listed_project_ids(http_client, memory_id) == [project_id]
 
 
-async def test_put_replaces_document_ids(http_client):
-    first = await _create_document(http_client, "first-doc")
-    second = await _create_document(http_client, "second-doc")
-    memory_id = await _create_memory(http_client, document_ids=[first])
+async def test_put_replaces_project_ids(http_client):
+    first = await _create_project(http_client, "first-project")
+    second = await _create_project(http_client, "second-project")
+    memory_id = await _create_memory(http_client, project_ids=[first])
 
-    response = await http_client.put(f"/api/v1/memories/{memory_id}", json={"document_ids": [second]})
+    response = await http_client.put(f"/api/v1/memories/{memory_id}", json={"project_ids": [second]})
 
     assert response.status_code == 200, response.text
-    assert response.json()["document_ids"] == [second]
-    assert (await _get_memory(http_client, memory_id))["document_ids"] == [second]
-    assert await _listed_document_ids(http_client, memory_id) == [second]
+    assert response.json()["project_ids"] == [second]
+    assert (await _get_memory(http_client, memory_id))["project_ids"] == [second]
+    assert await _listed_project_ids(http_client, memory_id) == [second]
 
 
-async def test_put_links_documents_to_memory_without_any(http_client):
-    document_id = await _create_document(http_client, "late-doc")
+async def test_put_links_projects_to_memory_without_any(http_client):
+    project_id = await _create_project(http_client, "late-project")
     memory_id = await _create_memory(http_client)
 
-    response = await http_client.put(f"/api/v1/memories/{memory_id}", json={"document_ids": [document_id]})
+    response = await http_client.put(f"/api/v1/memories/{memory_id}", json={"project_ids": [project_id]})
 
     assert response.status_code == 200, response.text
-    assert response.json()["document_ids"] == [document_id]
-    assert (await _get_memory(http_client, memory_id))["document_ids"] == [document_id]
+    assert response.json()["project_ids"] == [project_id]
+    assert (await _get_memory(http_client, memory_id))["project_ids"] == [project_id]
 
 
-async def test_put_empty_document_ids_clears_links(http_client):
-    document_id = await _create_document(http_client, "cleared-doc")
-    memory_id = await _create_memory(http_client, document_ids=[document_id])
+async def test_put_empty_project_ids_clears_links(http_client):
+    project_id = await _create_project(http_client, "cleared-project")
+    memory_id = await _create_memory(http_client, project_ids=[project_id])
 
-    response = await http_client.put(f"/api/v1/memories/{memory_id}", json={"document_ids": []})
+    response = await http_client.put(f"/api/v1/memories/{memory_id}", json={"project_ids": []})
 
     assert response.status_code == 200, response.text
-    assert response.json()["document_ids"] == []
-    assert (await _get_memory(http_client, memory_id))["document_ids"] == []
-    assert await _listed_document_ids(http_client, memory_id) == []
+    assert response.json()["project_ids"] == []
+    assert (await _get_memory(http_client, memory_id))["project_ids"] == []
+    assert await _listed_project_ids(http_client, memory_id) == []
 
 
-async def test_put_other_field_keeps_document_links_in_response_and_storage(http_client):
-    document_id = await _create_document(http_client, "kept-doc")
-    memory_id = await _create_memory(http_client, document_ids=[document_id])
+async def test_put_other_field_keeps_project_links_in_response_and_storage(http_client):
+    project_id = await _create_project(http_client, "kept-project")
+    memory_id = await _create_memory(http_client, project_ids=[project_id])
 
     response = await http_client.put(f"/api/v1/memories/{memory_id}", json={"title": "Renamed"})
 
     assert response.status_code == 200, response.text
     assert response.json()["title"] == "Renamed"
-    assert response.json()["document_ids"] == [document_id]
-    assert (await _get_memory(http_client, memory_id))["document_ids"] == [document_id]
+    assert response.json()["project_ids"] == [project_id]
+    assert (await _get_memory(http_client, memory_id))["project_ids"] == [project_id]
 
 
-async def test_put_unknown_document_id_is_not_found_and_keeps_links(http_client):
-    document_id = await _create_document(http_client, "survivor-doc")
-    memory_id = await _create_memory(http_client, document_ids=[document_id])
+async def test_put_unknown_project_id_is_not_found_and_keeps_links(http_client):
+    project_id = await _create_project(http_client, "survivor-project")
+    memory_id = await _create_memory(http_client, project_ids=[project_id])
 
     response = await http_client.put(
-        f"/api/v1/memories/{memory_id}", json={"document_ids": [document_id + 1000]},
+        f"/api/v1/memories/{memory_id}", json={"project_ids": [project_id + 1000]},
     )
 
     assert response.status_code == 404, response.text
-    assert (await _get_memory(http_client, memory_id))["document_ids"] == [document_id]
+    assert (await _get_memory(http_client, memory_id))["project_ids"] == [project_id]
 
 
-async def test_search_and_linked_memories_report_document_ids(http_client):
-    document_id = await _create_document(http_client, "search-doc")
-    documented_id = await _create_memory(
+async def test_search_and_linked_memories_report_project_ids(http_client):
+    project_id = await _create_project(http_client, "search-project")
+    grouped_id = await _create_memory(
         http_client,
-        title="Documented memory about espresso machines",
+        title="Grouped memory about espresso machines",
         content="Descaling an espresso machine every three months keeps it healthy.",
-        document_ids=[document_id],
+        project_ids=[project_id],
     )
     primary_id = await _create_memory(
         http_client,
@@ -188,7 +187,7 @@ async def test_search_and_linked_memories_report_document_ids(http_client):
         content="Waterproof boots with a stiff sole are best for volcano trails.",
     )
     linked = await http_client.post(
-        f"/api/v1/memories/{primary_id}/links", json={"related_ids": [documented_id]},
+        f"/api/v1/memories/{primary_id}/links", json={"related_ids": [grouped_id]},
     )
     assert linked.status_code == 200, linked.text
 
@@ -205,8 +204,8 @@ async def test_search_and_linked_memories_report_document_ids(http_client):
     assert response.status_code == 200, response.text
     body = response.json()
     assert [m["id"] for m in body["primary_memories"]] == [primary_id]
-    assert [(lm["memory"]["id"], lm["memory"]["document_ids"]) for lm in body["linked_memories"]] == [
-        (documented_id, [document_id]),
+    assert [(lm["memory"]["id"], lm["memory"]["project_ids"]) for lm in body["linked_memories"]] == [
+        (grouped_id, [project_id]),
     ]
 
     primary_hit = await http_client.post(
@@ -219,8 +218,8 @@ async def test_search_and_linked_memories_report_document_ids(http_client):
         },
     )
     assert primary_hit.status_code == 200, primary_hit.text
-    assert [(m["id"], m["document_ids"]) for m in primary_hit.json()["primary_memories"]] == [
-        (documented_id, [document_id]),
+    assert [(m["id"], m["project_ids"]) for m in primary_hit.json()["primary_memories"]] == [
+        (grouped_id, [project_id]),
     ]
 
 

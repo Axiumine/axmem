@@ -10,23 +10,15 @@ import pytest
 from app.config.settings import settings
 from app.exceptions import NotFoundError
 from app.models.activity_models import ActionType, EntityType
-from app.models.code_artifact_models import CodeArtifactCreate
-from app.models.document_models import DocumentCreate
 from app.models.memory_models import MemoryCreate
 from app.models.project_models import ProjectCreate, ProjectType
 from app.models.user_models import UserCreate
 from app.repositories.sqlite.activity_repository import SqliteActivityRepository
-from app.repositories.sqlite.code_artifact_repository import (
-    SqliteCodeArtifactRepository,
-)
-from app.repositories.sqlite.document_repository import SqliteDocumentRepository
 from app.repositories.sqlite.memory_repository import SqliteMemoryRepository
 from app.repositories.sqlite.project_repository import SqliteProjectRepository
 from app.repositories.sqlite.sqlite_adapter import SqliteDatabaseAdapter
 from app.repositories.sqlite.user_repository import SqliteUserRepository
 from app.services.activity_service import ActivityService
-from app.services.code_artifact_service import CodeArtifactService
-from app.services.document_service import DocumentService
 from app.services.memory_service import MemoryService
 from app.services.project_service import ProjectService
 from tests.integration.conftest import CollectingEventBus
@@ -66,10 +58,6 @@ async def stack(monkeypatch):
         memory_service = MemoryService(memory_repo, event_bus=bus)
         memory_service.register_access_tracking_handlers(bus)
         project_service = ProjectService(SqliteProjectRepository(db_adapter=db), event_bus=bus)
-        document_service = DocumentService(SqliteDocumentRepository(db_adapter=db), event_bus=bus)
-        artifact_service = CodeArtifactService(
-            SqliteCodeArtifactRepository(db_adapter=db), event_bus=bus,
-        )
         yield {
             "user_id": user.id,
             "bus": bus,
@@ -77,33 +65,21 @@ async def stack(monkeypatch):
             "memory_repo": memory_repo,
             "memory": memory_service,
             "project": project_service,
-            "document": document_service,
-            "artifact": artifact_service,
         }
     finally:
         await db.dispose()
 
 
-async def _seed_project_content(s):
-    """A project holding one document and artifact."""
+async def _seed_project(s):
+    """A project to read back."""
     uid = s["user_id"]
     project = await s["project"].create_project(
         uid, ProjectCreate(name="P", description="proj", project_type=ProjectType.DEVELOPMENT),
     )
     pid = project.id
-    ids = {"project": pid}
-    ids["document"] = (await s["document"].create_document(
-        uid, DocumentCreate(title="D", description="doc", content="body", project_id=pid),
-    )).id
-    ids["code_artifact"] = (await s["artifact"].create_code_artifact(
-        uid,
-        CodeArtifactCreate(
-            title="A", description="art", code="print(1)", language="python", project_id=pid,
-        ),
-    )).id
     await s["bus"].wait_for_pending()
     s["bus"].collected_events.clear()
-    return ids
+    return pid
 
 
 def _noisy_events(s):
@@ -119,17 +95,11 @@ async def test_explicit_gets_still_emit_read_events(stack):
     """An explicit get_* logs its read."""
     s = stack
     uid = s["user_id"]
-    ids = await _seed_project_content(s)
+    project_id = await _seed_project(s)
 
-    await s["project"].get_project(uid, ids["project"])
-    await s["document"].get_document(uid, ids["document"])
-    await s["artifact"].get_code_artifact(uid, ids["code_artifact"])
+    await s["project"].get_project(uid, project_id)
 
-    assert {(kind, action) for kind, _id, action in _noisy_events(s)} == {
-        ("project", "read"),
-        ("document", "read"),
-        ("code_artifact", "read"),
-    }
+    assert {(kind, action) for kind, _id, action in _noisy_events(s)} == {("project", "read")}
 
 
 @pytest.mark.asyncio

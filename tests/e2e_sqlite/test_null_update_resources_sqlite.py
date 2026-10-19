@@ -59,35 +59,6 @@ RESOURCES = [
         same_field="name",
     ),
     Resource(
-        name="document",
-        base="/api/v1/documents",
-        payload={
-            "title": "Doc",
-            "description": "A document",
-            "content": "Some document content that is long enough.",
-            "document_type": "analysis",
-            "tags": ["a", "b"],
-            "source_url": "https://example.test/x",
-        },
-        null_fields=(
-            "title", "description", "content", "document_type", "size_bytes", "tags", "source_url",
-        ),
-        same_field="title",
-    ),
-    Resource(
-        name="code_artifact",
-        base="/api/v1/code-artifacts",
-        payload={
-            "title": "Snippet",
-            "description": "A snippet",
-            "code": "def hello():\n    return 1",
-            "language": "python",
-            "tags": ["a", "b"],
-        },
-        null_fields=("title", "description", "code", "language", "tags"),
-        same_field="title",
-    ),
-    Resource(
         name="entity",
         base="/api/v1/entities",
         payload={
@@ -168,7 +139,7 @@ async def test_put_value_next_to_null_applies_only_the_value(http_client, resour
 
 @pytest.mark.parametrize(
     ("resource_name", "field"),
-    [("project", "notes"), ("project", "repo_name"), ("entity", "notes"), ("document", "filename")],
+    [("project", "notes"), ("project", "repo_name"), ("entity", "notes")],
 )
 async def test_empty_string_still_clears_optional_field(http_client, resource_name, field):
     """Null is ignored, but the documented way to clear a field keeps working."""

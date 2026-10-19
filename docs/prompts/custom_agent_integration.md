@@ -117,7 +117,7 @@ discover_forgetful_tools()
 discover_forgetful_tools(category="entity")
 ```
 
-Categories: `user`, `memory`, `project`, `code_artifact`, `document`, `entity`
+Categories: `user`, `memory`, `project`, `entity`
 
 ### 2. `how_to_use_forgetful_tool(tool_name)`
 Get detailed documentation for a specific tool including parameters and examples.
@@ -144,16 +144,14 @@ execute_forgetful_tool("create_memory", {
 
 ---
 
-## Five Building Blocks
+## Three Building Blocks
 
-Forgetful organizes knowledge across 5 types:
+Forgetful organizes knowledge across 3 types:
 
 | Type | What it stores | When to use |
 |------|---------------|-------------|
 | **Memories** | Atomic concepts, decisions, patterns | ONE concept that's directly queryable |
 | **Entities** | Real-world things (people, orgs, devices) | Concrete things with stable identity |
-| **Documents** | Long-form content (>300 words) | Detailed analysis, ADRs, research |
-| **Code Artifacts** | Reusable code snippets | Utilities, patterns, templates |
 | **Projects** | Organizational scope | Group related knowledge |
 
 ### Quick Decision Tree
@@ -164,11 +162,7 @@ Is this a PERSON, COMPANY, or DEVICE?
   → No: Continue...
 
 Is this >300 words of detailed content?
-  → Yes: Create DOCUMENT, then extract atomic MEMORIES
-  → No: Continue...
-
-Is this reusable CODE?
-  → Yes: Create CODE ARTIFACT
+  → Yes: Split it into several atomic MEMORIES and link them
   → No: Continue...
 
 Is this ONE concept/decision/pattern?
@@ -433,15 +427,6 @@ execute_forgetful_tool("link_entity_to_memory", {
 | `update_entity_relationship` | `relationship_id` | Modify edge |
 | `delete_entity_relationship` | `relationship_id` | Remove edge |
 
-### Document & Code Artifact Tools
-
-| Tool | Required Params | Purpose |
-|------|-----------------|---------|
-| `create_document` | `title`, `description`, `content` | Long-form storage |
-| `get_document` | `document_id` | Retrieve full content |
-| `create_code_artifact` | `title`, `description`, `code`, `language` | Store snippets |
-| `get_code_artifact` | `code_artifact_id` | Retrieve code |
-
 ---
 
 ## Common Workflows
@@ -493,21 +478,12 @@ execute_forgetful_tool("create_memory", {
 })
 ```
 
-### 4. Document Decomposition
+### 4. Long Content Decomposition
 
-For long content, create a document then extract atomic memories:
+For long content, split it into atomic memories and link them:
 
 ```python
-# 1. Create document with full content
-doc = execute_forgetful_tool("create_document", {
-    "title": "ADR-003: Event-Driven Architecture",
-    "description": "Architecture decision record for event-driven processing",
-    "content": "[... 2000+ words ...]",
-    "document_type": "markdown",
-    "project_id": PROJECT_ID
-})
-
-# 2. Extract key decisions as atomic memories
+# 1. Capture each key decision as an atomic memory
 memory1 = execute_forgetful_tool("create_memory", {
     "title": "Architecture: Event-driven with Kafka",
     "content": "Selected event-driven architecture...",
@@ -515,7 +491,7 @@ memory1 = execute_forgetful_tool("create_memory", {
     "keywords": ["architecture", "kafka", "events"],
     "tags": ["architecture", "decision"],
     "importance": 10,
-    "document_ids": [doc["id"]]
+    "project_ids": [PROJECT_ID]
 })
 
 memory2 = execute_forgetful_tool("create_memory", {
@@ -525,7 +501,13 @@ memory2 = execute_forgetful_tool("create_memory", {
     "keywords": ["eventual-consistency", "tradeoff"],
     "tags": ["architecture", "tradeoff"],
     "importance": 8,
-    "document_ids": [doc["id"]]
+    "project_ids": [PROJECT_ID]
+})
+
+# 2. Link the pieces to each other
+execute_forgetful_tool("link_memories", {
+    "memory_id": memory1["id"],
+    "related_ids": [memory2["id"]]
 })
 ```
 
@@ -576,7 +558,7 @@ execute_forgetful_tool("link_entity_to_memory", {
 - **Confuse entities with memories** - "Sarah" is entity, "Sarah's preference" is memory
 - **Create duplicate entities** - Search before creating
 - **Create low-importance memories (<6)** - Focus on reusable knowledge
-- **Store entire documents as memories** - Use Documents, extract atoms
+- **Store entire documents as memories** - Split them into atomic memories
 
 ---
 

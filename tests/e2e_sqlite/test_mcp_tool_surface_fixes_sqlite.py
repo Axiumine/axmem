@@ -1,6 +1,6 @@
 """E2E tests for MCP tool-surface argument validation with in-memory SQLite
 
-Covers the document, code artifact, entity and project link tools reached through
+Covers the entity and project link tools reached through
 ``execute_forgetful_tool``.
 """
 import pytest
@@ -11,22 +11,6 @@ async def call(client, tool_name, **arguments):
     return await client.call_tool(
         "execute_forgetful_tool", {"tool_name": tool_name, "arguments": arguments},
     )
-
-
-async def make_document(client, tags=None, **extra):
-    result = await call(
-        client, "create_document", title="doc", description="d", content="c",
-        document_type="text", tags=tags or [], **extra,
-    )
-    return result.data["id"]
-
-
-async def make_code_artifact(client, tags=None, **extra):
-    result = await call(
-        client, "create_code_artifact", title="art", description="d", code="print(1)",
-        language="python", tags=tags or [], **extra,
-    )
-    return result.data["id"]
 
 
 async def make_entity(client, name="ent", tags=None, **extra):
@@ -53,18 +37,6 @@ async def make_memory(client):
 
 # (create helper, get tool, id parameter, [(tool, extra arguments)])
 ID_TOOL_CASES = [
-    pytest.param(
-        make_document, "get_document", "document_id",
-        [("get_document", {}), ("update_document", {"title": "changed"}),
-         ("delete_document", {})],
-        id="document",
-    ),
-    pytest.param(
-        make_code_artifact, "get_code_artifact", "artifact_id",
-        [("get_code_artifact", {}), ("update_code_artifact", {"title": "changed"}),
-         ("delete_code_artifact", {})],
-        id="code_artifact",
-    ),
     pytest.param(
         make_entity, "get_entity", "entity_id",
         [("get_entity", {}), ("update_entity", {"name": "changed"}),
@@ -101,15 +73,14 @@ async def test_tools_reject_invalid_ids_and_leave_object_intact(
 @pytest.mark.asyncio
 async def test_numeric_string_and_integral_float_ids_are_accepted(mcp_client):
     """'1' and 1.0 identify object 1, just as they do for the project tools."""
-    document_id = await make_document(mcp_client)
     entity_id = await make_entity(mcp_client)
 
-    assert (await call(mcp_client, "get_document", document_id=str(document_id))).data["id"] == 1
+    assert (await call(mcp_client, "get_entity", entity_id=str(entity_id))).data["id"] == 1
     assert (await call(mcp_client, "get_entity", entity_id=float(entity_id))).data["id"] == 1
 
-    deleted = await call(mcp_client, "delete_document", document_id=f" {document_id} ")
+    deleted = await call(mcp_client, "delete_entity", entity_id=f" {entity_id} ")
     assert deleted.data["success"] is True
-    assert deleted.data["deleted_id"] == document_id
+    assert deleted.data["deleted_id"] == entity_id
 
 
 @pytest.mark.asyncio
@@ -149,38 +120,23 @@ async def test_entity_link_and_relationship_tools_reject_invalid_ids(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("tool_name", "extra"),
-    [
-        ("create_document", {"title": "t", "description": "d", "content": "c"}),
-        ("create_code_artifact",
-         {"title": "t", "description": "d", "code": "x", "language": "python"}),
-        ("create_entity", {"name": "n", "entity_type": "Organization"}),
-    ],
-)
-async def test_create_tools_reject_boolean_project_reference(mcp_client, tool_name, extra):
-    """project_id=True must not silently link the new object to project 1."""
+async def test_create_entity_rejects_boolean_project_reference(mcp_client):
+    """project_ids=[True] must not silently link the new entity to project 1."""
     await make_project(mcp_client)
-    argument = "project_ids" if tool_name == "create_entity" else "project_id"
-    value = [True] if tool_name == "create_entity" else True
 
-    with pytest.raises(ToolError, match=f"{argument} (must|cannot)"):
-        await call(mcp_client, tool_name, **extra, **{argument: value})
+    with pytest.raises(ToolError, match="project_ids (must|cannot)"):
+        await call(
+            mcp_client, "create_entity", name="n", entity_type="Organization", project_ids=[True],
+        )
 
 
 @pytest.mark.asyncio
-async def test_update_tools_reject_boolean_project_reference(mcp_client):
+async def test_update_entity_rejects_boolean_project_reference(mcp_client):
     await make_project(mcp_client)
-    document_id = await make_document(mcp_client)
     entity_id = await make_entity(mcp_client)
 
-    with pytest.raises(ToolError, match="project_id (must|cannot)"):
-        await call(mcp_client, "update_document", document_id=document_id, project_id=True)
     with pytest.raises(ToolError, match="project_ids (must|cannot)"):
         await call(mcp_client, "update_entity", entity_id=entity_id, project_ids=[True])
-
-    document = await call(mcp_client, "get_document", document_id=document_id)
-    assert document.data["project_id"] is None
 
 
 @pytest.mark.asyncio
@@ -198,28 +154,20 @@ async def test_list_id_does_not_leak_sql_or_user_id(mcp_client):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("make", "list_tool", "key"),
-    [
-        (make_document, "list_documents", "documents"),
-        (make_code_artifact, "list_code_artifacts", "code_artifacts"),
-        (make_entity, "list_entities", "entities"),
-    ],
-)
-async def test_list_tools_treat_scalar_tags_string_as_one_tag(mcp_client, make, list_tool, key):
+async def test_list_entities_treats_scalar_tags_string_as_one_tag(mcp_client):
     """tags='adr' filters on the tag 'adr' instead of the letters 'a', 'd', 'r'."""
-    await make(mcp_client, tags=["adr"])
-    await make(mcp_client, tags=["other"])
+    await make_entity(mcp_client, tags=["adr"])
+    await make_entity(mcp_client, tags=["other"])
 
-    as_list = await call(mcp_client, list_tool, tags=["adr"])
-    as_string = await call(mcp_client, list_tool, tags="adr")
+    as_list = await call(mcp_client, "list_entities", tags=["adr"])
+    as_string = await call(mcp_client, "list_entities", tags="adr")
 
     assert as_list.data["total_count"] == 1
     assert as_string.data["total_count"] == 1
-    assert as_string.data[key][0]["tags"] == ["adr"]
+    assert as_string.data["entities"][0]["tags"] == ["adr"]
 
     with pytest.raises(ToolError, match="tags must be a list of strings"):
-        await call(mcp_client, list_tool, tags=5)
+        await call(mcp_client, "list_entities", tags=5)
 
 
 @pytest.mark.asyncio
@@ -234,13 +182,11 @@ async def test_search_entities_treats_scalar_tags_string_as_one_tag(mcp_client):
 
 
 @pytest.mark.asyncio
-async def test_list_filters_validate_project_ids_and_project_id(mcp_client):
+async def test_list_filters_validate_project_ids(mcp_client):
     """Scalar project ids work as one-item lists and bad ids are parameter errors."""
     project_id = await make_project(mcp_client)
     await make_entity(mcp_client, name="in project", project_ids=[project_id])
     await make_entity(mcp_client, name="no project")
-    await make_document(mcp_client, project_id=project_id)
-    await make_document(mcp_client)
 
     scalar = await call(mcp_client, "list_entities", project_ids=str(project_id))
     listed = await call(mcp_client, "list_entities", project_ids=[project_id])
@@ -249,13 +195,6 @@ async def test_list_filters_validate_project_ids_and_project_id(mcp_client):
 
     with pytest.raises(ToolError, match="project_ids (must|cannot)"):
         await call(mcp_client, "list_entities", project_ids=[True])
-    with pytest.raises(ToolError, match="project_id (must|cannot)"):
-        await call(mcp_client, "list_documents", project_id=True)
-    with pytest.raises(ToolError, match="project_id (must|cannot)"):
-        await call(mcp_client, "list_code_artifacts", project_id=1.5)
-
-    by_project = await call(mcp_client, "list_documents", project_id=str(project_id))
-    assert by_project.data["total_count"] == 1
 
 
 @pytest.mark.asyncio

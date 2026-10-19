@@ -65,22 +65,6 @@ memory_project_association = Table(
     Column("project_id", Integer, ForeignKey("projects.id", ondelete="CASCADE"), primary_key=True),
 )
 
-# Association table for many-to-many relationship between memories and code artifacts
-memory_code_artifact_association = Table(
-    "memory_code_artifact_association",
-    Base.metadata,
-    Column("memory_id", Integer, ForeignKey("memories.id", ondelete="CASCADE"), primary_key=True),
-    Column("code_artifact_id", Integer, ForeignKey("code_artifacts.id", ondelete="CASCADE"), primary_key=True),
-)
-
-# Association table for many-to-many relationship between memories and documents
-memory_document_association = Table(
-    "memory_document_association",
-    Base.metadata,
-    Column("memory_id", Integer, ForeignKey("memories.id", ondelete="CASCADE"), primary_key=True),
-    Column("document_id", Integer, ForeignKey("documents.id", ondelete="CASCADE"), primary_key=True),
-)
-
 # Association table for many-to-many relationship between memories and entities
 memory_entity_association = Table(
     "memory_entity_association",
@@ -130,12 +114,6 @@ class UsersTable(Base):
     )
     projects: Mapped[list[ProjectsTable]] = relationship(
         "ProjectsTable", back_populates="user", cascade="all, delete-orphan",
-    )
-    code_artifacts: Mapped[list[CodeArtifactsTable]] = relationship(
-        "CodeArtifactsTable", back_populates="user", cascade="all, delete-orphan",
-    )
-    documents: Mapped[list[DocumentsTable]] = relationship(
-        "DocumentsTable", back_populates="user", cascade="all, delete-orphan",
     )
     entities: Mapped[list[EntitiesTable]] = relationship(
         "EntitiesTable", back_populates="user", cascade="all, delete-orphan",
@@ -207,16 +185,6 @@ class MemoryTable(Base):
         secondary=memory_project_association,
         back_populates="memories",
     )
-    code_artifacts: Mapped[list[CodeArtifactsTable]] = relationship(
-        "CodeArtifactsTable",
-        secondary=memory_code_artifact_association,
-        back_populates="memories",
-    )
-    documents: Mapped[list[DocumentsTable]] = relationship(
-        "DocumentsTable",
-        secondary=memory_document_association,
-        back_populates="memories",
-    )
     entities: Mapped[list[EntitiesTable]] = relationship(
         "EntitiesTable",
         secondary=memory_entity_association,
@@ -280,36 +248,6 @@ class MemoryTable(Base):
         insp = inspect(self)
         if insp.attrs.projects.loaded_value is not NO_VALUE:
             return [p.id for p in self.projects]
-        return []
-
-    @property
-    def code_artifact_ids(self) -> list[int]:
-        """Compute code artifact IDs from code_artifacts relationship.
-
-        Returns:
-            List of code artifact IDs, or empty list if relationship not loaded
-        """
-        from sqlalchemy import inspect
-        from sqlalchemy.orm.attributes import NO_VALUE
-
-        insp = inspect(self)
-        if insp.attrs.code_artifacts.loaded_value is not NO_VALUE:
-            return [a.id for a in self.code_artifacts]
-        return []
-
-    @property
-    def document_ids(self) -> list[int]:
-        """Compute document IDs from documents relationship.
-
-        Returns:
-            List of document IDs, or empty list if relationship not loaded
-        """
-        from sqlalchemy import inspect
-        from sqlalchemy.orm.attributes import NO_VALUE
-
-        insp = inspect(self)
-        if insp.attrs.documents.loaded_value is not NO_VALUE:
-            return [d.id for d in self.documents]
         return []
 
     __table_args__ = (
@@ -396,14 +334,6 @@ class ProjectsTable(Base):
         secondary=memory_project_association,
         back_populates="projects",
     )
-    code_artifacts: Mapped[list[CodeArtifactsTable]] = relationship(
-        "CodeArtifactsTable",
-        back_populates="project",
-    )
-    documents: Mapped[list[DocumentsTable]] = relationship(
-        "DocumentsTable",
-        back_populates="project",
-    )
     entities: Mapped[list[EntitiesTable]] = relationship(
         "EntitiesTable",
         secondary=entity_project_association,
@@ -420,133 +350,6 @@ class ProjectsTable(Base):
         Index("ix_projects_user_id", "user_id"),
         Index("ix_projects_status", "status"),
     )
-
-
-class CodeArtifactsTable(Base):
-    """Table for maintaining artifacts
-
-    Supports dual relationships:
-    - Direct project link (project_id) for project-specific code
-    - Memory references (many-to-many) for cross-project reuse
-    """
-
-    __tablename__ = "code_artifacts"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    project_id: Mapped[int] = mapped_column(Integer, ForeignKey("projects.id", ondelete="SET NULL"), nullable=True)
-
-    # Code Artifact information
-    title: Mapped[str] = mapped_column(String(500), nullable=False)
-    description: Mapped[str] = mapped_column(Text, nullable=False)
-    code: Mapped[str] = mapped_column(Text, nullable=False)
-    language: Mapped[str] = mapped_column(String(100), nullable=False)
-    tags: Mapped[list[str]] = mapped_column(JSON, nullable=False)  # ARRAY -> JSON
-
-    # Provenance tracking (optional)
-    source_repo: Mapped[str] = mapped_column(Text, nullable=True)
-    source_files: Mapped[list[str]] = mapped_column(JSON, nullable=True)
-    source_url: Mapped[str] = mapped_column(Text, nullable=True)
-    confidence: Mapped[float] = mapped_column(nullable=True)
-    encoding_agent: Mapped[str] = mapped_column(Text, nullable=True)
-    encoding_version: Mapped[str] = mapped_column(Text, nullable=True)
-    agent_id: Mapped[str] = mapped_column(Text, nullable=True)
-    agent_version: Mapped[str] = mapped_column(Text, nullable=True)
-    agent_model: Mapped[str] = mapped_column(Text, nullable=True)
-
-    # Timestamps
-    created_at: Mapped[datetime] = mapped_column(
-        UTCDateTime(),
-        default=lambda: datetime.now(UTC),
-        nullable=False,
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        UTCDateTime(),
-        default=lambda: datetime.now(UTC),
-        onupdate=lambda: datetime.now(UTC),
-        nullable=False,
-    )
-
-    # Relationships
-    user: Mapped[UsersTable] = relationship("UsersTable", back_populates="code_artifacts")
-    project: Mapped[ProjectsTable] = relationship("ProjectsTable", back_populates="code_artifacts")
-    memories: Mapped[list[MemoryTable]] = relationship(
-        "MemoryTable",
-        secondary=memory_code_artifact_association,
-        back_populates="code_artifacts",
-    )
-
-    __table_args__ = (
-        Index("ix_code_artifacts_user_id", "user_id"),
-        Index("ix_code_artifacts_project_id", "project_id"),
-        Index("ix_code_artifacts_language", "language"),
-        # No GIN index for tags in SQLite
-    )
-
-
-class DocumentsTable(Base):
-    """Table for storing text documents and long-form content referenced by memories
-
-    Supports dual relationships:
-    - Direct project link (project_id) for project-specific documents
-    - Memory references (many-to-many) for cross-project reuse
-    """
-
-    __tablename__ = "documents"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    project_id: Mapped[int] = mapped_column(Integer, ForeignKey("projects.id", ondelete="SET NULL"), nullable=True)
-
-    # Document information
-    title: Mapped[str] = mapped_column(String(500), nullable=False)
-    description: Mapped[str] = mapped_column(Text, nullable=False)
-    content: Mapped[str] = mapped_column(Text, nullable=False)
-    document_type: Mapped[str] = mapped_column(String(100), default="text", nullable=True)
-    filename: Mapped[str] = mapped_column(String(500), nullable=True)
-    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
-    tags: Mapped[list[str]] = mapped_column(JSON, nullable=False)  # ARRAY -> JSON
-
-    # Provenance tracking (optional)
-    source_repo: Mapped[str] = mapped_column(Text, nullable=True)
-    source_files: Mapped[list[str]] = mapped_column(JSON, nullable=True)
-    source_url: Mapped[str] = mapped_column(Text, nullable=True)
-    confidence: Mapped[float] = mapped_column(nullable=True)
-    encoding_agent: Mapped[str] = mapped_column(Text, nullable=True)
-    encoding_version: Mapped[str] = mapped_column(Text, nullable=True)
-    agent_id: Mapped[str] = mapped_column(Text, nullable=True)
-    agent_version: Mapped[str] = mapped_column(Text, nullable=True)
-    agent_model: Mapped[str] = mapped_column(Text, nullable=True)
-
-    # Timestamps
-    created_at: Mapped[datetime] = mapped_column(
-        UTCDateTime(),
-        default=lambda: datetime.now(UTC),
-        nullable=False,
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        UTCDateTime(),
-        default=lambda: datetime.now(UTC),
-        onupdate=lambda: datetime.now(UTC),
-        nullable=False,
-    )
-    # Relationships
-    user: Mapped[UsersTable] = relationship("UsersTable", back_populates="documents")
-    project: Mapped[ProjectsTable] = relationship("ProjectsTable", back_populates="documents")
-    memories: Mapped[list[MemoryTable]] = relationship(
-        "MemoryTable",
-        secondary=memory_document_association,
-        back_populates="documents",
-    )
-
-    __table_args__ = (
-        Index("ix_documents_user_id", "user_id"),
-        Index("ix_documents_project_id", "project_id"),
-        Index("ix_documents_document_type", "document_type"),
-        # No GIN index for tags in SQLite
-    )
-
-
 
 
 class EntitiesTable(Base):

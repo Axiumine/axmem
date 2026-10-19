@@ -22,8 +22,6 @@ from app.config.settings import settings
 from app.routes.api import (
     activity,
     auth,
-    code_artifacts,
-    documents,
     entities,
     health,
     memories,
@@ -61,8 +59,6 @@ async def lifespan(app):
     mcp.memory_service = services.memory
     mcp.re_embedding_service = services.re_embedding
     mcp.project_service = services.project
-    mcp.code_artifact_service = services.code_artifact
-    mcp.document_service = services.document
     mcp.entity_service = services.entity
     mcp.activity_service = services.activity
     mcp.event_bus = runtime.event_bus
@@ -116,8 +112,6 @@ auth.register(mcp)
 memories.register(mcp)
 entities.register(mcp)
 projects.register(mcp)
-documents.register(mcp)
-code_artifacts.register(mcp)
 activity.register(mcp)
 
 meta_tools.register(mcp)

@@ -17,8 +17,6 @@ from typing import Any
 import pytest
 
 from app.models.activity_models import ActionType, EntityType
-from app.models.code_artifact_models import CodeArtifactCreate, CodeArtifactUpdate
-from app.models.document_models import DocumentCreate, DocumentUpdate
 from app.models.entity_models import (
     EntityCreate,
     EntityRelationshipUpdate,
@@ -58,63 +56,6 @@ class Case:
 
 
 CASES = [
-    Case(
-        name="document",
-        fixture="test_document_service_with_event_bus",
-        model=DocumentUpdate,
-        create=lambda s, u: s.create_document(
-            u,
-            DocumentCreate(
-                title="Doc",
-                description="A document",
-                content="Some document content.",
-                tags=["keep"],
-                source_url="https://example.test/x",
-            ),
-        ),
-        update=lambda s, u, i, d: s.update_document(u, i, d),
-        get=lambda s, u, i: s.get_document(u, i),
-        null_fields={
-            "title": None,
-            "description": None,
-            "content": None,
-            "size_bytes": None,
-            "tags": None,
-            "source_url": None,
-            "project_id": None,
-        },
-        change={"title": "Renamed"},
-        same={"title": "Doc", "tags": ["keep"]},
-        entity_type=EntityType.DOCUMENT,
-    ),
-    Case(
-        name="code_artifact",
-        fixture="test_code_artifact_service_with_event_bus",
-        model=CodeArtifactUpdate,
-        create=lambda s, u: s.create_code_artifact(
-            u,
-            CodeArtifactCreate(
-                title="Snippet",
-                description="A snippet",
-                code="print(1)",
-                language="python",
-                tags=["keep"],
-            ),
-        ),
-        update=lambda s, u, i, d: s.update_code_artifact(u, i, d),
-        get=lambda s, u, i: s.get_code_artifact(u, i),
-        null_fields={
-            "title": None,
-            "description": None,
-            "code": None,
-            "language": None,
-            "tags": None,
-            "project_id": None,
-        },
-        change={"title": "Renamed"},
-        same={"title": "Snippet", "language": "python"},
-        entity_type=EntityType.CODE_ARTIFACT,
-    ),
     Case(
         name="entity",
         fixture="test_entity_service_with_event_bus",
@@ -211,7 +152,6 @@ def test_relationship_update_ignores_explicit_null():
         (ProjectUpdate, "repo_name"),
         (ProjectUpdate, "last_encoding_point"),
         (EntityUpdate, "notes"),
-        (DocumentUpdate, "filename"),
     ],
 )
 def test_empty_string_still_clears_optional_fields(model, field):

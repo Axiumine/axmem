@@ -1,7 +1,7 @@
 """Input models must reject values the database cannot store.
 
 PostgreSQL text/varchar/jsonb columns cannot hold a NUL character, JSONB cannot hold
-NaN/Infinity and documents.size_bytes is a 32-bit INTEGER. SQLite accepts all of these and then
+NaN/Infinity. SQLite accepts all of these and then
 stores values that poison later reads (NaN in a JSON column makes every later read
 fail). The request models are the one place both backends share, so that is where the
 values are refused, with an error the REST routes can return as a 400.
@@ -11,7 +11,6 @@ import json
 import pytest
 from pydantic import ValidationError
 
-from app.models.document_models import DocumentCreate, DocumentUpdate
 from app.models.entity_models import (
     EntityRelationship,
     EntityRelationshipCreate,
@@ -19,7 +18,6 @@ from app.models.entity_models import (
 )
 
 NUL = "\x00"
-INT32_MAX = 2_147_483_647
 
 REL = {"source_entity_id": 1, "target_entity_id": 2, "relationship_type": "knows"}
 NOW = "2026-01-01T00:00:00Z"
@@ -95,24 +93,3 @@ class TestRelationshipMetadata:
         relationship = EntityRelationship(**row)
         assert relationship.metadata is not None
         assert relationship.metadata["a"] == f"x{NUL}"
-
-
-class TestDocumentSizeBytes:
-    """documents.size_bytes is a 32-bit INTEGER on PostgreSQL."""
-
-    DOC = {"title": "t", "description": "d", "content": "c"}
-
-    def test_create_accepts_the_largest_int32(self):
-        assert DocumentCreate(**self.DOC, size_bytes=INT32_MAX).size_bytes == INT32_MAX
-
-    def test_create_rejects_a_value_above_int32(self):
-        errors = _rejected(DocumentCreate, {**self.DOC, "size_bytes": INT32_MAX + 1})
-        assert errors[0]["loc"] == ("size_bytes",)
-        assert errors[0]["type"] == "less_than_equal"
-
-    def test_update_accepts_the_largest_int32(self):
-        assert DocumentUpdate(size_bytes=INT32_MAX).size_bytes == INT32_MAX
-
-    def test_update_rejects_a_value_above_int32(self):
-        errors = _rejected(DocumentUpdate, {"size_bytes": 3_000_000_000})
-        assert errors[0]["loc"] == ("size_bytes",)

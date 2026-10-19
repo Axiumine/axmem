@@ -24,22 +24,10 @@ RESOURCES = {
         "description": "Timestamp check",
         "project_type": "development",
     },
-    "documents": {
-        "title": "UTC document",
-        "description": "Timestamp check",
-        "content": "Document content with enough text.",
-        "document_type": "analysis",
-    },
     "entities": {
         "name": "UTC entity",
         "entity_type": "Organization",
         "notes": "Timestamp check",
-    },
-    "code-artifacts": {
-        "title": "UTC artifact",
-        "description": "Timestamp check",
-        "code": "print('utc')",
-        "language": "python",
     },
     "memories": {
         "title": "UTC memory",

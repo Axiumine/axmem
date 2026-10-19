@@ -6,16 +6,12 @@ module per domain); this module imports them and exposes the fixtures the tests 
 
 import pytest
 
-from app.services.code_artifact_service import CodeArtifactService
-from app.services.document_service import DocumentService
 from app.services.entity_service import EntityService
 from app.services.memory_service import MemoryService
 from app.services.project_service import ProjectService
 from app.services.user_service import UserService
 from tests.integration.stubs import (
     CollectingEventBus,
-    InMemoryCodeArtifactRepository,
-    InMemoryDocumentRepository,
     InMemoryEntityRepository,
     InMemoryMemoryRepository,
     InMemoryProjectRepository,
@@ -102,48 +98,6 @@ def test_project_service_with_event_bus(mock_project_repository):
     """Provides a ProjectService with event bus for testing event emission."""
     event_bus = CollectingEventBus()
     service = ProjectService(mock_project_repository, event_bus=event_bus)
-    return service, event_bus
-
-
-# ============ Code Artifact Testing Fixtures ============
-
-
-@pytest.fixture
-def mock_code_artifact_repository():
-    return InMemoryCodeArtifactRepository()
-
-
-@pytest.fixture
-def test_code_artifact_service(mock_code_artifact_repository):
-    return CodeArtifactService(mock_code_artifact_repository)
-
-
-@pytest.fixture
-def test_code_artifact_service_with_event_bus(mock_code_artifact_repository):
-    """Provides a CodeArtifactService with event bus for testing event emission."""
-    event_bus = CollectingEventBus()
-    service = CodeArtifactService(mock_code_artifact_repository, event_bus=event_bus)
-    return service, event_bus
-
-
-# ============ Document Testing Fixtures ============
-
-
-@pytest.fixture
-def mock_document_repository():
-    return InMemoryDocumentRepository()
-
-
-@pytest.fixture
-def test_document_service(mock_document_repository):
-    return DocumentService(mock_document_repository)
-
-
-@pytest.fixture
-def test_document_service_with_event_bus(mock_document_repository):
-    """Provides a DocumentService with event bus for testing event emission."""
-    event_bus = CollectingEventBus()
-    service = DocumentService(mock_document_repository, event_bus=event_bus)
     return service, event_bus
 
 

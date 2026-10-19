@@ -43,8 +43,8 @@ cross-encoder reranking.
 | Graph | Graph REST view, `GraphService` and subgraph SQL removed; memory links and auto-linking stay | A second open-ended graph next to the memory links drifts from any graph a host system keeps | Done (`6ce740e7`) |
 | Planning | Plans and tasks removed; revision `20261019_drop_planning` | Planning belongs to the host system's tracker, not to a memory server | Done (`59f3f479`) |
 | Skills | Skills removed, with import/export and `skill_ids` on memories; revision `20261019_drop_skills` | Skills are files a host system already keeps | Done (`e77b50e0`) |
-| Files | Files removed, with `file_ids` on memories; revision `20261019_drop_files` | A host system keeps its artefacts in its own repository and tracks their state itself | Done |
-| Documents, code artifacts | Removed | The knowledge layer ingests ADRs, epics and stories with chunking; GitNexus indexes code | Planned |
+| Files | Files removed, with `file_ids` on memories; revision `20261019_drop_files` | A host system keeps its artefacts in its own repository and tracks their state itself | Done (`c2cbf05a`) |
+| Documents, code artifacts | Documents and code artifacts removed, with `document_ids` and `code_artifact_ids` on memories; revision `20261019_drop_docs_artifacts` | The knowledge layer ingests ADRs, epics and stories with chunking; GitNexus indexes code | Done |
 | Entities | Entities and relationships removed | A second free-form graph would drift from the Neo4j one | Planned |
 | Activity | Event bus and SSE stream removed | Metrics and tracing belong to the host's observability stack | Planned |
 | Deployment | Container deployment removed (Docker stays for tests) | Axmem is deployed natively on hosts with an NVIDIA GPU | Planned |

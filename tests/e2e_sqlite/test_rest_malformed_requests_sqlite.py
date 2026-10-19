@@ -13,15 +13,13 @@ from fastmcp import Client, FastMCP
 from httpx import ASGITransport, AsyncClient
 
 from app.routes.api import (
-    code_artifacts,
-    documents,
     entities,
     memories,
     projects,
 )
 
 API_MODULES = (
-    code_artifacts, documents, entities, memories, projects,
+    entities, memories, projects,
 )
 IGNORED_METHODS = {"HEAD", "OPTIONS"}
 BAD_IDS = [
@@ -93,8 +91,8 @@ async def client(sqlite_app):
 
 def test_inventory_covers_the_rest_api():
     """Guard the sweeps below: they must actually see the routes."""
-    assert len(ROUTES_WITH_IDS) > 22
-    assert len(ROUTES_WITH_BODY) > 13
+    assert len(ROUTES_WITH_IDS) > 16
+    assert len(ROUTES_WITH_BODY) > 10
 
 
 class TestPathIds:

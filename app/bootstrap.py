@@ -23,8 +23,6 @@ from app.routes.mcp.tool_registry import ToolRegistry
 if TYPE_CHECKING:
     from app.events import EventBus
     from app.services.activity_service import ActivityService
-    from app.services.code_artifact_service import CodeArtifactService
-    from app.services.document_service import DocumentService
     from app.services.entity_service import EntityService
     from app.services.memory_service import MemoryService
     from app.services.project_service import ProjectService
@@ -114,12 +112,6 @@ def create_repositories(db_adapter, embeddings_adapter, reranker_adapter):
         from app.repositories.postgres.activity_repository import (
             PostgresActivityRepository,
         )
-        from app.repositories.postgres.code_artifact_repository import (
-            PostgresCodeArtifactRepository,
-        )
-        from app.repositories.postgres.document_repository import (
-            PostgresDocumentRepository,
-        )
         from app.repositories.postgres.entity_repository import PostgresEntityRepository
         from app.repositories.postgres.memory_repository import PostgresMemoryRepository
         from app.repositories.postgres.project_repository import (
@@ -135,8 +127,6 @@ def create_repositories(db_adapter, embeddings_adapter, reranker_adapter):
                 rerank_adapter=reranker_adapter,
             ),
             "project": PostgresProjectRepository(db_adapter=db_adapter),
-            "code_artifact": PostgresCodeArtifactRepository(db_adapter=db_adapter),
-            "document": PostgresDocumentRepository(db_adapter=db_adapter),
             "entity": PostgresEntityRepository(db_adapter=db_adapter),
             "activity": PostgresActivityRepository(db_adapter=db_adapter),
         }
@@ -144,10 +134,6 @@ def create_repositories(db_adapter, embeddings_adapter, reranker_adapter):
         return repos
     if settings.DATABASE == "SQLite":
         from app.repositories.sqlite.activity_repository import SqliteActivityRepository
-        from app.repositories.sqlite.code_artifact_repository import (
-            SqliteCodeArtifactRepository,
-        )
-        from app.repositories.sqlite.document_repository import SqliteDocumentRepository
         from app.repositories.sqlite.entity_repository import SqliteEntityRepository
         from app.repositories.sqlite.memory_repository import SqliteMemoryRepository
         from app.repositories.sqlite.project_repository import SqliteProjectRepository
@@ -161,8 +147,6 @@ def create_repositories(db_adapter, embeddings_adapter, reranker_adapter):
                 rerank_adapter=reranker_adapter,
             ),
             "project": SqliteProjectRepository(db_adapter=db_adapter),
-            "code_artifact": SqliteCodeArtifactRepository(db_adapter=db_adapter),
-            "document": SqliteDocumentRepository(db_adapter=db_adapter),
             "entity": SqliteEntityRepository(db_adapter=db_adapter),
             "activity": SqliteActivityRepository(db_adapter=db_adapter),
         }
@@ -178,8 +162,6 @@ class Services:
     user: UserService
     memory: MemoryService
     project: ProjectService
-    code_artifact: CodeArtifactService
-    document: DocumentService
     entity: EntityService
     activity: ActivityService
     re_embedding: ReEmbeddingService
@@ -220,8 +202,6 @@ async def build_runtime() -> Runtime:
 
     from app.events import EventBus
     from app.services.activity_service import ActivityService
-    from app.services.code_artifact_service import CodeArtifactService
-    from app.services.document_service import DocumentService
     from app.services.entity_service import EntityService
     from app.services.memory_service import MemoryService
     from app.services.project_service import ProjectService
@@ -246,8 +226,6 @@ async def build_runtime() -> Runtime:
     if event_bus is not None:
         memory_service.register_access_tracking_handlers(event_bus)
     project_service = ProjectService(repos["project"], event_bus=event_bus)
-    code_artifact_service = CodeArtifactService(repos["code_artifact"], event_bus=event_bus)
-    document_service = DocumentService(repos["document"], event_bus=event_bus)
     entity_service = EntityService(repos["entity"], event_bus=event_bus)
 
     registry = ToolRegistry()
@@ -257,8 +235,6 @@ async def build_runtime() -> Runtime:
         memory_service=memory_service,
         re_embedding_service=re_embedding_service,
         project_service=project_service,
-        code_artifact_service=code_artifact_service,
-        document_service=document_service,
         entity_service=entity_service,
     )
 
@@ -277,8 +253,6 @@ async def build_runtime() -> Runtime:
         user=user_service,
         memory=memory_service,
         project=project_service,
-        code_artifact=code_artifact_service,
-        document=document_service,
         entity=entity_service,
         activity=activity_service,
         re_embedding=re_embedding_service,

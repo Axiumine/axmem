@@ -61,8 +61,6 @@ class InMemoryMemoryRepository(MemorySearchMixin, MemoryLinkMixin, MemoryReposit
             tags=memory.tags,
             importance=memory.importance,
             project_ids=memory.project_ids or [],
-            code_artifact_ids=memory.code_artifact_ids or [],
-            document_ids=memory.document_ids or [],
             linked_memory_ids=[],
             **provenance_kwargs(memory),
             created_at=now,

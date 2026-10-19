@@ -1,6 +1,6 @@
 # Core Concepts
 
-Forgetful organizes knowledge into six building blocks. Understanding when to use each one makes the difference between a cluttered knowledge dump and a useful, searchable knowledge graph.
+Forgetful organizes knowledge into three building blocks. Understanding when to use each one makes the difference between a cluttered knowledge dump and a useful, searchable knowledge graph.
 
 ---
 
@@ -12,7 +12,7 @@ Forgetful organizes knowledge into six building blocks. Understanding when to us
 
 Memories are the core of Forgetful. Each memory captures a single fact, decision, preference, or insight. Think of them as the nodes in your knowledge graph.
 
-**Important:** Memories are the only directly queryable type. Documents and Code Artifacts must be linked to memories to be discoverable through search.
+**Important:** Memories are the only directly queryable type. Entities and Projects are reached through the memories they are linked to.
 
 Good memories are:
 - **Easily titled** - if you can't summarize it in ~10 words, it's probably not atomic
@@ -53,30 +53,6 @@ Entities represent concrete nouns that exist in the world. They can have relatio
 
 **Relationships:** Entities connect to each other (e.g., "Sarah works_at TechFlow") and to memories (e.g., "Sarah" linked to "Hired Sarah for Stripe integration").
 
-### Documents
-
-**Long-form reference material** - guides, analysis, specifications.
-
-When content exceeds ~300 words or covers multiple related concepts, use a document. Documents are meant to be referenced, not retrieved in full during every query.
-
-**Best practice:** Create the document, then extract 3-7 atomic memories that link back to it. This gives you both the detailed reference AND searchable knowledge atoms.
-
-**Examples:**
-- "Payment Integration Architecture Guide" - 2000 word technical spec
-- "Q4 Planning Meeting Notes" - detailed discussion summary
-- "TTS Engine Evaluation Report" - comparison of 5 different engines
-
-### Code Artifacts
-
-**Reusable code snippets** - patterns, templates, examples.
-
-Attach working code to memories so agents can retrieve not just the concept but a concrete implementation.
-
-**Examples:**
-- Stripe webhook handler boilerplate
-- FastAPI dependency injection pattern
-- React form validation hook
-
 ### Projects
 
 **Organizational scope** - groups memories by context.
@@ -110,7 +86,7 @@ Forgetful supports optional provenance fields on all object types so you can tra
 
 ### Coverage by Object Type
 
-- **All 9 fields**: Memories, Projects, Documents, Code Artifacts, Entities
+- **All 9 fields**: Memories, Projects, Entities
 - **8 fields (no `confidence`)**: Entity relationships — these already carry their own relationship-level confidence
 - Memories previously had 6 fields; `agent_id`, `agent_version`, and `agent_model` were added to bring them in line with all other types
 
@@ -137,9 +113,8 @@ When `false` (the default), agent-provided values take precedence and env values
 | Question | Answer |
 |----------|--------|
 | Is it a person, org, device, or product? | **Entity** |
-| Is it detailed analysis or a guide (>300 words)? | **Document** |
+| Is it detailed analysis or a guide (>300 words)? | Several linked **Memories** |
 | Is it a single fact, decision, or preference? | **Memory** |
-| Is it reusable code? | **Code Artifact** |
 | Does it help scope/filter other knowledge? | **Project** |
 
 ---
@@ -156,15 +131,14 @@ Ask: "Can I point at it?" If yes, probably an entity. If it's abstract knowledge
 - "Sarah Chen" - Entity (she exists)
 - "Sarah is great at debugging async issues" - Memory (knowledge about Sarah)
 
-### Memory vs Document
+### Long-form material
 
 **Memory** = single concept, scannable, <400 words
-**Document** = multiple concepts, reference material, >300 words
 
-Ask: "Is this ONE idea or MANY?" One idea = memory. Many related ideas = document (then extract atomic memories from it).
+Ask: "Is this ONE idea or MANY?" One idea = one memory. Many related ideas = several atomic memories, linked to each other.
 
-- "Chose XTTS-v2 for voice cloning" - Memory
-- "TTS Engine Evaluation comparing 5 engines with benchmarks" - Document
+- "Chose XTTS-v2 for voice cloning" - One memory
+- "TTS Engine Evaluation comparing 5 engines with benchmarks" - One memory per engine and one for the verdict, linked together
 
 ### When to Use Projects
 
@@ -188,21 +162,15 @@ You're building a payment system. Here's how to decompose the knowledge:
 **Project:**
 - "E-Commerce Platform v2" (active)
 
-**Document:**
-- "Payment Gateway Evaluation" - 1500 word comparison of Stripe vs PayPal vs Square
-
-**Memories (extracted from document + decisions):**
+**Memories (decisions and the evaluation of Stripe vs PayPal vs Square, split into atoms):**
 - "Chose Stripe over PayPal: better webhooks, lower fees, superior fraud detection"
 - "PCI compliance: use Stripe Elements to avoid handling raw card data"
 - "Subscription billing requires Stripe Billing API, not one-time charges endpoint"
 - "Jordan Taylor owns payment integration - hired specifically for Stripe experience"
 
-**Code Artifact:**
-- Stripe webhook signature verification snippet
-
 **Links:**
 - Memories link to → Stripe entity, PayPal entity, Jordan entity
-- Memories link to → Payment Gateway Evaluation document
+- Memories link to → each other
 - Everything scoped to → E-Commerce Platform v2 project
 
 ---
@@ -220,19 +188,12 @@ You're developing a coding assistant agent. Here's the breakdown:
 **Project:**
 - "AI Coding Assistant" (active)
 
-**Document:**
-- "Prompt Engineering Guidelines" - 2000 word guide on system prompts, temperature, context management
-
-**Memories (extracted + decisions):**
+**Memories (prompt engineering guidelines and decisions, split into atoms):**
 - "Use Claude Sonnet for quick edits, Opus for complex refactoring"
 - "Temperature 0.3 for code generation, 0.7 for explanations"
 - "System prompt must include repo structure for accurate file references"
 - "Context window overflow: summarize conversation history after 50k tokens"
 - "Tool calls: prefer specific tools over generic bash when available"
-
-**Code Artifact:**
-- Conversation summarization prompt template
-- Tool result truncation logic
 
 **Links:**
 - Model-related memories link to → Claude Sonnet, Claude Opus entities
@@ -245,10 +206,8 @@ You're developing a coding assistant agent. Here's the breakdown:
 
 | Type | Size | Contains | Links To |
 |------|------|----------|----------|
-| Memory | <400 words | One concept | Memories, Entities, Documents, Code Artifacts |
-| Entity | N/A | Real-world thing | Other Entities, Memories |
-| Document | >300 words | Multiple concepts | Memories |
-| Code Artifact | Variable | Working code | Memories |
-| Project | N/A | Scope/context | Memories |
+| Memory | <400 words | One concept | Memories, Entities, Projects |
+| Entity | N/A | Real-world thing | Other Entities, Memories, Projects |
+| Project | N/A | Scope/context | Memories, Entities |
 
-The knowledge graph emerges from these connections. Memories are the atoms; entities, documents, and projects provide structure and context.
+The knowledge graph emerges from these connections. Memories are the atoms; entities and projects provide structure and context.
