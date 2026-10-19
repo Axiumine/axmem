@@ -7,8 +7,10 @@ import time
 from asyncio import Lock
 from collections import OrderedDict
 from dataclasses import dataclass
+from typing import Any
 
 from fastmcp import Context, FastMCP
+from fastmcp.server.auth import AuthProvider
 from fastmcp.server.dependencies import AccessToken, get_access_token
 from starlette.requests import Request
 
@@ -123,6 +125,37 @@ class TokenCache:
         }
 
 
+def _default_user_create() -> UserCreate:
+    """The configured default user, used when no auth provider is attached"""
+    return UserCreate(
+        external_id=settings.DEFAULT_USER_ID,
+        name=settings.DEFAULT_USER_NAME,
+        email=settings.DEFAULT_USER_EMAIL,
+    )
+
+
+def _user_create_from_claims(claims: dict[str, Any], missing_sub_message: str) -> UserCreate:
+    """Build the user to provision from validated token claims
+
+    Raises:
+        ValueError: With ``missing_sub_message`` if the token carries no ``sub`` claim
+    """
+    sub = claims.get("sub")
+    name = claims.get("name") or claims.get("preferred_username") or claims.get("login") or f"User {sub}"
+
+    if not sub:
+        raise ValueError(missing_sub_message)
+
+    email = claims.get("email") or f"{sub}@oauth.local"
+
+    # Some IdPs emit non-string claims (e.g. a numeric sub); UserCreate requires strings
+    return UserCreate(
+        external_id=str(sub),
+        name=str(name),
+        email=str(email),
+    )
+
+
 async def get_user_from_auth(ctx: Context) -> User:
     """Provides user context for MCP and API interaction.
 
@@ -141,12 +174,7 @@ async def get_user_from_auth(ctx: Context) -> User:
 
     if not ctx.fastmcp.auth:
         logger.info("Authentication disabled (no auth provider configured) - using default user")
-        default_user = UserCreate(
-            external_id=settings.DEFAULT_USER_ID,
-            name=settings.DEFAULT_USER_NAME,
-            email=settings.DEFAULT_USER_EMAIL,
-        )
-        return await user_service.get_or_create_user(user=default_user)
+        return await user_service.get_or_create_user(user=_default_user_create())
 
     logger.info(f"Authentication enabled ({type(ctx.fastmcp.auth).__name__}) - extracting user from token")
     token: AccessToken | None = get_access_token()
@@ -158,21 +186,58 @@ async def get_user_from_auth(ctx: Context) -> User:
 
     logger.debug(f"Token claims received: {json.dumps(claims, indent=2, default=str)}")
 
-    sub = claims.get("sub")
-    name = claims.get("name") or claims.get("preferred_username") or claims.get("login") or f"User {sub}"
-
-    if not sub:
-        raise ValueError("Token contains no 'sub' claim")
-
-    email = claims.get("email") or f"{sub}@oauth.local"
-
-    # Some IdPs emit non-string claims (e.g. a numeric sub); UserCreate requires strings
-    user = UserCreate(
-        external_id=str(sub),
-        name=str(name),
-        email=str(email),
-    )
+    user = _user_create_from_claims(claims, "Token contains no 'sub' claim")
     return await user_service.get_or_create_user(user=user)
+
+
+def _bearer_token(request: Request) -> str:
+    """Extract the Bearer credential from the Authorization header
+
+    Raises:
+        ValueError: If the header is missing or does not use the Bearer scheme
+    """
+    # RFC 6750: Bearer scheme is case-insensitive
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.lower().startswith("bearer "):
+        raise ValueError("Missing or invalid Authorization header")
+
+    return auth_header[7:]  # Strip "Bearer " prefix (length is same regardless of case)
+
+
+async def _cached_user(cache: TokenCache | None, token: str) -> User | None:
+    """The user cached for a token, or None on a miss or when caching is off"""
+    if not (cache and settings.TOKEN_CACHE_ENABLED):
+        return None
+
+    cached_user = await cache.get(token)
+    if cached_user:
+        logger.debug("Token cache HIT - returning cached user")
+        return cached_user
+    logger.debug("Token cache MISS - validating token")
+    return None
+
+
+async def _cache_user(cache: TokenCache | None, token: str, user: User, access_token: AccessToken) -> None:
+    """Cache a validated user, when caching is on"""
+    if cache and settings.TOKEN_CACHE_ENABLED:
+        # Cap the entry at the token's own expiry so a cache hit never outlives the token
+        await cache.set(token, user, token_expires_at=getattr(access_token, "expires_at", None))
+        logger.debug(f"Token cached (TTL: {settings.TOKEN_CACHE_TTL_SECONDS}s)")
+
+
+async def _verify_bearer_token(auth: AuthProvider, token: str) -> AccessToken:
+    """Validate a Bearer token with the configured auth provider
+
+    Raises:
+        ValueError: If the provider rejects the token
+    """
+    logger.debug(f"Validating Bearer token via {type(auth).__name__}")
+    access_token = await auth.verify_token(token)
+
+    if access_token is None:
+        raise ValueError("Invalid or expired token")
+
+    return access_token
 
 
 async def get_user_from_request(request: Request, mcp: FastMCP) -> User:
@@ -203,56 +268,28 @@ async def get_user_from_request(request: Request, mcp: FastMCP) -> User:
     if not mcp.auth:
         # No auth configured - use default user (no caching needed)
         logger.debug("HTTP auth disabled (mcp.auth not configured) - using default user")
-        default_user = UserCreate(
-            external_id=settings.DEFAULT_USER_ID,
-            name=settings.DEFAULT_USER_NAME,
-            email=settings.DEFAULT_USER_EMAIL,
-        )
-        return await user_service.get_or_create_user(user=default_user)
+        return await user_service.get_or_create_user(user=_default_user_create())
 
     # Auth is configured - extract Bearer token from Authorization header
-    # RFC 6750: Bearer scheme is case-insensitive
-    auth_header = request.headers.get("Authorization", "")
-    if not auth_header.lower().startswith("bearer "):
-        raise ValueError("Missing or invalid Authorization header")
-
-    token = auth_header[7:]  # Strip "Bearer " prefix (length is same regardless of case)
+    token = _bearer_token(request)
 
     # Check cache first (if enabled and cache exists)
     cache: TokenCache | None = getattr(mcp, "token_cache", None)
-    if cache and settings.TOKEN_CACHE_ENABLED:
-        cached_user = await cache.get(token)
-        if cached_user:
-            logger.debug("Token cache HIT - returning cached user")
-            return cached_user
-        logger.debug("Token cache MISS - validating token")
+    cached_user = await _cached_user(cache, token)
+    if cached_user:
+        return cached_user
 
     # Cache miss or disabled - validate token via provider
-    logger.debug(f"Validating Bearer token via {type(mcp.auth).__name__}")
-    access_token = await mcp.auth.verify_token(token)
-
-    if access_token is None:
-        raise ValueError("Invalid or expired token")
+    access_token = await _verify_bearer_token(mcp.auth, token)
 
     # Extract claims and provision user (same pattern as MCP auth)
     claims = access_token.claims
     logger.debug(f"Token claims received: {json.dumps(claims, indent=2, default=str)}")
 
-    sub = claims.get("sub")
-    if not sub:
-        raise ValueError("Token missing 'sub' claim")
-
-    name = claims.get("name") or claims.get("preferred_username") or claims.get("login") or f"User {sub}"
-    email = claims.get("email") or f"{sub}@oauth.local"
-
-    # Some IdPs emit non-string claims (e.g. a numeric sub); UserCreate requires strings
-    user_data = UserCreate(external_id=str(sub), name=str(name), email=str(email))
+    user_data = _user_create_from_claims(claims, "Token missing 'sub' claim")
     user = await user_service.get_or_create_user(user=user_data)
 
     # Cache the validated user
-    if cache and settings.TOKEN_CACHE_ENABLED:
-        # Cap the entry at the token's own expiry so a cache hit never outlives the token
-        await cache.set(token, user, token_expires_at=getattr(access_token, "expires_at", None))
-        logger.debug(f"Token cached (TTL: {settings.TOKEN_CACHE_TTL_SECONDS}s)")
+    await _cache_user(cache, token, user, access_token)
 
     return user

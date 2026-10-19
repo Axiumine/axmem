@@ -22,7 +22,36 @@ _MESSAGES = {
 }
 
 
-def find_unstorable(value: Any) -> tuple[tuple[str | int, ...], str] | None:
+_Location = tuple[str | int, ...]
+
+
+def _own_problem(item: Any) -> str | None:
+    """Error type for a NaN, Infinity or NUL held by the item itself, not by its children
+
+    A NUL in a dict key counts against the dict.
+    """
+    if isinstance(item, str):
+        return "nul_character" if NUL in item else None
+    if isinstance(item, float):
+        return None if math.isfinite(item) else "non_finite_number"
+    if isinstance(item, dict) and any(isinstance(key, str) and NUL in key for key in item):
+        return "nul_character"
+    return None
+
+
+def _children(loc: _Location, item: Any) -> list[tuple[_Location, Any]]:
+    """Nested values of a dict or list in reverse order, ready to push on a stack
+
+    Reversed, so the first entry is popped first and errors follow document order.
+    """
+    if isinstance(item, dict):
+        return [(loc + (key,), child) for key, child in reversed(item.items())]
+    if isinstance(item, list | tuple):
+        return [(loc + (index,), child) for index, child in reversed(list(enumerate(item)))]
+    return []
+
+
+def find_unstorable(value: Any) -> tuple[_Location, str] | None:
     """Find the first NaN, Infinity or NUL character inside a value
 
     Walks nested dicts and lists without recursion, so a deeply nested value cannot
@@ -32,22 +61,13 @@ def find_unstorable(value: Any) -> tuple[tuple[str | int, ...], str] | None:
         (location inside the value, error type), or None when the value is storable.
         A NUL in a dict key is reported at the location of the dict itself.
     """
-    stack: list[tuple[tuple[str | int, ...], Any]] = [((), value)]
+    stack: list[tuple[_Location, Any]] = [((), value)]
     while stack:
         loc, item = stack.pop()
-        if isinstance(item, str):
-            if NUL in item:
-                return loc, "nul_character"
-        elif isinstance(item, float):
-            if not math.isfinite(item):
-                return loc, "non_finite_number"
-        elif isinstance(item, dict):
-            if any(isinstance(key, str) and NUL in key for key in item):
-                return loc, "nul_character"
-            # Reversed, so the first entry is popped first and errors follow document order
-            stack.extend((loc + (key,), child) for key, child in reversed(item.items()))
-        elif isinstance(item, list | tuple):
-            stack.extend((loc + (index,), child) for index, child in reversed(list(enumerate(item))))
+        problem = _own_problem(item)
+        if problem is not None:
+            return loc, problem
+        stack.extend(_children(loc, item))
     return None
 
 

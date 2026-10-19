@@ -204,6 +204,26 @@ def scan_for_breaches(events: list[dict[str, Any]]) -> list[str]:
     return breaches
 
 
+def _events_of_type(events: list[dict[str, Any]], kind: str) -> list[dict[str, Any]]:
+    return [e for e in events if e.get("type") == kind]
+
+
+def _classify_session(outcome: SessionOutcome, events: list[dict[str, Any]]) -> tuple[str, str]:
+    """Status (completed | timeout | error) and error text of a finished session."""
+    if outcome.kind == "timeout":
+        return "timeout", outcome.detail or "session timed out"
+
+    error_events = _events_of_type(events, "error")
+    if error_events:
+        return "error", "; ".join(str(e.get("content") or "") for e in error_events)
+
+    if not any(e.get("content") == "ok" for e in _events_of_type(events, "result")):
+        # A turn can truncate with no result and no error yet exit 0 (mem 1690)
+        return "error", "stream ended without a result event with content 'ok'"
+
+    return "completed", ""
+
+
 class Walkthrough:
     def __init__(
         self, config: HarnessConfig, runner: SessionRunner, server_url: str, run_dir: Path,
@@ -239,21 +259,9 @@ class Walkthrough:
         )
 
         events = load_events(skill_dir / "events.jsonl", self.mount)
-        result_events = [e for e in events if e.get("type") == "result"]
-        error_events = [e for e in events if e.get("type") == "error"]
+        status, error = _classify_session(outcome, events)
 
-        if outcome.kind == "timeout":
-            status, error = "timeout", outcome.detail or "session timed out"
-        elif error_events:
-            status = "error"
-            error = "; ".join(str(e.get("content") or "") for e in error_events)
-        elif not any(e.get("content") == "ok" for e in result_events):
-            # A turn can truncate with no result and no error yet exit 0 (mem 1690)
-            status = "error"
-            error = "stream ended without a result event with content 'ok'"
-        else:
-            status, error = "completed", ""
-
+        result_events = _events_of_type(events, "result")
         terminal = result_events[-1] if result_events else {}
         result = SkillRunResult(
             skill=skill,

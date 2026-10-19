@@ -16,10 +16,10 @@ Categories: users, memories, projects, code_artifacts, documents, entities, plan
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from app.config.logging_config import logging
-from app.models.tool_registry_models import ToolCategory
+from app.models.tool_registry_models import ToolCategory, ToolMetadata
 
 if TYPE_CHECKING:
     from fastmcp import Context
@@ -55,6 +55,35 @@ VALID_ACTIONS = frozenset({"read", "write"})
 VALID_CATEGORIES = frozenset(_SCOPE_TO_CATEGORIES.keys())
 
 
+def _validate_scope_token(token: str) -> None:
+    """Check one scope token against the accepted formats
+
+    Raises:
+        ValueError: If the token is not ``*``, ``read``, ``write`` or ``<action>:<category>``
+    """
+    if token == "*" or token in VALID_ACTIONS:
+        # "*" is every tool, a bare "read" or "write" applies to all categories
+        return
+
+    if ":" not in token:
+        raise ValueError(
+            f"Invalid scope token '{token}'. "
+            f"Valid formats: *, read, write, read:<category>, write:<category>",
+        )
+
+    action, category = token.split(":", 1)
+    if action not in VALID_ACTIONS:
+        raise ValueError(
+            f"Invalid scope action '{action}' in '{token}'. "
+            f"Valid actions: {', '.join(sorted(VALID_ACTIONS))}",
+        )
+    if category not in VALID_CATEGORIES:
+        raise ValueError(
+            f"Invalid scope category '{category}' in '{token}'. "
+            f"Valid categories: {', '.join(sorted(VALID_CATEGORIES))}",
+        )
+
+
 def parse_scopes(scope_string: str) -> frozenset[str]:
     """Parse and validate a comma-separated scope string.
 
@@ -76,32 +105,23 @@ def parse_scopes(scope_string: str) -> frozenset[str]:
         raise ValueError("Scope string cannot be empty")
 
     for token in tokens:
-        if token == "*":
-            continue
-
-        if ":" in token:
-            parts = token.split(":", 1)
-            action, category = parts[0], parts[1]
-            if action not in VALID_ACTIONS:
-                raise ValueError(
-                    f"Invalid scope action '{action}' in '{token}'. "
-                    f"Valid actions: {', '.join(sorted(VALID_ACTIONS))}",
-                )
-            if category not in VALID_CATEGORIES:
-                raise ValueError(
-                    f"Invalid scope category '{category}' in '{token}'. "
-                    f"Valid categories: {', '.join(sorted(VALID_CATEGORIES))}",
-                )
-        elif token in VALID_ACTIONS:
-            # Bare "read" or "write" — applies to all categories
-            continue
-        else:
-            raise ValueError(
-                f"Invalid scope token '{token}'. "
-                f"Valid formats: *, read, write, read:<category>, write:<category>",
-            )
+        _validate_scope_token(token)
 
     return tokens
+
+
+def _token_permits(token: str, tool: ToolMetadata) -> bool:
+    """Whether one validated scope token (other than ``*``) permits a tool"""
+    if ":" in token:
+        action, scope_category = token.split(":", 1)
+        if tool.category.value not in _SCOPE_TO_CATEGORIES.get(scope_category, []):
+            return False
+        return tool.mutates == (action != "read")
+    if token == "read":
+        return not tool.mutates
+    if token == "write":
+        return tool.mutates
+    return False
 
 
 def resolve_permitted_tools(scopes: frozenset[str], registry: ToolRegistry) -> set[str]:
@@ -117,27 +137,12 @@ def resolve_permitted_tools(scopes: frozenset[str], registry: ToolRegistry) -> s
     if "*" in scopes:
         return {m.name for m in registry.list_all_tools()}
 
-    permitted: set[str] = set()
-
-    for token in scopes:
-        if ":" in token:
-            action, scope_category = token.split(":", 1)
-            cat_values = _SCOPE_TO_CATEGORIES.get(scope_category, [])
-            is_read = action == "read"
-            for tool in registry.list_all_tools():
-                if tool.category.value in cat_values:
-                    if (is_read and not tool.mutates) or (not is_read and tool.mutates):
-                        permitted.add(tool.name)
-        elif token == "read":
-            for tool in registry.list_all_tools():
-                if not tool.mutates:
-                    permitted.add(tool.name)
-        elif token == "write":
-            for tool in registry.list_all_tools():
-                if tool.mutates:
-                    permitted.add(tool.name)
-
-    return permitted
+    return {
+        tool.name
+        for tool in registry.list_all_tools()
+        for token in scopes
+        if _token_permits(token, tool)
+    }
 
 
 def get_required_scope(tool_name: str, registry: ToolRegistry) -> str:
@@ -203,6 +208,48 @@ def get_effective_scopes(ctx: Context) -> tuple[set[str], frozenset[str]]:
     return effective_permitted, effective_scopes
 
 
+def _current_access_token() -> Any:
+    """The OAuth access token of the current request, or None when there is none"""
+    try:
+        from fastmcp.server.dependencies import get_access_token
+        return get_access_token()
+    except Exception:
+        return None
+
+
+def _scopes_from_claim(claim: Any) -> list[str]:
+    """Split one token claim into raw scope strings"""
+    if isinstance(claim, str):
+        return claim.split()
+    if isinstance(claim, list | tuple):
+        return " ".join(str(item) for item in claim).split()
+    if claim:
+        # Not a type that can carry scopes, but the token was meant to be limited
+        return [str(claim)]
+    return []
+
+
+def _raw_token_scopes(claims: dict[str, Any]) -> list[str]:
+    """Raw scope strings from the first scope claim that carries any"""
+    for claim_name in _TOKEN_SCOPE_CLAIMS:
+        raw_scopes = _scopes_from_claim(claims.get(claim_name))
+        if raw_scopes:
+            return raw_scopes
+    return []
+
+
+def _split_recognised_scopes(raw_scopes: list[str]) -> tuple[set[str], list[str]]:
+    """Separate the Forgetful scopes from the ones this module does not understand"""
+    recognised: set[str] = set()
+    ignored: list[str] = []
+    for raw_scope in raw_scopes:
+        try:
+            recognised |= parse_scopes(raw_scope)
+        except ValueError:
+            ignored.append(raw_scope)
+    return recognised, ignored
+
+
 def _extract_token_scopes(ctx: Context) -> frozenset[str] | None:
     """Extract scopes from OAuth access token if present.
 
@@ -219,38 +266,15 @@ def _extract_token_scopes(ctx: Context) -> frozenset[str] | None:
     empty set (nothing permitted): a token must never widen to the full instance
     ceiling because of scopes this module does not understand.
     """
-    try:
-        from fastmcp.server.dependencies import get_access_token
-        token = get_access_token()
-    except Exception:
-        return None
-
+    token = _current_access_token()
     if token is None:
         return None
 
-    raw_scopes: list[str] = []
-    for claim_name in _TOKEN_SCOPE_CLAIMS:
-        claim = token.claims.get(claim_name)
-        if isinstance(claim, str):
-            raw_scopes = claim.split()
-        elif isinstance(claim, list | tuple):
-            raw_scopes = " ".join(str(item) for item in claim).split()
-        elif claim:
-            # Not a type that can carry scopes, but the token was meant to be limited
-            raw_scopes = [str(claim)]
-        if raw_scopes:
-            break
-
+    raw_scopes = _raw_token_scopes(token.claims)
     if not raw_scopes:
         return None
 
-    recognised: set[str] = set()
-    ignored: list[str] = []
-    for raw_scope in raw_scopes:
-        try:
-            recognised |= parse_scopes(raw_scope)
-        except ValueError:
-            ignored.append(raw_scope)
+    recognised, ignored = _split_recognised_scopes(raw_scopes)
 
     if not recognised:
         logger.warning(

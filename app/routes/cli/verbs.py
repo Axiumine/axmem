@@ -43,6 +43,20 @@ def _pick_project(value: str, matches: list[dict]) -> int:
     return matches[0]["id"]
 
 
+def _resolve_by_name(value: str, projects: list[dict]) -> int | None:
+    """Resolve a project name: exact-case matches first, then case-insensitive ones.
+
+    Returns None when no project has that name; several equally good matches raise CliError.
+    """
+    exact = [project for project in projects if project["name"] == value]
+    if exact:
+        return _pick_project(value, exact)
+    folded = [project for project in projects if project["name"].lower() == value.lower()]
+    if folded:
+        return _pick_project(value, folded)
+    return None
+
+
 async def resolve_project(executor, value: str) -> int:
     """Resolve a -p/--project value to a project id.
 
@@ -58,12 +72,9 @@ async def resolve_project(executor, value: str) -> int:
     if is_id and any(project["id"] == int(value) for project in projects):
         return int(value)
 
-    exact = [project for project in projects if project["name"] == value]
-    if exact:
-        return _pick_project(value, exact)
-    folded = [project for project in projects if project["name"].lower() == value.lower()]
-    if folded:
-        return _pick_project(value, folded)
+    by_name = _resolve_by_name(value, projects)
+    if by_name is not None:
+        return by_name
 
     if is_id:
         return int(value)
