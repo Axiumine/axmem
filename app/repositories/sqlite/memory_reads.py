@@ -96,10 +96,7 @@ class SqliteMemoryReadMixin(SqliteMemoryBase):
             Memory object or None if not found
         """
         memory_orm = await self.get_memory_table_by_id(user_id=user_id, memory_id=memory_id)
-
-        if memory_orm:
-            return Memory.model_validate(memory_orm)
-        raise NotFoundError(f"Memory with id {memory_id} not found")
+        return Memory.model_validate(memory_orm)
 
     async def get_memory_table_by_id(self, user_id: UUID, memory_id: int) -> MemoryTable:
         """Retrieves memory by ID
