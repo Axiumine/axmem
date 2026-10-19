@@ -181,9 +181,6 @@ class MemorySearchMixin(MemoryRepositoryBase):
         except NotFoundError:
             return []
 
-        if memory_orm.embedding is None:
-            return []
-
         return await self._nearest_memories(
             user_id=user_id,
             memory_id=memory_id,

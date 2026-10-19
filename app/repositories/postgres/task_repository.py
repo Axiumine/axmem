@@ -120,6 +120,53 @@ async def _summarise_tasks(
     return summaries
 
 
+async def _raise_if_dependency_unfinished(session: AsyncSession, task_id: int) -> None:
+    """Raise DependencyNotMetError naming the lowest-id prerequisite that is not done."""
+    prerequisite = aliased(TasksTable, name="prerequisite")
+    result = await session.execute(
+        select(prerequisite.id, prerequisite.state)
+        .join(
+            TaskDependenciesTable,
+            TaskDependenciesTable.depends_on_task_id == prerequisite.id,
+        )
+        .where(
+            TaskDependenciesTable.task_id == task_id,
+            prerequisite.state != TaskState.DONE.value,
+        )
+        .order_by(prerequisite.id)
+        .limit(1),
+    )
+    unfinished = result.first()
+    if unfinished is not None:
+        raise DependencyNotMetError(
+            f"Dependency task {unfinished.id} is not done (state: {unfinished.state})",
+        )
+
+
+async def _raise_if_criteria_unmet(session: AsyncSession, task_id: int) -> None:
+    """Raise InvalidStateTransitionError listing the acceptance criteria that are not met."""
+    result = await session.execute(
+        select(CriteriaTable.description).where(
+            CriteriaTable.task_id == task_id,
+            CriteriaTable.met.is_(False),
+        ),
+    )
+    unmet = [description for (description,) in result.all()]
+    if unmet:
+        raise InvalidStateTransitionError(
+            f"Cannot mark task as done: {len(unmet)} acceptance criteria not met. "
+            f"Unmet: {[description[:50] for description in unmet]}",
+        )
+
+
+# The guarded UPDATE in transition_task_state only carries preconditions for these states;
+# any other state has nothing to explain beyond a concurrent change.
+_PRECONDITION_EXPLAINERS = {
+    TaskState.DOING: (_raise_if_dependency_unfinished,),
+    TaskState.DONE: (_raise_if_dependency_unfinished, _raise_if_criteria_unmet),
+}
+
+
 class PostgresTaskRepository:
     """Repository for Task, Criterion, and TaskDependency operations in Postgres."""
 
@@ -313,39 +360,8 @@ class PostgresTaskRepository:
         self, session, task_id: int, new_state: TaskState,
     ) -> None:
         """Explain why the guarded UPDATE matched nothing although the version was current."""
-        if new_state in (TaskState.DOING, TaskState.DONE):
-            prerequisite = aliased(TasksTable, name="prerequisite")
-            result = await session.execute(
-                select(prerequisite.id, prerequisite.state)
-                .join(
-                    TaskDependenciesTable,
-                    TaskDependenciesTable.depends_on_task_id == prerequisite.id,
-                )
-                .where(
-                    TaskDependenciesTable.task_id == task_id,
-                    prerequisite.state != TaskState.DONE.value,
-                )
-                .order_by(prerequisite.id)
-                .limit(1),
-            )
-            unfinished = result.first()
-            if unfinished is not None:
-                raise DependencyNotMetError(
-                    f"Dependency task {unfinished.id} is not done (state: {unfinished.state})",
-                )
-        if new_state == TaskState.DONE:
-            result = await session.execute(
-                select(CriteriaTable.description).where(
-                    CriteriaTable.task_id == task_id,
-                    CriteriaTable.met.is_(False),
-                ),
-            )
-            unmet = [description for (description,) in result.all()]
-            if unmet:
-                raise InvalidStateTransitionError(
-                    f"Cannot mark task as done: {len(unmet)} acceptance criteria not met. "
-                    f"Unmet: {[description[:50] for description in unmet]}",
-                )
+        for explain in _PRECONDITION_EXPLAINERS.get(new_state, ()):
+            await explain(session, task_id)
         raise ConflictError(
             f"Task {task_id} changed while moving to {new_state.value}; reload it and retry",
         )
