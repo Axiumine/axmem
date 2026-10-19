@@ -17,13 +17,18 @@ from app.models.patch_models import PatchModel
 from app.models.storable import StorableInput
 
 
-def _require_text(value: str, field_name: str) -> str:
-    """Trim required text and reject values that are blank after trimming"""
+def _require_text(value: str, field_name: str, *, verbatim: bool = False) -> str:
+    """Trim required text and reject values that are blank after trimming
+
+    With ``verbatim`` the value is only checked, never changed: the skill body is
+    Markdown, where leading indentation (a code block) and trailing newlines mean
+    something, and export/import must give back exactly what was stored.
+    """
     stripped = value.strip()
     if not stripped:
         raise ValueError(f"{field_name} cannot be empty or whitespace only")
 
-    return stripped
+    return value if verbatim else stripped
 
 
 def _check_allowed_tools_length(tools: list[str] | None) -> list[str] | None:
@@ -161,8 +166,8 @@ class SkillCreate(StorableInput):
     @field_validator("description", "content")
     @classmethod
     def validate_required_text(cls, v, info):
-        """Trim description/content and reject blank values."""
-        return _require_text(v, info.field_name)
+        """Trim the description, keep the content verbatim, reject blank values."""
+        return _require_text(v, info.field_name, verbatim=info.field_name == "content")
 
     @field_validator("allowed_tools")
     @classmethod
@@ -246,11 +251,11 @@ class SkillUpdate(PatchModel, StorableInput):
     @field_validator("description", "content")
     @classmethod
     def validate_required_text(cls, v, info):
-        """Trim description/content and reject blank values."""
+        """Trim the description, keep the content verbatim, reject blank values."""
         if v is None:
             return None
 
-        return _require_text(v, info.field_name)
+        return _require_text(v, info.field_name, verbatim=info.field_name == "content")
 
     @field_validator("allowed_tools")
     @classmethod

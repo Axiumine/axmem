@@ -310,14 +310,14 @@ class TestSkillBlankTextApi:
         assert "cannot be empty or whitespace only" in response.text
 
     @pytest.mark.asyncio
-    async def test_create_trims_description_and_content(self, http_client):
+    async def test_create_trims_description_but_keeps_content_verbatim(self, http_client):
         response = await http_client.post("/api/v1/skills", json={
             "name": "padded", "description": "  does things  ", "content": "\n  body  \n",
         })
 
         assert response.status_code == 201, response.text
         assert response.json()["description"] == "does things"
-        assert response.json()["content"] == "body"
+        assert response.json()["content"] == "\n  body  \n"
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("field", ["description", "content"])

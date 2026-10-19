@@ -224,17 +224,17 @@ class TestSkillBlankText:
 
         assert f"{field} cannot be empty or whitespace only" in str(exc_info.value)
 
-    def test_create_trims_surrounding_whitespace(self):
+    def test_create_trims_the_description_but_keeps_the_content_verbatim(self):
         skill = SkillCreate(**_skill_kwargs(description="  does things  ", content="\n  body  \n"))
 
         assert skill.description == "does things"
-        assert skill.content == "body"
+        assert skill.content == "\n  body  \n"
 
-    def test_update_trims_surrounding_whitespace(self):
+    def test_update_trims_the_description_but_keeps_the_content_verbatim(self):
         update = SkillUpdate(description="  does things  ", content="\n  body  \n")
 
         assert update.description == "does things"
-        assert update.content == "body"
+        assert update.content == "\n  body  \n"
 
     def test_update_without_text_is_still_allowed(self):
         update = SkillUpdate(importance=3)
