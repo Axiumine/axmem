@@ -218,7 +218,7 @@ class OpenAIEmbeddingsAdapter(EmbeddingsAdapter):
     """
 
     def __init__(self):
-        base_url = settings.OPENAI_BASE_URL or None
+        base_url: str | None = settings.OPENAI_BASE_URL or None
         self.supports_dimensions = settings.OPENAI_SUPPORTS_DIMENSIONS
 
         logger.info("Initialising OpenAI embeddings adapter", extra={
