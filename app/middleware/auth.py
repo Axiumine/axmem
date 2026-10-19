@@ -9,13 +9,14 @@ from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Any
 
-from fastmcp import Context, FastMCP
+from fastmcp import Context
 from fastmcp.server.auth import AuthProvider
 from fastmcp.server.dependencies import AccessToken, get_access_token
 from starlette.requests import Request
 
 from app.config.settings import settings
 from app.models.user_models import User, UserCreate
+from app.routes.server_state import ForgetfulMCP, server_of
 from app.services.user_service import UserService
 
 logger = logging.getLogger(__name__)
@@ -156,6 +157,19 @@ def _user_create_from_claims(claims: dict[str, Any], missing_sub_message: str) -
     )
 
 
+async def _provision_user(user_service: UserService, user: UserCreate) -> User:
+    """Fetch or create the user for a request's identity
+
+    Raises:
+        ValueError: If the user could not be provisioned, because ``get_or_create_user``
+            returned no user (a concurrent request removed the row it had just found)
+    """
+    provisioned = await user_service.get_or_create_user(user=user)
+    if provisioned is None:
+        raise ValueError("User could not be provisioned")
+    return provisioned
+
+
 async def get_user_from_auth(ctx: Context) -> User:
     """Provides user context for MCP and API interaction.
 
@@ -170,13 +184,14 @@ async def get_user_from_auth(ctx: Context) -> User:
     Returns:
         User: full user model with internal ids and meta data plus external ids, name, email, idp_metadata and notes
     """
-    user_service: UserService = ctx.fastmcp.user_service
+    server = server_of(ctx)
+    user_service: UserService = server.user_service
 
-    if not ctx.fastmcp.auth:
+    if not server.auth:
         logger.info("Authentication disabled (no auth provider configured) - using default user")
-        return await user_service.get_or_create_user(user=_default_user_create())
+        return await _provision_user(user_service, _default_user_create())
 
-    logger.info(f"Authentication enabled ({type(ctx.fastmcp.auth).__name__}) - extracting user from token")
+    logger.info(f"Authentication enabled ({type(server.auth).__name__}) - extracting user from token")
     token: AccessToken | None = get_access_token()
 
     if token is None:
@@ -187,7 +202,7 @@ async def get_user_from_auth(ctx: Context) -> User:
     logger.debug(f"Token claims received: {json.dumps(claims, indent=2, default=str)}")
 
     user = _user_create_from_claims(claims, "Token contains no 'sub' claim")
-    return await user_service.get_or_create_user(user=user)
+    return await _provision_user(user_service, user)
 
 
 def _bearer_token(request: Request) -> str:
@@ -240,7 +255,7 @@ async def _verify_bearer_token(auth: AuthProvider, token: str) -> AccessToken:
     return access_token
 
 
-async def get_user_from_request(request: Request, mcp: FastMCP) -> User:
+async def get_user_from_request(request: Request, mcp: ForgetfulMCP) -> User:
     """Get user for HTTP routes (non-MCP endpoints).
 
     This is the HTTP equivalent of get_user_from_auth() for MCP tools.
@@ -268,7 +283,7 @@ async def get_user_from_request(request: Request, mcp: FastMCP) -> User:
     if not mcp.auth:
         # No auth configured - use default user (no caching needed)
         logger.debug("HTTP auth disabled (mcp.auth not configured) - using default user")
-        return await user_service.get_or_create_user(user=_default_user_create())
+        return await _provision_user(user_service, _default_user_create())
 
     # Auth is configured - extract Bearer token from Authorization header
     token = _bearer_token(request)
@@ -287,7 +302,7 @@ async def get_user_from_request(request: Request, mcp: FastMCP) -> User:
     logger.debug(f"Token claims received: {json.dumps(claims, indent=2, default=str)}")
 
     user_data = _user_create_from_claims(claims, "Token missing 'sub' claim")
-    user = await user_service.get_or_create_user(user=user_data)
+    user = await _provision_user(user_service, user_data)
 
     # Cache the validated user
     await _cache_user(cache, token, user, access_token)

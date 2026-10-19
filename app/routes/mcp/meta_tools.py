@@ -14,7 +14,7 @@ only see tools they can actually use.
 
 from typing import Any
 
-from fastmcp import Context, FastMCP
+from fastmcp import Context
 from fastmcp.exceptions import ToolError
 
 from app.config.logging_config import logging
@@ -22,6 +22,7 @@ from app.config.settings import settings
 from app.models.tool_registry_models import ToolCategory
 from app.routes.mcp.scope_resolver import get_effective_scopes, get_required_scope
 from app.routes.mcp.tool_errors import client_error_detail
+from app.routes.server_state import ForgetfulMCP, server_of
 
 logger = logging.getLogger(__name__)
 
@@ -415,7 +416,7 @@ def build_discovery_payload(registry, permitted: set, category: str | None = Non
     tools = [meta.to_discovery_dict() for meta in tools_metadata]
 
     # Group by category
-    tools_by_category = {}
+    tools_by_category: dict[str, list[dict[str, Any]]] = {}
     for tool in tools:
         cat = tool["category"]
         if cat not in tools_by_category:
@@ -490,7 +491,7 @@ def ensure_tool_executable(registry, permitted: set, tool_name: str) -> None:
 # ============================================================================
 
 
-def register(mcp: FastMCP):
+def register(mcp: ForgetfulMCP):
     """Register meta-tools with the provided FastMCP instance - registry accessed via ctx pattern"""
 
     # Build dynamic docstrings based on enabled feature flags
@@ -502,11 +503,12 @@ def register(mcp: FastMCP):
 
     async def discover_forgetful_tools(
         category: str | None = None,
-        ctx: Context = None,
+        *,
+        ctx: Context,
     ) -> dict[str, Any]:
         """Placeholder - set dynamically below"""
         try:
-            registry = ctx.fastmcp.registry
+            registry = server_of(ctx).registry
             permitted, _ = get_effective_scopes(ctx)
             logger.info("discover_forgetful_tools: category=%r", category)
 
@@ -530,7 +532,7 @@ def register(mcp: FastMCP):
     @mcp.tool()
     async def how_to_use_forgetful_tool(
         tool_name: str,
-        ctx: Context = None,
+        ctx: Context,
     ) -> dict[str, Any]:
         """Get detailed documentation for a specific tool
 
@@ -544,7 +546,7 @@ def register(mcp: FastMCP):
             Detailed tool documentation with JSON schema
         """
         try:
-            registry = ctx.fastmcp.registry
+            registry = server_of(ctx).registry
             permitted, _ = get_effective_scopes(ctx)
             logger.info("how_to_use_forgetful_tool: tool_name=%r", tool_name)
 
@@ -572,7 +574,7 @@ def register(mcp: FastMCP):
         try:
             reject_invalid_argument_names(tool_name, arguments)
 
-            registry = ctx.fastmcp.registry
+            registry = server_of(ctx).registry
             permitted, _ = get_effective_scopes(ctx)
             logger.info("execute_forgetful_tool: %r, args=%r", tool_name, list(arguments.keys()))
 

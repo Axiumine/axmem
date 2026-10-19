@@ -9,19 +9,29 @@ the codebase (supports .env, docker/.env, and platform config .env files).
 
 Users change nothing — same env vars, same behavior.
 """
+from __future__ import annotations
+
 import logging
+from typing import TYPE_CHECKING
 
 from app.config.settings import settings
 
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from fastmcp.server.auth import AuthProvider
+
 logger = logging.getLogger(__name__)
 
+type _ProviderFactory = Callable[[], AuthProvider]
+
 # Map of recognized provider class paths to their factory functions
-_PROVIDER_FACTORIES: dict[str, callable] = {}
+_PROVIDER_FACTORIES: dict[str, _ProviderFactory] = {}
 
 
-def _register(class_path: str):
+def _register(class_path: str) -> Callable[[_ProviderFactory], _ProviderFactory]:
     """Decorator to register a provider factory for a given class path."""
-    def wrapper(fn):
+    def wrapper(fn: _ProviderFactory) -> _ProviderFactory:
         _PROVIDER_FACTORIES[class_path] = fn
         return fn
     return wrapper
@@ -44,7 +54,7 @@ def _scopes(raw: str) -> list[str] | None:
 
 
 @_register("fastmcp.server.auth.providers.github.GitHubProvider")
-def _build_github():
+def _build_github() -> AuthProvider:
     from fastmcp.server.auth.providers.github import GitHubProvider
 
     return GitHubProvider(
@@ -56,7 +66,7 @@ def _build_github():
 
 
 @_register("fastmcp.server.auth.providers.google.GoogleProvider")
-def _build_google():
+def _build_google() -> AuthProvider:
     from fastmcp.server.auth.providers.google import GoogleProvider
 
     return GoogleProvider(
@@ -68,7 +78,7 @@ def _build_google():
 
 
 @_register("fastmcp.server.auth.providers.jwt.JWTVerifier")
-def _build_jwt():
+def _build_jwt() -> AuthProvider:
     from fastmcp.server.auth.providers.jwt import JWTVerifier
 
     jwks_uri = settings.FASTMCP_SERVER_AUTH_JWT_JWKS_URI or None
@@ -90,7 +100,7 @@ def _build_jwt():
 
 
 @_register("fastmcp.server.auth.providers.introspection.IntrospectionTokenVerifier")
-def _build_introspection():
+def _build_introspection() -> AuthProvider:
     from fastmcp.server.auth.providers.introspection import IntrospectionTokenVerifier
 
     return IntrospectionTokenVerifier(
@@ -104,7 +114,7 @@ def _build_introspection():
     )
 
 
-def build_auth_provider():
+def build_auth_provider() -> AuthProvider | None:
     """Build auth provider from FASTMCP_SERVER_AUTH setting.
 
     Returns None when FASTMCP_SERVER_AUTH is not set (no auth mode).

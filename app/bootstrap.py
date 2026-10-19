@@ -4,9 +4,11 @@ Extracted from main.lifespan() (docs/dev/cli_plan.md phase 1) so every front doo
 MCP server, REST API, and CLI — builds the identical adapter/repo/service/registry
 stack from one place. Heavy imports stay inside functions to keep module import cheap.
 """
+from __future__ import annotations
+
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from app.config.logging_config import logging
 from app.config.settings import (
@@ -17,6 +19,22 @@ from app.config.settings import (
 )
 from app.routes.mcp.tool_metadata_registry import register_all_tools_metadata
 from app.routes.mcp.tool_registry import ToolRegistry
+
+if TYPE_CHECKING:
+    from app.events import EventBus
+    from app.services.activity_service import ActivityService
+    from app.services.code_artifact_service import CodeArtifactService
+    from app.services.document_service import DocumentService
+    from app.services.entity_service import EntityService
+    from app.services.file_service import FileService
+    from app.services.graph_service import GraphService
+    from app.services.memory_service import MemoryService
+    from app.services.plan_service import PlanService
+    from app.services.project_service import ProjectService
+    from app.services.re_embedding_service import ReEmbeddingService
+    from app.services.skill_service import SkillService
+    from app.services.task_service import TaskService
+    from app.services.user_service import UserService
 
 logger = logging.getLogger(__name__)
 
@@ -223,19 +241,19 @@ def create_skill_repository(db_adapter, embeddings_adapter, reranker_adapter=Non
 class Services:
     """Service layer instances; feature-flagged services are None when disabled."""
 
-    user: Any
-    memory: Any
-    project: Any
-    code_artifact: Any
-    document: Any
-    entity: Any
-    graph: Any
-    activity: Any
-    re_embedding: Any
-    file: Any | None = None
-    skill: Any | None = None
-    plan: Any | None = None
-    task: Any | None = None
+    user: UserService
+    memory: MemoryService
+    project: ProjectService
+    code_artifact: CodeArtifactService
+    document: DocumentService
+    entity: EntityService
+    graph: GraphService
+    activity: ActivityService
+    re_embedding: ReEmbeddingService
+    file: FileService | None = None
+    skill: SkillService | None = None
+    plan: PlanService | None = None
+    task: TaskService | None = None
 
 
 @dataclass
@@ -248,7 +266,7 @@ class Runtime:
     registry: ToolRegistry
     permitted_tools: set[str]
     instance_scopes: frozenset[str]
-    event_bus: Any | None
+    event_bus: EventBus | None
 
 
 async def build_runtime() -> Runtime:

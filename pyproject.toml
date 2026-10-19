@@ -154,7 +154,9 @@ forbidden_modules = [
 id = "routes"
 name = "HTTP and MCP handlers use services instead of repositories or bootstrap"
 type = "forbidden"
-source_modules = ["app.routes.api", "app.routes.mcp", "app.middleware.auth"]
+source_modules = [
+    "app.routes.api", "app.routes.mcp", "app.routes.server_state", "app.middleware.auth",
+]
 forbidden_modules = ["app.repositories", "app.bootstrap"]
 
 # Keep CLI startup exceptions separate so HTTP/MCP cannot use them to reach bootstrap.

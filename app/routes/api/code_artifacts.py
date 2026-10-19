@@ -5,7 +5,6 @@ Provides CRUD operations for code artifacts.
 """
 import logging
 
-from fastmcp import FastMCP
 from pydantic import ValidationError
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -25,11 +24,12 @@ from app.routes.api.validation import (
     parse_optional_id_query,
     validation_error_response,
 )
+from app.routes.server_state import ForgetfulMCP
 
 logger = logging.getLogger(__name__)
 
 
-def register(mcp: FastMCP):
+def register(mcp: ForgetfulMCP):
     """Register code artifact REST routes with FastMCP"""
 
     @mcp.custom_route("/api/v1/code-artifacts", methods=["GET"])

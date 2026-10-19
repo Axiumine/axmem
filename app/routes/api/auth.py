@@ -2,10 +2,11 @@
 
 import logging
 
-from fastmcp import FastMCP
 from fastmcp.server.auth.auth import OAuthProvider
 from starlette.requests import Request
 from starlette.responses import JSONResponse
+
+from app.routes.server_state import ForgetfulMCP
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +27,7 @@ OAUTH_PROVIDER_MAP = {
 }
 
 
-def register(mcp: FastMCP):
+def register(mcp: ForgetfulMCP):
     """Register auth info routes with FastMCP"""
 
     @mcp.custom_route("/api/v1/auth/info", methods=["GET"])

@@ -2,7 +2,6 @@
 """
 import logging
 
-from fastmcp import FastMCP
 from pydantic import ValidationError
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -32,11 +31,12 @@ from app.routes.api.request_utils import (
     read_json_object,
 )
 from app.routes.api.validation import validation_error_response
+from app.routes.server_state import ForgetfulMCP
 
 logger = logging.getLogger(__name__)
 
 
-def register(mcp: FastMCP):
+def register(mcp: ForgetfulMCP):
     """Register task REST routes with FastMCP"""
     # ---- Task endpoints ----
 
@@ -50,11 +50,10 @@ def register(mcp: FastMCP):
             return JSONResponse({"error": str(e)}, status_code=401)
 
         params = request.query_params
-        plan_id_str = params.get("plan_id")
-        if not plan_id_str:
+        plan_id = query_int(params, "plan_id")
+        if plan_id is None:
             return JSONResponse({"error": "plan_id query param is required"}, status_code=400)
 
-        plan_id = query_int(params, "plan_id")
         assigned_agent = params.get("assigned_agent")
 
         state = query_enum(params, "state", TaskState)

@@ -7,7 +7,6 @@ import logging
 from typing import Any
 from uuid import UUID
 
-from fastmcp import FastMCP
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
@@ -16,6 +15,7 @@ from app.exceptions import NotFoundError
 from app.middleware.auth import get_user_from_request
 from app.models.memory_models import Memory
 from app.routes.api.query_params import INT32_MAX, INT32_MIN, INT64_MAX
+from app.routes.server_state import ForgetfulMCP
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +60,7 @@ async def _collect_memory_neighbourhood(
     return reached
 
 
-def register(mcp: FastMCP):
+def register(mcp: ForgetfulMCP):
     """Register graph REST routes with FastMCP"""
     # Constants for valid node types
     ALL_NODE_TYPES = {"memory", "entity", "project", "document", "code_artifact", "file", "skill", "plan", "task"}
@@ -233,7 +233,7 @@ def register(mcp: FastMCP):
         seen_skill_ids = set()
         seen_plan_ids = set()
         seen_task_ids = set()
-        memories = []  # Store for edge building
+        memories: list[Memory] = []  # Store for edge building
 
         # Get memories with pagination
         total_memory_count = 0
@@ -898,6 +898,9 @@ def register(mcp: FastMCP):
                 memory_id=memory_id,
             )
         except NotFoundError:
+            return JSONResponse({"error": "Memory not found"}, status_code=404)
+
+        if center_memory is None:
             return JSONResponse({"error": "Memory not found"}, status_code=404)
 
         nodes: list[dict[str, Any]] = []

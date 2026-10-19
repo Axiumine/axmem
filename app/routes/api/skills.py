@@ -5,7 +5,6 @@ for skills (procedural memory following the Agent Skills standard).
 """
 import logging
 
-from fastmcp import FastMCP
 from pydantic import ValidationError
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -27,11 +26,12 @@ from app.routes.api.validation import (
     parse_optional_int_query,
     validate_body_id,
 )
+from app.routes.server_state import ForgetfulMCP
 
 logger = logging.getLogger(__name__)
 
 
-def register(mcp: FastMCP):
+def register(mcp: ForgetfulMCP):
     """Register skill REST routes with FastMCP"""
 
     @mcp.custom_route("/api/v1/skills", methods=["POST"])

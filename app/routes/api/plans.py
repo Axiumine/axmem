@@ -2,7 +2,6 @@
 """
 import logging
 
-from fastmcp import FastMCP
 from pydantic import ValidationError
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -17,11 +16,12 @@ from app.routes.api.request_utils import (
     read_json_object,
 )
 from app.routes.api.validation import validation_error_response
+from app.routes.server_state import ForgetfulMCP
 
 logger = logging.getLogger(__name__)
 
 
-def register(mcp: FastMCP):
+def register(mcp: ForgetfulMCP):
     """Register plan REST routes with FastMCP"""
 
     @mcp.custom_route("/api/v1/plans", methods=["GET"])

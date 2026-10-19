@@ -193,7 +193,7 @@ async def _fetch_user_name(executor) -> str:
         if _SCOPE_DENIAL_MARKER in str(exc):
             return "(not shown: get_current_user is outside the granted scopes)"
         raise
-    return user.get("name") if isinstance(user, dict) else str(user)
+    return str(user.get("name") if isinstance(user, dict) else user)
 
 
 async def status(*, server: str | None = None) -> int:
