@@ -73,13 +73,13 @@ class MemoryRepositoryBase:
             memory_id: Id of the memory to be returned
 
         Returns:
-            Memory object or None if not found
+            Memory object
+
+        Raises:
+            NotFoundError: If the memory does not exist or belongs to another user
         """
         memory_orm = await self.get_memory_table_by_id(user_id=user_id, memory_id=memory_id)
-
-        if memory_orm:
-            return Memory.model_validate(memory_orm)
-        raise NotFoundError(f"Memory with id {memory_id} not found")
+        return Memory.model_validate(memory_orm)
 
     async def get_memory_table_by_id(self, user_id: UUID, memory_id: int) -> MemoryTable:
         """Retrieves memory by ID
@@ -89,7 +89,10 @@ class MemoryRepositoryBase:
             memory_id: Id of the memory to be returned
 
         Returns:
-            Memory Table object or None if not found
+            Memory Table object
+
+        Raises:
+            NotFoundError: If the memory does not exist or belongs to another user
         """
         if not fits_int4(memory_id):
             raise NotFoundError(f"Memory with id {memory_id} not found")
