@@ -17,11 +17,10 @@
 
 > **Axmem** is maintained by [Axiumine](https://github.com/Axiumine). It starts from the
 > [Forgetful](https://github.com/ScottRBK/forgetful) codebase by Scott Raisbeck (MIT) and goes
-> in directions an upstream-tracking fork cannot. Planned direction, not yet shipped:
->
-> 1. **Qdrant as the mandatory vector store** (search, auto-linking, re-embedding), with
->    PostgreSQL as the relational source of truth and a transactional outbox between the two.
-> 2. **SQLite removed**: PostgreSQL is the only relational backend.
+> in directions an upstream-tracking fork cannot. Planned direction, not yet shipped: fewer features,
+> **Qdrant as the only store** (SQLite, PostgreSQL and Alembic removed), embeddings computed in-process on the GPU
+> (or through an optional HTTP gateway) and GPU reranking. Every change, its reason and its status are listed in
+> [docs/changes-from-forgetful.md](docs/changes-from-forgetful.md) and [CHANGELOG.md](CHANGELOG.md).
 >
 > Until the rename lands, the commands, package names and environment variables below still say
 > `forgetful`. See [License](#license) for attribution.
@@ -424,6 +423,8 @@ For all environment variables with detailed explanations, see [Configuration Gui
 - [Search Documentation](docs/search.md) – Embedding pipeline and retrieval architecture
 - [Embedding Migration](docs/embedding_migration.md) – Switch embedding providers safely
 - [Features Roadmap](docs/features_roadmap.md) – Planned features and priorities
+- [Changelog](CHANGELOG.md) – Notable changes to Axmem by section
+- [Changes from Forgetful](docs/changes-from-forgetful.md) – Every difference from upstream, the reason and its status
 
 ### External Resources
 

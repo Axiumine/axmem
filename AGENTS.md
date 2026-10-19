@@ -77,6 +77,14 @@ GitNexus) and how to run or bypass single gates is documented in
 [docs/quality-gates.md](docs/quality-gates.md). Run `uv run python -m scripts.quality stage pre-commit`
 before committing; do not weaken a threshold to make a gate pass, fix the code or justify the exception.
 
+## Changelog
+Every commit that changes behaviour updates [CHANGELOG.md](CHANGELOG.md) and
+[docs/changes-from-forgetful.md](docs/changes-from-forgetful.md) in the same commit. Behaviour means anything a
+user, an MCP client or an operator can see: tools, REST routes, settings, schema and migrations, dependencies,
+supported platforms and the quality gates. Move the matching planned entry to its section and mark it Done, or
+add a new entry with the reason for the change. A commit cannot name its own hash, so the next commit that
+touches these files adds it. Refactors, test-only and typo commits need no entry.
+
 ## Linting
 Ensure that you run ruff following any changes and address any issues raised
 ```bash
