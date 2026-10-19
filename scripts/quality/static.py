@@ -44,7 +44,12 @@ def gate_mypy(ctx: Ctx) -> tuple[bool, str]:
 
 def gate_pylint(ctx: Ctx) -> tuple[bool, str]:
     paths = scoped_paths(ctx, PYLINT_PATHS, tuple(PYLINT_PATHS))
-    return check([*venv_tool("pylint"), "--fail-under=8.0", *paths])
+    argv = [*venv_tool("pylint"), "--fail-under=8.0"]
+    if ctx.scoped:
+        # A score over a handful of changed files is meaningless for convention/refactor
+        # messages; those count in the project-wide score checked on push and in CI.
+        argv.append("--disable=C,R")
+    return check([*argv, *paths])
 
 
 BANDIT_BASE = [

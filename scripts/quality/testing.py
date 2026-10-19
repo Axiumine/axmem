@@ -17,7 +17,7 @@ from .core import (
 )
 
 COMPAT_PYTHON = "3.14"
-CODE_PREFIXES = ("app/", "tests/", "main.py", "alembic/")
+CODE_PREFIXES = ("app/", "tests/", "main.py", "alembic/", "scripts/", "test_harness/")
 PYTEST = ["-q", "-p", "no:cacheprovider"]
 
 
