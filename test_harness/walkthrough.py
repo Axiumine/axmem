@@ -11,7 +11,7 @@ missing/malformed report) become recorded findings in meta.json.
 """
 import json
 import os
-import subprocess
+import subprocess  # nosec B404 - runs git on the fixture repo with fixed argv lists, never a shell
 import tempfile
 import time
 from dataclasses import dataclass, field
@@ -139,7 +139,7 @@ def _build_fixture_repo(root: Path) -> None:
 
         def git(*args: str) -> None:
             try:
-                subprocess.run(
+                subprocess.run(  # nosec B603 B607 - constant git argv, hermetic env, no shell
                     ["git", *overrides, *args], cwd=root, env=env, check=True,
                     capture_output=True, text=True, encoding="utf-8", errors="replace",
                 )

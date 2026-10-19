@@ -8,7 +8,7 @@ import os
 import re
 import shutil
 import sqlite3
-import subprocess
+import subprocess  # nosec B404 - runs pg_dump/psql with fixed argv lists, never a shell
 from contextlib import closing
 from pathlib import Path
 
@@ -165,7 +165,9 @@ class DatabaseBackupAdapter:
         ]
 
         try:
-            result = subprocess.run(cmd, env=_postgres_env(), capture_output=True, text=True)
+            result = subprocess.run(  # nosec B603 - argv list: constants + settings values after their option flags, no shell
+                cmd, env=_postgres_env(), capture_output=True, text=True,
+            )
             if result.returncode != 0:
                 raise RuntimeError(f"pg_dump failed: {result.stderr}")
         except BaseException:
@@ -195,7 +197,9 @@ class DatabaseBackupAdapter:
             "-f", str(backup_path),
         ]
 
-        result = subprocess.run(cmd, env=_postgres_env(), capture_output=True, text=True)
+        result = subprocess.run(  # nosec B603 - argv list: constants + settings values after their option flags, no shell
+            cmd, env=_postgres_env(), capture_output=True, text=True,
+        )
         if result.returncode != 0:
             raise RuntimeError(f"psql restore failed: {result.stderr}")
 

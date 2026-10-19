@@ -29,7 +29,7 @@ async def health() -> None:
     print provider errors and exit 0, so the caller reads HEALTHY=/EXCEPTION=."""
     try:
         result = await _shell().health_check(
-            cwd="/tmp",
+            cwd="/tmp",  # nosec B108 - container-side scratch cwd, dies with the container
             model=os.environ["AGENT_MODEL"],
             timeout=float(os.environ.get("HEALTH_TIMEOUT", "120")),
         )

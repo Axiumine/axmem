@@ -62,7 +62,7 @@ def _validate_scope_token(token: str) -> None:
     Raises:
         ValueError: If the token is not ``*``, ``read``, ``write`` or ``<action>:<category>``
     """
-    if token == "*" or token in VALID_ACTIONS:
+    if token == "*" or token in VALID_ACTIONS:  # nosec B105 - scope grant name, not a credential
         # "*" is every tool, a bare "read" or "write" applies to all categories
         return
 
@@ -118,9 +118,9 @@ def _token_permits(token: str, tool: ToolMetadata) -> bool:
         if tool.category.value not in _SCOPE_TO_CATEGORIES.get(scope_category, []):
             return False
         return tool.mutates == (action != "read")
-    if token == "read":
+    if token == "read":  # nosec B105 - scope grant name, not a credential
         return not tool.mutates
-    if token == "write":
+    if token == "write":  # nosec B105 - scope grant name, not a credential
         return tool.mutates
     return False
 

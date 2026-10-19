@@ -19,7 +19,7 @@ import json
 import os
 import shutil
 import socket
-import subprocess
+import subprocess  # nosec B404 - starts the throwaway server with a fixed argv list, never a shell
 import sys
 import time
 from collections.abc import Iterable
@@ -158,7 +158,7 @@ class ThrowawayForgetful:
         binary = _server_executable()
         self.port = _ephemeral_port()
         self._log_file = (self.run_dir / "server.log").open("w", encoding="utf-8")
-        self.process = subprocess.Popen(
+        self.process = subprocess.Popen(  # nosec B603 - argv list: which()-resolved binary + constants + our own port, no shell
             [binary, "serve", "--transport", "http", "--host", "127.0.0.1",
              "--port", str(self.port)],
             env=self._child_env(),

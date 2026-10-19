@@ -452,4 +452,4 @@ def build_traversal_query(lateral_subquery: str) -> str:
         GROUP BY node_id, node_type
         ORDER BY depth, node_type, node_id
         LIMIT :limit_plus_one
-    """
+    """  # nosec B608 - lateral_subquery is only ever joined _EDGE_QUERIES constants; every value is a bound :param

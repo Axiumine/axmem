@@ -465,6 +465,25 @@ def test_staged_credentials_are_private_to_the_invoking_user(tmp_path, staged, s
 
 
 @posix_only
+def test_staged_dir_is_owner_only_whatever_the_umask(tmp_path, staged):
+    # Arrange: the owner-only mode comes from mkdtemp itself, not from the caller's umask
+    secret = tmp_path / "auth.json"
+    secret.write_text("{}")
+    previous_umask = os.umask(0)
+
+    # Act
+    try:
+        staged_mount([secret], "/home/node/.local/share/opencode", staged)
+    finally:
+        os.umask(previous_umask)
+
+    # Assert
+    (staging,) = staged
+    assert stat.S_IMODE(staging.stat().st_mode) == 0o700
+    assert stat.S_IMODE((staging / "auth.json").stat().st_mode) == 0o600
+
+
+@posix_only
 def test_provisioned_opencode_mounts_are_all_private(tmp_path, staged):
     # Arrange
     auth = tmp_path / "auth.json"
