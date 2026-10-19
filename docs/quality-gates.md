@@ -31,7 +31,7 @@ synced as above.
 | Hook | Runs | Blocks |
 |---|---|---|
 | `pre-commit` | stage `pre-commit` on the staged files | yes |
-| `pre-push` | stage `pre-push` on the whole project | yes |
+| `pre-push` | stage `pre-push` on the whole project; only when the pushed commit is the checked-out `HEAD` (the gates read the working tree), pushing any other ref is not gated | yes |
 | `post-commit` | refreshes the local GitNexus index in the background (needs `.gitnexus/run.cjs` and `node`) | never |
 
 ## Pipeline
