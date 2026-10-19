@@ -116,12 +116,7 @@ async def test_not_null_embedding_constraint_is_restored_after_re_embed(
     assert not await embedding_is_nullable(db_adapter)
 
 
-@pytest.mark.e2e
-async def test_skills_are_migrated_with_memories_and_keep_their_constraint(
-    memory_repo, skill_repo, db_adapter,
-):
-    # Arrange: stored memories and skills whose vectors came from another (8-wide) model,
-    # while the application already runs with the new configuration, as after a restart.
+async def _seed_memory_and_skills(memory_repo, skill_repo, db_adapter):
     user_id = await create_user(db_adapter)
     await memory_repo.create_memory(user_id, MemoryCreate(
         title="Memory", content="content", context="run flow",
@@ -131,7 +126,11 @@ async def test_skills_are_migrated_with_memories_and_keep_their_constraint(
         await skill_repo.create_skill(user_id, SkillCreate(
             name=name, description=f"Process pdf documents for {name}", content="# Steps",
         ))
-    before = {s.id: s.updated_at for s in await skill_repo.get_skills_for_reembedding(10, 0)}
+    return user_id
+
+
+async def _store_vectors_from_another_model(db_adapter):
+    """Give every memory and skill an 8-wide vector, as if another model produced it."""
     async with db_adapter.system_session() as session:
         for table in ("memories", "skills"):
             await session.execute(text(f"ALTER TABLE {table} ALTER COLUMN embedding DROP NOT NULL"))
@@ -142,6 +141,23 @@ async def test_skills_are_migrated_with_memories_and_keep_their_constraint(
                 f"UPDATE {table} SET embedding = '[1,0,0,0,0,0,0,0]'::vector",  # noqa: S608
             ))
 
+
+async def _skill_vector_widths(db_adapter):
+    async with db_adapter.system_session() as session:
+        widths = (await session.execute(text("SELECT DISTINCT vector_dims(embedding) FROM skills"))).all()
+    return [row[0] for row in widths]
+
+
+@pytest.mark.e2e
+async def test_skills_are_migrated_with_memories_and_keep_their_constraint(
+    memory_repo, skill_repo, db_adapter,
+):
+    # Arrange: stored memories and skills whose vectors came from another (8-wide) model,
+    # while the application already runs with the new configuration, as after a restart.
+    user_id = await _seed_memory_and_skills(memory_repo, skill_repo, db_adapter)
+    before = {s.id: s.updated_at for s in await skill_repo.get_skills_for_reembedding(10, 0)}
+    await _store_vectors_from_another_model(db_adapter)
+
     # Act
     result = await ReEmbeddingService(
         memory_repo, StubEmbeddings(), batch_size=1, skill_repository=skill_repo,
@@ -151,9 +167,7 @@ async def test_skills_are_migrated_with_memories_and_keep_their_constraint(
     assert (result.total_skills, result.skills_processed) == (2, 2)
     assert result.validation.all_passed
     assert not await embedding_is_nullable(db_adapter, "skills")
-    async with db_adapter.system_session() as session:
-        widths = (await session.execute(text("SELECT DISTINCT vector_dims(embedding) FROM skills"))).all()
-    assert [row[0] for row in widths] == [settings.EMBEDDING_DIMENSIONS]
+    assert await _skill_vector_widths(db_adapter) == [settings.EMBEDDING_DIMENSIONS]
     hits = await skill_repo.search_skills(user_id=user_id, query="pdf", k=5)
     assert {hit.name for hit in hits} == {"pdf-processing", "docx-processing"}
     # Rebuilding a vector is not an edit of the skill.

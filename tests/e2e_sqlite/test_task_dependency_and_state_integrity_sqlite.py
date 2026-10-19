@@ -570,38 +570,48 @@ async def test_rest_criterion_changes_on_a_done_task_are_unprocessable(http_clie
 # ---------------------------------------------------------------------------
 
 
-async def test_criterion_and_dependency_mutations_reach_the_activity_log(evented_stack):
-    stack = evented_stack
-    service = stack.task_service
-    task = await stack.new_task("t")
-    prerequisite = await stack.new_task("prerequisite")
-    await stack.bus.wait_for_pending()
-    baseline = (await stack.activity.get_activity(user_id=stack.user_id, limit=100)).events
+async def _activity_events(stack):
+    return (await stack.activity.get_activity(user_id=stack.user_id, limit=100)).events
 
+
+async def _mutate_criterion_and_dependency(stack, task, prerequisite):
+    service = stack.task_service
     criterion = await service.add_criterion(stack.user_id, task.id, CriterionCreate(description="holds"))
     await service.update_criterion(stack.user_id, criterion.id, CriterionUpdate(met=True))
     await service.add_dependency(stack.user_id, task.id, prerequisite.id)
     await service.remove_dependency(stack.user_id, task.id, prerequisite.id)
     await service.delete_criterion(stack.user_id, criterion.id)
+
+
+def _event_that_introduced(events, change_key):
+    """The event whose change to ``change_key`` replaced a missing value."""
+    return next(
+        e for e in events
+        if change_key in e.changes and e.changes[change_key]["old"] is None
+    )
+
+
+async def test_criterion_and_dependency_mutations_reach_the_activity_log(evented_stack):
+    stack = evented_stack
+    task = await stack.new_task("t")
+    prerequisite = await stack.new_task("prerequisite")
+    await stack.bus.wait_for_pending()
+    baseline = await _activity_events(stack)
+
+    await _mutate_criterion_and_dependency(stack, task, prerequisite)
     await stack.bus.wait_for_pending()
 
-    events = (await stack.activity.get_activity(user_id=stack.user_id, limit=100)).events
+    events = await _activity_events(stack)
     new_events = [e for e in events if e.id not in {b.id for b in baseline}]
     assert len(new_events) == 5
     assert {(e.entity_type, e.action, e.entity_id) for e in new_events} == {
         (EntityType.TASK, ActionType.UPDATED, task.id),
     }
     assert sorted(next(iter(e.changes)) for e in new_events) == ["criterion"] * 3 + ["dependency"] * 2
-    added = next(
-        e for e in new_events
-        if "criterion" in e.changes and e.changes["criterion"]["old"] is None
-    )
+    added = _event_that_introduced(new_events, "criterion")
     assert added.changes["criterion"]["new"]["description"] == "holds"
     assert [c["description"] for c in added.snapshot["criteria"]] == ["holds"]
-    linked = next(
-        e for e in new_events
-        if "dependency" in e.changes and e.changes["dependency"]["old"] is None
-    )
+    linked = _event_that_introduced(new_events, "dependency")
     assert linked.snapshot["dependency_ids"] == [prerequisite.id]
 
 
