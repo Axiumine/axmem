@@ -177,3 +177,35 @@ async def test_cancelled_rerank_does_not_block_later_jobs(encoder, cancel_index)
     finally:
         encoder.release.release(len(tasks))
         await asyncio.gather(*tasks, return_exceptions=True)
+
+
+async def test_rerank_joins_the_running_loop_instead_of_asking_for_a_default(
+    monkeypatch, encoder,
+):
+    # Arrange: `asyncio.get_event_loop()` is deprecated and fails on newer Pythons wherever
+    # no loop was installed as the thread's default; the awaiting loop is always running.
+    def no_default_loop():
+        raise AssertionError("rerank must use asyncio.get_running_loop()")
+
+    monkeypatch.setattr(asyncio, "get_event_loop", no_default_loop)
+    adapter = FastEmbedCrossEncoderAdapter()
+    encoder.release.release()
+
+    # Act
+    result = await asyncio.wait_for(adapter.rerank("redis", ["postgres", "redis"]), timeout=3)
+
+    # Assert
+    assert result == [(1, 1.0), (0, 0.0)]
+
+
+async def test_rerank_works_on_a_fresh_loop_in_a_plain_thread(encoder):
+    # Arrange: a worker thread has no default loop at all; `asyncio.run` makes a private one
+    adapter = FastEmbedCrossEncoderAdapter()
+    encoder.release.release()
+    request = adapter.rerank("redis", ["postgres", "redis"])
+
+    # Act
+    result = await asyncio.wait_for(asyncio.to_thread(asyncio.run, request), timeout=3)
+
+    # Assert
+    assert result == [(1, 1.0), (0, 0.0)]

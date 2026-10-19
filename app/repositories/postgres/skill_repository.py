@@ -34,6 +34,7 @@ from app.repositories.postgres.postgres_tables import (
     skill_file_association,
 )
 from app.repositories.postgres.project_reference import ensure_project_owned
+from app.repositories.vector_ddl import resize_pgvector_column_sql
 from app.utils.embedding_helpers import build_skill_embedding_text
 
 logger = logging.getLogger(__name__)
@@ -1144,6 +1145,8 @@ class PostgresSkillRepository:
         must be cleared before resizing the column.
         """
         dims = settings.EMBEDDING_DIMENSIONS
+        # Built (and validated) first, so a bad width fails before anything is cleared
+        resize_column = resize_pgvector_column_sql("skills", dims)
         async with self.db_adapter.system_session() as session:
             # Drop NOT NULL so we can clear embeddings
             await session.execute(text(
@@ -1154,9 +1157,7 @@ class PostgresSkillRepository:
                 "UPDATE skills SET embedding = NULL",
             ))
             # Resize the column
-            await session.execute(text(
-                f"ALTER TABLE skills ALTER COLUMN embedding TYPE vector({dims})",
-            ))
+            await session.execute(text(resize_column))
             logger.info("Altered skills embedding column", extra={
                 "dimensions": dims,
             })

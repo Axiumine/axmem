@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import (
 from app.config.settings import settings
 from app.repositories.session_logging import log_session_failure
 from app.repositories.sqlite.text_matching import register_text_functions
+from app.repositories.vector_ddl import create_vec0_table_sql
 from app.utils.private_files import (
     create_private_file,
     make_private_dir,
@@ -27,6 +28,7 @@ logger = logging.getLogger(__name__)
 
 # Another process may be mid-migration; wait for it rather than failing start-up.
 _MIGRATION_LOCK_TIMEOUT_MS = 60000
+_MIGRATION_LOCK_PRAGMA = f"PRAGMA busy_timeout={_MIGRATION_LOCK_TIMEOUT_MS}"
 _WAL_SWITCH_RETRY_SECONDS = 30
 
 
@@ -198,7 +200,7 @@ class SqliteDatabaseAdapter:
             # and every restart dies on "table already exists". The lock also makes
             # concurrent first starts wait for each other (the winner migrates, the
             # others find nothing left to do) instead of racing on CREATE TABLE.
-            await conn.exec_driver_sql(f"PRAGMA busy_timeout={_MIGRATION_LOCK_TIMEOUT_MS}")
+            await conn.exec_driver_sql(_MIGRATION_LOCK_PRAGMA)
             try:
                 await conn.exec_driver_sql("BEGIN IMMEDIATE")
             finally:
@@ -209,23 +211,10 @@ class SqliteDatabaseAdapter:
             logger.info("Database schema initialized via Alembic")
 
             # Create virtual tables for vector storage (not managed by Alembic)
-            await conn.execute(
-                text(f"""
-                CREATE VIRTUAL TABLE IF NOT EXISTS vec_memories USING vec0(
-                    memory_id TEXT PRIMARY KEY,
-                    embedding FLOAT[{settings.EMBEDDING_DIMENSIONS}]
-                )
-            """),
-            )
-
-            await conn.execute(
-                text(f"""
-                CREATE VIRTUAL TABLE IF NOT EXISTS vec_skills USING vec0(
-                    skill_id TEXT PRIMARY KEY,
-                    embedding FLOAT[{settings.EMBEDDING_DIMENSIONS}]
-                )
-            """),
-            )
+            for table, id_column in (("vec_memories", "memory_id"), ("vec_skills", "skill_id")):
+                await conn.execute(text(create_vec0_table_sql(
+                    table, id_column, settings.EMBEDDING_DIMENSIONS, if_not_exists=True,
+                )))
             logger.info("sqlite-vec virtual tables created for vector storage")
 
     def _run_migrations(self, connection) -> None:

@@ -35,6 +35,7 @@ from app.repositories.sqlite.sqlite_tables import (
     skill_document_association,
     skill_file_association,
 )
+from app.repositories.vector_ddl import create_vec0_table_sql
 from app.utils.embedding_helpers import build_skill_embedding_text
 
 logger = logging.getLogger(__name__)
@@ -1297,16 +1298,13 @@ class SqliteSkillRepository:
 
     async def reset_embedding_storage(self) -> None:
         """Drop and recreate vec_skills table with current EMBEDDING_DIMENSIONS"""
+        # Built (and validated) first, so a bad width fails before the old table is dropped
+        create_table = create_vec0_table_sql(
+            "vec_skills", "skill_id", settings.EMBEDDING_DIMENSIONS,
+        )
         async with self.db_adapter.system_session() as session:
             await session.execute(text("DROP TABLE IF EXISTS vec_skills"))
-            await session.execute(
-                text(f"""
-                    CREATE VIRTUAL TABLE vec_skills USING vec0(
-                        skill_id TEXT PRIMARY KEY,
-                        embedding FLOAT[{settings.EMBEDDING_DIMENSIONS}]
-                    )
-                """),
-            )
+            await session.execute(text(create_table))
             logger.info("Recreated vec_skills table", extra={
                 "dimensions": settings.EMBEDDING_DIMENSIONS,
             })

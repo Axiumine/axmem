@@ -94,7 +94,7 @@ class FastEmbedCrossEncoderAdapter:
         if not documents:
             return []
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
 
         ranked = await loop.run_in_executor(
             self._executor,
