@@ -1,0 +1,167 @@
+"""PostgreSQL repositories: database failures are logged and re-raised unchanged.
+
+Code artifacts, documents and files share one failure contract. Whatever operation fails
+because the database cannot be used, the repository writes an error record naming the
+operation (and the user and record involved) and then lets the original exception reach the
+caller, so the service and route layers can turn it into a server error. Plan updates
+translate only the external_ref unique violation into a conflict and pass every other
+integrity violation through. No database is needed: the repositories run against an adapter
+whose sessions fail on entry.
+"""
+import logging
+from uuid import UUID
+
+import pytest
+from sqlalchemy.exc import IntegrityError, OperationalError
+
+from app.exceptions import ConflictError
+from app.models.code_artifact_models import CodeArtifactCreate, CodeArtifactUpdate
+from app.models.document_models import DocumentCreate, DocumentUpdate
+from app.models.file_models import FileCreate, FileUpdate
+from app.models.plan_models import PlanUpdate
+from app.repositories.postgres.code_artifact_repository import (
+    PostgresCodeArtifactRepository,
+)
+from app.repositories.postgres.document_repository import PostgresDocumentRepository
+from app.repositories.postgres.file_repository import PostgresFileRepository
+from app.repositories.postgres.plan_repository import PostgresPlanRepository
+from tests.integration.postgres_failure_injection import (
+    UnreachableDatabaseAdapter,
+    connection_lost_error,
+    constraint_violation_error,
+)
+
+USER_ID = UUID("00000000-0000-4000-8000-0000000000aa")
+RECORD_ID = 41
+
+ARTIFACT = CodeArtifactCreate(title="t", description="d", code="x = 1", language="python")
+DOCUMENT = DocumentCreate(title="t", description="d", content="body")
+FILE = FileCreate(filename="a.txt", description="d", data="aGVsbG8=", mime_type="text/plain")
+
+# (repository class, method, keyword arguments besides user_id, expected error message)
+FAILING_OPERATIONS = [
+    pytest.param(
+        PostgresCodeArtifactRepository, "create_code_artifact",
+        {"artifact_data": ARTIFACT}, "Failed to create code artifact",
+        id="code-artifact-create",
+    ),
+    pytest.param(
+        PostgresCodeArtifactRepository, "get_code_artifact_by_id",
+        {"artifact_id": RECORD_ID}, f"Failed to get code artifact {RECORD_ID}",
+        id="code-artifact-get",
+    ),
+    pytest.param(
+        PostgresCodeArtifactRepository, "list_code_artifacts",
+        {}, "Failed to list code artifacts",
+        id="code-artifact-list",
+    ),
+    pytest.param(
+        PostgresCodeArtifactRepository, "update_code_artifact",
+        {"artifact_id": RECORD_ID, "artifact_data": CodeArtifactUpdate(title="n")},
+        f"Failed to update code artifact {RECORD_ID}",
+        id="code-artifact-update",
+    ),
+    pytest.param(
+        PostgresCodeArtifactRepository, "delete_code_artifact",
+        {"artifact_id": RECORD_ID}, f"Failed to delete code artifact {RECORD_ID}",
+        id="code-artifact-delete",
+    ),
+    pytest.param(
+        PostgresDocumentRepository, "create_document",
+        {"document_data": DOCUMENT}, "Failed to create document",
+        id="document-create",
+    ),
+    pytest.param(
+        PostgresDocumentRepository, "get_document_by_id",
+        {"document_id": RECORD_ID}, f"Failed to get document {RECORD_ID}",
+        id="document-get",
+    ),
+    pytest.param(
+        PostgresDocumentRepository, "list_documents",
+        {}, "Failed to list documents",
+        id="document-list",
+    ),
+    pytest.param(
+        PostgresDocumentRepository, "update_document",
+        {"document_id": RECORD_ID, "document_data": DocumentUpdate(title="n")},
+        f"Failed to update document {RECORD_ID}",
+        id="document-update",
+    ),
+    pytest.param(
+        PostgresDocumentRepository, "delete_document",
+        {"document_id": RECORD_ID}, f"Failed to delete document {RECORD_ID}",
+        id="document-delete",
+    ),
+    pytest.param(
+        PostgresFileRepository, "create_file",
+        {"file_data": FILE}, "Failed to create file",
+        id="file-create",
+    ),
+    pytest.param(
+        PostgresFileRepository, "get_file_by_id",
+        {"file_id": RECORD_ID}, f"Failed to get file {RECORD_ID}",
+        id="file-get",
+    ),
+    pytest.param(
+        PostgresFileRepository, "list_files",
+        {}, "Failed to list files",
+        id="file-list",
+    ),
+    pytest.param(
+        PostgresFileRepository, "update_file",
+        {"file_id": RECORD_ID, "file_data": FileUpdate(description="n")},
+        f"Failed to update file {RECORD_ID}",
+        id="file-update",
+    ),
+    pytest.param(
+        PostgresFileRepository, "delete_file",
+        {"file_id": RECORD_ID}, f"Failed to delete file {RECORD_ID}",
+        id="file-delete",
+    ),
+]
+
+
+@pytest.fixture
+def error_records(caplog, monkeypatch):
+    """Capture error records even when an earlier migration run disabled the app loggers."""
+    for name in list(logging.root.manager.loggerDict):
+        if name.startswith("app.repositories.postgres."):
+            monkeypatch.setattr(logging.getLogger(name), "disabled", False)
+    caplog.set_level(logging.ERROR)
+    return caplog
+
+
+@pytest.mark.parametrize(("repository_class", "method", "arguments", "message"), FAILING_OPERATIONS)
+async def test_unreachable_database_is_logged_with_the_operation_and_reraised(
+    error_records, repository_class, method, arguments, message,
+):
+    injected = connection_lost_error()
+    repository = repository_class(UnreachableDatabaseAdapter(injected))
+
+    with pytest.raises(OperationalError) as raised:
+        await getattr(repository, method)(user_id=USER_ID, **arguments)
+
+    assert raised.value is injected
+    (record,) = [r for r in error_records.records if r.levelno >= logging.ERROR]
+    assert record.name == repository_class.__module__
+    assert record.getMessage() == message
+    assert record.user_id == str(USER_ID)
+
+
+async def test_plan_update_reraises_an_integrity_violation_that_is_not_the_external_ref_conflict():
+    injected = constraint_violation_error("plans_project_id_fkey")
+    repository = PostgresPlanRepository(UnreachableDatabaseAdapter(injected))
+
+    with pytest.raises(IntegrityError) as raised:
+        await repository.update_plan(USER_ID, RECORD_ID, PlanUpdate(title="renamed"))
+
+    assert raised.value is injected
+
+
+async def test_plan_update_reports_the_external_ref_unique_violation_as_a_conflict():
+    repository = PostgresPlanRepository(
+        UnreachableDatabaseAdapter(constraint_violation_error("ix_plans_user_external_ref")),
+    )
+
+    with pytest.raises(ConflictError, match="A plan with this external_ref already exists"):
+        await repository.update_plan(USER_ID, RECORD_ID, PlanUpdate(external_ref="JIRA-1"))
