@@ -288,8 +288,29 @@ ignore_names = [
 ]
 
 [tool.mutmut]
+# Full-project mutation (~33k mutants) is impractical; scripts/quality scopes every run.
+# The sandbox (mutants/) must contain everything the selected tests read from the repo root.
 source_paths = ["app/"]
-pytest_add_cli_args_test_selection = ["tests/architecture/", "tests/integration/", "tests/e2e_sqlite/"]
+pytest_add_cli_args_test_selection = ["tests/architecture/", "tests/integration/"]
 do_not_mutate = ["app/_version.py", "app/repositories/postgres/*"]
-also_copy = ["alembic/", "alembic.ini", "pytest.ini", "main.py"]
-pytest_add_cli_args = ["-p", "no:cacheprovider", "-q"]
+also_copy = [
+    "alembic/", "alembic.ini", "pytest.ini", "main.py", "pyproject.toml", "ruff.toml",
+    "test_harness/", "scripts/", "skills/", "docs/", "docker/", "architecture.md", "README.md",
+]
+# Modules that start Python child processes in other directories cannot run inside the mutmut
+# sandbox (an instrumented app module needs mutmut's config at import time), so they are skipped.
+pytest_add_cli_args = [
+    "-p", "no:cacheprovider", "-q",
+    "--ignore=tests/architecture/test_contracts.py",
+    "--ignore=tests/integration/test_cli_env_file_writer.py",
+    "--ignore=tests/integration/test_config_precedence.py",
+    "--ignore=tests/integration/test_harness_config_cli.py",
+    "--ignore=tests/integration/test_harness_container_image_and_mounts.py",
+    "--ignore=tests/integration/test_harness_fixture_and_report.py",
+    "--ignore=tests/integration/test_harness_lifecycle.py",
+    "--ignore=tests/integration/test_harness_throwaway_server.py",
+    "--ignore=tests/integration/test_harness_walkthrough.py",
+    "--ignore=tests/integration/test_main_lifespan_and_routes.py",
+    "--ignore=tests/integration/test_quality_runner.py",
+    "--ignore=tests/integration/test_startup_config_wiring.py",
+]

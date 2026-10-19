@@ -85,18 +85,31 @@ def mutation_targets(ctx: Ctx) -> list[str]:
     return [f.removesuffix(".py").replace("/", ".") + ".*" for f in changed]
 
 
+def mutant_statuses(results: str, targets: list[str]) -> dict[str, str]:
+    """`mutmut results` lines ('<dotted name>: <status>') belonging to the targeted modules."""
+    prefixes = tuple(t.removesuffix("*") for t in targets)
+    found: dict[str, str] = {}
+    for line in results.splitlines():
+        name, sep, status = line.strip().partition(": ")
+        if sep and name.startswith(prefixes):
+            found[name] = status.strip()
+    return found
+
+
 def gate_mutation(ctx: Ctx) -> tuple[bool, str]:
     tolerated = int(os.environ.get("MUTATION_MAX_SURVIVORS", "0"))
     targets = mutation_targets(ctx)
     code, out = run([*venv_tool("mutmut"), "run", *targets], timeout=7200)
-    if code not in (0, 1):
-        return False, out
+    tail = "\n".join(out.replace("\r", "\n").splitlines()[-40:])
+    if code != 0 or "failed to collect stats" in out:
+        return False, f"mutmut could not run the test suite (exit {code}):\n{tail}"
     _, results = run([*venv_tool("mutmut"), "results"])
-    survivors = [
-        line.strip() for line in results.splitlines()
-        if "survived" in line and any(line.strip().startswith(t.removesuffix("*")) for t in targets)
-    ]
+    statuses = mutant_statuses(results, targets)
+    untested = [name for name, status in statuses.items() if status == "not checked"]
+    if untested:
+        return False, f"{len(untested)} targeted mutants were never tested (first: {untested[0]}):\n{tail}"
+    survivors = [f"{name}: {status}" for name, status in statuses.items()]
     if len(survivors) > tolerated:
-        header = f"{len(survivors)} surviving mutants (tolerated {tolerated}):\n"
+        header = f"{len(survivors)} mutants not killed (tolerated {tolerated}):\n"
         return False, header + "\n".join(survivors[:200])
     return True, ""

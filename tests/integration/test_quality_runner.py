@@ -5,7 +5,7 @@ import subprocess
 
 import pytest
 
-from scripts.quality import cli, core, registry, static
+from scripts.quality import cli, core, registry, static, testing
 
 
 def test_every_stage_gate_is_registered():
@@ -138,3 +138,43 @@ def test_install_hooks_points_git_at_githooks(tmp_path, monkeypatch):
     ).stdout.strip()
     assert value == ".githooks"
     assert cli.uninstall_hooks() == 0
+
+
+def _mutmut(monkeypatch, run_result, results_text):
+    monkeypatch.setenv("MUTATION_TARGETS", "app.utils.*")
+    monkeypatch.delenv("MUTATION_MAX_SURVIVORS", raising=False)
+
+    def fake_run(argv, **_kwargs):
+        return run_result if "run" in argv else (0, results_text)
+
+    monkeypatch.setattr(testing, "run", fake_run)
+    return testing.gate_mutation(core.Ctx(stage="manual", files=None))
+
+
+def test_mutant_statuses_keep_only_targeted_modules():
+    results = "Survived:\n    app.utils.a.x_f__mutmut_1: survived\n    app.other.b.x_g__mutmut_2: survived\n"
+    assert testing.mutant_statuses(results, ["app.utils.*"]) == {"app.utils.a.x_f__mutmut_1": "survived"}
+
+
+def test_mutation_gate_fails_when_the_suite_cannot_run(monkeypatch):
+    ok, out = _mutmut(monkeypatch, (1, "failed to collect stats. runner returned 1"), "")
+    assert not ok
+    assert "could not run the test suite" in out
+
+
+def test_mutation_gate_never_passes_on_untested_mutants(monkeypatch):
+    ok, out = _mutmut(monkeypatch, (0, ""), "app.utils.a.x_f__mutmut_1: not checked\n")
+    assert not ok
+    assert "never tested" in out
+
+
+def test_mutation_gate_counts_survivors_against_the_tolerance(monkeypatch):
+    ok, out = _mutmut(monkeypatch, (0, ""), "app.utils.a.x_f__mutmut_1: survived\n")
+    assert not ok
+    assert "1 mutants not killed" in out
+    monkeypatch.setenv("MUTATION_MAX_SURVIVORS", "1")
+    assert testing.gate_mutation(core.Ctx(stage="manual", files=None)) == (True, "")
+
+
+def test_mutation_gate_passes_when_everything_is_killed(monkeypatch):
+    assert _mutmut(monkeypatch, (0, ""), "") == (True, "")
