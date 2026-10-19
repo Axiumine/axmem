@@ -13,7 +13,7 @@ from contextlib import nullcontext
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-import yaml
+import yaml  # type: ignore[import-untyped]  # PyYAML has no inline types; types-PyYAML is not installed
 
 from app.config.logging_config import logging
 from app.config.settings import settings
@@ -289,7 +289,7 @@ class SkillService:
         await self._event_bus.emit(event)
 
     @staticmethod
-    def _name_taken_error(name: str) -> ValueError:
+    def _name_taken_error(name: str | None) -> ValueError:
         return ValueError(f"A skill named '{name}' already exists")
 
     async def create_skill(
@@ -523,12 +523,12 @@ class SkillService:
             return existing_skill
 
         # A rename must keep the name unique per user, as create_skill enforces
-        renaming = skill_data.name is not None and skill_data.name != existing_skill.name
-        async with self._name_lock(user_id) if renaming else nullcontext():
-            if renaming and await self.skill_repo.skill_name_exists(
-                user_id, skill_data.name,
+        renamed_to = None if skill_data.name == existing_skill.name else skill_data.name
+        async with self._name_lock(user_id) if renamed_to is not None else nullcontext():
+            if renamed_to is not None and await self.skill_repo.skill_name_exists(
+                user_id, renamed_to,
             ):
-                raise self._name_taken_error(skill_data.name)
+                raise self._name_taken_error(renamed_to)
 
             try:
                 skill = await self.skill_repo.update_skill(

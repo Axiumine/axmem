@@ -2,11 +2,11 @@
 """
 import logging
 from pathlib import Path
-from typing import Self
+from typing import Self, cast
 
 from platformdirs import user_config_dir, user_data_dir
-from pydantic import ConfigDict, Field, ValidationInfo, field_validator, model_validator
-from pydantic_settings import BaseSettings
+from pydantic import Field, ValidationInfo, field_validator, model_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.version import get_version
 
@@ -78,6 +78,13 @@ def canonical_choice(setting: str, value: str, choices: tuple[str, ...]) -> str:
         if choice.lower() == wanted:
             return choice
     raise ValueError(f"Unsupported {setting} setting: {value!r}. Must be one of: {', '.join(choices)}")
+
+
+def _field_name(info: ValidationInfo) -> str:
+    """Name of the field a field validator is running for."""
+    # pydantic leaves field_name None only for validators that are not bound to a field;
+    # every validator in this module is registered with @field_validator on named fields.
+    return cast(str, info.field_name)
 
 
 def parse_onnx_providers(value: str | None) -> list[str] | None:
@@ -329,7 +336,8 @@ class Settings(BaseSettings):
     @field_validator("EMBEDDING_PROVIDER", "RERANKING_PROVIDER", "LOG_FORMAT")
     @classmethod
     def _validate_choice_setting(cls, value: str, info: ValidationInfo) -> str:
-        return canonical_choice(info.field_name, value, _CHOICES[info.field_name])
+        field_name = _field_name(info)
+        return canonical_choice(field_name, value, _CHOICES[field_name])
 
     @field_validator("ACTIVITY_RETENTION_DAYS", mode="before")
     @classmethod
@@ -342,9 +350,10 @@ class Settings(BaseSettings):
     @field_validator(*PROVENANCE_MAX_LENGTHS)
     @classmethod
     def _validate_provenance_length(cls, value: str, info: ValidationInfo) -> str:
-        limit = PROVENANCE_MAX_LENGTHS[info.field_name]
+        field_name = _field_name(info)
+        limit = PROVENANCE_MAX_LENGTHS[field_name]
         if len(value) > limit:
-            raise ValueError(f"{info.field_name} must be at most {limit} characters (got {len(value)})")
+            raise ValueError(f"{field_name} must be at most {limit} characters (got {len(value)})")
         return value
 
     @model_validator(mode="after")
@@ -377,7 +386,7 @@ class Settings(BaseSettings):
 
     """Pydantic Configuration"""
 
-    model_config = ConfigDict(
+    model_config = SettingsConfigDict(
         env_file=[
             ".env",  # Local override
             "docker/.env",  # Development/Docker

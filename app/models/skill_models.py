@@ -298,7 +298,7 @@ class Skill(SkillCreate):
 
     @field_validator("description", "content")
     @classmethod
-    def validate_required_text(cls, v):
+    def validate_required_text(cls, v, info):
         # Overrides SkillCreate.validate_required_text: skills stored before blank text
         # was rejected must stay readable and deletable.
         return v

@@ -78,7 +78,12 @@ class UserService:
         Returns:
             User or None
         """
-        existing_user = await self.user_repo.get_user_by_external_id(external_id=user_update.external_id)
+        # No external_id means no stored user can match (the column is NOT NULL), so skip the lookup
+        existing_user = (
+            await self.user_repo.get_user_by_external_id(external_id=user_update.external_id)
+            if user_update.external_id is not None
+            else None
+        )
 
         if existing_user:
             changed_fields = get_changed_fields(user_update, existing_user)
@@ -106,7 +111,7 @@ class UserService:
             logger.info("User creation race condition, fetching existing user",
                         extra={"external_id": user_update.external_id})
             return await self.user_repo.get_user_by_external_id(
-                external_id=user_update.external_id)
+                external_id=create_user.external_id)
 
 
 

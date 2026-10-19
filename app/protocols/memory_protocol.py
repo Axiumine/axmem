@@ -78,7 +78,7 @@ class MemoryRepository(Protocol):
             user_id: UUID,
             memory_id: int,
             reason: str,
-            superseded_by: int,
+            superseded_by: int | None = None,
     ) -> bool:
         ...
     async def restore_obsolete(
@@ -207,7 +207,11 @@ class MemoryRepository(Protocol):
             include_projects: bool,
             include_documents: bool,
             include_code_artifacts: bool,
-            max_nodes: int,
+            include_files: bool,
+            include_skills: bool = False,
+            include_plans: bool = False,
+            include_tasks: bool = False,
+            max_nodes: int = 50,
     ) -> tuple[list[dict[str, Any]], bool]:
         """Traverse graph using recursive CTE from center node.
 
@@ -223,7 +227,7 @@ class MemoryRepository(Protocol):
 
         Args:
             user_id: User ID for ownership filtering
-            center_type: "memory", "entity", "project", "document", or "code_artifact"
+            center_type: "memory", "entity", "project", "document", "code_artifact", or "file"
             center_id: ID of the center node
             depth: Maximum traversal depth (1-3)
             include_memories: Whether to include memory nodes in traversal
@@ -231,6 +235,10 @@ class MemoryRepository(Protocol):
             include_projects: Whether to include project nodes in traversal
             include_documents: Whether to include document nodes in traversal
             include_code_artifacts: Whether to include code_artifact nodes in traversal
+            include_files: Whether to include file nodes in traversal
+            include_skills: Whether to include skill nodes in traversal
+            include_plans: Whether to include plan nodes in traversal
+            include_tasks: Whether to include task nodes in traversal
             max_nodes: Maximum nodes to return
 
         Returns:

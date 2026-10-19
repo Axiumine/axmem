@@ -808,7 +808,7 @@ class MemoryService:
         count_truncated = len(sorted_memories) > max_count
         sorted_memories = sorted_memories[:max_count]
 
-        selected = []
+        selected: list[Memory] = []
         running_total = 0
 
         for memory in sorted_memories:

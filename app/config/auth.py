@@ -10,18 +10,25 @@ the codebase (supports .env, docker/.env, and platform config .env files).
 Users change nothing — same env vars, same behavior.
 """
 import logging
+from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 from app.config.settings import settings
+
+if TYPE_CHECKING:
+    from fastmcp.server.auth import AuthProvider
 
 logger = logging.getLogger(__name__)
 
 # Map of recognized provider class paths to their factory functions
-_PROVIDER_FACTORIES: dict[str, callable] = {}
+_PROVIDER_FACTORIES: dict[str, Callable[[], "AuthProvider"]] = {}
 
 
-def _register(class_path: str):
+def _register(
+    class_path: str,
+) -> Callable[[Callable[[], "AuthProvider"]], Callable[[], "AuthProvider"]]:
     """Decorator to register a provider factory for a given class path."""
-    def wrapper(fn):
+    def wrapper(fn: Callable[[], "AuthProvider"]) -> Callable[[], "AuthProvider"]:
         _PROVIDER_FACTORIES[class_path] = fn
         return fn
     return wrapper
@@ -104,7 +111,7 @@ def _build_introspection():
     )
 
 
-def build_auth_provider():
+def build_auth_provider() -> "AuthProvider | None":
     """Build auth provider from FASTMCP_SERVER_AUTH setting.
 
     Returns None when FASTMCP_SERVER_AUTH is not set (no auth mode).
