@@ -153,13 +153,10 @@ def register(mcp: ForgetfulMCP):
 
         file_id = path_id(request, "file_id")
 
-        try:
-            success = await mcp.file_service.delete_file(
-                user_id=user.id,
-                file_id=file_id,
-            )
-        except NotFoundError:
-            return JSONResponse({"error": "File not found"}, status_code=404)
+        success = await mcp.file_service.delete_file(
+            user_id=user.id,
+            file_id=file_id,
+        )
 
         if not success:
             return JSONResponse({"error": "File not found"}, status_code=404)

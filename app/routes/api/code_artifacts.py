@@ -154,13 +154,10 @@ def register(mcp: ForgetfulMCP):
 
         artifact_id = path_id(request, "artifact_id")
 
-        try:
-            success = await mcp.code_artifact_service.delete_code_artifact(
-                user_id=user.id,
-                artifact_id=artifact_id,
-            )
-        except NotFoundError:
-            return JSONResponse({"error": "Code artifact not found"}, status_code=404)
+        success = await mcp.code_artifact_service.delete_code_artifact(
+            user_id=user.id,
+            artifact_id=artifact_id,
+        )
 
         if not success:
             return JSONResponse({"error": "Code artifact not found"}, status_code=404)
