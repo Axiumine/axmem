@@ -48,13 +48,13 @@ without the mark, with the commit that landed it, in the commit that lands it.
 ### Removed
 
 - Graph REST view (`GET /api/v1/graph`, `/graph/subgraph`, `/graph/memory/{id}`), `GraphService`, the graph models,
-  the `MAX_GRAPH_LIMIT` setting and the subgraph SQL on both backends (`4954c134`). Memory links, auto-linking,
+  the `MAX_GRAPH_LIMIT` setting and the subgraph SQL on both backends (`6ce740e7`). Memory links, auto-linking,
   the link tools and the `query_memory` link expansion stay. No schema change.
 - Plans and tasks: services, repositories, models, REST routes, 15 MCP tools and the `PLANNING_ENABLED` flag
-  (`bdd4b13e`). Revision `20261019_drop_planning` drops their tables and activity rows; the downgrade recreates
+  (`59f3f479`). Revision `20261019_drop_planning` drops their tables and activity rows; the downgrade recreates
   the empty tables.
 - Skills: service, repositories, models, REST routes, 17 MCP tools, `SKILLS_ENABLED` and the `SKILL_*` settings,
-  skill import/export, `skill_ids` on memories and the skill handling in re-embedding (`50431302`). Revision
+  skill import/export, `skill_ids` on memories and the skill handling in re-embedding (`e77b50e0`). Revision
   `20261019_drop_skills` drops the tables and activity rows; the downgrade recreates the empty tables. The
   `forgetful-procedures` agent skill file is deleted and the other files in the `skills/` catalogue are edited;
   the catalogue stays.
