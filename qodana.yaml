@@ -17,7 +17,7 @@ include:
   - name: VulnerableLibrariesLocal
   - name: CheckDependencyLicenses
 
-bootstrap: export UV_CACHE_DIR=/tmp/uv-cache && pip install uv && uv sync --locked --all-extras --dev
+bootstrap: export UV_CACHE_DIR=/tmp/uv-cache SETUPTOOLS_SCM_PRETEND_VERSION=0.0.0+qodana && pip install uv && uv sync --locked --all-extras --dev
 
 exclude:
   - name: All
