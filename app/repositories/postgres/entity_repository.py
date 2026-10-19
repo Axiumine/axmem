@@ -20,6 +20,7 @@ from app.models.entity_models import (
     EntityType,
     EntityUpdate,
 )
+from app.repositories.postgres.memory_base import affected_rows
 from app.repositories.postgres.postgres_adapter import PostgresDatabaseAdapter
 from app.repositories.postgres.postgres_tables import (
     EntitiesTable,
@@ -547,7 +548,7 @@ class PostgresEntityRepository:
                 )
                 await session.commit()
 
-                return result.rowcount > 0
+                return affected_rows(result) > 0
 
         except NotFoundError:
             raise
@@ -683,7 +684,7 @@ class PostgresEntityRepository:
                 )
                 await session.commit()
 
-                return result.rowcount > 0
+                return affected_rows(result) > 0
 
         except NotFoundError:
             raise

@@ -20,6 +20,7 @@ from app.models.entity_models import (
     EntityType,
     EntityUpdate,
 )
+from app.repositories.sqlite.memory_queries import affected_rows
 from app.repositories.sqlite.sqlite_adapter import SqliteDatabaseAdapter
 from app.repositories.sqlite.sqlite_tables import (
     EntitiesTable,
@@ -553,7 +554,7 @@ class SqliteEntityRepository:
                 )
                 await session.commit()
 
-                return result.rowcount > 0
+                return affected_rows(result) > 0
 
         except NotFoundError:
             raise
@@ -689,7 +690,7 @@ class SqliteEntityRepository:
                 )
                 await session.commit()
 
-                return result.rowcount > 0
+                return affected_rows(result) > 0
 
         except NotFoundError:
             raise

@@ -17,6 +17,7 @@ from app.models.project_models import (
     ProjectSummary,
     ProjectUpdate,
 )
+from app.repositories.postgres.memory_base import affected_rows
 from app.repositories.postgres.postgres_adapter import PostgresDatabaseAdapter
 from app.repositories.postgres.postgres_tables import ProjectsTable
 from app.utils.like_pattern import LIKE_ESCAPE_CHAR, contains_pattern
@@ -242,14 +243,14 @@ class PostgresProjectRepository:
             if not update_data:
                 logger.info("No fields to update")
                 # Still need to return the project
-                stmt = (
+                select_stmt = (
                     select(ProjectsTable)
                     .options(selectinload(ProjectsTable.memories))
                     .where(
                         ProjectsTable.user_id == user_id, ProjectsTable.id == project_id,
                     )
                 )
-                result = await session.execute(stmt)
+                result = await session.execute(select_stmt)
                 project_orm = result.scalar_one_or_none()
 
                 if not project_orm:
@@ -312,7 +313,7 @@ class PostgresProjectRepository:
             )
 
             result = await session.execute(stmt)
-            deleted = result.rowcount > 0
+            deleted = affected_rows(result) > 0
 
             if deleted:
                 logger.info(

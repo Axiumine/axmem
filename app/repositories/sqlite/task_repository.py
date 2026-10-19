@@ -29,6 +29,7 @@ from app.models.plan_models import (
     TaskSummary,
     TaskUpdate,
 )
+from app.repositories.sqlite.memory_queries import affected_rows
 from app.repositories.sqlite.sqlite_adapter import SqliteDatabaseAdapter
 from app.repositories.sqlite.sqlite_tables import (
     CriteriaTable,
@@ -185,7 +186,10 @@ class SqliteTaskRepository:
         async with self.db_adapter.session(user_id) as session:
             update_data = task_data.model_dump(exclude_unset=True)
             if not update_data:
-                return await self.get_task_by_id(user_id, task_id)
+                current = await self.get_task_by_id(user_id, task_id)
+                if current is None:
+                    raise NotFoundError(f"Task with id {task_id} not found")
+                return current
 
             update_data["updated_at"] = datetime.now(UTC)
             stmt = (
@@ -207,7 +211,7 @@ class SqliteTaskRepository:
                 TasksTable.user_id == str(user_id), TasksTable.id == task_id,
             )
             result = await session.execute(stmt)
-            return result.rowcount > 0
+            return affected_rows(result) > 0
 
     # ---- Atomic state transition ----
 
@@ -357,11 +361,11 @@ class SqliteTaskRepository:
         async with self.db_adapter.session(user_id) as session:
             update_data = criterion_data.model_dump(exclude_unset=True)
             if not update_data:
-                stmt = select(CriteriaTable).where(
+                select_stmt = select(CriteriaTable).where(
                     CriteriaTable.user_id == str(user_id),
                     CriteriaTable.id == criterion_id,
                 )
-                result = await session.execute(stmt)
+                result = await session.execute(select_stmt)
                 c = result.scalar_one_or_none()
                 if not c:
                     raise NotFoundError(f"Criterion with id {criterion_id} not found")
@@ -404,7 +408,7 @@ class SqliteTaskRepository:
                 CriteriaTable.id == criterion_id,
             )
             result = await session.execute(stmt)
-            return result.rowcount > 0
+            return affected_rows(result) > 0
 
     async def get_criterion_by_id(
         self, user_id: UUID, criterion_id: int,
@@ -503,7 +507,7 @@ class SqliteTaskRepository:
                 TaskDependenciesTable.depends_on_task_id == depends_on_task_id,
             )
             result = await session.execute(stmt)
-            return result.rowcount > 0
+            return affected_rows(result) > 0
 
     async def get_dependencies(self, user_id: UUID, task_id: int) -> list[int]:
         async with self.db_adapter.session(user_id) as session:

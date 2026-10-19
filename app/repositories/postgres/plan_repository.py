@@ -16,7 +16,9 @@ from app.models.plan_models import (
     PlanSummary,
     PlanUpdate,
 )
+from app.repositories.postgres.memory_base import affected_rows
 from app.repositories.postgres.postgres_adapter import PostgresDatabaseAdapter
+from app.repositories.postgres.postgres_errors import violated_constraint
 from app.repositories.postgres.postgres_tables import PlansTable
 from app.repositories.postgres.project_reference import ensure_project_owned
 
@@ -46,7 +48,7 @@ class PostgresPlanRepository:
                 logger.info("Plan created", extra={"plan_id": plan.id})
                 return plan
         except IntegrityError as exc:
-            if getattr(exc.orig.__cause__, "constraint_name", None) == "ix_plans_user_external_ref":
+            if violated_constraint(exc) == "ix_plans_user_external_ref":
                 raise ConflictError(
                     "A plan with this external_ref already exists. "
                     "Use list_plans with external_ref to find it.",
@@ -104,12 +106,12 @@ class PostgresPlanRepository:
             async with self.db_adapter.session(user_id) as session:
                 update_data = plan_data.model_dump(exclude_unset=True)
                 if not update_data:
-                    stmt = (
+                    select_stmt = (
                         select(PlansTable)
                         .options(selectinload(PlansTable.tasks))
                         .where(PlansTable.user_id == user_id, PlansTable.id == plan_id)
                     )
-                    result = await session.execute(stmt)
+                    result = await session.execute(select_stmt)
                     plan_orm = result.scalar_one_or_none()
                     if not plan_orm:
                         raise NotFoundError(f"Plan with id {plan_id} not found")
@@ -129,7 +131,7 @@ class PostgresPlanRepository:
                 await session.refresh(plan_orm, attribute_names=["tasks"])
                 return Plan.model_validate(plan_orm)
         except IntegrityError as exc:
-            if getattr(exc.orig.__cause__, "constraint_name", None) == "ix_plans_user_external_ref":
+            if violated_constraint(exc) == "ix_plans_user_external_ref":
                 raise ConflictError(
                     "A plan with this external_ref already exists. "
                     "Use list_plans with external_ref to find it.",
@@ -144,4 +146,4 @@ class PostgresPlanRepository:
                 PlansTable.user_id == user_id, PlansTable.id == plan_id,
             )
             result = await session.execute(stmt)
-            return result.rowcount > 0
+            return affected_rows(result) > 0

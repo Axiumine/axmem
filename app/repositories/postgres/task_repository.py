@@ -39,7 +39,9 @@ from app.models.plan_models import (
     TaskSummary,
     TaskUpdate,
 )
+from app.repositories.postgres.memory_base import affected_rows
 from app.repositories.postgres.postgres_adapter import PostgresDatabaseAdapter
+from app.repositories.postgres.postgres_errors import violated_constraint
 from app.repositories.postgres.postgres_tables import (
     CriteriaTable,
     TaskDependenciesTable,
@@ -195,7 +197,10 @@ class PostgresTaskRepository:
         async with self.db_adapter.session(user_id) as session:
             update_data = task_data.model_dump(exclude_unset=True)
             if not update_data:
-                return await self.get_task_by_id(user_id, task_id)
+                current = await self.get_task_by_id(user_id, task_id)
+                if current is None:
+                    raise NotFoundError(f"Task with id {task_id} not found")
+                return current
 
             update_data["updated_at"] = datetime.now(UTC)
             stmt = (
@@ -217,7 +222,7 @@ class PostgresTaskRepository:
                 TasksTable.user_id == user_id, TasksTable.id == task_id,
             )
             result = await session.execute(stmt)
-            return result.rowcount > 0
+            return affected_rows(result) > 0
 
     # ---- Atomic state transition ----
 
@@ -366,11 +371,11 @@ class PostgresTaskRepository:
         async with self.db_adapter.session(user_id) as session:
             update_data = criterion_data.model_dump(exclude_unset=True)
             if not update_data:
-                stmt = select(CriteriaTable).where(
+                select_stmt = select(CriteriaTable).where(
                     CriteriaTable.user_id == user_id,
                     CriteriaTable.id == criterion_id,
                 )
-                result = await session.execute(stmt)
+                result = await session.execute(select_stmt)
                 c = result.scalar_one_or_none()
                 if not c:
                     raise NotFoundError(f"Criterion with id {criterion_id} not found")
@@ -413,7 +418,7 @@ class PostgresTaskRepository:
                 CriteriaTable.id == criterion_id,
             )
             result = await session.execute(stmt)
-            return result.rowcount > 0
+            return affected_rows(result) > 0
 
     async def get_criterion_by_id(
         self, user_id: UUID, criterion_id: int,
@@ -471,7 +476,7 @@ class PostgresTaskRepository:
                     )
                 return TaskDependency.model_validate(dep)
         except IntegrityError as exc:
-            if getattr(exc.orig.__cause__, "constraint_name", None) == "ix_task_deps_unique":
+            if violated_constraint(exc) == "ix_task_deps_unique":
                 raise ConflictError(
                     f"Task {task_id} already depends on task {depends_on_task_id}",
                 ) from exc
@@ -516,7 +521,7 @@ class PostgresTaskRepository:
                 TaskDependenciesTable.depends_on_task_id == depends_on_task_id,
             )
             result = await session.execute(stmt)
-            return result.rowcount > 0
+            return affected_rows(result) > 0
 
     async def get_dependencies(self, user_id: UUID, task_id: int) -> list[int]:
         async with self.db_adapter.session(user_id) as session:

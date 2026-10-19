@@ -20,6 +20,7 @@ from app.models.skill_models import (
 )
 from app.protocols.embedding_protocol import EmbeddingsAdapter
 from app.repositories.embeddings.reranker_adapter import RerankAdapter
+from app.repositories.sqlite.memory_queries import affected_rows
 from app.repositories.sqlite.project_reference import ensure_project_owned
 from app.repositories.sqlite.sqlite_adapter import SqliteDatabaseAdapter
 from app.repositories.sqlite.sqlite_json_filters import json_array_overlaps
@@ -712,7 +713,7 @@ class SqliteSkillRepository:
                 return {
                     "skill_id": skill_id,
                     "memory_id": memory_id,
-                    "unlinked": result.rowcount > 0,
+                    "unlinked": affected_rows(result) > 0,
                 }
 
         except Exception:
@@ -830,7 +831,7 @@ class SqliteSkillRepository:
                 return {
                     "skill_id": skill_id,
                     "file_id": file_id,
-                    "unlinked": result.rowcount > 0,
+                    "unlinked": affected_rows(result) > 0,
                 }
 
         except Exception:
@@ -948,7 +949,7 @@ class SqliteSkillRepository:
                 return {
                     "skill_id": skill_id,
                     "code_artifact_id": code_artifact_id,
-                    "unlinked": result.rowcount > 0,
+                    "unlinked": affected_rows(result) > 0,
                 }
 
         except Exception:
@@ -1066,7 +1067,7 @@ class SqliteSkillRepository:
                 return {
                     "skill_id": skill_id,
                     "document_id": document_id,
-                    "unlinked": result.rowcount > 0,
+                    "unlinked": affected_rows(result) > 0,
                 }
 
         except Exception:
@@ -1281,7 +1282,7 @@ class SqliteSkillRepository:
         """Count all skills across all users."""
         async with self.db_adapter.system_session() as session:
             result = await session.execute(text("SELECT COUNT(*) FROM skills"))
-            return result.scalar()
+            return result.scalar() or 0
 
     async def get_skills_for_reembedding(self, limit: int, offset: int) -> list[Skill]:
         """Fetch all skills, across all users, in batches ordered by id."""
