@@ -106,6 +106,13 @@ satisfy the gate: `e2e-postgres` reports `SKIP` and `coverage` fails, because un
 cannot be called covered. Branch coverage runs with `parallel = true` and `concurrency =
 ["greenlet", "thread"]` (SQLAlchemy's async layer and aiosqlite) and also follows subprocesses.
 
+In parallel mode every measured process writes its own `.coverage.<host>.pid<N>.<random>` fragment, and
+`coverage combine` merges the fragments into one data file. `[tool.coverage.run] data_file` puts that data file
+and its fragments in `.coverage-data/` (ignored by Git, Docker, semgrep, trivy, Qodana and radon), so nothing
+named `.coverage*` is written to the repository root, not even by an interrupted run. `pytest --cov` combines
+when it finishes; `tests` starts with `coverage erase`, which removes the data file and any leftover fragments.
+To merge fragments by hand, run `coverage combine --append`; to start over, delete `.coverage-data/`.
+
 ### Snapshots
 
 The snapshot tests pin the public surfaces that must not change by accident. A changed snapshot is a

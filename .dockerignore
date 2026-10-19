@@ -25,7 +25,7 @@ env
 
 # Testing
 .pytest_cache
-.coverage
+.coverage-data
 htmlcov
 
 # Environment files

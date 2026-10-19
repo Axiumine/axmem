@@ -179,6 +179,8 @@ source = ["app", "main"]
 branch = true
 relative_files = true
 parallel = true
+# Keeps the data file and the per-process fragments that parallel mode writes out of the repository root.
+data_file = ".coverage-data/.coverage"
 # SQLAlchemy's async layer runs sync code in greenlets; aiosqlite uses threads.
 concurrency = ["greenlet", "thread"]
 patch = ["subprocess"]

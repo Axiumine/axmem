@@ -2,6 +2,7 @@
 .git/
 .gitnexus/
 .idea/
+.coverage-data/
 node_modules/
 build/
 dist/

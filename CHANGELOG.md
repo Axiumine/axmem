@@ -35,6 +35,9 @@ without the mark, with the commit that landed it, in the commit that lands it.
   kept (`b121d350`). The package, CLI and environment variables still say `forgetful`.
 - Python 3.14 is the only supported version: `requires-python`, classifiers, tool targets, CI, Dockerfiles and Nix
   (`1eea81a5`); the `compat` gate is gone; 142 ruff findings from the new target were auto-fixed (`c78d3f98`).
+- Coverage data is written to `.coverage-data/` (`[tool.coverage.run] data_file`) instead of the repository root,
+  because `parallel = true` makes every measured process write its own `.coverage.*` fragment, and interrupted
+  runs left them behind. `.coverage-data/` is ignored by Git, Docker, semgrep, trivy, Qodana and radon.
 - **(planned)** NVIDIA GPU is a hard requirement for development and runtime; there is no CPU path and no skip.
 - **(planned)** Embeddings come only from the router (`gateway`); reranking runs locally on the GPU.
 - **(planned)** Users become tenants; projects become an optional scope string created on first use.

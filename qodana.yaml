@@ -25,6 +25,7 @@ exclude:
       - .venv
       - .gitnexus
       - .idea
+      - .coverage-data
       - .qodana-results
       - node_modules
       - test_harness/runs

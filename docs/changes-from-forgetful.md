@@ -36,6 +36,7 @@ cross-encoder reranking.
 | Identity | Renamed to Axmem under Axiumine; README rewritten, Forgetful credited, MIT notice kept | A separate product with its own direction | Done (`b121d350`); rename of the package, CLI and environment variables Planned |
 | Python | 3.14 only; `compat` gate removed; ruff target py314 | One supported version removes the matrix and a redundant gate | Done (`1eea81a5`, `c78d3f98`) |
 | Quality | Gate orchestrator, Git hooks, 100 % branch coverage threshold (proposed upstream as #163) | Every check runs the same way locally, in hooks and in CI | Done |
+| Coverage data | `data_file` set to `.coverage-data/.coverage`, so the data file and its per-process fragments stay out of the repository root | `parallel = true` writes one `.coverage.*` file per measured process, and interrupted runs left them in the root | Done |
 | Commits | `commit-msg` hook with `test`, `perf` and `build` types; AI attribution rejected only as trailers and "Generated with" lines | Naming Claude Code in docs is legitimate for an MCP project; the checks avoid `grep -P` so they run on any platform | Done (`95c1e5f1`) |
 | Process | CHANGELOG.md, this page and an AGENTS.md rule to update both | A fork made of removals needs a record of what went and why | Done |
 | Graph | Graph REST view, `GraphService` and subgraph SQL removed; memory links and auto-linking stay | A second open-ended graph next to the memory links drifts from any graph a host system keeps | Done (`4954c134`) |

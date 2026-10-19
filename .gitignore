@@ -18,8 +18,7 @@ data/
 .venv*
 
 # Quality-gate artefacts
-.coverage
-.coverage.*
+.coverage-data/
 htmlcov/
 coverage.xml
 .mypy_cache/
