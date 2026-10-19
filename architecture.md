@@ -91,10 +91,10 @@ The full operation set is dynamic: feature flags and scopes affect what a caller
 callables and registers metadata/implementations together. Despite its filename, this is a module
 of registration helpers, not a second `ToolMetadataRegistry` class.
 [ToolRegistry.execute:198](app/routes/mcp/tool_registry.py#L198) looks up and awaits the callable.
-[MemoryToolAdapters.create_memory:223](app/routes/mcp/tool_adapters.py#L223) illustrates identity
+[MemoryToolAdapters.create_memory:56](app/routes/mcp/adapters/memory.py#L56) illustrates identity
 resolution, argument conversion, model construction, service delegation, and response formatting.
-The older category `*_tools.py` registration functions also appear in the map; their presence does
-not mean they are mounted by `main.py`, which registers `meta_tools` at [line 150](main.py#L150).
+`main.py` mounts only `meta_tools` ([line 150](main.py#L150)); there are no per-category MCP tool
+modules, so every operation is reachable only through the registry and these three meta-tools.
 
 HTTP endpoints are FastMCP custom routes accepting Starlette requests, rather than a separate
 FastAPI application despite the opening docstring in `main.py`.
@@ -249,7 +249,8 @@ suites have passed for any particular revision. Repository lint command: `uv too
 The [Mycelium map](docs/assets/mycelium_class_diagram.md) is supporting detail, not required
 reading in full. Do not load the entire file into context by default.
 It is a historical snapshot: the October 17 boundary changes moved embedding/backup types and
-rebuild wiring; use this overview and current source for those components.
+rebuild wiring; use this overview and current source for those components. It also still lists the
+seven per-category `app/routes/mcp/*_tools.py` modules that were later removed as unmounted.
 
 - Find the relevant declaration in the source index, reading that index in chunks if needed.
 - Search its diagram identifier for connections and read the relevant line ranges.

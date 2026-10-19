@@ -27,7 +27,6 @@ from app.routes.mcp.adapters.user import UserToolAdapters, create_user_adapters
 # The argument helpers keep their historical private names for existing importers.
 _coerce_bool = arguments.coerce_bool
 _coerce_int = arguments.coerce_int
-_coerce_int_id = arguments.coerce_int_id
 _coerce_int_ids = arguments.coerce_int_ids
 _coerce_optional_int_id = arguments.coerce_optional_int_id
 _coerce_optional_int_ids = arguments.coerce_optional_int_ids
@@ -47,7 +46,6 @@ __all__ = [
     "UserToolAdapters",
     "_coerce_bool",
     "_coerce_int",
-    "_coerce_int_id",
     "_coerce_int_ids",
     "_coerce_optional_int_id",
     "_coerce_optional_int_ids",
