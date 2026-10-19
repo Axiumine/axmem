@@ -356,17 +356,12 @@ class MemoryUpdate(BaseModel):
 
         The maximum count is enforced by the field's max_length, which is checked first.
         """
-        if v is None:
-            return None  # Keep None for optional fields in update model
-
         return [item.strip() for item in v if item.strip()]
 
     @field_validator("source_files")
     @classmethod
     def validate_source_files(cls, v):
         """Clean empty strings from source_files list"""
-        if v is None:
-            return None
         return [item.strip() for item in v if item.strip()]
 
 class Memory(MemoryCreate):

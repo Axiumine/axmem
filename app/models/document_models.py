@@ -112,9 +112,6 @@ class DocumentCreate(BaseModel):
         # Strip whitespace and remove empty strings
         cleaned = [tag.strip() for tag in v if tag and tag.strip()]
 
-        if len(cleaned) > settings.DOCUMENT_TAGS_MAX_COUNT:
-            raise ValueError(f"Maximum {settings.DOCUMENT_TAGS_MAX_COUNT} tags allowed")
-
         return cleaned
 
     @field_validator("size_bytes", mode="before")
@@ -201,17 +198,12 @@ class DocumentUpdate(PatchModel):
     @field_validator("source_files")
     @classmethod
     def validate_source_files(cls, v):
-        if v is None:
-            return None
         return [item.strip() for item in v if item.strip()]
 
     @field_validator("title", "description", "content", "document_type", "filename")
     @classmethod
     def strip_whitespace(cls, v, info):
         """Strip whitespace from string fields"""
-        if v is None:
-            return v
-
         stripped = v.strip()
 
         # Don't allow empty after stripping for required fields (if provided)
@@ -225,18 +217,12 @@ class DocumentUpdate(PatchModel):
     @classmethod
     def validate_tags(cls, v):
         """Validate and clean tags"""
-        if v is None:
-            return None
-
         # Empty list is valid (clears tags)
         if not v:
             return []
 
         # Strip whitespace and remove empty strings
         cleaned = [tag.strip() for tag in v if tag and tag.strip()]
-
-        if len(cleaned) > settings.DOCUMENT_TAGS_MAX_COUNT:
-            raise ValueError(f"Maximum {settings.DOCUMENT_TAGS_MAX_COUNT} tags allowed")
 
         return cleaned
 
