@@ -38,6 +38,7 @@ cross-encoder reranking.
 | Quality | Gate orchestrator, Git hooks, 100 % branch coverage threshold (proposed upstream as #163) | Every check runs the same way locally, in hooks and in CI | Done |
 | Coverage data | `data_file` set to `.coverage-data/.coverage`, so the data file and its per-process fragments stay out of the repository root | `parallel = true` writes one `.coverage.*` file per measured process, and interrupted runs left them in the root | Done |
 | Commits | `commit-msg` hook with `test`, `perf` and `build` types; AI attribution rejected only as trailers and "Generated with" lines | Naming Claude Code in docs is legitimate for an MCP project; the checks avoid `grep -P` so they run on any platform | Done (`95c1e5f1`) |
+| Leak guard | `denylist-check` refuses commits, messages and pushes that match terms in the clone-local `.git/info/denylist` | Some names must never enter the repository, and a tracked list would name them | Done |
 | Process | CHANGELOG.md, this page and an AGENTS.md rule to update both | A fork made of removals needs a record of what went and why | Done |
 | Graph | Graph REST view, `GraphService` and subgraph SQL removed; memory links and auto-linking stay | A second open-ended graph next to the memory links drifts from any graph a host system keeps | Done (`6ce740e7`) |
 | Planning | Plans and tasks removed; revision `20261019_drop_planning` | Planning belongs to the host system's tracker, not to a memory server | Done (`59f3f479`) |

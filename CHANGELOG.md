@@ -18,6 +18,8 @@ without the mark, with the commit that landed it, in the commit that lands it.
   Qodana, mutmut and GitNexus (proposed upstream as #163).
 - `commit-msg` hook (`95c1e5f1`): `[🤖 ]<type>(<scope>): <subject>`, subject up to 150 characters, body up to 10
   lines, AI Co-Authored-By trailers and "Generated with" lines rejected, `SKIP=commit-msg` to bypass, with tests.
+- `denylist-check` hook script: `pre-commit`, `commit-msg` and `pre-push` refuse staged changes, messages and
+  unpushed commits that match a term in the clone-local, untracked `.git/info/denylist`; `SKIP` does not bypass it.
 - This changelog and [docs/changes-from-forgetful.md](docs/changes-from-forgetful.md), with a rule in `AGENTS.md`
   that every commit that changes behaviour updates both.
 - **(planned)** `gateway` embeddings provider that calls an optional HTTP embeddings gateway with

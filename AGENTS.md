@@ -85,6 +85,12 @@ supported platforms and the quality gates. Move the matching planned entry to it
 add a new entry with the reason for the change. A commit cannot name its own hash, so the next commit that
 touches these files adds it. Refactors, test-only and typo commits need no entry.
 
+## Private references
+Some names must never appear in this repository: not in code, comments, docs, tests, fixtures, settings,
+commit messages or pull request text. The list is local to each clone (`.git/info/denylist`, untracked) and the
+hooks enforce it. If a hook refuses a commit or push, remove the term; never bypass the guard. Do not copy
+names from files outside this repository into anything you write here: describe the behaviour instead.
+
 ## Linting
 Ensure that you run ruff following any changes and address any issues raised
 ```bash

@@ -33,6 +33,12 @@ synced as above.
 | `pre-push` | stage `pre-push` on the whole project; only when the pushed commit is the checked-out `HEAD` (the gates read the working tree), pushing any other ref is not gated | yes |
 | `commit-msg` | commit message format: `[🤖 ]<type>(<scope>): <subject>`, types feat/fix/chore/docs/refactor/test/perf/ci/build, subject <=150 chars, body <=10 lines, no AI attribution trailers; skip once with `SKIP=commit-msg` or `--no-verify` | yes |
 | `post-commit` | refreshes the local GitNexus index in the background (needs `.gitnexus/run.cjs` and `node`) | never |
+| `denylist-check` | called by `pre-commit` (staged file names and added lines), `commit-msg` (the message) and `pre-push` (every unpushed commit); refuses any match with `.git/info/denylist` | yes |
+
+`denylist-check` keeps terms that must not appear in the repository out of it. The terms live in
+`.git/info/denylist` (one extended regular expression per line, matched case-insensitively), a file that belongs
+to the clone and is never tracked, so no tracked file names them. Without the file nothing is checked. The guard
+never prints a term, and `SKIP` does not bypass it (covered by `tests/integration/test_denylist_check_hook.py`).
 
 `commit-msg` is stage-less: it only validates the message text, so it is not run by `scripts.quality stage`
 and is not part of the pipeline below. Comment lines and the `git commit -v` scissors section are stripped

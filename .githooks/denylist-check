@@ -1,0 +1,41 @@
+#!/bin/sh
+# Local denylist guard (see docs/quality-gates.md).
+# Refuses staged changes, commit messages and pushes that contain a term listed in
+# .git/info/denylist: one extended regular expression per line, matched case-insensitively.
+# The file belongs to the clone and is never tracked, so no tracked file names the terms.
+# Without the file, or with an empty one, nothing is checked. The terms are never printed.
+#   denylist-check staged            the staged file names and added lines
+#   denylist-check message <file>    a commit message file
+#   denylist-check range <tip>       every commit reachable from <tip> that no remote-tracking ref has
+list=$(git rev-parse --git-path info/denylist 2>/dev/null) || exit 0
+[ -f "$list" ] || exit 0
+pattern=$(grep -v '^[[:space:]]*$' "$list" | paste -sd'|' -)
+[ -n "$pattern" ] || exit 0
+
+refuse() {
+    echo "[denylist] $1 contains a term from $list; remove it (the terms are not shown)" >&2
+    exit 1
+}
+added_lines() { grep '^+' | grep -v '^+++'; }
+matches() { grep -q -i -E "$pattern"; }
+
+case "$1" in
+    staged)
+        git diff --cached --name-only | matches && refuse "a staged file name"
+        git diff --cached -U0 --no-color | added_lines | matches && refuse "the staged changes"
+        ;;
+    message)
+        grep -v '^#' "$2" | matches && refuse "the commit message"
+        ;;
+    range)
+        for commit in $(git rev-list "$2" --not --remotes); do
+            git log -1 --format=%B "$commit" | matches && refuse "the message of commit $commit"
+            git show --format= -U0 --no-color "$commit" | added_lines | matches && refuse "commit $commit"
+        done
+        ;;
+    *)
+        echo "usage: denylist-check staged | message <file> | range <tip>" >&2
+        exit 2
+        ;;
+esac
+exit 0

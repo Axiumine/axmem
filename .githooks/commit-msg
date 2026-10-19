@@ -11,6 +11,9 @@
 
 COMMIT_MSG_FILE="$1"
 
+# The local denylist is not a quality gate: SKIP does not bypass it.
+"$(dirname "$0")/denylist-check" message "$COMMIT_MSG_FILE" || exit 1
+
 case ",${SKIP:-}," in
   *,commit-msg,*) exit 0 ;;
 esac
