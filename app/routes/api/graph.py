@@ -232,7 +232,6 @@ def register(mcp: ForgetfulMCP):
         seen_file_ids = set()
         seen_skill_ids = set()
         seen_plan_ids = set()
-        seen_task_ids = set()
         memories: list[Memory] = []  # Store for edge building
 
         # Get memories with pagination
@@ -290,14 +289,12 @@ def register(mcp: ForgetfulMCP):
                     for linked_id in memory.linked_memory_ids:
                         if linked_id in linked_elsewhere:
                             edge_id = f"memory_{min(memory.id, linked_id)}_memory_{max(memory.id, linked_id)}"
-                            if edge_id not in seen_edge_ids:
-                                seen_edge_ids.add(edge_id)
-                                cross_page_edges.append({
-                                    "id": edge_id,
-                                    "source": f"memory_{memory.id}",
-                                    "target": f"memory_{linked_id}",
-                                    "type": "memory_link",
-                                })
+                            cross_page_edges.append({
+                                "id": edge_id,
+                                "source": f"memory_{memory.id}",
+                                "target": f"memory_{linked_id}",
+                                "type": "memory_link",
+                            })
 
         # Add entity nodes and edges if requested
         seen_entity_ids = set()
@@ -363,14 +360,12 @@ def register(mcp: ForgetfulMCP):
                     # Entity always first for consistent edge ID format
                     edge_id = f"entity_{entity_id}_memory_{mem_id}"
 
-                    if edge_id not in seen_edge_ids:
-                        seen_edge_ids.add(edge_id)
-                        edges.append({
-                            "id": edge_id,
-                            "source": f"entity_{entity_id}",
-                            "target": f"memory_{mem_id}",
-                            "type": "entity_memory",
-                        })
+                    edges.append({
+                        "id": edge_id,
+                        "source": f"entity_{entity_id}",
+                        "target": f"memory_{mem_id}",
+                        "type": "entity_memory",
+                    })
 
         # Add project nodes
         projects = []
@@ -519,7 +514,6 @@ def register(mcp: ForgetfulMCP):
                 user_id=user.id, plan_ids=task_filter,
             )
             for task_summary in tasks:
-                seen_task_ids.add(task_summary.id)
                 nodes.append({
                     "id": f"task_{task_summary.id}",
                     "type": "task",
@@ -545,42 +539,36 @@ def register(mcp: ForgetfulMCP):
                 for proj_id in (memory.project_ids or []):
                     if proj_id in seen_project_ids:
                         edge_id = f"memory_{memory.id}_project_{proj_id}"
-                        if edge_id not in seen_edge_ids:
-                            seen_edge_ids.add(edge_id)
-                            edges.append({
-                                "id": edge_id,
-                                "source": f"memory_{memory.id}",
-                                "target": f"project_{proj_id}",
-                                "type": "memory_project",
-                            })
+                        edges.append({
+                            "id": edge_id,
+                            "source": f"memory_{memory.id}",
+                            "target": f"project_{proj_id}",
+                            "type": "memory_project",
+                        })
 
         # Add document-project edges (from document.project_id)
         if include_documents and include_projects:
             for document in documents:
                 if document.project_id and document.project_id in seen_project_ids:
                     edge_id = f"document_{document.id}_project_{document.project_id}"
-                    if edge_id not in seen_edge_ids:
-                        seen_edge_ids.add(edge_id)
-                        edges.append({
-                            "id": edge_id,
-                            "source": f"document_{document.id}",
-                            "target": f"project_{document.project_id}",
-                            "type": "document_project",
-                        })
+                    edges.append({
+                        "id": edge_id,
+                        "source": f"document_{document.id}",
+                        "target": f"project_{document.project_id}",
+                        "type": "document_project",
+                    })
 
         # Add code_artifact-project edges (from artifact.project_id)
         if include_code_artifacts and include_projects:
             for artifact in code_artifacts:
                 if artifact.project_id and artifact.project_id in seen_project_ids:
                     edge_id = f"code_artifact_{artifact.id}_project_{artifact.project_id}"
-                    if edge_id not in seen_edge_ids:
-                        seen_edge_ids.add(edge_id)
-                        edges.append({
-                            "id": edge_id,
-                            "source": f"code_artifact_{artifact.id}",
-                            "target": f"project_{artifact.project_id}",
-                            "type": "code_artifact_project",
-                        })
+                    edges.append({
+                        "id": edge_id,
+                        "source": f"code_artifact_{artifact.id}",
+                        "target": f"project_{artifact.project_id}",
+                        "type": "code_artifact_project",
+                    })
 
         # Add entity-project edges (from entity_project_association)
         if include_entities and include_projects:
@@ -590,14 +578,12 @@ def register(mcp: ForgetfulMCP):
             for entity_id, proj_id in entity_project_links:
                 if entity_id in seen_entity_ids and proj_id in seen_project_ids:
                     edge_id = f"entity_{entity_id}_project_{proj_id}"
-                    if edge_id not in seen_edge_ids:
-                        seen_edge_ids.add(edge_id)
-                        edges.append({
-                            "id": edge_id,
-                            "source": f"entity_{entity_id}",
-                            "target": f"project_{proj_id}",
-                            "type": "entity_project",
-                        })
+                    edges.append({
+                        "id": edge_id,
+                        "source": f"entity_{entity_id}",
+                        "target": f"project_{proj_id}",
+                        "type": "entity_project",
+                    })
 
         # Add memory-document edges (from memory.document_ids)
         if include_memories and include_documents:
@@ -605,14 +591,12 @@ def register(mcp: ForgetfulMCP):
                 for doc_id in (memory.document_ids or []):
                     if doc_id in seen_document_ids:
                         edge_id = f"memory_{memory.id}_document_{doc_id}"
-                        if edge_id not in seen_edge_ids:
-                            seen_edge_ids.add(edge_id)
-                            edges.append({
-                                "id": edge_id,
-                                "source": f"memory_{memory.id}",
-                                "target": f"document_{doc_id}",
-                                "type": "memory_document",
-                            })
+                        edges.append({
+                            "id": edge_id,
+                            "source": f"memory_{memory.id}",
+                            "target": f"document_{doc_id}",
+                            "type": "memory_document",
+                        })
 
         # Add memory-code_artifact edges (from memory.code_artifact_ids)
         if include_memories and include_code_artifacts:
@@ -620,14 +604,12 @@ def register(mcp: ForgetfulMCP):
                 for artifact_id in (memory.code_artifact_ids or []):
                     if artifact_id in seen_code_artifact_ids:
                         edge_id = f"memory_{memory.id}_code_artifact_{artifact_id}"
-                        if edge_id not in seen_edge_ids:
-                            seen_edge_ids.add(edge_id)
-                            edges.append({
-                                "id": edge_id,
-                                "source": f"memory_{memory.id}",
-                                "target": f"code_artifact_{artifact_id}",
-                                "type": "memory_code_artifact",
-                            })
+                        edges.append({
+                            "id": edge_id,
+                            "source": f"memory_{memory.id}",
+                            "target": f"code_artifact_{artifact_id}",
+                            "type": "memory_code_artifact",
+                        })
 
         # Add memory-file edges (from memory.file_ids)
         if include_memories and include_files:
@@ -635,28 +617,24 @@ def register(mcp: ForgetfulMCP):
                 for fid in (memory.file_ids or []):
                     if fid in seen_file_ids:
                         edge_id = f"memory_{memory.id}_file_{fid}"
-                        if edge_id not in seen_edge_ids:
-                            seen_edge_ids.add(edge_id)
-                            edges.append({
-                                "id": edge_id,
-                                "source": f"memory_{memory.id}",
-                                "target": f"file_{fid}",
-                                "type": "memory_file",
-                            })
+                        edges.append({
+                            "id": edge_id,
+                            "source": f"memory_{memory.id}",
+                            "target": f"file_{fid}",
+                            "type": "memory_file",
+                        })
 
         # Add file-project edges (from file.project_id)
         if include_files and include_projects:
             for file_summary in files:
                 if file_summary.project_id and file_summary.project_id in seen_project_ids:
                     edge_id = f"file_{file_summary.id}_project_{file_summary.project_id}"
-                    if edge_id not in seen_edge_ids:
-                        seen_edge_ids.add(edge_id)
-                        edges.append({
-                            "id": edge_id,
-                            "source": f"file_{file_summary.id}",
-                            "target": f"project_{file_summary.project_id}",
-                            "type": "file_project",
-                        })
+                    edges.append({
+                        "id": edge_id,
+                        "source": f"file_{file_summary.id}",
+                        "target": f"project_{file_summary.project_id}",
+                        "type": "file_project",
+                    })
 
         # Add entity-file edges (from entity_file_association)
         if include_entities and include_files:
@@ -666,14 +644,12 @@ def register(mcp: ForgetfulMCP):
             for entity_id, fid in entity_file_links:
                 if entity_id in seen_entity_ids and fid in seen_file_ids:
                     edge_id = f"entity_{entity_id}_file_{fid}"
-                    if edge_id not in seen_edge_ids:
-                        seen_edge_ids.add(edge_id)
-                        edges.append({
-                            "id": edge_id,
-                            "source": f"entity_{entity_id}",
-                            "target": f"file_{fid}",
-                            "type": "entity_file",
-                        })
+                    edges.append({
+                        "id": edge_id,
+                        "source": f"entity_{entity_id}",
+                        "target": f"file_{fid}",
+                        "type": "entity_file",
+                    })
 
         # Add memory-skill edges (from memory.skill_ids)
         if include_memories and include_skills:
@@ -681,28 +657,24 @@ def register(mcp: ForgetfulMCP):
                 for sid in (memory.skill_ids or []):
                     if sid in seen_skill_ids:
                         edge_id = f"memory_{memory.id}_skill_{sid}"
-                        if edge_id not in seen_edge_ids:
-                            seen_edge_ids.add(edge_id)
-                            edges.append({
-                                "id": edge_id,
-                                "source": f"memory_{memory.id}",
-                                "target": f"skill_{sid}",
-                                "type": "memory_skill",
-                            })
+                        edges.append({
+                            "id": edge_id,
+                            "source": f"memory_{memory.id}",
+                            "target": f"skill_{sid}",
+                            "type": "memory_skill",
+                        })
 
         # Add skill-project edges (from skill.project_id)
         if include_skills and include_projects:
             for skill_summary in skills:
                 if skill_summary.project_id and skill_summary.project_id in seen_project_ids:
                     edge_id = f"skill_{skill_summary.id}_project_{skill_summary.project_id}"
-                    if edge_id not in seen_edge_ids:
-                        seen_edge_ids.add(edge_id)
-                        edges.append({
-                            "id": edge_id,
-                            "source": f"skill_{skill_summary.id}",
-                            "target": f"project_{skill_summary.project_id}",
-                            "type": "skill_project",
-                        })
+                    edges.append({
+                        "id": edge_id,
+                        "source": f"skill_{skill_summary.id}",
+                        "target": f"project_{skill_summary.project_id}",
+                        "type": "skill_project",
+                    })
 
         # Add skill-file edges (from skill_file_association)
         if include_skills and include_files and getattr(mcp, "skill_service", None):
@@ -712,14 +684,12 @@ def register(mcp: ForgetfulMCP):
             for skill_id, fid in skill_file_links:
                 if skill_id in seen_skill_ids and fid in seen_file_ids:
                     edge_id = f"skill_{skill_id}_file_{fid}"
-                    if edge_id not in seen_edge_ids:
-                        seen_edge_ids.add(edge_id)
-                        edges.append({
-                            "id": edge_id,
-                            "source": f"skill_{skill_id}",
-                            "target": f"file_{fid}",
-                            "type": "skill_file",
-                        })
+                    edges.append({
+                        "id": edge_id,
+                        "source": f"skill_{skill_id}",
+                        "target": f"file_{fid}",
+                        "type": "skill_file",
+                    })
 
         # Add skill-code_artifact edges (from skill_code_artifact_association)
         if include_skills and include_code_artifacts and getattr(mcp, "skill_service", None):
@@ -729,14 +699,12 @@ def register(mcp: ForgetfulMCP):
             for skill_id, artifact_id in skill_artifact_links:
                 if skill_id in seen_skill_ids and artifact_id in seen_code_artifact_ids:
                     edge_id = f"skill_{skill_id}_code_artifact_{artifact_id}"
-                    if edge_id not in seen_edge_ids:
-                        seen_edge_ids.add(edge_id)
-                        edges.append({
-                            "id": edge_id,
-                            "source": f"skill_{skill_id}",
-                            "target": f"code_artifact_{artifact_id}",
-                            "type": "skill_code_artifact",
-                        })
+                    edges.append({
+                        "id": edge_id,
+                        "source": f"skill_{skill_id}",
+                        "target": f"code_artifact_{artifact_id}",
+                        "type": "skill_code_artifact",
+                    })
 
         # Add skill-document edges (from skill_document_association)
         if include_skills and include_documents and getattr(mcp, "skill_service", None):
@@ -746,42 +714,36 @@ def register(mcp: ForgetfulMCP):
             for skill_id, doc_id in skill_doc_links:
                 if skill_id in seen_skill_ids and doc_id in seen_document_ids:
                     edge_id = f"skill_{skill_id}_document_{doc_id}"
-                    if edge_id not in seen_edge_ids:
-                        seen_edge_ids.add(edge_id)
-                        edges.append({
-                            "id": edge_id,
-                            "source": f"skill_{skill_id}",
-                            "target": f"document_{doc_id}",
-                            "type": "skill_document",
-                        })
+                    edges.append({
+                        "id": edge_id,
+                        "source": f"skill_{skill_id}",
+                        "target": f"document_{doc_id}",
+                        "type": "skill_document",
+                    })
 
         # Add plan-project edges (from plan.project_id)
         if include_plans and include_projects:
             for plan_summary in plans:
                 if plan_summary.project_id and plan_summary.project_id in seen_project_ids:
                     edge_id = f"plan_{plan_summary.id}_project_{plan_summary.project_id}"
-                    if edge_id not in seen_edge_ids:
-                        seen_edge_ids.add(edge_id)
-                        edges.append({
-                            "id": edge_id,
-                            "source": f"plan_{plan_summary.id}",
-                            "target": f"project_{plan_summary.project_id}",
-                            "type": "plan_project",
-                        })
+                    edges.append({
+                        "id": edge_id,
+                        "source": f"plan_{plan_summary.id}",
+                        "target": f"project_{plan_summary.project_id}",
+                        "type": "plan_project",
+                    })
 
         # Add plan-task edges (from task.plan_id)
         if include_plans and include_tasks:
             for task_summary in tasks:
-                if task_summary.plan_id in seen_plan_ids and task_summary.id in seen_task_ids:
-                    edge_id = f"plan_{task_summary.plan_id}_task_{task_summary.id}"
-                    if edge_id not in seen_edge_ids:
-                        seen_edge_ids.add(edge_id)
-                        edges.append({
-                            "id": edge_id,
-                            "source": f"plan_{task_summary.plan_id}",
-                            "target": f"task_{task_summary.id}",
-                            "type": "plan_task",
-                        })
+                # The tasks were fetched for exactly these plans, so every plan endpoint exists
+                edge_id = f"plan_{task_summary.plan_id}_task_{task_summary.id}"
+                edges.append({
+                    "id": edge_id,
+                    "source": f"plan_{task_summary.plan_id}",
+                    "target": f"task_{task_summary.id}",
+                    "type": "plan_task",
+                })
 
         # Count edges by type for meta
         memory_link_count = len([e for e in edges if e["type"] == "memory_link"])
@@ -963,32 +925,29 @@ def register(mcp: ForgetfulMCP):
                 user_id=user.id,
                 entity_id=entity_id,
             )
-            if entity:
-                seen_entity_ids.add(entity.id)
-                nodes.append({
-                    "id": f"entity_{entity.id}",
-                    "type": "entity",
-                    "label": entity.name,
-                    "data": {
-                        "id": entity.id,
-                        "name": entity.name,
-                        "entity_type": entity.entity_type.value if hasattr(entity.entity_type, "value") else entity.entity_type,
-                        "created_at": entity.created_at.isoformat() if entity.created_at else None,
-                    },
-                })
+            seen_entity_ids.add(entity.id)
+            nodes.append({
+                "id": f"entity_{entity.id}",
+                "type": "entity",
+                "label": entity.name,
+                "data": {
+                    "id": entity.id,
+                    "name": entity.name,
+                    "entity_type": entity.entity_type.value if hasattr(entity.entity_type, "value") else entity.entity_type,
+                    "created_at": entity.created_at.isoformat() if entity.created_at else None,
+                },
+            })
 
         # Add entity-memory edges
         for entity_id, mem_id in entity_memory_links:
             if entity_id in seen_entity_ids and mem_id in seen_memory_ids:
                 edge_id = f"entity_{entity_id}_memory_{mem_id}"
-                if edge_id not in seen_edge_ids:
-                    seen_edge_ids.add(edge_id)
-                    edges.append({
-                        "id": edge_id,
-                        "source": f"entity_{entity_id}",
-                        "target": f"memory_{mem_id}",
-                        "type": "entity_memory",
-                    })
+                edges.append({
+                    "id": edge_id,
+                    "source": f"entity_{entity_id}",
+                    "target": f"memory_{mem_id}",
+                    "type": "entity_memory",
+                })
 
         # Add entity-entity relationships for entities in subgraph
         entity_relationships = await mcp.entity_service.get_all_entity_relationships(

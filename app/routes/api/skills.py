@@ -216,13 +216,10 @@ def register(mcp: ForgetfulMCP):
 
         skill_id = path_id(request, "skill_id")
 
-        try:
-            success = await mcp.skill_service.delete_skill(
-                user_id=user.id,
-                skill_id=skill_id,
-            )
-        except NotFoundError:
-            return JSONResponse({"error": "Skill not found"}, status_code=404)
+        success = await mcp.skill_service.delete_skill(
+            user_id=user.id,
+            skill_id=skill_id,
+        )
 
         if not success:
             return JSONResponse({"error": "Skill not found"}, status_code=404)
@@ -270,8 +267,7 @@ def register(mcp: ForgetfulMCP):
                 importance=importance,
             )
         except ValueError as e:
-            return JSONResponse({"error": str(e)}, status_code=400)
-        except ValidationError as e:
+            # Includes pydantic.ValidationError, which subclasses ValueError
             return JSONResponse({"error": str(e)}, status_code=400)
         except NotFoundError as e:
             return JSONResponse({"error": str(e)}, status_code=404)

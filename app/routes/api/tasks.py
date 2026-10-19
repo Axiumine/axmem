@@ -105,8 +105,6 @@ def register(mcp: ForgetfulMCP):
             return JSONResponse({"error": str(e)}, status_code=404)
         except InvalidStateTransitionError as e:
             return JSONResponse({"error": str(e)}, status_code=422)
-        except CyclicDependencyError as e:
-            return JSONResponse({"error": str(e)}, status_code=400)
         except ValueError as e:
             return JSONResponse({"error": str(e)}, status_code=400)
 
