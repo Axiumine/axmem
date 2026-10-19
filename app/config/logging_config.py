@@ -101,23 +101,32 @@ class SensitiveDataFilter(logging.Filter):
             for pattern, replacement in self.SENSITIVE_PATTERNS:
                 record.msg = pattern.sub(replacement, record.msg)
 
-        # Also mask args if it's present in there as well innit
-        if record.args:
-            if isinstance(record.args, dict):
-                record.args = {
-                    k: self._mask_value(v) for k, v in record.args.items()
-                }
-            elif isinstance(record.args, tuple):
-                record.args = tuple(self._mask_value(arg) for arg in record.args)
+        self._mask_args(record)
+        self._mask_exception_text(record)
 
-        # Tracebacks are rendered by the handler's formatter after this filter has run, so
-        # render and mask them here (the formatter reuses a cached ``exc_text``).
+        return True
+
+    def _mask_args(self, record: logging.LogRecord) -> None:
+        """Mask the %-style arguments of a record, whether passed as a dict or a tuple"""
+        if not record.args:
+            return
+        if isinstance(record.args, dict):
+            record.args = {
+                k: self._mask_value(v) for k, v in record.args.items()
+            }
+        elif isinstance(record.args, tuple):
+            record.args = tuple(self._mask_value(arg) for arg in record.args)
+
+    def _mask_exception_text(self, record: logging.LogRecord) -> None:
+        """Render and mask a record's traceback
+
+        Tracebacks are rendered by the handler's formatter after this filter has run, so
+        render and mask them here (the formatter reuses a cached ``exc_text``).
+        """
         if record.exc_info and not record.exc_text:
             record.exc_text = logging.Formatter().formatException(record.exc_info)
         if record.exc_text:
             record.exc_text = self._mask_value(record.exc_text)
-
-        return True
 
     def _mask_value(self, value):
         """Mask a value if it's a string that matches patterns"""

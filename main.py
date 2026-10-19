@@ -240,25 +240,8 @@ async def _restore_backup(db_adapter, backup_service, backup_path):
         print("  Database returned to pre-migration state.")
 
 
-async def _run_reembed(args):
-    """Run the re-embedding workflow"""
-    _tolerate_unencodable_output()
-    from app.config.logging_config import configure_logging, shutdown_logging
-    configure_logging(log_level="INFO", log_format="console", db_logging=settings.DB_LOGGING)
-    atexit.register(shutdown_logging)
-
-    from app.bootstrap import (
-        create_backup_service,
-        create_db_adapter,
-        create_repositories,
-        create_skill_repository,
-        get_embedding_adapter,
-    )
-    from app.services.re_embedding_service import ReEmbeddingService
-
-    embeddings_adapter = get_embedding_adapter()
-    backup_service = create_backup_service()
-
+def _print_reembed_configuration(batch_size):
+    """Step 1: show the configuration the re-embed will run with."""
     print("\n[1/5] Validating configuration...")
     model_display = settings.AZURE_DEPLOYMENT if settings.EMBEDDING_PROVIDER == "Azure" else settings.EMBEDDING_MODEL
     print(f"  Provider: {settings.EMBEDDING_PROVIDER} ({model_display})")
@@ -267,17 +250,22 @@ async def _run_reembed(args):
         print(f"  Database: SQLite ({settings.SQLITE_PATH})")
     else:
         print(f"  Database: PostgreSQL ({settings.POSTGRES_HOST}:{settings.PGPORT}/{settings.POSTGRES_DB})")
-    print(f"  Batch size: {args.batch_size}")
+    print(f"  Batch size: {batch_size}")
 
-    if args.dry_run:
-        total, skill_total = await _count_without_migrating(embeddings_adapter)
-        _print_counts(total, skill_total)
-        skills_note = f" and {skill_total} skills" if skill_total else ""
-        print(f"\n[DRY RUN] Would re-embed {total} memories{skills_note} with the above configuration.")
-        print("  No changes were made.")
-        return
 
-    # Initialize database
+async def _dry_run_reembed(embeddings_adapter):
+    """Report what a re-embed would process, without touching the database."""
+    total, skill_total = await _count_without_migrating(embeddings_adapter)
+    _print_counts(total, skill_total)
+    skills_note = f" and {skill_total} skills" if skill_total else ""
+    print(f"\n[DRY RUN] Would re-embed {total} memories{skills_note} with the above configuration.")
+    print("  No changes were made.")
+
+
+async def _open_database():
+    """Create the database adapter and bring the database up to date."""
+    from app.bootstrap import create_db_adapter
+
     db_adapter = create_db_adapter()
 
     if settings.DATABASE == "SQLite" and not settings.SQLITE_MEMORY:
@@ -285,6 +273,17 @@ async def _run_reembed(args):
         data_dir.mkdir(parents=True, exist_ok=True)
 
     await db_adapter.init_db()
+    return db_adapter
+
+
+async def _build_reembed_service(db_adapter, embeddings_adapter, batch_size):
+    """Wire the re-embedding service and print what it will process.
+
+    Returns:
+        (service, memory count, skill count)
+    """
+    from app.bootstrap import create_repositories, create_skill_repository
+    from app.services.re_embedding_service import ReEmbeddingService
 
     # Create repositories (reranker not needed for re-embedding). Skills share the embedding
     # provider and dimensions, so they are migrated even when the skills feature is switched off.
@@ -299,8 +298,154 @@ async def _run_reembed(args):
     service = ReEmbeddingService(
         memory_repository=memory_repository,
         embedding_adapter=embeddings_adapter,
-        batch_size=args.batch_size,
+        batch_size=batch_size,
         skill_repository=skill_repository,
+    )
+    return service, total, skill_total
+
+
+async def _create_reembed_backup(backup_service):
+    """Step 2: back the database up first; returns the backup path (None for in-memory SQLite)."""
+    if settings.DATABASE == "SQLite" and settings.SQLITE_MEMORY:
+        print("\n[2/5] Skipping backup (in-memory database)...")
+        return None
+
+    print("\n[2/5] Creating backup...")
+    backup_path = await backup_service.create_backup()
+    print(f"  Backup saved: {backup_path}")
+    return backup_path
+
+
+class _ReembedRun:
+    """State shared between the re-embed steps and the stop signal handler."""
+
+    def __init__(self):
+        # A signal cancels this task and the restore runs from the coroutine below: a signal
+        # handler cannot run the restore on the event loop that is currently running.
+        self.task = asyncio.current_task()
+        self.interrupted = False
+        self.restoring = False  # once a restore has begun, later signals must not cut it short
+
+    def request_stop(self):
+        """Signal handler: cancel the run, unless a restore has already begun."""
+        if not self.restoring:
+            self.interrupted = self.restoring = True
+            self.task.cancel()
+
+
+def _print_progress(processed, total_count):
+    pct = int((processed / total_count) * 100) if total_count > 0 else 100
+    bar_filled = int(pct / 4)
+    bar = "#" * bar_filled + "-" * (25 - bar_filled)
+    print(f"\r  [{bar}] {processed}/{total_count} memories ({pct}%)", end="", flush=True)
+
+
+def _print_validation(result):
+    """Step 5: show the outcome of each validation check."""
+    print(f"  Count check: {result.total_memories} memories, "
+          f"{result.total_processed} embeddings "
+          f"{'OK' if result.validation.count_ok else 'FAILED'}")
+    print(f"  Dimension check: {'OK' if result.validation.dimensions_ok else 'FAILED'}")
+    print(f"  Search check: {'OK' if result.validation.search_ok else 'FAILED'}")
+    if result.total_skills:
+        print(f"  Skills: {result.skills_processed}/{result.total_skills} re-embedded")
+
+
+def _print_reembed_success(result, backup_path):
+    skills_note = f" and {result.skills_processed} skills" if result.total_skills else ""
+    print(f"\n  Successfully re-embedded {result.total_processed} memories{skills_note}")
+    if backup_path:
+        print(f"  Backup retained at: {backup_path}")
+        print("  (Delete manually when satisfied with results)")
+
+
+async def _rebuild_vectors(service):
+    """Steps 3 and 4: reset the vector storage, then re-embed every memory and skill."""
+    print("\n[3/5] Updating vector schema...")
+    await service.reset_vector_storage()
+    if settings.DATABASE == "SQLite":
+        print(f"  Recreated vec_memories and vec_skills tables with {settings.EMBEDDING_DIMENSIONS} dimensions")
+    else:
+        print(f"  Altered embedding columns to vector({settings.EMBEDDING_DIMENSIONS})")
+
+    print("\n[4/5] Re-embedding memories...")
+    result = await service.re_embed_all(progress_callback=_print_progress, reset_storage=False)
+    print()  # newline after progress bar
+    return result
+
+
+async def _restore_after_cancel(run, db_adapter, backup_service, backup_path):
+    """Stopped by a signal (or cancelled from outside) with the vector storage half rebuilt."""
+    run.restoring = True
+    if run.interrupted:
+        run.task.uncancel()  # handled here: restore, then exit instead of propagating
+        print("\n\nInterrupted!")
+    await _restore_backup(db_adapter, backup_service, backup_path)
+    if run.interrupted:
+        sys.exit(1)
+
+
+async def _restore_after_error(error, run, db_adapter, backup_service, backup_path):
+    run.restoring = True
+    try:
+        print(f"\n  ERROR: {error}")
+    finally:
+        # Report first, but a report that fails (closed pipe, console) must not skip the restore.
+        await _restore_backup(db_adapter, backup_service, backup_path)
+
+
+async def _reembed_with_restore(service, db_adapter, backup_service, backup_path):
+    """Steps 3 to 5: rebuild the vectors, putting the backup back on failure or interruption."""
+    run = _ReembedRun()
+    restore_signal_handlers = _install_stop_handlers(asyncio.get_running_loop(), run.request_stop)
+
+    try:
+        result = await _rebuild_vectors(service)
+
+        # Validate
+        print("\n[5/5] Validating...")
+        if result.validation:
+            _print_validation(result)
+
+            if not result.validation.all_passed:
+                print("\n  Validation FAILED!")
+                run.restoring = True
+                await _restore_backup(db_adapter, backup_service, backup_path)
+                sys.exit(1)
+
+        _print_reembed_success(result, backup_path)
+
+    except asyncio.CancelledError:
+        await _restore_after_cancel(run, db_adapter, backup_service, backup_path)
+        raise
+    except Exception as e:
+        await _restore_after_error(e, run, db_adapter, backup_service, backup_path)
+        raise
+    finally:
+        restore_signal_handlers()
+
+
+async def _run_reembed(args):
+    """Run the re-embedding workflow"""
+    _tolerate_unencodable_output()
+    from app.config.logging_config import configure_logging, shutdown_logging
+    configure_logging(log_level="INFO", log_format="console", db_logging=settings.DB_LOGGING)
+    atexit.register(shutdown_logging)
+
+    from app.bootstrap import create_backup_service, get_embedding_adapter
+
+    embeddings_adapter = get_embedding_adapter()
+    backup_service = create_backup_service()
+
+    _print_reembed_configuration(args.batch_size)
+
+    if args.dry_run:
+        await _dry_run_reembed(embeddings_adapter)
+        return
+
+    db_adapter = await _open_database()
+    service, total, skill_total = await _build_reembed_service(
+        db_adapter, embeddings_adapter, args.batch_size,
     )
 
     if total == 0 and skill_total == 0:
@@ -312,93 +457,8 @@ async def _run_reembed(args):
         await db_adapter.dispose()
         return
 
-    # Create backup (skip for in-memory SQLite)
-    backup_path = None
-    if settings.DATABASE == "SQLite" and settings.SQLITE_MEMORY:
-        print("\n[2/5] Skipping backup (in-memory database)...")
-    else:
-        print("\n[2/5] Creating backup...")
-        backup_path = await backup_service.create_backup()
-        print(f"  Backup saved: {backup_path}")
-
-    # A signal cancels this task and the restore runs from the coroutine below: a signal
-    # handler cannot run the restore on the event loop that is currently running.
-    run_task = asyncio.current_task()
-    interrupted = False
-    restoring = False  # once a restore has begun, later signals must not cut it short
-
-    def stop_requested():
-        nonlocal interrupted, restoring
-        if not restoring:
-            interrupted = restoring = True
-            run_task.cancel()
-
-    restore_signal_handlers = _install_stop_handlers(asyncio.get_running_loop(), stop_requested)
-
-    try:
-        # Reset schema
-        print("\n[3/5] Updating vector schema...")
-        await service.reset_vector_storage()
-        if settings.DATABASE == "SQLite":
-            print(f"  Recreated vec_memories and vec_skills tables with {settings.EMBEDDING_DIMENSIONS} dimensions")
-        else:
-            print(f"  Altered embedding columns to vector({settings.EMBEDDING_DIMENSIONS})")
-
-        # Re-embed
-        print("\n[4/5] Re-embedding memories...")
-
-        def progress(processed, total_count):
-            pct = int((processed / total_count) * 100) if total_count > 0 else 100
-            bar_filled = int(pct / 4)
-            bar = "#" * bar_filled + "-" * (25 - bar_filled)
-            print(f"\r  [{bar}] {processed}/{total_count} memories ({pct}%)", end="", flush=True)
-
-        result = await service.re_embed_all(progress_callback=progress, reset_storage=False)
-        print()  # newline after progress bar
-
-        # Validate
-        print("\n[5/5] Validating...")
-        if result.validation:
-            print(f"  Count check: {result.total_memories} memories, "
-                  f"{result.total_processed} embeddings "
-                  f"{'OK' if result.validation.count_ok else 'FAILED'}")
-            print(f"  Dimension check: {'OK' if result.validation.dimensions_ok else 'FAILED'}")
-            print(f"  Search check: {'OK' if result.validation.search_ok else 'FAILED'}")
-            if result.total_skills:
-                print(f"  Skills: {result.skills_processed}/{result.total_skills} re-embedded")
-
-            if not result.validation.all_passed:
-                print("\n  Validation FAILED!")
-                restoring = True
-                await _restore_backup(db_adapter, backup_service, backup_path)
-                sys.exit(1)
-
-        skills_note = f" and {result.skills_processed} skills" if result.total_skills else ""
-        print(f"\n  Successfully re-embedded {result.total_processed} memories{skills_note}")
-        if backup_path:
-            print(f"  Backup retained at: {backup_path}")
-            print("  (Delete manually when satisfied with results)")
-
-    except asyncio.CancelledError:
-        # Stopped by a signal (or cancelled from outside) with the vector storage half rebuilt.
-        restoring = True
-        if interrupted:
-            run_task.uncancel()  # handled here: restore, then exit instead of propagating
-            print("\n\nInterrupted!")
-        await _restore_backup(db_adapter, backup_service, backup_path)
-        if interrupted:
-            sys.exit(1)
-        raise
-    except Exception as e:
-        restoring = True
-        try:
-            print(f"\n  ERROR: {e}")
-        finally:
-            # Report first, but a report that fails (closed pipe, console) must not skip the restore.
-            await _restore_backup(db_adapter, backup_service, backup_path)
-        raise
-    finally:
-        restore_signal_handlers()
+    backup_path = await _create_reembed_backup(backup_service)
+    await _reembed_with_restore(service, db_adapter, backup_service, backup_path)
 
     await db_adapter.dispose()
 
