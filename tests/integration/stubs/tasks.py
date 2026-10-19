@@ -126,21 +126,6 @@ class InMemoryTaskRepository(TaskSubresourceMixin, TaskRepository):
         )
         return [await self._summarize(user_id, t) for t in newest_first(tasks)]
 
-    async def list_tasks_for_user(
-        self,
-        user_id: UUID,
-        plan_ids: list[int] | None = None,
-    ) -> list[TaskSummary]:
-        if plan_ids is not None and len(plan_ids) == 0:
-            return []
-        allowed = set(plan_ids or [])
-        tasks = filter_items(
-            self._tasks.get(user_id, {}).values(),
-            (plan_ids is not None, lambda t: t.plan_id in allowed),
-        )
-        tasks.sort(key=lambda t: t.created_at)
-        return [await self._summarize(user_id, t) for t in tasks]
-
     async def update_task(
         self, user_id: UUID, task_id: int, task_data: TaskUpdate,
     ) -> Task:

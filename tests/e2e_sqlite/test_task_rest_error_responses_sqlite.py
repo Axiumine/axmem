@@ -4,7 +4,7 @@ Drives the public ``/api/v1/tasks`` and ``/api/v1/criteria`` endpoints against t
 service and in-memory SQLite stack and checks status codes, bodies and persisted state.
 """
 import pytest
-from graph_sqlite_helpers import make_project_plan_tasks
+from rest_helpers import make_project_plan_tasks
 
 MISSING_ID = 99999
 

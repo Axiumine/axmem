@@ -3,7 +3,7 @@
 Covers the search entity_type filter and the 404 answers for entities, links and
 relationships that do not exist.
 """
-from graph_sqlite_helpers import create_entity, create_memory
+from rest_helpers import create_entity, create_memory
 
 MISSING_ID = 99999
 

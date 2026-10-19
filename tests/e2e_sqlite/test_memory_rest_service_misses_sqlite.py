@@ -5,7 +5,7 @@ and a link may point at a memory that has since disappeared. The routes must tur
 into the documented 404 answers (or skip the dangling link) instead of failing.
 """
 import pytest
-from graph_sqlite_helpers import auto_link_disabled, create_memory, link_memories
+from rest_helpers import auto_link_disabled, create_memory, link_memories
 
 from app.exceptions import NotFoundError
 

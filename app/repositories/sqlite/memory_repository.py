@@ -1,12 +1,11 @@
 """Memory repository for SQLite data access operations with sqlite-vec integration
 
 The operations live in mixins grouped by concern (search, writes, reads, links,
-re-embedding, subgraph traversal); SqliteMemoryRepository composes them.
+re-embedding); SqliteMemoryRepository composes them.
 """
 from app.repositories.sqlite.memory_links import SqliteMemoryLinkMixin
 from app.repositories.sqlite.memory_reembedding import SqliteMemoryReembeddingMixin
 from app.repositories.sqlite.memory_search import SqliteMemorySearchMixin
-from app.repositories.sqlite.memory_subgraph import SqliteMemorySubgraphMixin
 from app.repositories.sqlite.memory_writes import (
     MAX_EMBEDDING_ATTEMPTS,
     SqliteMemoryWriteMixin,
@@ -20,7 +19,6 @@ class SqliteMemoryRepository(
     SqliteMemoryWriteMixin,
     SqliteMemoryLinkMixin,
     SqliteMemoryReembeddingMixin,
-    SqliteMemorySubgraphMixin,
 ):
     """Repository for Memory entity operations in SQLite with sqlite-vec integration
 

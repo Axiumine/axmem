@@ -131,8 +131,6 @@ class TestIdFiltersFitPostgresInteger:
             "/api/v1/memories?project_id=2147483648",
             "/api/v1/memories?project_id=3000000000",
             "/api/v1/memories?project_id=-2147483649",
-            "/api/v1/graph?project_id=2147483648",
-            "/api/v1/graph?project_id=-2147483649",
         ],
     )
     async def test_id_beyond_int32_is_rejected(self, http_client, url):
@@ -144,7 +142,6 @@ class TestIdFiltersFitPostgresInteger:
         [
             "/api/v1/activity?entity_id=2147483647",
             "/api/v1/memories?project_id=2147483647",
-            "/api/v1/graph?project_id=2147483647",
         ],
     )
     async def test_largest_int32_id_is_accepted(self, http_client, url):

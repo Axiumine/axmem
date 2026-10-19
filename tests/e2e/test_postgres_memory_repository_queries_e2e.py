@@ -1,4 +1,4 @@
-"""PostgreSQL memory repository: search filters, listing, targeted re-embedding and subgraphs.
+"""PostgreSQL memory repository: search filters and targeted re-embedding.
 
 Calls the repository directly against real rows and a real vector index. Search runs with a
 constant embedding, so every memory is equally close to every query and the filters and the
@@ -127,27 +127,6 @@ async def test_obsolete_matches_of_a_memory_without_embedding_are_empty(world, c
     assert matches == []
 
 
-async def test_listed_ids_of_no_candidates_are_empty(world):
-    assert await world.memories.get_listed_memory_ids(world.owner, []) == set()
-
-
-async def test_listed_ids_exclude_obsolete_foreign_and_out_of_project_memories(world):
-    owner = world.owner
-    project = await new_project(world, owner)
-    listed = await new_memory(world, owner, "Listed", project_ids=[project])
-    outside = await new_memory(world, owner, "Outside project")
-    obsolete = await new_memory(world, owner, "Obsolete", project_ids=[project])
-    await world.memories.mark_obsolete(owner, obsolete.id, "outdated")
-    strangers = await new_memory(world, world.stranger, "Stranger memory")
-    candidates = [listed.id, outside.id, obsolete.id, strangers.id]
-
-    in_project = await world.memories.get_listed_memory_ids(owner, candidates, [project])
-    anywhere = await world.memories.get_listed_memory_ids(owner, candidates)
-
-    assert in_project == {listed.id}
-    assert anywhere == {listed.id, outside.id}
-
-
 async def test_targeted_rebuild_can_be_scoped_to_a_project_without_memory_ids(world):
     owner = world.owner
     project = await new_project(world, owner)
@@ -184,25 +163,3 @@ async def test_targeted_embedding_upsert_skips_memories_of_other_users(world):
     strangers_row = await world.memories.get_memory_table_by_id(world.stranger, strangers.id)
     assert float(owned_row.embedding[0]) == pytest.approx(0.02)
     assert float(strangers_row.embedding[0]) == pytest.approx(0.01)
-
-
-async def test_subgraph_without_traversable_node_types_is_only_the_centre(world):
-    centre = await new_memory(world, world.owner, "Centre")
-    neighbour = await new_memory(world, world.owner, "Neighbour")
-    await world.memories.create_link(world.owner, centre.id, neighbour.id)
-
-    nodes, truncated = await world.memories.get_subgraph_nodes(
-        world.owner,
-        center_type="memory",
-        center_id=centre.id,
-        depth=2,
-        include_memories=False,
-        include_entities=False,
-        include_projects=False,
-        include_documents=False,
-        include_code_artifacts=False,
-        include_files=False,
-    )
-
-    assert nodes == [{"node_id": centre.id, "node_type": "memory", "depth": 0}]
-    assert truncated is False

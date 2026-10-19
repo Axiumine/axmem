@@ -1,4 +1,4 @@
-"""E2E (SQLite) tests for query-parameter handling on the activity, memories and graph routes.
+"""E2E (SQLite) tests for query-parameter handling on the activity and memories routes.
 
 Malformed or out-of-range values must produce a 400 naming the parameter instead of
 being silently ignored (activity) or reaching the database (500), since/until must be
@@ -242,65 +242,3 @@ class TestMemoriesListQueryParams:
         response = await client.get(f"/api/v1/memories?project_id={value}")
         assert response.status_code == 200, response.text
         assert response.json()["total"] == 0
-
-
-class TestGraphQueryParams:
-    @pytest.mark.parametrize("limit", [0, -1, -2])
-    async def test_non_positive_limit_is_rejected(self, client, limit):
-        await _create_memories(client, 3)
-        response = await client.get(f"/api/v1/graph?limit={limit}")
-        assert response.status_code == 400, (
-            f"limit={limit} -> {response.status_code} {response.text[:200]}"
-        )
-        assert "limit" in response.json()["error"]
-
-    async def test_limit_one_pages_to_the_end(self, client):
-        await _create_memories(client, 3)
-        seen = 0
-        for offset in range(3):
-            response = await client.get(
-                f"/api/v1/graph?node_types=memory&limit=1&offset={offset}",
-            )
-            assert response.status_code == 200, response.text
-            meta = response.json()["meta"]
-            seen += meta["memory_count"]
-            assert meta["has_more"] is (offset < 2)
-        assert seen == 3
-
-    async def test_offset_beyond_int64_is_rejected(self, client):
-        response = await client.get(f"/api/v1/graph?offset={BEYOND_INT64}")
-        assert response.status_code == 400, f"offset -> {response.status_code}"
-        assert "offset" in response.json()["error"]
-
-    @pytest.mark.parametrize("value", [INT32_MAX + 1, INT32_MIN - 1, 3_000_000_000, BEYOND_INT64])
-    async def test_project_id_beyond_int32_is_rejected(self, client, value):
-        response = await client.get(f"/api/v1/graph?project_id={value}")
-        assert response.status_code == 400, f"project_id={value} -> {response.status_code}"
-        assert "project_id" in response.json()["error"]
-
-    @pytest.mark.parametrize("value", [INT32_MAX, INT32_MIN])
-    async def test_int32_edges_are_accepted_for_project_id(self, client, value):
-        response = await client.get(f"/api/v1/graph?project_id={value}&node_types=memory")
-        assert response.status_code == 200, response.text
-        assert response.json()["meta"]["memory_count"] == 0
-
-    async def test_project_id_zero_still_filters(self, client):
-        await _create_memories(client, 2)
-        response = await client.get("/api/v1/graph?project_id=0&node_types=memory")
-        assert response.status_code == 200, response.text
-        assert response.json()["meta"]["memory_count"] == 0
-
-    @pytest.mark.parametrize("depth", [0, -3])
-    async def test_memory_subgraph_rejects_depth_below_one(self, client, depth):
-        await _create_memories(client, 1)
-        memory_id = (await client.get("/api/v1/memories?limit=1")).json()["memories"][0]["id"]
-        response = await client.get(f"/api/v1/graph/memory/{memory_id}?depth={depth}")
-        assert response.status_code == 400, response.text
-        assert "depth" in response.json()["error"]
-
-    async def test_memory_subgraph_accepts_valid_depth(self, client):
-        await _create_memories(client, 1)
-        memory_id = (await client.get("/api/v1/memories?limit=1")).json()["memories"][0]["id"]
-        for depth in (1, 3, 50):
-            response = await client.get(f"/api/v1/graph/memory/{memory_id}?depth={depth}")
-            assert response.status_code == 200, response.text

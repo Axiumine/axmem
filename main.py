@@ -26,7 +26,6 @@ from app.routes.api import (
     documents,
     entities,
     files,
-    graph,
     health,
     memories,
     plans,
@@ -69,7 +68,6 @@ async def lifespan(app):
     mcp.code_artifact_service = services.code_artifact
     mcp.document_service = services.document
     mcp.entity_service = services.entity
-    mcp.graph_service = services.graph
     mcp.activity_service = services.activity
     mcp.event_bus = runtime.event_bus
 
@@ -135,7 +133,6 @@ entities.register(mcp)
 projects.register(mcp)
 documents.register(mcp)
 code_artifacts.register(mcp)
-graph.register(mcp)
 activity.register(mcp)
 
 if settings.FILES_ENABLED:

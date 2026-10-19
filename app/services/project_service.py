@@ -156,9 +156,7 @@ class ProjectService:
 
         return projects
 
-    async def get_project(
-        self, user_id: UUID, project_id: int, track_read: bool = True,
-    ) -> Project:
+    async def get_project(self, user_id: UUID, project_id: int) -> Project:
         """Get single project by ID
 
         Retrieves complete project details including description, notes,
@@ -167,7 +165,6 @@ class ProjectService:
         Args:
             user_id: User ID for RLS
             project_id: Project ID to retrieve
-            track_read: Set False for internal lookups so no read event is emitted
 
         Returns:
             Project if found
@@ -190,7 +187,7 @@ class ProjectService:
             )
 
             # Emit read event (opt-in via ACTIVITY_TRACK_READS)
-            if track_read and settings.ACTIVITY_TRACK_READS and self._event_bus:
+            if settings.ACTIVITY_TRACK_READS and self._event_bus:
                 await self._emit_event(
                     user_id=user_id,
                     entity_type=EntityType.PROJECT,

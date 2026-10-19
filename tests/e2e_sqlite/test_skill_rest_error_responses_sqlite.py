@@ -4,7 +4,7 @@ Covers deleting and importing skills, and the link/unlink routes for files, code
 and documents when the skill is missing or the request body lacks the resource id.
 """
 import pytest
-from graph_sqlite_helpers import create_skill
+from rest_helpers import create_skill
 
 MISSING_ID = 99999
 

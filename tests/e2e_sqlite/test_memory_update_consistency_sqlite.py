@@ -225,20 +225,6 @@ async def test_search_and_linked_memories_report_skill_ids(http_client):
     ]
 
 
-async def test_subgraph_has_memory_skill_edge(http_client):
-    skill_id = await _create_skill(http_client, "graph-skill")
-    memory_id = await _create_memory(http_client, skill_ids=[skill_id])
-
-    response = await http_client.get(
-        f"/api/v1/graph/subgraph?node_id=memory_{memory_id}&node_types=memory,skill",
-    )
-
-    assert response.status_code == 200, response.text
-    body = response.json()
-    assert f"skill_{skill_id}" in {node["id"] for node in body["nodes"]}
-    assert [edge for edge in body["edges"] if edge["type"] == "memory_skill"], body["edges"]
-
-
 # ============================================================================
 # Embedding written by update_memory
 # ============================================================================

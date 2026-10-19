@@ -407,7 +407,6 @@ For vector search and optional cross-encoder reranking, see
 - `MEMORY_NUM_AUTO_LINK` – Auto-link count (default: `3`, set `0` to disable)
 - `MEMORY_SIMILARITY_THRESHOLD` – Minimum cosine similarity for auto-links (default: `0.7`)
 - `SERVER_PORT` – HTTP server port (default: `8020`)
-- `MAX_GRAPH_LIMIT` – Upper bound for `/api/v1/graph` `?limit` and `/api/v1/graph/subgraph` `?max_nodes` (default: `2000`)
 
 For all environment variables with detailed explanations, see [Configuration Guide](docs/configuration.md).
 

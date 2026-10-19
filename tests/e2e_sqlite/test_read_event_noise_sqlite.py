@@ -1,12 +1,9 @@
 """Full-stack (in-memory SQLite) tests: no READ noise from internal lookups.
 
 Real repositories and services share one EventBus, the way bootstrap wires them, with
-ACTIVITY_TRACK_READS on. Two paths used to log reads the user never made:
-
-- rendering a graph hydrated every node through the public ``get_*`` methods, so one
-  graph view wrote several ``read``/``queried`` events per node;
-- ``unlink_memories`` checked the source memory through ``get_memory``, recording a
-  ``memory.read`` event and bumping ``access_count``.
+ACTIVITY_TRACK_READS on. ``unlink_memories`` used to check the source memory through
+``get_memory``, recording a read the user never made: a ``memory.read`` event and a bump of
+``access_count``.
 """
 import base64
 
@@ -28,7 +25,6 @@ from app.repositories.sqlite.code_artifact_repository import (
     SqliteCodeArtifactRepository,
 )
 from app.repositories.sqlite.document_repository import SqliteDocumentRepository
-from app.repositories.sqlite.entity_repository import SqliteEntityRepository
 from app.repositories.sqlite.file_repository import SqliteFileRepository
 from app.repositories.sqlite.memory_repository import SqliteMemoryRepository
 from app.repositories.sqlite.plan_repository import SqlitePlanRepository
@@ -41,7 +37,6 @@ from app.services.activity_service import ActivityService
 from app.services.code_artifact_service import CodeArtifactService
 from app.services.document_service import DocumentService
 from app.services.file_service import FileService
-from app.services.graph_service import GraphService
 from app.services.memory_service import MemoryService
 from app.services.plan_service import PlanService
 from app.services.project_service import ProjectService
@@ -97,17 +92,6 @@ async def stack(monkeypatch):
         task_service = TaskService(
             SqliteTaskRepository(db_adapter=db), plan_service=plan_service, event_bus=bus,
         )
-        graph = GraphService(
-            memory_repo,
-            SqliteEntityRepository(db_adapter=db),
-            project_service=project_service,
-            document_service=document_service,
-            code_artifact_service=artifact_service,
-            file_service=file_service,
-            skill_service=skill_service,
-            plan_service=plan_service,
-            task_service=task_service,
-        )
         yield {
             "user_id": user.id,
             "bus": bus,
@@ -121,7 +105,6 @@ async def stack(monkeypatch):
             "skill": skill_service,
             "plan": plan_service,
             "task": task_service,
-            "graph": graph,
         }
     finally:
         await db.dispose()
@@ -175,41 +158,8 @@ def _noisy_events(s):
 
 
 @pytest.mark.asyncio
-async def test_project_graph_renders_without_read_or_query_events(stack):
-    s = stack
-    ids = await _seed_project_content(s)
-
-    sub = await s["graph"].get_subgraph(s["user_id"], f"project_{ids['project']}", depth=2)
-
-    # Sanity: every service-backed node type and its project edge really rendered
-    node_ids = {n.id for n in sub.nodes}
-    for kind, entity_id in ids.items():
-        assert f"{kind}_{entity_id}" in node_ids, f"{kind} node missing from graph"
-    edge_types = {e.type for e in sub.edges}
-    assert {
-        "document_project", "code_artifact_project", "file_project", "skill_project", "plan_project",
-    } <= edge_types
-
-    await s["bus"].wait_for_pending()
-    assert _noisy_events(s) == []
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("center", ["document", "code_artifact", "file", "skill", "plan", "project"])
-async def test_graph_center_validation_emits_no_read_event(stack, center):
-    s = stack
-    ids = await _seed_project_content(s)
-
-    sub = await s["graph"].get_subgraph(s["user_id"], f"{center}_{ids[center]}", depth=1)
-
-    assert f"{center}_{ids[center]}" in {n.id for n in sub.nodes}
-    await s["bus"].wait_for_pending()
-    assert _noisy_events(s) == []
-
-
-@pytest.mark.asyncio
 async def test_explicit_gets_still_emit_read_events(stack):
-    """Only the internal lookups are silenced: an explicit get_* still logs its read."""
+    """An explicit get_* logs its read."""
     s = stack
     uid = s["user_id"]
     ids = await _seed_project_content(s)

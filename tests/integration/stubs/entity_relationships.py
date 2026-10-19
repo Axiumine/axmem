@@ -103,9 +103,3 @@ class EntityRelationshipMixin:
         self, user_id: UUID, relationship_id: int,
     ) -> bool:
         return remove_item(self._relationships, user_id, relationship_id)
-
-    async def get_all_entity_relationships(
-        self, user_id: UUID,
-    ) -> list[EntityRelationship]:
-        """Get all entity relationships for a user (for graph visualization)"""
-        return newest_first(self._relationships.get(user_id, {}).values())

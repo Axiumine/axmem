@@ -128,21 +128,6 @@ SKILL_OPERATIONS: dict[str, tuple[SkillCall, str, dict[str, int]]] = {
         "Failed to get skill links",
         {"skill_id": 7},
     ),
-    "get_all_skill_file_links": (
-        lambda repo, s: repo.get_all_skill_file_links(s.user_id),
-        "Failed to get all skill-file links",
-        {},
-    ),
-    "get_all_skill_code_artifact_links": (
-        lambda repo, s: repo.get_all_skill_code_artifact_links(s.user_id),
-        "Failed to get all skill-code_artifact links",
-        {},
-    ),
-    "get_all_skill_document_links": (
-        lambda repo, s: repo.get_all_skill_document_links(s.user_id),
-        "Failed to get all skill-document links",
-        {},
-    ),
 }
 
 

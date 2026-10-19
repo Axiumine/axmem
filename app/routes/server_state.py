@@ -28,7 +28,6 @@ if TYPE_CHECKING:
     from app.services.document_service import DocumentService
     from app.services.entity_service import EntityService
     from app.services.file_service import FileService
-    from app.services.graph_service import GraphService
     from app.services.memory_service import MemoryService
     from app.services.plan_service import PlanService
     from app.services.project_service import ProjectService
@@ -48,7 +47,6 @@ class ForgetfulMCP(FastMCP[Any]):
     code_artifact_service: CodeArtifactService
     document_service: DocumentService
     entity_service: EntityService
-    graph_service: GraphService
     activity_service: ActivityService
     event_bus: EventBus | None
 

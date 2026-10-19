@@ -222,19 +222,6 @@ class TaskService:
         logger.info("tasks retrieved", extra={"count": len(tasks)})
         return tasks
 
-    async def list_tasks_for_user(
-        self,
-        user_id: UUID,
-        plan_ids: list[int] | None = None,
-    ) -> list[TaskSummary]:
-        logger.info(
-            "listing tasks for user",
-            extra={"user_id": str(user_id), "plan_ids_count": len(plan_ids) if plan_ids is not None else None},
-        )
-        tasks = await self.task_repo.list_tasks_for_user(user_id=user_id, plan_ids=plan_ids)
-        logger.info("tasks retrieved", extra={"count": len(tasks)})
-        return tasks
-
     async def update_task(
         self, user_id: UUID, task_id: int, task_data: TaskUpdate,
     ) -> Task:

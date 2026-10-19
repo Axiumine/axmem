@@ -902,16 +902,12 @@ REST listing does not emit those events.
 Some internal lookups check that an object exists or hydrate a response, and do not count as
 reads. These emit no `read`/`queried` events and do not touch `access_count`:
 
-- `GraphService.get_subgraph` (`GET /api/v1/graph/subgraph`)
 - linking and unlinking memories, and linking and unlinking skills
 - `create_task` and plan auto-completion after a task transition or deletion
 
-This does not cover the legacy graph endpoints `GET /api/v1/graph` and
-`GET /api/v1/graph/memory/{memory_id}`, nor `GET /api/v1/memories/{memory_id}/links`. They still
-read through the public service methods, so with `ACTIVITY_TRACK_READS=true` they can emit
-`read`/`queried` events (for example `file.queried` from `GET /api/v1/graph`, and `memory.read`
-with an `access_count` bump for each memory returned by `GET /api/v1/graph/memory/{memory_id}`
-or `GET /api/v1/memories/{memory_id}/links`).
+This does not cover `GET /api/v1/memories/{memory_id}/links`. It still reads through the public
+service methods, so with `ACTIVITY_TRACK_READS=true` it can emit `memory.read` events with an
+`access_count` bump for each memory returned.
 
 ### SSE Streaming Configuration
 
@@ -922,16 +918,6 @@ or `GET /api/v1/memories/{memory_id}/links`).
 - **Behavior**: Clients can detect dropped events via sequence number gaps and resync via REST API
 - **Note**: Increase for high-throughput scenarios where bulk operations are common
 - **Example**: `SSE_MAX_QUEUE_SIZE=2000`
-
-### Graph Visualization Configuration
-
-#### `MAX_GRAPH_LIMIT`
-- **Default**: `2000`
-- **Description**: Upper bound for the `?limit` query parameter on `/api/v1/graph` and the `?max_nodes` query parameter on `/api/v1/graph/subgraph` (enforced in `GraphService.get_subgraph`)
-- **Purpose**: Safety cap that prevents clients from requesting an unbounded number of nodes in a single response, while staying configurable for larger knowledge graphs (see issue #23)
-- **Behavior**: Any client-provided value above this cap is silently clamped; values at or below are passed through unchanged. A value of `0` is clamped up to `1` for `/graph/subgraph`.
-- **Note**: Before this setting was introduced the cap was hardcoded to `500`, which excluded older memories from the full graph visualization on larger knowledge bases.
-- **Example**: `MAX_GRAPH_LIMIT=5000`
 
 ### Example Configuration
 

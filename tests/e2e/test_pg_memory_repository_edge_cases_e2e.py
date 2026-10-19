@@ -1,4 +1,4 @@
-"""PostgreSQL memory repository: lookups, links, listing, usage and subgraph edges.
+"""PostgreSQL memory repository: lookups, links, usage and obsolescence edges.
 
 Behaviour of the repository operations that the services normally shield from odd input:
 unknown ids, empty id lists, optional filters left out and ids no memory can have. Each test
@@ -122,41 +122,11 @@ async def test_batch_linking_to_no_targets_creates_nothing(memories, owner):
     assert await memories.create_links_batch(owner, source.id, []) == []
 
 
-# ---- listing, usage, subgraph ----
-
-
-async def test_listed_ids_of_no_candidates_are_empty(memories, owner):
-    assert await memories.get_listed_memory_ids(owner, []) == set()
-
-
-async def test_listed_ids_can_be_restricted_to_projects(memories, owner, project_id):
-    inside = await memories.create_memory(owner, memory_data("inside", project_ids=[project_id]))
-    outside = await memories.create_memory(owner, memory_data("outside"))
-
-    listed = await memories.get_listed_memory_ids(
-        owner, [inside.id, outside.id], project_ids=[project_id],
-    )
-
-    assert listed == {inside.id}
+# ---- usage ----
 
 
 async def test_recording_access_for_no_memories_updates_nothing(memories, owner):
     assert await memories.record_memory_access(owner, []) == 0
-
-
-async def test_subgraph_of_a_center_without_included_node_types_is_the_center_alone(
-    memories, owner,
-):
-    center = await memories.create_memory(owner, memory_data("center"))
-
-    nodes, truncated = await memories.get_subgraph_nodes(
-        owner, "memory", center.id, depth=2,
-        include_memories=False, include_entities=False, include_projects=False,
-        include_documents=False, include_code_artifacts=False, include_files=False,
-    )
-
-    assert nodes == [{"node_id": center.id, "node_type": "memory", "depth": 0}]
-    assert truncated is False
 
 
 # ---- obsolescence ----

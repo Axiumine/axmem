@@ -2,8 +2,8 @@
 
 ``ForgetfulMCP`` (app/routes/server_state.py) is the one type routes, middleware and MCP
 tools see the lifespan-attached services through. These tests cover the places where
-narrowing to that typing added a guard: a user that cannot be provisioned, a centre memory
-the service reports as missing, and the required ``plan_id`` of the task listing.
+narrowing to that typing added a guard: a user that cannot be provisioned, and the required
+``plan_id`` of the task listing.
 """
 from types import SimpleNamespace
 from uuid import uuid4
@@ -12,7 +12,6 @@ import httpx
 import pytest
 
 from app.middleware.auth import get_user_from_auth, get_user_from_request
-from app.routes.api import graph as graph_routes
 from app.routes.api import tasks as task_routes
 from app.routes.server_state import ForgetfulMCP, server_of
 
@@ -25,13 +24,6 @@ class _UserService:
 
     async def get_or_create_user(self, user):
         return self._user
-
-
-class _MemoryService:
-    """Memory service whose lookup reports the memory as missing the way the contract allows."""
-
-    async def get_memory(self, user_id, memory_id):
-        return None
 
 
 class _TaskService:
@@ -89,18 +81,6 @@ async def test_identity_is_the_provisioned_user(user):
 
     assert await get_user_from_request(SimpleNamespace(headers={}), mcp) is user
     assert await get_user_from_auth(SimpleNamespace(fastmcp=mcp)) is user
-
-
-@pytest.mark.asyncio
-async def test_memory_subgraph_is_not_found_when_the_service_returns_no_memory(user):
-    mcp = _server(_UserService(user))
-    mcp.memory_service = _MemoryService()
-    graph_routes.register(mcp)
-
-    response = await _get(mcp, "/api/v1/graph/memory/7")
-
-    assert response.status_code == 404
-    assert response.json() == {"error": "Memory not found"}
 
 
 @pytest.mark.asyncio

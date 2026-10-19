@@ -49,7 +49,6 @@ from app.routes.api import (
     documents,
     entities,
     files,
-    graph,
     health,
     memories,
     plans,
@@ -66,7 +65,6 @@ from app.services.code_artifact_service import CodeArtifactService
 from app.services.document_service import DocumentService
 from app.services.entity_service import EntityService
 from app.services.file_service import FileService
-from app.services.graph_service import GraphService
 from app.services.memory_service import MemoryService
 from app.services.plan_service import PlanService
 from app.services.project_service import ProjectService
@@ -235,18 +233,6 @@ async def build_sqlite_app(embedding_adapter, reranker_adapter, enabled_features
             if "skills" in enabled_features:
                 skill_service = SkillService(skill_repository, event_bus=None)
 
-            graph_service = GraphService(
-                memory_repository,
-                entity_repository,
-                project_service=project_service,
-                document_service=document_service,
-                code_artifact_service=code_artifact_service,
-                file_service=file_service,
-                skill_service=skill_service,
-                plan_service=plan_service,
-                task_service=task_service,
-            )
-
             # Store core services on FastMCP instance
             mcp.user_service = user_service
             mcp.memory_service = memory_service
@@ -254,7 +240,6 @@ async def build_sqlite_app(embedding_adapter, reranker_adapter, enabled_features
             mcp.code_artifact_service = code_artifact_service
             mcp.document_service = document_service
             mcp.entity_service = entity_service
-            mcp.graph_service = graph_service
             mcp.activity_service = activity_service
             mcp.event_bus = event_bus
 
@@ -306,7 +291,6 @@ async def build_sqlite_app(embedding_adapter, reranker_adapter, enabled_features
         projects.register(mcp)
         documents.register(mcp)
         code_artifacts.register(mcp)
-        graph.register(mcp)
         activity.register(mcp)
 
         # Feature-flagged routes

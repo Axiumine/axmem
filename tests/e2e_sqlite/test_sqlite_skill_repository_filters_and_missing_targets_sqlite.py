@@ -8,6 +8,7 @@ import base64
 import logging
 
 import pytest
+from sqlalchemy import func, select
 
 from app.config.settings import settings
 from app.exceptions import NotFoundError
@@ -17,6 +18,11 @@ from app.models.file_models import FileCreate
 from app.models.memory_models import MemoryCreate
 from app.models.project_models import ProjectCreate, ProjectType
 from app.models.skill_models import SkillCreate, SkillUpdate
+from app.repositories.sqlite.sqlite_tables import (
+    skill_code_artifact_association,
+    skill_document_association,
+    skill_file_association,
+)
 from tests.e2e_sqlite.sqlite_repository_stack_helpers import (
     RepositoryStack,
     open_repository_stack,
@@ -45,6 +51,13 @@ async def _project(stack: RepositoryStack, name: str = "p") -> int:
         ProjectCreate(name=name, description="d", project_type=ProjectType.DEVELOPMENT),
     )
     return created.id
+
+
+async def _stored_skill_link_count(stack: RepositoryStack) -> int:
+    """Rows across the skill-file, skill-code-artifact and skill-document link tables."""
+    tables = (skill_file_association, skill_code_artifact_association, skill_document_association)
+    async with stack.adapter.session(stack.user_id) as session:
+        return sum([await session.scalar(select(func.count()).select_from(t)) for t in tables])
 
 
 async def test_list_skills_filters_by_project(stack):
@@ -157,9 +170,7 @@ async def test_linking_unknown_skill_is_not_found_and_creates_no_link(stack, kin
     with pytest.raises(NotFoundError, match=f"Skill {UNKNOWN_ID} not found"):
         await getattr(stack.skills, method_name)(stack.user_id, UNKNOWN_ID, target_id)
 
-    assert await stack.skills.get_all_skill_file_links(stack.user_id) == []
-    assert await stack.skills.get_all_skill_code_artifact_links(stack.user_id) == []
-    assert await stack.skills.get_all_skill_document_links(stack.user_id) == []
+    assert await _stored_skill_link_count(stack) == 0
 
 
 @pytest.mark.parametrize("kind", list(LINK_KINDS))

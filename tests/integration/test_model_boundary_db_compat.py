@@ -3,7 +3,7 @@
 PostgreSQL text/varchar/jsonb columns cannot hold a NUL character, JSONB cannot hold
 NaN/Infinity, documents.size_bytes is a 32-bit INTEGER and skills.tags is GIN indexed
 (an index key above roughly 2.7KB is refused). SQLite accepts all of these and then
-stores values that poison later reads (NaN in a JSON column makes every graph response
+stores values that poison later reads (NaN in a JSON column makes every later read
 fail). The request models are the one place both backends share, so that is where the
 values are refused, with an error the REST routes can return as a 400.
 """

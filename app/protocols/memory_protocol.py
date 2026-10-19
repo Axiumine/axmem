@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Protocol
+from typing import Protocol
 from uuid import UUID
 
 from app.models.memory_models import Memory, MemoryCreate, MemoryScore, MemoryUpdate
@@ -157,27 +157,6 @@ class MemoryRepository(Protocol):
         """
         ...
 
-    async def get_listed_memory_ids(
-            self,
-            user_id: UUID,
-            memory_ids: list[int],
-            project_ids: list[int] | None = None,
-    ) -> set[int]:
-        """Return the ids among ``memory_ids`` that ``list_memories`` would list.
-
-        Applies the same visibility rules as ``list_memories`` (owned by the user, not
-        obsolete, member of one of ``project_ids`` when given) without loading the memories.
-
-        Args:
-            user_id: User ID
-            memory_ids: Candidate memory ids
-            project_ids: Project filter (optional)
-
-        Returns:
-            The subset of ``memory_ids`` that is listed
-        """
-        ...
-
     async def unlink_memories(
             self,
             user_id: UUID,
@@ -193,57 +172,6 @@ class MemoryRepository(Protocol):
 
         Returns:
             True if link was removed, False if link didn't exist
-        """
-        ...
-
-    async def get_subgraph_nodes(
-            self,
-            user_id: UUID,
-            center_type: str,
-            center_id: int,
-            depth: int,
-            include_memories: bool,
-            include_entities: bool,
-            include_projects: bool,
-            include_documents: bool,
-            include_code_artifacts: bool,
-            include_files: bool,
-            include_skills: bool = False,
-            include_plans: bool = False,
-            include_tasks: bool = False,
-            max_nodes: int = 50,
-    ) -> tuple[list[dict[str, Any]], bool]:
-        """Traverse graph using recursive CTE from center node.
-
-        Uses a single recursive CTE query to traverse all edge types:
-        - memory_links (memory <-> memory)
-        - memory_entity_association (memory <-> entity)
-        - entity_relationships (entity <-> entity)
-        - memory_project_association (memory <-> project)
-        - document.project_id (document -> project)
-        - code_artifact.project_id (code_artifact -> project)
-        - memory_document_association (memory <-> document)
-        - memory_code_artifact_association (memory <-> code_artifact)
-
-        Args:
-            user_id: User ID for ownership filtering
-            center_type: "memory", "entity", "project", "document", "code_artifact", or "file"
-            center_id: ID of the center node
-            depth: Maximum traversal depth (1-3)
-            include_memories: Whether to include memory nodes in traversal
-            include_entities: Whether to include entity nodes in traversal
-            include_projects: Whether to include project nodes in traversal
-            include_documents: Whether to include document nodes in traversal
-            include_code_artifacts: Whether to include code_artifact nodes in traversal
-            include_files: Whether to include file nodes in traversal
-            include_skills: Whether to include skill nodes in traversal
-            include_plans: Whether to include plan nodes in traversal
-            include_tasks: Whether to include task nodes in traversal
-            max_nodes: Maximum nodes to return
-
-        Returns:
-            Tuple of (nodes_list, truncated) where nodes_list contains dicts
-            with node_id, node_type, and depth fields
         """
         ...
 

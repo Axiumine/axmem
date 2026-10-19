@@ -2,7 +2,7 @@
 
 NaN/Infinity, NUL characters, an INTEGER overflow and an oversized GIN key all fail on
 PostgreSQL with an unhandled driver error (500). SQLite accepted them instead, and a NaN
-stored in a relationship's metadata made every later graph response fail. These tests run
+stored in a relationship's metadata made every later relationship listing fail. These tests run
 the real REST and MCP stack on in-memory SQLite; the PostgreSQL counterpart is
 tests/e2e/test_model_boundary_db_compat_e2e.py.
 """
@@ -44,11 +44,11 @@ async def _relationship(http_client, source, target, metadata):
     return response.json()["id"]
 
 
-async def _graph_is_healthy(http_client, entity_id):
-    for url in ("/api/v1/graph", f"/api/v1/graph/subgraph?node_id=entity_{entity_id}&depth=2"):
-        response = await http_client.get(url)
-        assert response.status_code == 200, (url, response.text[:200])
-        json.loads(response.text, parse_constant=lambda c: pytest.fail(f"{c} in {url}"))
+async def _relationships_are_healthy(http_client, entity_id):
+    url = f"/api/v1/entities/{entity_id}/relationships"
+    response = await http_client.get(url)
+    assert response.status_code == 200, (url, response.text[:200])
+    json.loads(response.text, parse_constant=lambda c: pytest.fail(f"{c} in {url}"))
 
 
 def _assert_rejected(response, *loc):
@@ -92,7 +92,7 @@ async def _plan(http_client, **extra):
 
 class TestRelationshipMetadata:
     @pytest.mark.parametrize("token", ["NaN", "Infinity", "-Infinity", "1e999"])
-    async def test_create_with_non_finite_number_is_refused_and_graph_stays_healthy(
+    async def test_create_with_non_finite_number_is_refused_and_listing_stays_healthy(
         self, http_client, token,
     ):
         a = await _entity(http_client, "Alice")
@@ -108,7 +108,7 @@ class TestRelationshipMetadata:
         _assert_refused_by_body_parser(response)
         listed = await http_client.get(f"/api/v1/entities/{a}/relationships")
         assert listed.json()["relationships"] == []
-        await _graph_is_healthy(http_client, a)
+        await _relationships_are_healthy(http_client, a)
 
     @pytest.mark.parametrize("token", ["NaN", "Infinity", "1e999"])
     async def test_update_with_non_finite_number_is_refused_and_keeps_the_old_value(
@@ -126,7 +126,7 @@ class TestRelationshipMetadata:
         _assert_refused_by_body_parser(response)
         listed = await http_client.get(f"/api/v1/entities/{a}/relationships")
         assert listed.json()["relationships"][0]["metadata"] == {"w": 1}
-        await _graph_is_healthy(http_client, a)
+        await _relationships_are_healthy(http_client, a)
 
     async def test_nul_character_is_refused(self, http_client):
         a = await _entity(http_client, "Alice")
@@ -155,7 +155,7 @@ class TestRelationshipMetadata:
         )
 
         assert updated.status_code == 200, updated.text
-        await _graph_is_healthy(http_client, a)
+        await _relationships_are_healthy(http_client, a)
 
 
 class TestSkill:

@@ -36,12 +36,6 @@ class TaskRepository(Protocol):
         assigned_agent: str | None = None,
     ) -> list[TaskSummary]: ...
 
-    async def list_tasks_for_user(
-        self,
-        user_id: UUID,
-        plan_ids: list[int] | None = None,
-    ) -> list[TaskSummary]: ...
-
     async def update_task(
         self, user_id: UUID, task_id: int, task_data: TaskUpdate,
     ) -> Task: ...

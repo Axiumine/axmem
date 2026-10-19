@@ -1024,27 +1024,3 @@ class SkillService:
             user_id=user_id,
             skill_id=skill_id,
         )
-
-    async def get_all_skill_file_links(
-        self,
-        user_id: UUID,
-    ) -> list[tuple[int, int]]:
-        """Get all skill-file links for graph visualization."""
-        logger.info("getting all skill-file links for graph", extra={"user_id": str(user_id)})
-        return await self.skill_repo.get_all_skill_file_links(user_id=user_id)
-
-    async def get_all_skill_code_artifact_links(
-        self,
-        user_id: UUID,
-    ) -> list[tuple[int, int]]:
-        """Get all skill-code_artifact links for graph visualization."""
-        logger.info("getting all skill-code_artifact links for graph", extra={"user_id": str(user_id)})
-        return await self.skill_repo.get_all_skill_code_artifact_links(user_id=user_id)
-
-    async def get_all_skill_document_links(
-        self,
-        user_id: UUID,
-    ) -> list[tuple[int, int]]:
-        """Get all skill-document links for graph visualization."""
-        logger.info("getting all skill-document links for graph", extra={"user_id": str(user_id)})
-        return await self.skill_repo.get_all_skill_document_links(user_id=user_id)

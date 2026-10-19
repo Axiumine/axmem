@@ -117,22 +117,6 @@ ENTITY_OPERATIONS: dict[str, tuple[EntityCall, str]] = {
         lambda repo, s: repo.delete_entity_relationship(s.user_id, 5),
         "Failed to delete entity relationship 5",
     ),
-    "get_all_entity_relationships": (
-        lambda repo, s: repo.get_all_entity_relationships(s.user_id),
-        "Failed to get all entity relationships",
-    ),
-    "get_all_entity_memory_links": (
-        lambda repo, s: repo.get_all_entity_memory_links(s.user_id),
-        "Failed to get all entity-memory links",
-    ),
-    "get_all_entity_project_links": (
-        lambda repo, s: repo.get_all_entity_project_links(s.user_id),
-        "Failed to get all entity-project links",
-    ),
-    "get_all_entity_file_links": (
-        lambda repo, s: repo.get_all_entity_file_links(s.user_id),
-        "Failed to get all entity-file links",
-    ),
     "get_memory_entities": (
         lambda repo, s: repo.get_memory_entities(s.user_id, 8),
         "Failed to get memory entities",
@@ -196,7 +180,7 @@ async def test_create_relationship_surfaces_non_duplicate_constraint_violation(
     [record] = repository_errors()
     assert record.getMessage() == "Failed to create entity relationship"
     healthy = SqliteEntityRepository(db_adapter=stack.adapter)
-    assert await healthy.get_all_entity_relationships(stack.user_id) == []
+    assert await healthy.get_entity_relationships(stack.user_id, acme) == []
 
 
 async def test_update_relationship_surfaces_non_duplicate_constraint_violation(

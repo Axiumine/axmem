@@ -1,7 +1,7 @@
 """Memory repository for postgres data access operations
 
-Creating, updating and obsoleting memories lives here; the search, link, listing, usage,
-subgraph and re-embedding queries are mixins from the sibling memory_* modules.
+Creating, updating and obsoleting memories lives here; the search, link, listing, usage
+and re-embedding queries are mixins from the sibling memory_* modules.
 """
 from datetime import UTC, datetime
 from typing import Any
@@ -28,7 +28,6 @@ from app.repositories.postgres.memory_links import MemoryLinksMixin
 from app.repositories.postgres.memory_listing import MemoryListingMixin
 from app.repositories.postgres.memory_reembedding import MemoryReembeddingMixin
 from app.repositories.postgres.memory_search import MemorySearchMixin
-from app.repositories.postgres.memory_subgraph import MemorySubgraphMixin
 from app.repositories.postgres.memory_usage import MemoryUsageMixin
 from app.repositories.postgres.postgres_tables import MemoryTable
 from app.utils.embedding_helpers import build_embedding_text
@@ -58,7 +57,6 @@ class PostgresMemoryRepository(
     MemoryLinksMixin,
     MemoryListingMixin,
     MemoryUsageMixin,
-    MemorySubgraphMixin,
     MemoryReembeddingMixin,
 ):
     """Repository for Memory entity operations in Postgres

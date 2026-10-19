@@ -1,4 +1,4 @@
-"""SqliteMemoryRepository behaviour for empty, self-referencing and unknown inputs.
+"""SqliteMemoryRepository behaviour for empty, self-referencing, unknown and unstorable inputs.
 
 The repository is driven directly against a real in-memory SQLite database with sqlite-vec,
 with two users so ownership filtering is part of the contract.
@@ -68,6 +68,43 @@ async def test_batch_linking_skips_the_memory_itself(stack):
 
     assert created == [other]
     assert await _neighbour_ids(stack, hub) == [other]
+
+
+@pytest.mark.parametrize(
+    "bad_id",
+    [2**63, 2**70, -(2**63) - 1, 0, -5],
+    ids=["int64-overflow", "2**70", "below-int64", "zero", "negative"],
+)
+async def test_batch_linking_skips_target_ids_that_cannot_be_stored(stack, bad_id):
+    source = await _memory(stack, "source")
+    first = await _memory(stack, "first")
+    await _memory(stack, "unused")
+    last = await _memory(stack, "last")
+
+    created = await stack.memories.create_links_batch(stack.user_id, source, [last, bad_id, first])
+
+    assert created == [last, first]
+    assert await _neighbour_ids(stack, source) == sorted([first, last])
+
+
+async def test_batch_linking_skips_the_largest_int64_target_as_not_found(stack):
+    source = await _memory(stack, "source")
+    target = await _memory(stack, "target")
+
+    created = await stack.memories.create_links_batch(stack.user_id, source, [2**63 - 1, target])
+
+    assert created == [target]
+
+
+async def test_batch_linking_from_a_source_id_that_cannot_be_stored_links_nothing(stack):
+    first = await _memory(stack, "first")
+    second = await _memory(stack, "second")
+
+    created = await stack.memories.create_links_batch(stack.user_id, 2**70, [first, second])
+
+    assert created == []
+    assert await _neighbour_ids(stack, first) == []
+    assert await _neighbour_ids(stack, second) == []
 
 
 async def test_search_leaves_out_excluded_memory_ids(stack):

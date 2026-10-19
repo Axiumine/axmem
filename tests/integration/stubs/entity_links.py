@@ -71,14 +71,6 @@ class EntityLinkMixin:
     ) -> bool:
         return _drop_link(self._entity_project_links, entity_id, project_id)
 
-    async def get_all_entity_memory_links(self, user_id: UUID) -> list[tuple[int, int]]:
-        """Get all entity-memory associations for a user (for graph visualization)"""
-        return [
-            (entity_id, memory_id)
-            for entity_id in self._entities.get(user_id, {})
-            for memory_id in self._entity_memory_links.get(entity_id, set())
-        ]
-
     async def get_entity_memories(
         self, user_id: UUID, entity_id: int,
     ) -> list[tuple[int, str]]:

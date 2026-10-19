@@ -221,23 +221,6 @@ class PostgresTaskRepository:
             result = await session.execute(stmt)
             return await _summarise_tasks(session, user_id, result.scalars().all())
 
-    async def list_tasks_for_user(
-        self,
-        user_id: UUID,
-        plan_ids: list[int] | None = None,
-    ) -> list[TaskSummary]:
-        if plan_ids is not None and len(plan_ids) == 0:
-            return []
-
-        stmt = _tasks_select(TasksTable.user_id == user_id)
-        if plan_ids is not None:
-            stmt = stmt.where(TasksTable.plan_id.in_(plan_ids))
-        stmt = stmt.order_by(TasksTable.created_at.asc())
-
-        async with self.db_adapter.session(user_id) as session:
-            result = await session.execute(stmt)
-            return await _summarise_tasks(session, user_id, result.scalars().all())
-
     async def update_task(
         self, user_id: UUID, task_id: int, task_data: TaskUpdate,
     ) -> Task:

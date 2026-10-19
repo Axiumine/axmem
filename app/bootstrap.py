@@ -27,7 +27,6 @@ if TYPE_CHECKING:
     from app.services.document_service import DocumentService
     from app.services.entity_service import EntityService
     from app.services.file_service import FileService
-    from app.services.graph_service import GraphService
     from app.services.memory_service import MemoryService
     from app.services.plan_service import PlanService
     from app.services.project_service import ProjectService
@@ -247,7 +246,6 @@ class Services:
     code_artifact: CodeArtifactService
     document: DocumentService
     entity: EntityService
-    graph: GraphService
     activity: ActivityService
     re_embedding: ReEmbeddingService
     file: FileService | None = None
@@ -294,7 +292,6 @@ async def build_runtime() -> Runtime:
     from app.services.code_artifact_service import CodeArtifactService
     from app.services.document_service import DocumentService
     from app.services.entity_service import EntityService
-    from app.services.graph_service import GraphService
     from app.services.memory_service import MemoryService
     from app.services.project_service import ProjectService
     from app.services.re_embedding_service import ReEmbeddingService
@@ -341,8 +338,7 @@ async def build_runtime() -> Runtime:
     else:
         logger.info("Skills feature disabled (SKILLS_ENABLED=false)")
 
-    # Conditionally create plan/task services behind PLANNING_ENABLED (built before GraphService
-    # so they can be passed in as optional services)
+    # Conditionally create plan/task services behind PLANNING_ENABLED
     plan_service = None
     task_service = None
 
@@ -355,18 +351,6 @@ async def build_runtime() -> Runtime:
         logger.info("Planning feature enabled")
     else:
         logger.info("Planning feature disabled (PLANNING_ENABLED=false)")
-
-    graph_service = GraphService(
-        repos["memory"],
-        repos["entity"],
-        project_service=project_service,
-        document_service=document_service,
-        code_artifact_service=code_artifact_service,
-        file_service=file_service,
-        skill_service=skill_service,
-        plan_service=plan_service,
-        task_service=task_service,
-    )
 
     registry = ToolRegistry()
     register_all_tools_metadata(
@@ -402,7 +386,6 @@ async def build_runtime() -> Runtime:
         code_artifact=code_artifact_service,
         document=document_service,
         entity=entity_service,
-        graph=graph_service,
         activity=activity_service,
         re_embedding=re_embedding_service,
         file=file_service,

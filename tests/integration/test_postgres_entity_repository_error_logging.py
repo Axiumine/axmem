@@ -145,30 +145,6 @@ FAILING_CALLS: list[tuple[str, Call, str, dict[str, object]]] = [
         {"relationship_id": 5},
     ),
     (
-        "get_all_entity_relationships",
-        lambda repo: repo.get_all_entity_relationships(USER_ID),
-        "Failed to get all entity relationships",
-        {},
-    ),
-    (
-        "get_all_entity_memory_links",
-        lambda repo: repo.get_all_entity_memory_links(USER_ID),
-        "Failed to get all entity-memory links",
-        {},
-    ),
-    (
-        "get_all_entity_project_links",
-        lambda repo: repo.get_all_entity_project_links(USER_ID),
-        "Failed to get all entity-project links",
-        {},
-    ),
-    (
-        "get_all_entity_file_links",
-        lambda repo: repo.get_all_entity_file_links(USER_ID),
-        "Failed to get all entity-file links",
-        {},
-    ),
-    (
         "get_memory_entities",
         lambda repo: repo.get_memory_entities(USER_ID, 8),
         "Failed to get memory entities",

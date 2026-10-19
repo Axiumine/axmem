@@ -15,9 +15,8 @@ from app.middleware.auth import TokenCache
 from app.models.activity_models import ActorType
 from app.models.activity_models import EntityType as ActivityEntityType
 from app.models.entity_models import EntityType
-from app.models.graph_models import SubgraphMeta
 from app.models.memory_models import Memory, MemoryScore, MemorySummary, ObsoleteMatch
-from app.models.plan_models import TaskPriority
+from app.models.plan_models import Plan, PlanSummary, TaskPriority, TaskSummary
 from app.models.project_models import ProjectType
 from app.models.user_models import UserCreate, UserUpdate
 from app.repositories.embeddings.embedding_adapter import _EmbeddingsCreateKwargs
@@ -70,14 +69,13 @@ ProjectType.THIRD_PARTY_LIBRARY
 ProjectType.OPEN_SOURCE
 
 # --- pydantic model fields, serialised in REST / MCP responses and report files -------
-# SubgraphMeta counts are filled by name through count_fields() (app/services/graph/meta.py).
+# Plan.task_count, PlanSummary.task_count and TaskSummary.criteria_* are counts that the plan
+# and task repositories fill in and that the plan/task REST routes and MCP tools return.
 # The test_harness report models are validated from the agent-written report.json.
-SubgraphMeta.project_count
-SubgraphMeta.document_count
-SubgraphMeta.code_artifact_count
-SubgraphMeta.file_count
-SubgraphMeta.edge_count
-SubgraphMeta.plan_count
+Plan.task_count
+PlanSummary.task_count
+TaskSummary.criteria_met
+TaskSummary.criteria_total
 Memory.last_accessed_at
 MemorySummary.similarity
 MemoryScore.similarity
@@ -102,14 +100,17 @@ FastEmbedKwargs.local_files_only
 # Columns are the table schema (pinned by the schema snapshots and the alembic revisions);
 # values are written through mapped keyword arguments and read by the mapper. The
 # relationship names are the back_populates targets of the other side of the mapping.
+# PlansTable.task_count is a hybrid property that Plan/PlanSummary.model_validate reads by name.
 sqlite_tables.UsersTable.idp_metadata
 sqlite_tables.MemoryTable.last_accessed_at
 sqlite_tables.EntitiesTable.outgoing_relationships
 sqlite_tables.EntitiesTable.incoming_relationships
+sqlite_tables.PlansTable.task_count
 postgres_tables.UsersTable.idp_metadata
 postgres_tables.MemoryTable.last_accessed_at
 postgres_tables.EntitiesTable.outgoing_relationships
 postgres_tables.EntitiesTable.incoming_relationships
+postgres_tables.PlansTable.task_count
 
 # --- Read-only observation accessors that the tests of live behaviour assert on -------
 # Nothing in production calls these; they expose state that tests/ read to prove the

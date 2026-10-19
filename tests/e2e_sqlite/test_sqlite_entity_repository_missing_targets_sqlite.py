@@ -100,7 +100,9 @@ async def test_link_entity_to_project_reports_unseen_entity_as_not_found(stack, 
     with pytest.raises(NotFoundError, match=f"Entity {entity_id} not found"):
         await stack.entities.link_entity_to_project(stack.user_id, entity_id, project_id)
 
-    assert await stack.entities.get_all_entity_project_links(stack.user_id) == []
+    if case == "foreign":
+        untouched = await stack.entities.get_entity_by_id(stack.other_user_id, entity_id)
+        assert untouched.project_ids == []
 
 
 async def test_link_entity_to_project_reports_unknown_project_as_not_found(stack):
@@ -109,7 +111,7 @@ async def test_link_entity_to_project_reports_unknown_project_as_not_found(stack
     with pytest.raises(NotFoundError, match=f"Project {UNKNOWN_ID} not found"):
         await stack.entities.link_entity_to_project(stack.user_id, entity_id, UNKNOWN_ID)
 
-    assert await stack.entities.get_all_entity_project_links(stack.user_id) == []
+    assert (await stack.entities.get_entity_by_id(stack.user_id, entity_id)).project_ids == []
 
 
 @pytest.mark.parametrize("case", ["unknown_entity", "unknown_memory", "never_linked", "already_unlinked"])
@@ -135,7 +137,7 @@ async def test_unlink_entity_from_memory_removes_the_stored_link(stack):
     removed = await stack.entities.unlink_entity_from_memory(stack.user_id, entity_id, memory_id)
 
     assert removed is True
-    assert await stack.entities.get_all_entity_memory_links(stack.user_id) == []
+    assert await stack.entities.get_entity_memories(stack.user_id, entity_id) == []
 
 
 @pytest.mark.parametrize("case", ["unknown_entity", "unknown_project", "never_linked", "already_unlinked"])
@@ -161,7 +163,7 @@ async def test_unlink_entity_from_project_removes_the_stored_link(stack):
     removed = await stack.entities.unlink_entity_from_project(stack.user_id, entity_id, project_id)
 
     assert removed is True
-    assert await stack.entities.get_all_entity_project_links(stack.user_id) == []
+    assert (await stack.entities.get_entity_by_id(stack.user_id, entity_id)).project_ids == []
 
 
 @pytest.mark.parametrize(
@@ -187,7 +189,7 @@ async def test_create_entity_relationship_reports_unknown_endpoint_as_not_found(
             ),
         )
 
-    assert await stack.entities.get_all_entity_relationships(stack.user_id) == []
+    assert await stack.entities.get_entity_relationships(stack.user_id, existing) == []
 
 
 async def test_get_entity_relationships_reports_unknown_entity_as_not_found(stack):

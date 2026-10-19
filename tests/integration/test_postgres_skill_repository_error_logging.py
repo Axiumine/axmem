@@ -143,24 +143,6 @@ FAILING_CALLS: list[tuple[str, Call, str, dict[str, object]]] = [
         "Failed to get skill links",
         {"skill_id": 7, "error": ERROR_TEXT},
     ),
-    (
-        "get_all_skill_file_links",
-        lambda repo: repo.get_all_skill_file_links(USER_ID),
-        "Failed to get all skill-file links",
-        {},
-    ),
-    (
-        "get_all_skill_code_artifact_links",
-        lambda repo: repo.get_all_skill_code_artifact_links(USER_ID),
-        "Failed to get all skill-code_artifact links",
-        {},
-    ),
-    (
-        "get_all_skill_document_links",
-        lambda repo: repo.get_all_skill_document_links(USER_ID),
-        "Failed to get all skill-document links",
-        {},
-    ),
 ]
 
 
