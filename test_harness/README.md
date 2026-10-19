@@ -29,7 +29,7 @@ FastEmbed cache is warm.
 ## Running
 
 ```bash
-uv run python -m test_harness                                  # full 9-skill walkthrough
+uv run python -m test_harness                                  # full 8-skill walkthrough
 uv run python -m test_harness --skills forgetful-recall        # subset (canonical order)
 uv run python -m test_harness --timeout 600 --output /tmp/uat
 uv run python -m test_harness --rebuild-image                  # force image rebuild
@@ -43,8 +43,8 @@ ignored; an empty value is an error, never "all skills"). `--timeout` /
 
 The walkthrough order
 is fixed by data dependencies — write-skills populate the store the read-skills then
-query: `cli-setup → remember → entities → procedures → files → recall → explore →
-context-gather → encode-repo`. `forgetful-mcp-setup` is seeded but not walked: the MCP
+query: `cli-setup → remember → entities → files → recall → explore →
+context-gather → encode-repo`. `forgetful-mcp-setup` is not walked: the MCP
 surface pass is a reserved axis (`--surface` accepts only `cli` in v1). `--agent` accepts
 only `opencode` in v1 — other agents need provisioning ported in `container.py`.
 
@@ -73,26 +73,24 @@ not covered: there the container uid no longer owns the bind mounts.
 ## What a run does
 
 1. Build/verify the sandbox image, boot `forgetful serve` as a host subprocess:
-   file-backed SQLite in the run dir, all feature flags on, no auth, FastEmbed
+   file-backed SQLite in the run dir, the files feature on, no auth, FastEmbed
    embeddings (warm default cache), `/health` polled to 200. Every other Forgetful
    setting is pinned to its default, so shell variables and
    `~/.config/forgetful` cannot leak into the instance under review; the server is the
    `forgetful` next to the interpreter running the harness, and the harness reaches it
    directly (no `HTTP(S)_PROXY`).
-2. Seed every `skills/*/SKILL.md` into the instance via `import_skill` (the store under
-   review holds the docs under review).
-3. Start one container for the run — fenced env baked in (`FORGETFUL_SERVER` →
+2. Start one container for the run — fenced env baked in (`FORGETFUL_SERVER` →
    `host.docker.internal:<port>`, decoy `SQLITE_PATH` for any `--local` detour), staged
    opencode credentials, `runs/<ts>/skills/` mounted rw, the wheel + runner mounted ro —
    then two in-container preflights, cheapest first: a stdlib GET of the throwaway
    server's `/health` (unreachable server = infra error, so no session ever burns model
    time on connection errors) and the agent health check (broken agent = infra error,
    not findings).
-4. Per skill, in order: fresh agent session (one `docker exec` each) in a prepared
+3. Per skill, in order: fresh agent session (one `docker exec` each) in a prepared
    workspace (`SKILL.md` copy; `fixture-repo/` for encode-repo), wrapped in an
    OS-level `timeout --kill-after` — host-side cancellation cannot kill a process
    inside a container.
-5. Teardown container and server, then a summary table and `run.json`. Teardown is
+4. Teardown container and server, then a summary table and `run.json`. Teardown is
    best-effort and independent per resource (a docker failure never skips stopping the
    server or deleting the staged credential copies), and `SIGTERM` (`kill`, a CI cancel,
    `timeout`) takes the same path as Ctrl-C: the run is cancelled at its next await,

@@ -1,7 +1,7 @@
 """Reranked search honours ``k`` against the real SQLite repositories (sqlite-vec, no Docker).
 
 Only the embedding provider and the cross-encoder are stubbed, so these tests drive the real
-candidate fetch, rerank hand-off and truncation in ``search_scored`` and ``search_skills``.
+candidate fetch, rerank hand-off and truncation in ``search_scored``.
 """
 import json
 import math
@@ -12,11 +12,9 @@ import pytest
 
 from app.config.settings import settings
 from app.models.memory_models import MemoryCreate
-from app.models.skill_models import SkillCreate
 from app.models.user_models import UserCreate
 from app.repositories.embeddings.reranker_adapter import HttpRerankAdapter
 from app.repositories.sqlite.memory_repository import SqliteMemoryRepository
-from app.repositories.sqlite.skill_repository import SqliteSkillRepository
 from app.repositories.sqlite.sqlite_adapter import SqliteDatabaseAdapter
 from app.repositories.sqlite.user_repository import SqliteUserRepository
 
@@ -98,17 +96,6 @@ async def _memories(adapter, user_id, reranker, count, embeddings=None):
     return repo
 
 
-async def _skills(adapter, user_id, reranker, count):
-    repo = SqliteSkillRepository(
-        db_adapter=adapter, embedding_adapter=FixedEmbeddings(), rerank_adapter=reranker,
-    )
-    for index in range(count):
-        await repo.create_skill(user_id, SkillCreate(
-            name=f"skill-{index}", description=f"description {index}", content="body",
-        ))
-    return repo
-
-
 async def _search_memories(repo, user_id, k):
     return await repo.search_scored(
         user_id=user_id, query="q", query_context="", k=k,
@@ -152,43 +139,6 @@ async def test_memory_search_still_reranks_when_k_is_within_dense_candidates(
     assert reranker.document_counts == [5]
     assert len(found) == 3
     assert all(score.rerank_score is not None for _, score in found)
-
-
-async def test_skill_search_returns_k_when_k_exceeds_dense_candidates(
-    sqlite_env, monkeypatch, reranker,
-):
-    adapter, user_id = sqlite_env
-    monkeypatch.setattr(settings, "DENSE_SEARCH_CANDIDATES", 5)
-    repo = await _skills(adapter, user_id, reranker, 12)
-
-    found = await repo.search_skills(user_id, "description", k=8)
-
-    assert len(found) == 8
-
-
-async def test_skill_search_returns_every_match_when_fewer_than_k(
-    sqlite_env, monkeypatch, reranker,
-):
-    adapter, user_id = sqlite_env
-    monkeypatch.setattr(settings, "DENSE_SEARCH_CANDIDATES", 5)
-    repo = await _skills(adapter, user_id, reranker, 6)
-
-    found = await repo.search_skills(user_id, "description", k=8)
-
-    assert len(found) == 6
-
-
-async def test_skill_search_still_reranks_when_k_is_within_dense_candidates(
-    sqlite_env, monkeypatch, reranker,
-):
-    adapter, user_id = sqlite_env
-    monkeypatch.setattr(settings, "DENSE_SEARCH_CANDIDATES", 5)
-    repo = await _skills(adapter, user_id, reranker, 8)
-
-    found = await repo.search_skills(user_id, "description", k=3)
-
-    assert reranker.document_counts == [5]
-    assert len(found) == 3
 
 
 class _IndexOrderRerankHandler(BaseHTTPRequestHandler):

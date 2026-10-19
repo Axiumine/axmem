@@ -8,7 +8,7 @@ The three meta-tools:
 3. execute_forgetful_tool: Dynamically invoke any tool with arguments
 
 Docstrings for discover and execute are built dynamically at registration time based on
-which feature flags (SKILLS_ENABLED, FILES_ENABLED) are active, so LLMs
+which feature flag (FILES_ENABLED) is active, so LLMs
 only see tools they can actually use.
 """
 
@@ -92,26 +92,6 @@ _DISCOVER_CORE_SECTIONS = """\
     - update_entity_relationship: Modify relationship
     - delete_entity_relationship: Remove relationship"""
 
-_DISCOVER_SKILL_SECTION = """
-
-    **Skill Tools** - Procedural knowledge and agent capabilities (SKILL.md format)
-    - create_skill: Create skill with name, description, content, tags
-    - get_skill: Retrieve skill by ID with full content
-    - list_skills: List skills with project/tags/importance filters
-    - update_skill: Modify skill fields (PATCH semantics)
-    - delete_skill: Remove skill and associations
-    - search_skills: Semantic search for skills by description
-    - import_skill: Import from Agent Skills markdown (SKILL.md)
-    - export_skill: Export to Agent Skills markdown format
-    - link_skill_to_memory: Connect skill to memory
-    - unlink_skill_from_memory: Remove skill-memory link
-    - link_skill_to_file: Connect skill to file
-    - unlink_skill_from_file: Remove skill-file link
-    - link_skill_to_code_artifact: Connect skill to code artifact
-    - unlink_skill_from_code_artifact: Remove skill-code artifact link
-    - link_skill_to_document: Connect skill to document
-    - unlink_skill_from_document: Remove skill-document link"""
-
 _DISCOVER_FILE_SECTION = """
 
     **File Tools** - Binary content storage (images, PDFs, fonts, etc.)
@@ -160,14 +140,6 @@ _EXECUTE_CORE_EXAMPLES = """\
     **Code Artifacts (reusable snippets):**
     - Create: execute_forgetful_tool("create_code_artifact", {"title": "Snippet Title", "description": "What this does", "code": "def example(): pass", "language": "python", "project_id": 1})"""
 
-_EXECUTE_SKILL_SECTION = """
-
-    **Skills (procedural knowledge):**
-    - Create: execute_forgetful_tool("create_skill", {"name": "code-review", "description": "Code review process", "content": "# Steps\\n1. ...", "tags": ["dev"]})
-    - Search: execute_forgetful_tool("search_skills", {"query": "deployment workflow"})
-    - List: execute_forgetful_tool("list_skills", {})
-    - Get: execute_forgetful_tool("get_skill", {"skill_id": 1})"""
-
 _EXECUTE_FILE_SECTION = """
 
     **Files (binary content):**
@@ -184,8 +156,6 @@ _EXECUTE_FILE_SECTION = """
 def _build_category_list() -> str:
     """Build the valid category filter list based on enabled features."""
     categories = ["user", "memory", "project", "code_artifact", "document", "entity", "linking"]
-    if settings.SKILLS_ENABLED:
-        categories.append("skill")
     if settings.FILES_ENABLED:
         categories.append("file")
     return ", ".join(categories)
@@ -194,8 +164,6 @@ def _build_category_list() -> str:
 def _build_tool_categories_line() -> str:
     """Build the tool categories pipe-separated line for execute_forgetful_tool."""
     categories = ["memory", "project", "entity", "document", "code_artifact", "linking", "user"]
-    if settings.SKILLS_ENABLED:
-        categories.append("skill")
     if settings.FILES_ENABLED:
         categories.append("file")
     return " | ".join(categories)
@@ -275,8 +243,6 @@ Discover available tools, optionally filtered by category
 {_DISCOVER_CORE_SECTIONS}""",
     ]
 
-    if settings.SKILLS_ENABLED:
-        parts.append(_DISCOVER_SKILL_SECTION)
     if settings.FILES_ENABLED:
         parts.append(_DISCOVER_FILE_SECTION)
 
@@ -303,8 +269,6 @@ Execute any registered tool dynamically. Forgetful is a semantic memory system f
 {_EXECUTE_CORE_EXAMPLES}""",
     ]
 
-    if settings.SKILLS_ENABLED:
-        parts.append(_EXECUTE_SKILL_SECTION)
     if settings.FILES_ENABLED:
         parts.append(_EXECUTE_FILE_SECTION)
 

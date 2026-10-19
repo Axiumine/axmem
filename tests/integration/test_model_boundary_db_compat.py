@@ -1,8 +1,7 @@
 """Input models must reject values the database cannot store.
 
 PostgreSQL text/varchar/jsonb columns cannot hold a NUL character, JSONB cannot hold
-NaN/Infinity, documents.size_bytes is a 32-bit INTEGER and skills.tags is GIN indexed
-(an index key above roughly 2.7KB is refused). SQLite accepts all of these and then
+NaN/Infinity and documents.size_bytes is a 32-bit INTEGER. SQLite accepts all of these and then
 stores values that poison later reads (NaN in a JSON column makes every later read
 fail). The request models are the one place both backends share, so that is where the
 values are refused, with an error the REST routes can return as a 400.
@@ -12,20 +11,17 @@ import json
 import pytest
 from pydantic import ValidationError
 
-from app.config.settings import settings
 from app.models.document_models import DocumentCreate, DocumentUpdate
 from app.models.entity_models import (
     EntityRelationship,
     EntityRelationshipCreate,
     EntityRelationshipUpdate,
 )
-from app.models.skill_models import Skill, SkillCreate, SkillUpdate
 
 NUL = "\x00"
 INT32_MAX = 2_147_483_647
 
 REL = {"source_entity_id": 1, "target_entity_id": 2, "relationship_type": "knows"}
-SKILL = {"name": "a-skill", "description": "d", "content": "c"}
 NOW = "2026-01-01T00:00:00Z"
 
 
@@ -99,89 +95,6 @@ class TestRelationshipMetadata:
         relationship = EntityRelationship(**row)
         assert relationship.metadata is not None
         assert relationship.metadata["a"] == f"x{NUL}"
-
-
-class TestSkill:
-    @pytest.mark.parametrize("model,base", [(SkillCreate, SKILL), (SkillUpdate, {})])
-    @pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf")])
-    def test_non_finite_metadata_is_rejected(self, model, base, bad):
-        errors = _rejected(model, {**base, "metadata": {"score": bad}})
-        assert errors[0]["loc"] == ("metadata", "score")
-
-    def test_non_finite_metadata_in_json_text_is_rejected(self):
-        with pytest.raises(ValidationError):
-            SkillCreate.model_validate_json(
-                '{"name": "a-skill", "description": "d", "content": "c", "metadata": {"x": NaN}}',
-            )
-
-    @pytest.mark.parametrize("field", ["description", "content", "license", "compatibility", "source_repo"])
-    def test_create_rejects_nul_in_text(self, field):
-        errors = _rejected(SkillCreate, {**SKILL, field: f"a{NUL}b"})
-        assert errors[0]["loc"] == (field,)
-        assert errors[0]["type"] == "nul_character"
-
-    @pytest.mark.parametrize("field", ["description", "content", "license", "compatibility"])
-    def test_update_rejects_nul_in_text(self, field):
-        errors = _rejected(SkillUpdate, {field: f"a{NUL}b"})
-        assert errors[0]["loc"] == (field,)
-
-    @pytest.mark.parametrize("payload,loc", [
-        ({"tags": [f"a{NUL}b"]}, ("tags", 0)),
-        ({"allowed_tools": ["Read", f"a{NUL}"]}, ("allowed_tools", 1)),
-        ({"source_files": [f"p{NUL}"]}, ("source_files", 0)),
-    ])
-    def test_nul_inside_lists_is_rejected(self, payload, loc):
-        assert _rejected(SkillCreate, {**SKILL, **payload})[0]["loc"] == loc
-        assert _rejected(SkillUpdate, payload)[0]["loc"] == loc
-
-    def test_response_model_still_reads_rows_stored_earlier(self):
-        long_tag = "t" * (settings.SKILL_TAG_MAX_LENGTH + 50)
-        row = {**SKILL, "content": f"a{NUL}b", "id": 1, "created_at": NOW, "updated_at": NOW}
-        skill = Skill(**row, tags=[long_tag], metadata={"x": float("nan")})
-        assert skill.tags == [long_tag]
-        assert skill.content == f"a{NUL}b"
-
-    def test_storable_values_are_unchanged(self):
-        skill = SkillCreate(**SKILL, metadata={"score": 1.5, "t": ["a", 2]}, tags=["x", "y"])
-        assert skill.metadata == {"score": 1.5, "t": ["a", 2]}
-        assert skill.tags == ["x", "y"]
-
-
-class TestSkillTagLength:
-    """skills.tags carries a GIN index, so one oversized tag fails the whole INSERT."""
-
-    def test_default_limit_is_well_below_the_index_key_limit(self):
-        # 4 bytes per character in UTF-8, index key limit about 2700 bytes
-        assert 0 < settings.SKILL_TAG_MAX_LENGTH * 4 < 2700
-
-    def test_create_accepts_tag_at_the_limit_and_rejects_one_more(self):
-        limit = settings.SKILL_TAG_MAX_LENGTH
-        assert SkillCreate(**SKILL, tags=["t" * limit]).tags == ["t" * limit]
-        errors = _rejected(SkillCreate, {**SKILL, "tags": ["ok", "t" * (limit + 1)]})
-        assert errors[0]["loc"] == ("tags",)
-        assert errors[0]["type"] == "tag_too_long"
-        assert str(limit) in errors[0]["msg"]
-
-    def test_update_accepts_tag_at_the_limit_and_rejects_one_more(self):
-        limit = settings.SKILL_TAG_MAX_LENGTH
-        assert SkillUpdate(tags=["t" * limit]).tags == ["t" * limit]
-        assert _rejected(SkillUpdate, {"tags": ["t" * (limit + 1)]})[0]["type"] == "tag_too_long"
-
-    def test_padding_does_not_count_towards_the_limit(self):
-        limit = settings.SKILL_TAG_MAX_LENGTH
-        assert SkillCreate(**SKILL, tags=["  " + "t" * limit + "  "]).tags == ["t" * limit]
-        assert SkillUpdate(tags=[" " + "t" * limit + " "]).tags == ["t" * limit]
-
-    def test_the_limit_is_configurable(self, monkeypatch):
-        monkeypatch.setattr(settings, "SKILL_TAG_MAX_LENGTH", 5)
-        assert SkillCreate(**SKILL, tags=["abcde"]).tags == ["abcde"]
-        assert _rejected(SkillCreate, {**SKILL, "tags": ["abcdef"]})[0]["type"] == "tag_too_long"
-        assert _rejected(SkillUpdate, {"tags": ["abcdef"]})[0]["type"] == "tag_too_long"
-
-    def test_existing_count_limit_still_applies(self):
-        too_many = [f"t{i}" for i in range(settings.SKILL_TAGS_MAX_COUNT + 1)]
-        with pytest.raises(ValidationError):
-            SkillCreate(**SKILL, tags=too_many)
 
 
 class TestDocumentSizeBytes:

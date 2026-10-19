@@ -41,7 +41,6 @@ from app.repositories.embeddings.embedding_adapter import (
 )
 from app.repositories.postgres.postgres_adapter import PostgresDatabaseAdapter
 from app.repositories.postgres.postgres_tables import Base
-from app.repositories.postgres.skill_repository import PostgresSkillRepository
 from app.routes.api import (
     activity,
     auth,
@@ -52,7 +51,6 @@ from app.routes.api import (
     health,
     memories,
     projects,
-    skills,
 )
 from app.routes.mcp import meta_tools
 from app.routes.mcp.tool_metadata_registry import register_all_tools_metadata
@@ -65,7 +63,6 @@ from app.services.file_service import FileService
 from app.services.memory_service import MemoryService
 from app.services.project_service import ProjectService
 from app.services.re_embedding_service import ReEmbeddingService
-from app.services.skill_service import SkillService
 from app.services.user_service import UserService
 
 # Force all async tests in this directory onto the session event loop.
@@ -199,10 +196,6 @@ ALL_TABLES = [
     "memory_document_association",
     "memory_entity_association",
     "memory_file_association",
-    "memory_skill_association",
-    "skill_file_association",
-    "skill_code_artifact_association",
-    "skill_document_association",
     "entity_file_association",
     "entity_project_association",
     "entity_relationships",
@@ -210,7 +203,6 @@ ALL_TABLES = [
     "code_artifacts",
     "documents",
     "files",
-    "skills",
     "memories",
     "projects",
     "users",
@@ -382,11 +374,6 @@ async def postgres_app(
     """Fresh FastMCP app and services per test, sharing the pool and loaded models."""
 
     repos = create_repositories(db_adapter, embedding_adapter, reranker_adapter)
-    skill_repository = PostgresSkillRepository(
-        db_adapter=db_adapter,
-        embedding_adapter=embedding_adapter,
-        rerank_adapter=reranker_adapter,
-    )
 
     @asynccontextmanager
     async def lifespan(app):
@@ -411,8 +398,6 @@ async def postgres_app(
         if settings.FILES_ENABLED and "file" in repos:
             file_service = FileService(repos["file"], event_bus=event_bus)
 
-        skill_service = SkillService(skill_repository, event_bus=event_bus)
-
         mcp.user_service = user_service
         mcp.memory_service = memory_service
         mcp.project_service = project_service
@@ -424,8 +409,6 @@ async def postgres_app(
 
         if file_service:
             mcp.file_service = file_service
-        if skill_service:
-            mcp.skill_service = skill_service
 
         registry = ToolRegistry()
         mcp.registry = registry
@@ -440,7 +423,6 @@ async def postgres_app(
             document_service=document_service,
             entity_service=entity_service,
             file_service=file_service,
-            skill_service=skill_service,
         )
 
         try:
@@ -462,7 +444,6 @@ async def postgres_app(
     activity.register(mcp)
     if settings.FILES_ENABLED:
         files.register(mcp)
-    skills.register(mcp)
     meta_tools.register(mcp)
 
     yield mcp

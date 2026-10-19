@@ -4,7 +4,7 @@ description: >-
   Remember knowledge worth keeping — a decision made, a solution found, a preference stated,
   a pattern confirmed. Use when work surfaces something future sessions will need, or the
   user asks to remember something. Routes content to the right store (memory, document, code
-  artifact, entity, procedure, file) and enforces query-before-create.
+  artifact, entity, file) and enforces query-before-create.
 license: MIT
 tags: [memory, capture, curation, knowledge-management]
 allowed-tools:
@@ -40,7 +40,6 @@ Get any operation's schema at runtime: `how_to_use_forgetful_tool` (MCP) or
 | Detailed analysis or a guide (>300 words) | Document + entry memories | this skill, step 4 |
 | Reusable code | Code artifact | this skill, step 4 |
 | A person, org, device, product, component | Entity | `forgetful-entities` |
-| Step-by-step procedural knowledge | Skill | `forgetful-procedures` |
 | Binary content (image, PDF, asset) | File | `forgetful-files` |
 | A goal decomposing into steps / a work item | Plan / Task | feature-flagged; check discovery |
 

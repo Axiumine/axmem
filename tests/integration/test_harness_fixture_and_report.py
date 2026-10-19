@@ -846,14 +846,12 @@ LOCALE_CHILD = textwrap.dedent(
     from pathlib import Path
 
     from test_harness.config import HarnessConfig
-    from test_harness.server import ThrowawayForgetful
     from test_harness.walkthrough import SessionOutcome, Walkthrough
 
     if sys.flags.utf8_mode or locale.getencoding().lower().replace("-", "") == "utf8":
         sys.exit(77)  # this platform cannot be made to default to a non-UTF-8 codec
 
     work, skills_src = Path(sys.argv[1]), Path(sys.argv[2])
-    seeded = []
 
     class Agent:
         async def run_session(self, *, skill, skill_dir, workspace, prompt, timeout):
@@ -873,13 +871,6 @@ LOCALE_CHILD = textwrap.dedent(
             return SessionOutcome(kind="ran")
 
     async def main():
-        server = ThrowawayForgetful(run_dir=work)
-
-        async def fake_execute(tool_name, arguments):
-            seeded.append(arguments["skill_md_content"])
-
-        server.execute = fake_execute
-        await server.seed_skills(skills_src, ["forgetful-recall"])
         config = HarnessConfig(skills=["forgetful-recall"], skills_dir=skills_src)
         run_dir = work / "run"
         run_dir.mkdir()
@@ -888,7 +879,6 @@ LOCALE_CHILD = textwrap.dedent(
         meta = (run_dir / "skills" / "forgetful-recall" / "meta.json").read_bytes()
         print(json.dumps({
             "codec": locale.getencoding(),
-            "seeded": seeded,
             "copied": copied.decode("utf-8"),
             "report_status": results[0].report_load.status,
             "what": results[0].report_load.report.issues[0].what,
@@ -926,7 +916,6 @@ def test_exchanged_files_are_utf8_even_when_the_host_codec_is_not(tmp_path):
         pytest.skip("cannot force a non-UTF-8 default codec here")
     assert child.returncode == 0, child.stderr.decode("utf-8", errors="replace")
     out = json.loads(child.stdout)
-    assert out["seeded"] == [skill_text]
     assert out["copied"] == skill_text
     assert out["report_status"] == "ok"
     assert out["what"] == "smart \u201cquotes\u201d \u2014 here"

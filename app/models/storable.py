@@ -78,7 +78,7 @@ class StorableInput(BaseModel):
     offending value: NaN cannot be written by a strict JSON encoder, which is what the
     REST routes use to return validation errors.
 
-    A model that also serves as a response model (Skill extends SkillCreate) sets
+    A model that also serves as a response model (EntityRelationship extends EntityRelationshipCreate) sets
     ``enforce_storage_limits = False``, so rows stored before a rule existed stay readable.
     """
 

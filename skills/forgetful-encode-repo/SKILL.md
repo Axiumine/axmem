@@ -51,8 +51,7 @@ Done when: there is a source list of what will be encoded, ordered by signal.
 
 ## Step 3 — Model the system as entities
 
-Skills referenced by name below resolve via `search_skills` → `export_skill` when not
-already available. Per `forgetful-entities`: the system itself and its key components
+Per `forgetful-entities`: the system itself and its key components
 (services, packages, databases, external dependencies that matter) as `entity_type:
 "System"`, and their structure as relationships — `part_of` for composition, `depends_on`
 for coupling. Dedupe against existing entities on a refresh.

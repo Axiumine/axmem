@@ -51,19 +51,6 @@ async def create_entity(http, name, entity_type, **extra):
     return await create_resource(http, "/api/v1/entities", payload)
 
 
-async def create_skill(http, name, description, content, **extra):
-    """Create a skill (tagged ``test``, importance 7) and return its id."""
-    payload = {
-        "name": name,
-        "description": description,
-        "content": content,
-        "tags": ["test"],
-        "importance": 7,
-        **extra,
-    }
-    return await create_resource(http, "/api/v1/skills", payload)
-
-
 # --- Builders: link existing resources ---------------------------------------
 
 

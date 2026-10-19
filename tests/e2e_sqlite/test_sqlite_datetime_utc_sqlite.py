@@ -49,13 +49,6 @@ RESOURCES = {
         "tags": ["utc"],
         "importance": 7,
     },
-    "skills": {
-        "name": "utc-skill",
-        "description": "Timestamp check",
-        "content": "# UTC\n\nSteps here.",
-        "tags": ["utc"],
-        "importance": 7,
-    },
 }
 
 

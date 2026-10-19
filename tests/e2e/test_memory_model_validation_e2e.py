@@ -93,10 +93,8 @@ async def test_blank_search_query_is_rejected(http_client):
         "/api/v1/memories/search",
         json={"query": "   ", "query_context": "looking for something", "k": 3},
     )
-    skills = await http_client.get("/api/v1/skills/search", params={"query": "   "})
 
     assert memories.status_code == 400
-    assert skills.status_code == 400
 
 
 @pytest.mark.e2e
@@ -104,30 +102,25 @@ async def test_postgres_repositories_do_not_embed_a_blank_query(http_client, pos
     created = await http_client.post("/api/v1/memories", json=_payload())
     assert created.status_code == 201
     memory_repo = postgres_app.memory_service.memory_repo
-    skill_repo = postgres_app.skill_service.skill_repo
     seen: list[str] = []
-    originals = {}
-    for repo in (memory_repo, skill_repo):
-        adapter = repo.embedding_adapter
-        originals[repo] = adapter.generate_embedding
+    adapter = memory_repo.embedding_adapter
+    original = adapter.generate_embedding
 
-        async def spy(*args, _original=adapter.generate_embedding, **kwargs):
-            seen.extend(list(args) + list(kwargs.values()))
-            return await _original(*args, **kwargs)
+    async def spy(*args, **kwargs):
+        seen.extend(list(args) + list(kwargs.values()))
+        return await original(*args, **kwargs)
 
-        adapter.generate_embedding = spy
+    adapter.generate_embedding = spy
 
     try:
         scored = await memory_repo.search_scored(
             user_id=uuid4(), query="   ", query_context="ctx", k=3,
             importance_threshold=None, project_ids=None, exclude_ids=None,
         )
-        skills = await skill_repo.search_skills(user_id=uuid4(), query="\n\t ")
     finally:
-        for repo, original in originals.items():
-            repo.embedding_adapter.generate_embedding = original
+        adapter.generate_embedding = original
 
-    assert (scored, skills) == ([], [])
+    assert scored == []
     assert seen == []
 
 

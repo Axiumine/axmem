@@ -14,7 +14,6 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
-import yaml
 from fastmcp import Client, FastMCP
 from fastmcp.exceptions import ToolError
 from sqlalchemy.exc import IntegrityError
@@ -36,7 +35,6 @@ from app.routes.mcp.tool_adapters import create_entity_adapters
 from app.routes.mcp.tool_errors import (
     CONSTRAINT_FAILURE,
     GENERIC_FAILURE,
-    INVALID_YAML_FAILURE,
     client_error_detail,
 )
 from app.routes.mcp.tool_metadata_registry import register_entity_tools_metadata
@@ -70,7 +68,7 @@ class TestClientErrorDetail:
         "error",
         [
             NotFoundError("Memory 7 not found"),
-            ConflictError("A skill with this name already exists."),
+            ConflictError("A project with this name already exists."),
             InvalidStateTransitionError("memory is already obsolete"),
             ValueError("project_id must be an integer"),
             TypeError("create_project() got an unexpected keyword argument 'name'"),
@@ -88,12 +86,6 @@ class TestClientErrorDetail:
         assert detail == CONSTRAINT_FAILURE
         assert not [marker for marker in LEAK_MARKERS if marker in detail]
         assert "INSERT INTO" in str(error), "precondition: the raw text is what leaks"
-
-    def test_yaml_error_becomes_short_message(self):
-        with pytest.raises(yaml.YAMLError) as caught:
-            yaml.safe_load("name: [unclosed")
-
-        assert client_error_detail(caught.value) == INVALID_YAML_FAILURE
 
     @pytest.mark.parametrize(
         "error",
@@ -224,7 +216,6 @@ def _registry_with_link_tools() -> ToolRegistry:
     for name, category, tags in [
         ("link_memories", ToolCategory.MEMORY, ["memory", "linking"]),
         ("link_entity_to_memory", ToolCategory.ENTITY, ["entity", "memory", "linking"]),
-        ("link_skill_to_memory", ToolCategory.SKILL, ["skill", "memory", "linking"]),
         ("get_memory", ToolCategory.MEMORY, ["memory", "query"]),
         ("create_entity", ToolCategory.ENTITY, ["entity", "create"]),
     ]:
@@ -250,8 +241,8 @@ class TestLinkingCategory:
         payload = build_discovery_payload(registry, permitted, "linking")
 
         names = {tool["name"] for tools in payload["tools_by_category"].values() for tool in tools}
-        assert names == {"link_memories", "link_entity_to_memory", "link_skill_to_memory"}
-        assert payload["total_count"] == 3
+        assert names == {"link_memories", "link_entity_to_memory"}
+        assert payload["total_count"] == 2
         assert payload["filtered_by"] == "linking"
 
     def test_linking_category_respects_permitted_tools(self):
@@ -268,7 +259,7 @@ class TestLinkingCategory:
 
         payload = build_discovery_payload(registry, permitted, "LINKING")
 
-        assert payload["total_count"] == 3
+        assert payload["total_count"] == 2
 
     def test_real_categories_are_unchanged(self):
         registry = _registry_with_link_tools()

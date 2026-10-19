@@ -54,18 +54,6 @@ def parse_int_query(
     return value
 
 
-def parse_optional_int_query(params: Any, name: str) -> int | None:
-    """Parse an optional integer query parameter; missing or empty means ``None``.
-
-    Raises:
-        ValueError: As for ``parse_int_query``
-    """
-    raw = params.get(name)
-    if not raw:
-        return None
-    return parse_int_query(raw, name)
-
-
 def parse_optional_id_query(params: Any, name: str) -> int | None:
     """Parse an optional row-id query parameter (``project_id``); empty means ``None``.
 

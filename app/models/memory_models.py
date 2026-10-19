@@ -170,10 +170,6 @@ class MemoryCreate(BaseModel):
         default=None,
         description="File IDs to link (create files first). Links binary assets (images, PDFs, etc.) to this memory.",
     )
-    skill_ids: list[int] | None = Field(
-        default=None,
-        description="Skill IDs to link (create skills first). Links procedural knowledge to this memory.",
-    )
 
     # Provenance tracking fields (optional) - for tracing AI-generated content
     source_repo: str | None = Field(
@@ -285,10 +281,6 @@ class MemoryUpdate(BaseModel):
         None,
         description="New file links. Replaces existing if provided, unchanged if null.",
     )
-    skill_ids: list[int] |None = Field(
-        None,
-        description="New skill IDs to link (create sklls first) to this memory",
-    )
 
     # Provenance tracking fields (optional) - for tracing AI-generated content
     source_repo: str | None = Field(
@@ -385,7 +377,6 @@ class Memory(MemoryCreate):
     code_artifact_ids: list[int] = Field(default_factory=list, description="Linked code artifact IDs")
     document_ids: list[int] = Field(default_factory=list, description="Linked document IDs")
     file_ids: list[int] = Field(default_factory=list, description="Linked file IDs")
-    skill_ids: list[int] = Field(default_factory=list, description="Linked skill Ids")
 
     # Lifecycle management fields
     is_obsolete: bool = Field(default=False, description="Whether this memory has been marked obsolete")
@@ -453,7 +444,6 @@ class MemoryCreateResponse(BaseModel):
     code_artifact_ids: list[int] = Field(default_factory=list)
     document_ids: list[int] = Field(default_factory=list)
     file_ids: list[int] = Field(default_factory=list)
-    skill_ids: list[int] = Field(default_factory=list)
     similar_memories: list[MemorySummary] = Field(
         default_factory=list,
         description="Summaries of similar memories that were auto-linked for review",

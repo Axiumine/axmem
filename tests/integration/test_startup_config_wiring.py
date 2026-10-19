@@ -49,7 +49,6 @@ from app.repositories.postgres.postgres_tables import (
     EntitiesTable,
     EntityRelationshipsTable,
     FilesTable,
-    SkillsTable,
 )
 from app.utils.provenance import PROVENANCE_ENV_MAP
 
@@ -333,10 +332,6 @@ def test_provenance_default_at_the_cap_is_accepted(monkeypatch, setting):
 # ============================================================================
 
 POSTGRES_COLUMNS = {
-    "SKILL_NAME_MAX_LENGTH": (SkillsTable, "name"),
-    "SKILL_DESCRIPTION_MAX_LENGTH": (SkillsTable, "description"),
-    "SKILL_LICENSE_MAX_LENGTH": (SkillsTable, "license"),
-    "SKILL_COMPATIBILITY_MAX_LENGTH": (SkillsTable, "compatibility"),
     "CODE_ARTIFACT_TITLE_MAX_LENGTH": (CodeArtifactsTable, "title"),
     "DOCUMENT_TITLE_MAX_LENGTH": (DocumentsTable, "title"),
     "FILE_FILENAME_MAX_LENGTH": (FilesTable, "filename"),

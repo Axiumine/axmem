@@ -35,7 +35,6 @@ from app.repositories.sqlite.entity_repository import SqliteEntityRepository
 from app.repositories.sqlite.file_repository import SqliteFileRepository
 from app.repositories.sqlite.memory_repository import SqliteMemoryRepository
 from app.repositories.sqlite.project_repository import SqliteProjectRepository
-from app.repositories.sqlite.skill_repository import SqliteSkillRepository
 
 # SQLite repository imports
 from app.repositories.sqlite.sqlite_adapter import SqliteDatabaseAdapter
@@ -50,7 +49,6 @@ from app.routes.api import (
     health,
     memories,
     projects,
-    skills,
 )
 from app.routes.mcp import meta_tools
 from app.routes.mcp.scope_resolver import parse_scopes, resolve_permitted_tools
@@ -64,7 +62,6 @@ from app.services.file_service import FileService
 from app.services.memory_service import MemoryService
 from app.services.project_service import ProjectService
 from app.services.re_embedding_service import ReEmbeddingService
-from app.services.skill_service import SkillService
 from app.services.user_service import UserService
 
 # ============================================================================
@@ -94,11 +91,6 @@ FEATURE_FLAGS: dict[str, FeatureFlagDef] = {
         categories=["file"],
         sample_tools=["create_file", "get_file", "list_files"],
         route_prefixes=["/api/v1/files"],
-    ),
-    "skills": FeatureFlagDef(
-        categories=["skill"],
-        sample_tools=["create_skill", "list_skills", "search_skills"],
-        route_prefixes=["/api/v1/skills"],
     ),
 }
 
@@ -186,11 +178,6 @@ async def build_sqlite_app(embedding_adapter, reranker_adapter, enabled_features
 
         # Feature-flagged repositories
         file_repository = SqliteFileRepository(db_adapter=db_adapter) if "files" in enabled_features else None
-        skill_repository = SqliteSkillRepository(
-            db_adapter=db_adapter,
-            embedding_adapter=embedding_adapter,
-            rerank_adapter=reranker_adapter,
-        ) if "skills" in enabled_features else None
 
         @asynccontextmanager
         async def lifespan(app):
@@ -211,9 +198,6 @@ async def build_sqlite_app(embedding_adapter, reranker_adapter, enabled_features
             file_service = None
             if "files" in enabled_features:
                 file_service = FileService(file_repository, event_bus=None)
-            skill_service = None
-            if "skills" in enabled_features:
-                skill_service = SkillService(skill_repository, event_bus=None)
 
             # Store core services on FastMCP instance
             mcp.user_service = user_service
@@ -228,8 +212,6 @@ async def build_sqlite_app(embedding_adapter, reranker_adapter, enabled_features
             # Store feature-flagged services
             if file_service:
                 mcp.file_service = file_service
-            if skill_service:
-                mcp.skill_service = skill_service
 
             # Create and attach registry
             registry = ToolRegistry()
@@ -246,7 +228,6 @@ async def build_sqlite_app(embedding_adapter, reranker_adapter, enabled_features
                 document_service=document_service,
                 entity_service=entity_service,
                 file_service=file_service,
-                skill_service=skill_service,
             )
 
             # Resolve instance-level scope ceiling
@@ -272,8 +253,6 @@ async def build_sqlite_app(embedding_adapter, reranker_adapter, enabled_features
         # Feature-flagged routes
         if "files" in enabled_features:
             files.register(mcp)
-        if "skills" in enabled_features:
-            skills.register(mcp)
 
         meta_tools.register(mcp)
 

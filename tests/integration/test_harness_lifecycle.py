@@ -185,9 +185,6 @@ def env(tmp_path, monkeypatch):
         def stop(self):
             lifecycle.events.append("server.stop")
 
-        async def seed_skills(self, skills_dir, names):
-            return []
-
     class RecordingWalkthrough:
         def __init__(self, **kwargs):
             pass
@@ -377,8 +374,6 @@ DRIVER = textwrap.dedent(
             log("server.start")
         def stop(self):
             log("server.stop")
-        async def seed_skills(self, skills_dir, names):
-            return []
 
     class FakeDockerContainer:
         def stop(self, timeout=5):

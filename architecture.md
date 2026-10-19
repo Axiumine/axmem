@@ -2,7 +2,7 @@
 
 Reviewable, agent-authored overview, checked against source on 2026-10-08, with boundary changes checked on 2026-10-17
 and the structure re-verified on 2026-10-19 against the `quality-gates` branch (`37ee70f`), then updated for the
-removal of the graph REST view and subgraph traversal, and of plans and tasks, on the `axmem` branch.
+removal of the graph REST view and subgraph traversal, of plans and tasks, and of skills, on the `axmem` branch.
 This is a selective interpretation, not an exhaustive dependency inventory.
 The component groupings below are inferred for readability; the described execution paths
 and wiring were verified against source. Line numbers are inspection starting points and may drift.
@@ -52,26 +52,26 @@ Boxes combine multiple classes/files; unless a label names a module or package, 
 packages or separate deployments.
 Solid arrows show source-verified use or explicitly labelled startup wiring. Dotted arrows mean
 structural implementation of a contract, not inheritance or a request passing through a protocol.
-Only memory/skill repositories use the embedding/rerank branch. Health/auth routes and operational
+Only the memory repository uses the embedding/rerank branch. Health/auth routes and operational
 commands have additional paths omitted here; the diagram does not assert universal layering.
 
 ## Entry points and lifecycle
 
 | Inspection point | Responsibility |
 | --- | --- |
-| [main.py:44](main.py#L44) | Server lifespan configures logging, calls `build_runtime`, attaches services/registry/scopes to the typed `ForgetfulMCP` instance ([server_state.py](app/routes/server_state.py)), then disposes the runtime on normal shutdown. Logging is deferred to protect STDIO transport. |
-| [main.py:105](main.py#L105), [main.py:457](main.py#L457) | Construct the typed FastMCP subclass with configured authentication; `_serve` runs it over STDIO or HTTP. Both HTTP branches run the app under Uvicorn directly so lifespan teardown (`dispose_runtime`) completes before a shutdown signal is re-raised; the CORS branch additionally wraps the app with Starlette middleware. |
-| [main.py:597](main.py#L597) | Console entry point `cli`: a known subcommand goes to `parser.dispatch`; any other argv falls through to the permanent legacy launcher (`--transport`, `--re-embed`, ...), which rejects the re-embed-only flags when `--re-embed` is absent. |
-| [bootstrap.py:254](app/bootstrap.py#L254) | Composition root: choose providers and database, initialize schema, construct repositories, services, optional events, tool registry, and instance scope ceiling. |
-| [bootstrap.py:226](app/bootstrap.py#L226) | `Services` and `Runtime` collect the instances for front doors; optional services are `None` when disabled. This is explicit constructor injection, not a DI container. |
-| [bootstrap.py:374](app/bootstrap.py#L374) | Drain pending event handlers before closing the database; especially relevant to one-shot CLI execution. |
+| [main.py:43](main.py#L43) | Server lifespan configures logging, calls `build_runtime`, attaches services/registry/scopes to the typed `ForgetfulMCP` instance ([server_state.py](app/routes/server_state.py)), then disposes the runtime on normal shutdown. Logging is deferred to protect STDIO transport. |
+| [main.py:101](main.py#L101), [main.py:427](main.py#L427) | Construct the typed FastMCP subclass with configured authentication; `_serve` runs it over STDIO or HTTP. Both HTTP branches run the app under Uvicorn directly so lifespan teardown (`dispose_runtime`) completes before a shutdown signal is re-raised; the CORS branch additionally wraps the app with Starlette middleware. |
+| [main.py:567](main.py#L567) | Console entry point `cli`: a known subcommand goes to `parser.dispatch`; any other argv falls through to the permanent legacy launcher (`--transport`, `--re-embed`, ...), which rejects the re-embed-only flags when `--re-embed` is absent. |
+| [bootstrap.py:211](app/bootstrap.py#L211) | Composition root: choose providers and database, initialize schema, construct repositories, services, optional events, tool registry, and instance scope ceiling. |
+| [bootstrap.py:184](app/bootstrap.py#L184) | `Services` and `Runtime` collect the instances for front doors; optional services are `None` when disabled. This is explicit constructor injection, not a DI container. |
+| [bootstrap.py:319](app/bootstrap.py#L319) | Drain pending event handlers before closing the database; especially relevant to one-shot CLI execution. |
 | [parser.py:273](app/routes/cli/parser.py#L273) | Dispatch CLI serve, re-embed, tool discovery/calls, memory/project verbs, and authentication commands. |
 
 The bootstrap factories select PostgreSQL or SQLite repositories at
-[bootstrap.py:113](app/bootstrap.py#L113), passing embedding and rerank adapters to memory/skill repositories.
-`FILES_ENABLED` and `SKILLS_ENABLED` control matching repositories, services,
+[bootstrap.py:112](app/bootstrap.py#L112), passing embedding and rerank adapters to the memory repository.
+`FILES_ENABLED` controls the file repository, service,
 metadata registration, and HTTP route registration.
-Settings live in [settings.py:97](app/config/settings.py#L97); [canonical_choice:64](app/config/settings.py#L64) resolves provider and
+Settings live in [settings.py:93](app/config/settings.py#L93); [canonical_choice:60](app/config/settings.py#L60) resolves provider and
 log-format choices case-insensitively and raises on a typo instead of silently selecting a default.
 
 The [local executor:18](app/routes/cli/local_executor.py#L18) builds the same runtime, supplies a
@@ -82,48 +82,48 @@ Both conform to [ToolExecutor:10](app/protocols/executor.py#L10).
 
 ## MCP, HTTP, and identity
 
-The active MCP surface is registered by [meta_tools.py:443](app/routes/mcp/meta_tools.py#L443):
+The active MCP surface is registered by [meta_tools.py:407](app/routes/mcp/meta_tools.py#L407):
 
 1. `discover_forgetful_tools` lists permitted tool metadata, optionally by category.
 2. `how_to_use_forgetful_tool` returns detailed metadata for a permitted tool.
 3. `execute_forgetful_tool` rejects argument names that are not identifiers
-   ([line 403](app/routes/mcp/meta_tools.py#L403)), checks the name/permissions
-   ([line 421](app/routes/mcp/meta_tools.py#L421)), injects context, and dispatches it.
+   ([line 403](app/routes/mcp/meta_tools.py#L367)), checks the name/permissions
+   ([line 421](app/routes/mcp/meta_tools.py#L385)), injects context, and dispatches it.
 
-Failures leave the meta-tools through [tool_errors.py:38](app/routes/mcp/tool_errors.py#L38): domain and
+Failures leave the meta-tools through [tool_errors.py:36](app/routes/mcp/tool_errors.py#L36): domain and
 argument errors keep their authored message, while database and other unexpected errors are logged
 server-side and reach the client only as a short generic sentence. The `linking` category of
-`discover_forgetful_tools` is a tag filter across the memory, entity, and skill link tools.
+`discover_forgetful_tools` is a tag filter across the memory and entity link tools.
 Caller-supplied names are logged with `%r` and quoted with `!r` inside `ToolError` text (FastMCP
 logs every failed tool call with a traceback that ends in that text); argument names are screened
 first because CPython copies an unknown keyword verbatim into the `TypeError` that the logs and
 traceback would carry.
 
 The full operation set is dynamic: feature flags and scopes affect what a caller sees.
-[tool_metadata_registry.py:908](app/routes/mcp/tool_metadata_registry.py#L908) constructs adapter
+[tool_metadata_registry.py:907](app/routes/mcp/tool_metadata_registry.py#L907) constructs adapter
 callables and registers metadata/implementations together. Despite its filename, this is a module
 of registration helpers, not a second `ToolMetadataRegistry` class.
 [ToolRegistry.execute:183](app/routes/mcp/tool_registry.py#L183) looks up and awaits the callable.
 The adapters live per domain in [app/routes/mcp/adapters](app/routes/mcp/adapters) (memory, project,
-entity, document, code artifact, file, skill, user), with argument coercion shared in
+entity, document, code artifact, file, user), with argument coercion shared in
 [arguments.py](app/routes/mcp/adapters/arguments.py);
 [tool_adapters.py](app/routes/mcp/tool_adapters.py) only re-exports them so the metadata registry
 and the tests keep one import path.
 [MemoryToolAdapters.create_memory:56](app/routes/mcp/adapters/memory.py#L56) illustrates identity
 resolution, argument conversion, model construction, service delegation, and response formatting.
-`main.py` mounts only `meta_tools` ([line 137](main.py#L137)); there are no per-category MCP tool
+`main.py` mounts only `meta_tools` ([line 137](main.py#L130)); there are no per-category MCP tool
 modules (the seven unmounted `*_tools.py` modules were removed), so every operation is reachable
 only through the registry and these three meta-tools.
 
 HTTP endpoints are FastMCP custom routes accepting Starlette requests, rather than a separate
 FastAPI application despite the opening docstring in `main.py`.
 The services, registry and scope ceiling that the lifespan attaches are declared once on
-[ForgetfulMCP:38](app/routes/server_state.py#L38), a `FastMCP` subclass; routes, middleware and
-`register(mcp)` take that type, and [server_of:61](app/routes/server_state.py#L61) narrows an MCP
+[ForgetfulMCP:37](app/routes/server_state.py#L37), a `FastMCP` subclass; routes, middleware and
+`register(mcp)` take that type, and [server_of:59](app/routes/server_state.py#L59) narrows an MCP
 request context to it (the in-process CLI passes a duck-typed shim carrying only the attributes adapters read).
-[main.py:122](main.py#L122) mounts health, auth info, domain CRUD, and activity routes;
-files and skills are conditional. The root service-info route starts at
-[main.py:108](main.py#L108). Route modules share three small helpers so bad client input answers
+[main.py:118](main.py#L118) mounts health, auth info, domain CRUD, and activity routes;
+files are conditional. The root service-info route starts at
+[main.py:104](main.py#L104). Route modules share three small helpers so bad client input answers
 4xx instead of 500: [request_utils.py](app/routes/api/request_utils.py) (`read_json_object`, `path_id`,
 `handle_request_errors`), [query_params.py](app/routes/api/query_params.py) (strict integer and
 ISO 8601 query parsing) and [validation.py](app/routes/api/validation.py) (`validation_error_response`
@@ -140,7 +140,7 @@ or introspection providers, or no authentication. MCP identity comes from valida
 default user ([auth.py:169](app/middleware/auth.py#L169)); HTTP identity has its own bearer-token
 verification/cache path ([auth.py:254](app/middleware/auth.py#L254)) whose cache entries never outlive
 the token's own expiry. Services receive an internal user ID.
-[scope_resolver.py:166](app/routes/mcp/scope_resolver.py#L166) intersects token permissions with
+[scope_resolver.py:165](app/routes/mcp/scope_resolver.py#L165) intersects token permissions with
 the instance ceiling for MCP. Token scopes come from the `scope`/`scp` claim; unrecognised scopes are
 ignored, and a claim with scopes but none recognised permits nothing. Its empty-ceiling fallback
 permits all registered tools; do not interpret an empty ceiling as deny-all. HTTP routes do not automatically inherit registry scope checks:
@@ -190,13 +190,13 @@ embedding query ([PostgreSQL:43](app/repositories/postgres/memory_search.py#L43)
 
 | Boundary | Implementations / inspection points |
 | --- | --- |
-| Domain persistence | [MemoryRepository:21](app/protocols/memory_protocol.py#L21) and sibling files in [app/protocols](app/protocols) define service-facing contracts. Pydantic domain/request/result models live in [app/models](app/models), separate from backend ORM tables. Update models derive from [PatchModel](app/models/patch_models.py) (an explicit `null` means unchanged), and the entity-relationship and skill request models derive from [StorableInput](app/models/storable.py), which refuses NaN, Infinity and NUL on both backends so the REST routes answer 400. |
-| Memory repositories | [PostgresMemoryRepository:55](app/repositories/postgres/memory_repository.py#L55) keeps create/update/obsolete itself and composes search, link, listing, usage and re-embedding mixins ([memory_search.py](app/repositories/postgres/memory_search.py), [memory_links.py](app/repositories/postgres/memory_links.py), [memory_listing.py](app/repositories/postgres/memory_listing.py), [memory_usage.py](app/repositories/postgres/memory_usage.py), [memory_reembedding.py](app/repositories/postgres/memory_reembedding.py)) over [MemoryRepositoryBase:55](app/repositories/postgres/memory_base.py#L55); association writes are in [memory_associations.py](app/repositories/postgres/memory_associations.py). [SqliteMemoryRepository:17](app/repositories/sqlite/memory_repository.py#L17) composes search, write, link and re-embedding mixins over [SqliteMemoryBase:7](app/repositories/sqlite/memory_base.py#L7), with reads in [memory_reads.py](app/repositories/sqlite/memory_reads.py), shared helpers in [memory_queries.py](app/repositories/sqlite/memory_queries.py). The mixin split is structural; both classes still satisfy the one `MemoryRepository` contract. |
+| Domain persistence | [MemoryRepository:21](app/protocols/memory_protocol.py#L21) and sibling files in [app/protocols](app/protocols) define service-facing contracts. Pydantic domain/request/result models live in [app/models](app/models), separate from backend ORM tables. Update models derive from [PatchModel](app/models/patch_models.py) (an explicit `null` means unchanged), and the entity-relationship request models derive from [StorableInput](app/models/storable.py), which refuses NaN, Infinity and NUL on both backends so the REST routes answer 400. |
+| Memory repositories | [PostgresMemoryRepository:55](app/repositories/postgres/memory_repository.py#L55) keeps create/update/obsolete itself and composes search, link, listing, usage and re-embedding mixins ([memory_search.py](app/repositories/postgres/memory_search.py), [memory_links.py](app/repositories/postgres/memory_links.py), [memory_listing.py](app/repositories/postgres/memory_listing.py), [memory_usage.py](app/repositories/postgres/memory_usage.py), [memory_reembedding.py](app/repositories/postgres/memory_reembedding.py)) over [MemoryRepositoryBase:54](app/repositories/postgres/memory_base.py#L54); association writes are in [memory_associations.py](app/repositories/postgres/memory_associations.py). [SqliteMemoryRepository:17](app/repositories/sqlite/memory_repository.py#L17) composes search, write, link and re-embedding mixins over [SqliteMemoryBase:7](app/repositories/sqlite/memory_base.py#L7), with reads in [memory_reads.py](app/repositories/sqlite/memory_reads.py), shared helpers in [memory_queries.py](app/repositories/sqlite/memory_queries.py). The mixin split is structural; both classes still satisfy the one `MemoryRepository` contract. |
 | PostgreSQL | [PostgresDatabaseAdapter:36](app/repositories/postgres/postgres_adapter.py#L36) owns async sessions, commit/rollback, initialization, and disposal. User sessions set `app.current_user_id`, but the schema defines no row-level-security policy, so isolation rests on the explicit `user_id` predicates in the repositories. Backend table definitions start at [postgres_tables.py:26](app/repositories/postgres/postgres_tables.py#L26). |
 | SQLite | [SqliteDatabaseAdapter:54](app/repositories/sqlite/sqlite_adapter.py#L54) owns file/in-memory connections and sessions, loads sqlite-vec, and creates vector virtual tables. It creates a new data directory `0700` and keeps the database file (and its WAL/SHM) `0600`. Repository queries enforce user ownership. Relational tables start at [sqlite_tables.py:57](app/repositories/sqlite/sqlite_tables.py#L57). |
 | Schema lifecycle | Both database adapters run Alembic in-process during `init_db` ([SQLite:157](app/repositories/sqlite/sqlite_adapter.py#L157), [PostgreSQL:85](app/repositories/postgres/postgres_adapter.py#L85)); concurrent first starts are serialised by a SQLite write transaction and a PostgreSQL advisory lock. Backend selection and migration execution live in [alembic/env.py:1](alembic/env.py#L1), with revisions in [alembic/versions](alembic/versions). Vector-storage initialization also has adapter-specific work; the vector DDL that cannot use bound parameters (SQLite `vec0` tables, the pgvector column resize) is built by [vector_ddl.py](app/repositories/vector_ddl.py), which accepts a plain identifier and a positive integer and refuses everything else. |
-| Embeddings | [EmbeddingsAdapter:6](app/protocols/embedding_protocol.py#L6) defines `generate_embedding`. Implementations: local FastEmbed, Azure OpenAI, Google, OpenAI, and Ollama. Selection is explicit in [bootstrap.py:47](app/bootstrap.py#L47) and matches `EMBEDDING_PROVIDER` case-insensitively. |
-| Reranking | [RerankAdapter:20](app/repositories/embeddings/reranker_adapter.py#L20) has local FastEmbed cross-encoder and HTTP implementations. [bootstrap.py:69](app/bootstrap.py#L69) selects one or disables reranking. |
+| Embeddings | [EmbeddingsAdapter:6](app/protocols/embedding_protocol.py#L6) defines `generate_embedding`. Implementations: local FastEmbed, Azure OpenAI, Google, OpenAI, and Ollama. Selection is explicit in [bootstrap.py:46](app/bootstrap.py#L46) and matches `EMBEDDING_PROVIDER` case-insensitively. |
+| Reranking | [RerankAdapter:20](app/repositories/embeddings/reranker_adapter.py#L20) has local FastEmbed cross-encoder and HTTP implementations. [bootstrap.py:68](app/bootstrap.py#L68) selects one or disables reranking. |
 
 The two persistence backends implement the same broad contracts but use different SQL/vector
 mechanisms. This source review does not establish complete behavioral parity or transaction equivalence.
@@ -210,10 +210,9 @@ These are explanatory groupings; they do not imply separate subsystems in the so
 | --- | --- |
 | Organization and entities | [ProjectService:33](app/services/project_service.py#L33) manages project metadata; [EntityService:67](app/services/entity_service.py#L67) manages named entities, aliases, typed entity relationships, and links to memories/projects. Memory project membership is represented by `project_ids` associations. |
 | Attached knowledge | [DocumentService:40](app/services/document_service.py#L40), [CodeArtifactService:40](app/services/code_artifact_service.py#L40), and optional [FileService:40](app/services/file_service.py#L40) manage long text, source snippets, and binary content. They use separate repository contracts and can be associated with memories. |
-| Procedural knowledge | Optional [SkillService:220](app/services/skill_service.py#L220) supports CRUD, semantic search, Markdown/frontmatter import/export, and links to memories/files/documents/code artifacts. Skill names are unique per user, enforced by the service and backed by a unique index. Skill repositories receive the same provider adapters as memory repositories. |
 | Activity and usage | Optional [EventBus:31](app/events/event_bus.py#L31) dispatches background handlers and per-user streams. [ActivityService:24](app/services/activity_service.py#L24) persists and queries events; it remains queryable when event emission is disabled. Memory read/query events optionally update access counters via [memory_service.py:834](app/services/memory_service.py#L834). |
-| Re-embedding | [ReEmbeddingService:49](app/services/re_embedding_service.py#L49) coordinates full storage reset/batch embedding/validation (memories and, when given a skill repository, skills) and targeted rebuilds, using repository contracts and an embedding adapter. [main.py:419](main.py#L419) is the operational CLI path: a read-only dry run, a backup restored on failure or SIGINT/SIGTERM, and a skill repository built regardless of `SKILLS_ENABLED`. |
-| Backup | [BackupService:9](app/services/backup_service.py#L9) supplies the timestamp and delegates through `BackupAdapter`; [DatabaseBackupAdapter:59](app/repositories/backup_adapter.py#L59) owns SQLite online-backup snapshots and PostgreSQL `pg_dump`/`psql` (owner-only files, optional `BACKUP_DIR`). [create_backup_service:39](app/bootstrap.py#L39) connects them. |
+| Re-embedding | [ReEmbeddingService:46](app/services/re_embedding_service.py#L46) coordinates full storage reset/batch embedding/validation of memories and targeted rebuilds, using repository contracts and an embedding adapter. [main.py:389](main.py#L389) is the operational CLI path: a read-only dry run, and a backup restored on failure or SIGINT/SIGTERM. |
+| Backup | [BackupService:9](app/services/backup_service.py#L9) supplies the timestamp and delegates through `BackupAdapter`; [DatabaseBackupAdapter:59](app/repositories/backup_adapter.py#L59) owns SQLite online-backup snapshots and PostgreSQL `pg_dump`/`psql` (owner-only files, optional `BACKUP_DIR`). [create_backup_service:38](app/bootstrap.py#L38) connects them. |
 
 Startup constructs `ReEmbeddingService` and supplies it to MCP handlers; handlers call its
 validation and rebuild methods without accessing `MemoryService.memory_repo`.
@@ -262,9 +261,9 @@ The CI test job runs the latter; [validation notes](docs/dev/architecture-tests.
 
 | Suite | What to inspect / run |
 | --- | --- |
-| Integration | [tests/integration](tests/integration) uses stubbed I/O for service workflows. Start at [test_memory_service.py:16](tests/integration/test_memory_service.py#L16), [test_bootstrap.py](tests/integration/test_bootstrap.py), and the scope, CLI, skill, and event-bus tests. Run `uv run pytest tests/integration/`. |
-| SQLite E2E | [tests/e2e_sqlite](tests/e2e_sqlite) exercises the stack with in-memory SQLite; [conftest.py:156](tests/e2e_sqlite/conftest.py#L156) builds the app and controls optional features. Run `uv run pytest tests/e2e_sqlite/`. |
-| PostgreSQL E2E | [tests/e2e](tests/e2e) exercises the PostgreSQL stack; [conftest.py:278](tests/e2e/conftest.py#L278) manages the Docker database fixture. Run `uv run pytest -m e2e` with Docker available. |
+| Integration | [tests/integration](tests/integration) uses stubbed I/O for service workflows. Start at [test_memory_service.py:16](tests/integration/test_memory_service.py#L16), [test_bootstrap.py](tests/integration/test_bootstrap.py), and the scope, CLI, and event-bus tests. Run `uv run pytest tests/integration/`. |
+| SQLite E2E | [tests/e2e_sqlite](tests/e2e_sqlite) exercises the stack with in-memory SQLite; [conftest.py:137](tests/e2e_sqlite/conftest.py#L137) builds the app and controls optional features. Run `uv run pytest tests/e2e_sqlite/`. |
+| PostgreSQL E2E | [tests/e2e](tests/e2e) exercises the PostgreSQL stack; [conftest.py:270](tests/e2e/conftest.py#L270) manages the Docker database fixture. Run `uv run pytest -m e2e` with Docker available. |
 | Snapshots | Syrupy snapshots (`-m snapshot`) pin public surfaces: [test_snapshots.py](tests/integration/test_snapshots.py) covers CLI help, settings defaults and the database schema; [test_snapshots_sqlite.py](tests/e2e_sqlite/test_snapshots_sqlite.py) covers the MCP meta-tool signatures, the discovered tool catalogue and the HTTP route table. A changed snapshot is a contract change; refresh it deliberately with `uv run pytest -m snapshot --snapshot-update`. |
 | Memory budgets | [test_memory_budget_sqlite.py](tests/e2e_sqlite/test_memory_budget_sqlite.py) holds `limit_memory` budgets for bulk create and query; they are enforced only under `--memray` (Linux/macOS) and otherwise run as smoke tests. |
 | Agent walkthroughs | [test_harness/walkthrough.py:227](test_harness/walkthrough.py#L227) orchestrates agent sessions; this is evaluation infrastructure, not a production request path. Generated run workspaces are excluded from the map. |
@@ -287,7 +286,8 @@ into `app/routes/mcp/adapters/*`, the typed `ForgetfulMCP` in `app/routes/server
 modules added since. It also still lists the seven per-category `app/routes/mcp/*_tools.py` modules,
 which were removed because they were never mounted, the graph REST view (`app/routes/api/graph.py`,
 `GraphService`, `get_subgraph_nodes`, `SubgraphResponse`), and planning (`PlanService`, `TaskService`, their
-repositories, models, routes and MCP adapters, with the `PLANNING_ENABLED` flag), which were removed later.
+repositories, models, routes and MCP adapters, with the `PLANNING_ENABLED` flag), and skills (`SkillService`, its
+repositories, models, routes and MCP adapters, with the `SKILLS_ENABLED` flag), which were removed later.
 Line numbers cited by the map refer to its own revision.
 
 - Find the relevant declaration in the source index, reading that index in chunks if needed.

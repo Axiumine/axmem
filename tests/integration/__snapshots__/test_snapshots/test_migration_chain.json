@@ -50,5 +50,9 @@
   "20261019_drop_planning_tables.py": {
     "down_revision": "20261018_skill_unique_name",
     "revision": "20261019_drop_planning"
+  },
+  "20261019_drop_skills_tables.py": {
+    "down_revision": "20261019_drop_planning",
+    "revision": "20261019_drop_skills"
   }
 }

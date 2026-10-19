@@ -1,19 +1,15 @@
 """E2E tests (service -> repository -> in-memory SQLite) for tag filters and list loading.
 
 Covers two behaviours of the SQLite list_* queries for documents, code
-artifacts, files and skills:
+artifacts and files:
 
 1. The ``tags`` filter must be an exact, case-sensitive array membership test
    (the same contract as the PostgreSQL ``&&`` overlap): non-ASCII tags are
    found, ``%``/``_``/quote characters in the filter have no special meaning.
 2. Summary listings must not fetch the heavy ``files.data`` /
    ``documents.content`` columns that the summary models never expose.
-
-Runs fully offline: skills use a deterministic stub embedding adapter.
 """
 import base64
-import hashlib
-import random
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from uuid import uuid4
@@ -25,33 +21,19 @@ from app.config.settings import settings
 from app.models.code_artifact_models import CodeArtifactCreate
 from app.models.document_models import DocumentCreate
 from app.models.file_models import FileCreate
-from app.models.skill_models import SkillCreate
 from app.models.user_models import UserCreate
 from app.repositories.sqlite.code_artifact_repository import (
     SqliteCodeArtifactRepository,
 )
 from app.repositories.sqlite.document_repository import SqliteDocumentRepository
 from app.repositories.sqlite.file_repository import SqliteFileRepository
-from app.repositories.sqlite.skill_repository import SqliteSkillRepository
 from app.repositories.sqlite.sqlite_adapter import SqliteDatabaseAdapter
 from app.repositories.sqlite.user_repository import SqliteUserRepository
 from app.services.code_artifact_service import CodeArtifactService
 from app.services.document_service import DocumentService
 from app.services.file_service import FileService
-from app.services.skill_service import SkillService
 
 EMBEDDING_DIMENSIONS = 384
-
-
-class StaticEmbeddingAdapter:
-    """Deterministic offline embedding adapter (skills embed on create)."""
-
-    async def generate_embedding(self, text: str) -> list[float]:
-        seed = int(hashlib.md5(text.encode()).hexdigest()[:8], 16)  # noqa: S324
-        rng = random.Random(seed)  # noqa: S311
-        vec = [rng.random() for _ in range(EMBEDDING_DIMENSIONS)]
-        magnitude = sum(x * x for x in vec) ** 0.5 or 1.0
-        return [x / magnitude for x in vec]
 
 
 @dataclass
@@ -63,7 +45,6 @@ class Stack:
     documents: DocumentService
     artifacts: CodeArtifactService
     files: FileService
-    skills: SkillService
 
 
 @pytest.fixture
@@ -98,14 +79,6 @@ async def stack():
             ),
             files=FileService(
                 SqliteFileRepository(db_adapter=adapter), event_bus=None,
-            ),
-            skills=SkillService(
-                SqliteSkillRepository(
-                    db_adapter=adapter,
-                    embedding_adapter=StaticEmbeddingAdapter(),
-                    rerank_adapter=None,
-                ),
-                event_bus=None,
             ),
         )
     finally:
@@ -161,7 +134,7 @@ def _build_kind(name: str, stack: Stack) -> Kind:
             found = await stack.artifacts.list_code_artifacts(uid, tags=tags)
             return {a.title for a in found}
 
-    elif name == "file":
+    else:
         async def create(label: str, tags: list[str]) -> None:
             await stack.files.create_file(
                 uid,
@@ -178,24 +151,11 @@ def _build_kind(name: str, stack: Stack) -> Kind:
             found = await stack.files.list_files(uid, tags=tags)
             return {f.filename for f in found}
 
-    else:
-        async def create(label: str, tags: list[str]) -> None:
-            await stack.skills.create_skill(
-                uid,
-                SkillCreate(
-                    name=label, description="d", content="c", tags=tags,
-                ),
-            )
-
-        async def list_labels(tags: list[str]) -> set[str]:
-            found = await stack.skills.list_skills(uid, tags=tags)
-            return {s.name for s in found}
-
     return Kind(create=create, list_labels=list_labels)
 
 
 @pytest.fixture(
-    params=["document", "code_artifact", "file", "skill"],
+    params=["document", "code_artifact", "file"],
 )
 def kind(request, stack: Stack) -> Kind:
     return _build_kind(request.param, stack)

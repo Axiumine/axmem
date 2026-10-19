@@ -30,7 +30,7 @@ def test_walkthrough_order_starts_with_setup_and_ends_with_encode_repo():
     assert SKILL_ORDER[0] == "forgetful-cli-setup"
     assert SKILL_ORDER[-1] == "forgetful-encode-repo"
     assert "forgetful-mcp-setup" not in SKILL_ORDER
-    assert len(SKILL_ORDER) == 9
+    assert len(SKILL_ORDER) == 8
 
 
 def test_env_overrides_defaults(monkeypatch):

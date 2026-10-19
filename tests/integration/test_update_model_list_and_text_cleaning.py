@@ -5,12 +5,10 @@ clears tags and alternative names, which blank names are refused, and that an up
 was already built validates to itself. Complements the null-handling tests in
 test_null_update_resources.py.
 """
-from datetime import UTC, datetime
 
 import pytest
 from pydantic import ValidationError
 
-from app.config.settings import settings
 from app.models.code_artifact_models import CodeArtifactUpdate
 from app.models.document_models import DocumentUpdate
 from app.models.entity_models import (
@@ -22,7 +20,6 @@ from app.models.entity_models import (
 from app.models.file_models import FileUpdate
 from app.models.memory_models import MemoryUpdate
 from app.models.project_models import ProjectUpdate
-from app.models.skill_models import Skill, SkillCreate, SkillUpdate
 
 UPDATE_MODELS = [
     CodeArtifactUpdate,
@@ -32,7 +29,6 @@ UPDATE_MODELS = [
     FileUpdate,
     MemoryUpdate,
     ProjectUpdate,
-    SkillUpdate,
 ]
 
 
@@ -108,48 +104,3 @@ class TestBlankRelationshipType:
 
         assert created.relationship_type == "works_at"
         assert updated.relationship_type == "works_at"
-
-
-class TestSkillNameAndTags:
-    @pytest.mark.parametrize("blank", ["   ", " \t "])
-    def test_create_rejects_a_blank_name(self, blank):
-        with pytest.raises(ValidationError, match="name cannot be empty or whitespace only"):
-            SkillCreate(name=blank, description="d", content="c")
-
-    @pytest.mark.parametrize("blank", ["   ", " \t "])
-    def test_update_rejects_a_blank_name(self, blank):
-        with pytest.raises(ValidationError, match="name cannot be empty or whitespace only"):
-            SkillUpdate(name=blank)
-
-    @pytest.mark.parametrize("name", ["My Skill", "my_skill", "-leading", "trailing-", "double--hyphen", "UPPER"])
-    def test_create_and_update_reject_names_that_are_not_kebab_case(self, name):
-        with pytest.raises(ValidationError, match="name must be kebab-case"):
-            SkillCreate(name=name, description="d", content="c")
-        with pytest.raises(ValidationError, match="name must be kebab-case"):
-            SkillUpdate(name=name)
-
-    def test_update_trims_a_kebab_case_name(self):
-        assert SkillUpdate(name="  my-skill ").name == "my-skill"
-
-    def test_update_rejects_more_tags_than_the_configured_maximum(self):
-        too_many = [f"tag-{i}" for i in range(settings.SKILL_TAGS_MAX_COUNT + 1)]
-
-        with pytest.raises(ValidationError, match=f"Maximum {settings.SKILL_TAGS_MAX_COUNT} tags allowed"):
-            SkillUpdate(tags=too_many)
-
-    def test_update_accepts_exactly_the_configured_maximum_of_tags(self):
-        tags = [f"tag-{i}" for i in range(settings.SKILL_TAGS_MAX_COUNT)]
-
-        assert SkillUpdate(tags=tags).tags == tags
-
-    def test_update_rejects_a_tag_that_is_too_long_to_index(self):
-        with pytest.raises(ValidationError, match="Tags are limited to"):
-            SkillUpdate(tags=["x" * (settings.SKILL_TAG_MAX_LENGTH + 1)])
-
-    def test_response_model_still_reads_a_tag_that_is_too_long_to_index(self):
-        now = datetime.now(tz=UTC)
-        long_tag = "x" * (settings.SKILL_TAG_MAX_LENGTH + 1)
-
-        skill = Skill(id=1, name="my-skill", description="d", content="c", tags=[long_tag], created_at=now, updated_at=now)
-
-        assert skill.tags == [long_tag]

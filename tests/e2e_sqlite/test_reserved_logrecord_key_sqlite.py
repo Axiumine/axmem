@@ -1,8 +1,8 @@
-"""E2E tests: INFO logging must not break skills, files and projects on SQLite.
+"""E2E tests: INFO logging must not break files and projects on SQLite.
 
 Several log calls passed ``extra={"name": ...}`` (or ``"filename"``), keys reserved by
-``logging.LogRecord``. ``Logger.makeRecord`` raises ``KeyError`` for those, so skill
-creation, file creation and project listing crashed whenever INFO was enabled for the
+``logging.LogRecord``. ``Logger.makeRecord`` raises ``KeyError`` for those, so file
+creation and project listing crashed whenever INFO was enabled for the
 module loggers.
 
 ``init_db`` runs Alembic, whose ``fileConfig`` call disables every app logger that
@@ -17,10 +17,8 @@ import logging
 import pytest
 
 LOGGERS = (
-    "app.services.skill_service",
     "app.services.project_service",
     "app.services.file_service",
-    "app.repositories.sqlite.skill_repository",
     "app.repositories.sqlite.project_repository",
     "app.repositories.sqlite.file_repository",
 )
@@ -59,38 +57,6 @@ def info_logging_mcp(mcp_client, caplog):
 
 def _messages(caplog, logger_name: str) -> set[str]:
     return {r.getMessage() for r in caplog.records if r.name == logger_name}
-
-
-@pytest.mark.asyncio
-async def test_create_skill_via_api_with_info_logging(http_client, info_logging_http):
-    response = await http_client.post(
-        "/api/v1/skills",
-        json={
-            "name": "info-logging-skill",
-            "description": "Created while INFO logging is enabled",
-            "content": "# Steps\n1. do the thing",
-        },
-    )
-
-    assert response.status_code == 201, response.text
-    assert response.json()["name"] == "info-logging-skill"
-    assert "creating skill" in _messages(info_logging_http, "app.services.skill_service")
-
-
-@pytest.mark.asyncio
-async def test_import_skill_via_api_with_info_logging(http_client, info_logging_http):
-    response = await http_client.post(
-        "/api/v1/skills/import",
-        json={
-            "skill_md": (
-                "---\nname: info-logging-import\n"
-                "description: Imported while INFO logging is enabled\n---\n\n# Body\n"
-            ),
-        },
-    )
-
-    assert response.status_code == 201, response.text
-    assert response.json()["name"] == "info-logging-import"
 
 
 @pytest.mark.asyncio

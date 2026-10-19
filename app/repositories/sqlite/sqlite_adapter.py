@@ -183,12 +183,11 @@ class SqliteDatabaseAdapter:
             await conn.run_sync(self._run_migrations)
             logger.info("Database schema initialized via Alembic")
 
-            # Create virtual tables for vector storage (not managed by Alembic)
-            for table, id_column in (("vec_memories", "memory_id"), ("vec_skills", "skill_id")):
-                await conn.execute(text(create_vec0_table_sql(
-                    table, id_column, settings.EMBEDDING_DIMENSIONS, if_not_exists=True,
-                )))
-            logger.info("sqlite-vec virtual tables created for vector storage")
+            # Create the virtual table for vector storage (not managed by Alembic)
+            await conn.execute(text(create_vec0_table_sql(
+                "vec_memories", "memory_id", settings.EMBEDDING_DIMENSIONS, if_not_exists=True,
+            )))
+            logger.info("sqlite-vec virtual table created for vector storage")
 
     def _run_migrations(self, connection) -> None:
         """Run pending Alembic migrations synchronously (called via run_sync)."""

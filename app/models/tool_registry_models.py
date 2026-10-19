@@ -18,7 +18,6 @@ class ToolCategory(StrEnum):
     ENTITY = "entity"
     LINKING = "linking"
     FILE = "file"
-    SKILL = "skill"
 
 class ToolParameterDef(TypedDict):
     """Simplified parameter definition used by the metadata registry tables"""

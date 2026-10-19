@@ -24,17 +24,13 @@ import pytest
 
 from app.models.file_models import FileCreate
 from app.models.project_models import ProjectCreate
-from app.models.skill_models import SkillCreate
 
 APP_DIR = Path(__file__).resolve().parents[2] / "app"
 
 AFFECTED_LOGGERS = (
-    "app.services.skill_service",
     "app.services.project_service",
     "app.services.file_service",
-    "app.repositories.postgres.skill_repository",
     "app.repositories.postgres.project_repository",
-    "app.repositories.sqlite.skill_repository",
     "app.repositories.sqlite.project_repository",
 )
 
@@ -122,29 +118,6 @@ def test_log_extra_never_uses_reserved_logrecord_keys():
     assert not offenders, "\n".join(offenders)
 
 
-async def test_create_skill_with_info_logging(test_skill_service, info_logging):
-    user_id = uuid4()
-
-    skill = await test_skill_service.create_skill(
-        user_id,
-        SkillCreate(name="reserved-key-skill", description="d" * 20, content="c" * 20),
-    )
-
-    assert skill.name == "reserved-key-skill"
-    record = _single_record(info_logging, "app.services.skill_service", "creating skill")
-    assert record.skill_name == "reserved-key-skill"
-    assert record.user_id == str(user_id)
-
-
-async def test_import_skill_with_info_logging(test_skill_service, info_logging):
-    skill = await test_skill_service.import_skill(
-        uuid4(),
-        "---\nname: reserved-key-import\ndescription: imported with INFO logging\n---\n\nbody",
-    )
-
-    assert skill.name == "reserved-key-import"
-
-
 async def test_list_projects_with_info_logging(test_project_service, info_logging):
     user_id = uuid4()
     await test_project_service.create_project(
@@ -182,33 +155,6 @@ class _FailingDbAdapter:
 
     def session(self, user_id):
         raise ConnectionRefusedError("database unavailable")
-
-
-@pytest.mark.parametrize("backend", ["postgres", "sqlite"])
-async def test_skill_name_exists_reraises_original_database_error(backend, caplog):
-    """The real database error must propagate, not a KeyError from the logging call."""
-    if backend == "postgres":
-        from app.repositories.postgres.skill_repository import (
-            PostgresSkillRepository as Repo,
-        )
-    else:
-        from app.repositories.sqlite.skill_repository import (
-            SqliteSkillRepository as Repo,
-        )
-    module_logger = logging.getLogger(Repo.__module__)
-    previous_disabled = module_logger.disabled
-    module_logger.disabled = False
-    repository = Repo(db_adapter=_FailingDbAdapter(), embedding_adapter=object())
-
-    try:
-        with pytest.raises(ConnectionRefusedError):
-            await repository.skill_name_exists(uuid4(), "my-skill")
-    finally:
-        module_logger.disabled = previous_disabled
-
-    record = _single_record(caplog, Repo.__module__, "Failed to check skill name existence")
-    assert record.levelno == logging.ERROR
-    assert record.skill_name == "my-skill"
 
 
 @pytest.mark.parametrize("backend", ["postgres", "sqlite"])

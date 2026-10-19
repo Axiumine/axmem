@@ -40,7 +40,6 @@ def memory_load_options() -> list[ExecutableOption]:
         selectinload(MemoryTable.code_artifacts),
         selectinload(MemoryTable.documents),
         selectinload(MemoryTable.files),
-        selectinload(MemoryTable.skills),
     ]
 
 

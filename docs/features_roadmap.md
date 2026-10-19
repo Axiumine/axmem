@@ -4,7 +4,6 @@
     - [x] Documents
     - [x] Code Artifacts
     - [x] Entities (Organisations, individuals, team, devices etc)
-    - [x] Skills
     - [ ] Audio
     - [ ] Images
     - [ ] Video 

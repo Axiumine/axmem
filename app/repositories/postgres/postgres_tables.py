@@ -65,34 +65,6 @@ entity_file_association = Table(
     Column("file_id", Integer, ForeignKey("files.id", ondelete="CASCADE"), primary_key=True),
 )
 
-# Association table for many-to-many relationship between memories and skills
-memory_skill_association = Table(
-    "memory_skill_association", Base.metadata,
-    Column("memory_id", Integer, ForeignKey("memories.id", ondelete="CASCADE"), primary_key=True),
-    Column("skill_id", Integer, ForeignKey("skills.id", ondelete="CASCADE"), primary_key=True),
-)
-
-# Association table for many-to-many relationship between skills and files
-skill_file_association = Table(
-    "skill_file_association", Base.metadata,
-    Column("skill_id", Integer, ForeignKey("skills.id", ondelete="CASCADE"), primary_key=True),
-    Column("file_id", Integer, ForeignKey("files.id", ondelete="CASCADE"), primary_key=True),
-)
-
-# Association table for many-to-many relationship between skills and code artifacts
-skill_code_artifact_association = Table(
-    "skill_code_artifact_association", Base.metadata,
-    Column("skill_id", Integer, ForeignKey("skills.id", ondelete="CASCADE"), primary_key=True),
-    Column("code_artifact_id", Integer, ForeignKey("code_artifacts.id", ondelete="CASCADE"), primary_key=True),
-)
-
-# Association table for many-to-many relationship between skills and documents
-skill_document_association = Table(
-    "skill_document_association", Base.metadata,
-    Column("skill_id", Integer, ForeignKey("skills.id", ondelete="CASCADE"), primary_key=True),
-    Column("document_id", Integer, ForeignKey("documents.id", ondelete="CASCADE"), primary_key=True),
-)
-
 # Association table for many-to-many relationship between memories and entities
 memory_entity_association = Table(
     "memory_entity_association",
@@ -161,11 +133,6 @@ class UsersTable(Base):
     )
     files: Mapped[list[FilesTable]] = relationship(
         "FilesTable",
-        back_populates="user",
-        cascade="all, delete-orphan",
-    )
-    skills: Mapped[list[SkillsTable]] = relationship(
-        "SkillsTable",
         back_populates="user",
         cascade="all, delete-orphan",
     )
@@ -245,11 +212,6 @@ class MemoryTable(Base):
     files: Mapped[list[FilesTable]] = relationship(
         "FilesTable",
         secondary=memory_file_association,
-        back_populates="memories",
-    )
-    skills: Mapped[list[SkillsTable]] = relationship(
-        "SkillsTable",
-        secondary=memory_skill_association,
         back_populates="memories",
     )
     entities: Mapped[list[EntitiesTable]] = relationship(
@@ -362,21 +324,6 @@ class MemoryTable(Base):
             return [f.id for f in self.files]
         return []
 
-    @property
-    def skill_ids(self) -> list[int]:
-        """Compute skill IDs from skills relationship.
-
-        Returns:
-            List of skill IDs, or empty list if relationship not loaded
-        """
-        from sqlalchemy import inspect
-        from sqlalchemy.orm.attributes import NO_VALUE
-
-        insp = inspect(self)
-        if insp.attrs.skills.loaded_value is not NO_VALUE:
-            return [s.id for s in self.skills]
-        return []
-
     __table_args__ = (
         Index("ix_memories_user_id", "user_id"),
         Index("ix_memories_importance", "importance"),
@@ -476,10 +423,6 @@ class ProjectsTable(Base):
         "FilesTable",
         back_populates="project",
     )
-    skills: Mapped[list[SkillsTable]] = relationship(
-        "SkillsTable",
-        back_populates="project",
-    )
 
     # Computed properties for Pydantic conversion
     @hybrid_property
@@ -544,11 +487,6 @@ class CodeArtifactsTable(Base):
         secondary=memory_code_artifact_association,
         back_populates="code_artifacts",
     )
-    skills: Mapped[list[SkillsTable]] = relationship(
-        "SkillsTable",
-        secondary=skill_code_artifact_association,
-        back_populates="code_artifacts",
-    )
 
     __table_args__ = (
         Index("ix_code_artifacts_user_id", "user_id"),
@@ -608,11 +546,6 @@ class DocumentsTable(Base):
     memories: Mapped[list[MemoryTable]] = relationship(
         "MemoryTable",
         secondary=memory_document_association,
-        back_populates="documents",
-    )
-    skills: Mapped[list[SkillsTable]] = relationship(
-        "SkillsTable",
-        secondary=skill_document_association,
         back_populates="documents",
     )
 
@@ -683,109 +616,12 @@ class FilesTable(Base):
         secondary=entity_file_association,
         back_populates="files",
     )
-    skills: Mapped[list[SkillsTable]] = relationship(
-        "SkillsTable",
-        secondary=skill_file_association,
-        back_populates="files",
-    )
 
     __table_args__ = (
         Index("ix_files_user_id", "user_id"),
         Index("ix_files_project_id", "project_id"),
         Index("ix_files_mime_type", "mime_type"),
         Index("ix_files_tags", "tags", postgresql_using="gin"),
-    )
-
-
-class SkillsTable(Base):
-    """Table for storing reusable skills/capabilities that can be linked to memories,
-    files, code artifacts, and documents.
-
-    Supports dual relationships:
-    - Direct project link (project_id) for project-specific skills
-    - Memory references (many-to-many via memory_skill_association) for cross-project reuse
-    - File references (many-to-many via skill_file_association)
-    - Code artifact references (many-to-many via skill_code_artifact_association)
-    - Document references (many-to-many via skill_document_association)
-    """
-    __tablename__ = "skills"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    project_id: Mapped[int] = mapped_column(Integer, ForeignKey("projects.id", ondelete="SET NULL"), nullable=True)
-
-    # Skill information
-    name: Mapped[str] = mapped_column(String(64), nullable=False)
-    description: Mapped[str] = mapped_column(String(1024), nullable=False)
-    content: Mapped[str] = mapped_column(Text, nullable=False)
-    license: Mapped[str] = mapped_column(String(100), nullable=True)
-    compatibility: Mapped[str] = mapped_column(String(500), nullable=True)
-    # No Python default: the ORM drops an explicit None for ARRAY, so a default would
-    # store an empty array (a restriction) instead of NULL (unrestricted).
-    allowed_tools: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=True)
-    skill_metadata: Mapped[dict] = mapped_column(JSONB, nullable=True)
-    tags: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=False)
-    importance: Mapped[int] = mapped_column(Integer, default=7, nullable=False)
-
-    # Embedding
-    embedding: Mapped[Vector] = mapped_column(Vector(settings.EMBEDDING_DIMENSIONS), nullable=False)
-
-    # Provenance tracking (optional)
-    source_repo: Mapped[str] = mapped_column(Text, nullable=True)
-    source_files: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=True)
-    source_url: Mapped[str] = mapped_column(Text, nullable=True)
-    confidence: Mapped[float] = mapped_column(nullable=True)
-    encoding_agent: Mapped[str] = mapped_column(Text, nullable=True)
-    encoding_version: Mapped[str] = mapped_column(Text, nullable=True)
-    agent_id: Mapped[str] = mapped_column(Text, nullable=True)
-    agent_version: Mapped[str] = mapped_column(Text, nullable=True)
-    agent_model: Mapped[str] = mapped_column(Text, nullable=True)
-
-    # Timestamps
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        default=lambda: datetime.now(UTC),
-        nullable=False,
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        default=lambda: datetime.now(UTC),
-        onupdate=lambda: datetime.now(UTC),
-        nullable=False,
-    )
-
-    # Relationships
-    user: Mapped[UsersTable] = relationship("UsersTable", back_populates="skills")
-    project: Mapped[ProjectsTable] = relationship("ProjectsTable", back_populates="skills")
-    memories: Mapped[list[MemoryTable]] = relationship(
-        "MemoryTable",
-        secondary=memory_skill_association,
-        back_populates="skills",
-    )
-    files: Mapped[list[FilesTable]] = relationship(
-        "FilesTable",
-        secondary=skill_file_association,
-        back_populates="skills",
-    )
-    code_artifacts: Mapped[list[CodeArtifactsTable]] = relationship(
-        "CodeArtifactsTable",
-        secondary=skill_code_artifact_association,
-        back_populates="skills",
-    )
-    documents: Mapped[list[DocumentsTable]] = relationship(
-        "DocumentsTable",
-        secondary=skill_document_association,
-        back_populates="skills",
-    )
-
-    __table_args__ = (
-        Index("ix_skills_user_id", "user_id"),
-        Index("ix_skills_project_id", "project_id"),
-        Index("ix_skills_name", "name"),
-        Index("ix_skills_user_name", "user_id", "name", unique=True),
-        Index("ix_skills_tags", "tags", postgresql_using="gin"),
-        Index("ix_skills_importance", "importance"),
-        Index("ix_skills_embedding", "embedding", postgresql_using="hnsw", postgresql_ops={"embedding": "vector_cosine_ops"}),
     )
 
 

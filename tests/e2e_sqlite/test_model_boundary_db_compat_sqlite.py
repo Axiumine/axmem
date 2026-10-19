@@ -1,22 +1,18 @@
 """Input that the database cannot store is refused with a 400, on every backend.
 
-NaN/Infinity, NUL characters, an INTEGER overflow and an oversized GIN key all fail on
+NaN/Infinity, NUL characters and an INTEGER overflow all fail on
 PostgreSQL with an unhandled driver error (500). SQLite accepted them instead, and a NaN
 stored in a relationship's metadata made every later relationship listing fail. These tests run
-the real REST and MCP stack on in-memory SQLite; the PostgreSQL counterpart is
+the real REST stack on in-memory SQLite; the PostgreSQL counterpart is
 tests/e2e/test_model_boundary_db_compat_e2e.py.
 """
 import json
 
 import pytest
-from fastmcp.exceptions import ToolError
-
-from app.config.settings import settings
 
 JSON = {"content-type": "application/json"}
 NUL = "\u0000"
 INT32_MAX = 2_147_483_647
-SKILL = {"name": "a-skill", "description": "d", "content": "c"}
 
 
 def _raw_json(payload, token):
@@ -67,15 +63,6 @@ def _assert_refused_by_body_parser(response):
     assert json.loads(response.text, parse_constant=lambda c: pytest.fail(c)) == {
         "error": "Invalid JSON body",
     }
-
-
-def _assert_skill_rejected(response, location, error_type):
-    """The skills routes return the pydantic message as text; it must name the field and rule."""
-    assert response.status_code == 400, response.text
-    message = response.json()["error"]
-    assert f"\n{location}\n" in message
-    assert f"type={error_type}" in message
-    return message
 
 
 class TestRelationshipMetadata:
@@ -146,70 +133,6 @@ class TestRelationshipMetadata:
         await _relationships_are_healthy(http_client, a)
 
 
-class TestSkill:
-    @pytest.mark.parametrize("literal", ["NaN", "Infinity", "-Infinity"])
-    async def test_create_with_non_finite_metadata_is_refused(self, http_client, literal):
-        body = _raw_json({**SKILL, "metadata": {"score": "TOKEN"}}, literal)
-
-        response = await http_client.post("/api/v1/skills", content=body, headers=JSON)
-
-        _assert_refused_by_body_parser(response)
-        assert (await http_client.get("/api/v1/skills")).json()["total"] == 0
-
-    async def test_update_with_non_finite_metadata_is_refused_and_skill_is_intact(self, http_client):
-        created = await http_client.post("/api/v1/skills", json={
-            "name": "a-skill", "description": "d", "content": "c", "metadata": {"score": 1},
-        })
-        skill_id = created.json()["id"]
-
-        response = await http_client.put(
-            f"/api/v1/skills/{skill_id}", content='{"metadata": {"score": NaN}}', headers=JSON,
-        )
-
-        _assert_refused_by_body_parser(response)
-        assert (await http_client.get(f"/api/v1/skills/{skill_id}")).json()["metadata"] == {"score": 1}
-
-    async def test_nul_in_content_is_refused(self, http_client):
-        response = await http_client.post("/api/v1/skills", json={
-            "name": "a-skill", "description": "d", "content": f"a{NUL}b",
-        })
-
-        message = _assert_skill_rejected(response, "content", "nul_character")
-        assert "a\u0000b" not in message
-        control = await http_client.post("/api/v1/skills", json={
-            "name": "a-skill", "description": "d", "content": "ab",
-        })
-        assert control.status_code == 201
-
-    async def test_nul_in_update_is_refused(self, http_client):
-        created = await http_client.post("/api/v1/skills", json={
-            "name": "a-skill", "description": "d", "content": "c",
-        })
-
-        response = await http_client.put(
-            f"/api/v1/skills/{created.json()['id']}", json={"description": f"a{NUL}"},
-        )
-
-        _assert_skill_rejected(response, "description", "nul_character")
-
-    async def test_tag_longer_than_the_limit_is_refused_on_create_and_update(self, http_client):
-        limit = settings.SKILL_TAG_MAX_LENGTH
-        refused = await http_client.post("/api/v1/skills", json={
-            "name": "a-skill", "description": "d", "content": "c", "tags": ["x" * 3000],
-        })
-        _assert_skill_rejected(refused, "tags", "tag_too_long")
-
-        accepted = await http_client.post("/api/v1/skills", json={
-            "name": "a-skill", "description": "d", "content": "c", "tags": ["x" * limit],
-        })
-        assert accepted.status_code == 201, accepted.text
-
-        updated = await http_client.put(
-            f"/api/v1/skills/{accepted.json()['id']}", json={"tags": ["y" * (limit + 1)]},
-        )
-        _assert_skill_rejected(updated, "tags", "tag_too_long")
-
-
 class TestDocumentSizeBytes:
     DOC = {"title": "t", "description": "d", "content": "c"}
 
@@ -237,22 +160,3 @@ class TestDocumentSizeBytes:
 
         assert response.status_code == 201, response.text
         assert response.json()["size_bytes"] == INT32_MAX
-
-
-class TestMcpTools:
-    async def test_create_skill_with_nul_is_refused(self, mcp_client):
-        with pytest.raises(ToolError):
-            await mcp_client.call_tool("execute_forgetful_tool", {
-                "tool_name": "create_skill",
-                "arguments": {"name": "a-skill", "description": "d", "content": f"a{NUL}b"},
-            })
-
-    async def test_create_skill_with_oversized_tag_is_refused(self, mcp_client):
-        with pytest.raises(ToolError):
-            await mcp_client.call_tool("execute_forgetful_tool", {
-                "tool_name": "create_skill",
-                "arguments": {
-                    "name": "a-skill", "description": "d", "content": "c",
-                    "tags": ["x" * (settings.SKILL_TAG_MAX_LENGTH + 1)],
-                },
-            })

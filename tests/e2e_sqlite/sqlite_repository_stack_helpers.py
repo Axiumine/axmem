@@ -1,7 +1,7 @@
 """Shared building blocks for tests that drive the SQLite repositories directly.
 
 ``open_repository_stack`` wires the real in-memory SQLite adapter (sqlite-vec tables and
-migrations included) to the entity, skill, memory, project, file, code artifact and
+migrations included) to the entity, memory, project, file, code artifact and
 document repositories, plus two users so ownership checks can be exercised.
 
 ``FaultyAdapter`` wraps that adapter and makes chosen session calls fail the way a locked
@@ -26,7 +26,6 @@ from app.repositories.sqlite.entity_repository import SqliteEntityRepository
 from app.repositories.sqlite.file_repository import SqliteFileRepository
 from app.repositories.sqlite.memory_repository import SqliteMemoryRepository
 from app.repositories.sqlite.project_repository import SqliteProjectRepository
-from app.repositories.sqlite.skill_repository import SqliteSkillRepository
 from app.repositories.sqlite.sqlite_adapter import SqliteDatabaseAdapter
 from app.repositories.sqlite.user_repository import SqliteUserRepository
 
@@ -46,7 +45,6 @@ class RepositoryStack:
     user_id: UUID
     other_user_id: UUID
     entities: SqliteEntityRepository
-    skills: SqliteSkillRepository
     memories: SqliteMemoryRepository
     projects: SqliteProjectRepository
     files: SqliteFileRepository
@@ -75,7 +73,6 @@ async def open_repository_stack(monkeypatch: Any) -> AsyncIterator[RepositorySta
             user_id=owner.id,
             other_user_id=other.id,
             entities=SqliteEntityRepository(db_adapter=adapter),
-            skills=SqliteSkillRepository(db_adapter=adapter, embedding_adapter=embeddings),
             memories=SqliteMemoryRepository(db_adapter=adapter, embedding_adapter=embeddings),
             projects=SqliteProjectRepository(db_adapter=adapter),
             files=SqliteFileRepository(db_adapter=adapter),

@@ -1,15 +1,18 @@
 """Contracts of the revision that dropped the planning tables, run against SQLite and PostgreSQL."""
 
-from pathlib import Path
 from typing import Any
 
-from alembic.config import Config
-from sqlalchemy import inspect, text
+from sqlalchemy import text
 
 from app.bootstrap import create_repositories
 from app.models.project_models import ProjectCreate, ProjectType
 from app.models.user_models import UserCreate
-from tests.skill_name_uniqueness_cases import run_migration
+from tests.migration_helpers import (
+    alembic_config,
+    run_migration,
+    stored_event_types,
+    table_shapes,
+)
 
 LAST_REVISION_WITH_PLANNING = "20261018_skill_unique_name"
 REVISION_BEFORE_PLANNING = "20260106_activity"
@@ -18,45 +21,8 @@ PLANNING_EVENT_TYPES = ("plan", "task", "criterion", "task_dependency")
 KEPT_EVENT_TYPES = ("memory", "project")
 
 
-def alembic_config() -> Config:
-    return Config(str(Path(__file__).parents[1] / "alembic.ini"))
-
-
-def read_shapes(connection: Any) -> dict[str, dict[str, Any] | None]:
-    """Columns, keys and indexes of each planning table (None when the table does not exist)."""
-    inspector = inspect(connection)
-    existing = set(inspector.get_table_names())
-    shapes: dict[str, dict[str, Any] | None] = {}
-    for table in PLANNING_TABLES:
-        if table not in existing:
-            shapes[table] = None
-            continue
-        shapes[table] = {
-            "columns": {
-                column["name"]: (str(column["type"]), column["nullable"], str(column["default"]))
-                for column in inspector.get_columns(table)
-            },
-            "primary_key": inspector.get_pk_constraint(table)["constrained_columns"],
-            "indexes": sorted(
-                (index["name"], tuple(index["column_names"]), bool(index["unique"]))
-                for index in inspector.get_indexes(table)
-            ),
-            "foreign_keys": sorted(
-                (
-                    tuple(key["constrained_columns"]),
-                    key["referred_table"],
-                    tuple(key["referred_columns"]),
-                    str(key["options"]),
-                )
-                for key in inspector.get_foreign_keys(table)
-            ),
-        }
-    return shapes
-
-
 async def planning_shapes(db: Any) -> dict[str, dict[str, Any] | None]:
-    async with db._engine.begin() as connection:
-        return await connection.run_sync(read_shapes)
+    return await table_shapes(db, PLANNING_TABLES)
 
 
 def assert_planning_tables_absent(shapes: dict[str, Any]) -> None:
@@ -90,12 +56,6 @@ async def store_planning_rows_and_events(db: Any) -> str:
         for entity_type in (*PLANNING_EVENT_TYPES, *KEPT_EVENT_TYPES):
             await session.execute(event, {"owner": owner, "entity_type": entity_type})
     return owner
-
-
-async def stored_event_types(db: Any) -> list[str]:
-    async with db.system_session() as session:
-        rows = await session.execute(text("SELECT entity_type FROM activity_log ORDER BY entity_type"))
-        return [row[0] for row in rows]
 
 
 class TestPlanningRemoval:

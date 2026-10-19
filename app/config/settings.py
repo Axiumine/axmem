@@ -48,10 +48,6 @@ PROVENANCE_MAX_LENGTHS = {
 # Tunable *_MAX_LENGTH settings that feed fixed-width PostgreSQL VARCHAR columns
 # (postgres_tables.py). PostgreSQL rejects longer values; SQLite does not enforce VARCHAR length.
 POSTGRES_COLUMN_WIDTHS = {
-    "SKILL_NAME_MAX_LENGTH": 64,
-    "SKILL_DESCRIPTION_MAX_LENGTH": 1024,
-    "SKILL_LICENSE_MAX_LENGTH": 100,
-    "SKILL_COMPATIBILITY_MAX_LENGTH": 500,
     "CODE_ARTIFACT_TITLE_MAX_LENGTH": 500,
     "DOCUMENT_TITLE_MAX_LENGTH": 500,
     "FILE_FILENAME_MAX_LENGTH": 255,
@@ -230,19 +226,6 @@ class Settings(BaseSettings):
     ENTITY_TAGS_MAX_COUNT: int = 10              # For categorization
     ENTITY_AKA_MAX_COUNT: int = 10               # Maximum alternative names per entity
     ENTITY_RELATIONSHIP_TYPE_MAX_LENGTH: int = 100  # e.g., "works_at", "owns", "manages"
-
-    # Skills Feature Flag
-    SKILLS_ENABLED: bool = False
-
-    # Skills Configuration
-    SKILL_NAME_MAX_LENGTH: int = 64
-    SKILL_DESCRIPTION_MAX_LENGTH: int = 1024
-    SKILL_CONTENT_MAX_LENGTH: int = 100000
-    SKILL_LICENSE_MAX_LENGTH: int = 100
-    SKILL_COMPATIBILITY_MAX_LENGTH: int = 500
-    SKILL_ALLOWED_TOOLS_MAX_LENGTH: int = 2000
-    SKILL_TAGS_MAX_COUNT: int = 10
-    SKILL_TAG_MAX_LENGTH: int = 255          # skills.tags is GIN indexed (key limit ~2.7KB)
 
     # Provenance Defaults (auto-applied to all writes when set via MCP env config)
     ENCODING_AGENT: str = ""        # Software running the agent (e.g., "OpenCode")

@@ -134,43 +134,6 @@ async def test_entity_memories_exclude_obsolete_memory(http_client):
 
 
 @pytest.mark.e2e
-async def test_skill_links_exclude_obsolete_memory(mcp_client):
-    """The get_skill_links reverse lookup no longer reports a memory marked obsolete."""
-    skill = await _call(mcp_client, "create_skill", {
-        "name": "obsolete-links-skill",
-        "description": "Skill used to check obsolete memory visibility",
-        "content": "# Content",
-        "tags": [],
-        "importance": 7,
-    })
-    skill_id = skill.data["id"]
-
-    memory_ids = []
-    for title in ("Kept skill memory", "Doomed skill memory"):
-        memory = await _call(mcp_client, "create_memory", {
-            "title": title,
-            "content": f"content of {title}",
-            "context": "obsolete visibility test",
-            "keywords": ["visibility"],
-            "tags": ["visibility"],
-            "importance": 7,
-        })
-        memory_ids.append(memory.data["id"])
-        await _call(mcp_client, "link_skill_to_memory", {
-            "skill_id": skill_id, "memory_id": memory.data["id"],
-        })
-    kept, doomed = memory_ids
-
-    await _call(mcp_client, "mark_memory_obsolete", {
-        "memory_id": doomed, "reason": "superseded",
-    })
-
-    links = await _call(mcp_client, "get_skill_links", {"skill_id": skill_id})
-    assert links.data["memory_ids"] == [kept]
-    assert links.data["total_count"] == 1
-
-
-@pytest.mark.e2e
 async def test_project_memory_count_excludes_obsolete_memories(http_client):
     """memory_count on project list and detail counts only non-obsolete memories."""
     project_id = await _create_project(http_client, "count-project")

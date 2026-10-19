@@ -13,11 +13,10 @@ files rather than maintaining their own copies.
 - **Surface-neutral bodies.** Operations are referenced by registry name (`query_memory`,
   `create_entity`). Each skill opens with the same two-line invocation mapping for MCP and
   CLI. Only the two setup skills are surface-specific.
-- **Single-file skills.** Every skill is one SKILL.md with no sibling files, so the set
-  round-trips through Forgetful's own `import_skill` / `export_skill` and can be seeded into
-  the skill store.
-- **Descriptions do double duty.** They are the model-invocation trigger in Claude Code and
-  the only embedded text for `search_skills` inside Forgetful — written for both.
+- **Single-file skills.** Every skill is one SKILL.md with no sibling files, so a skill
+  can be copied into any client's skills directory as is.
+- **Descriptions are the trigger.** They are the model-invocation trigger in Claude Code, so
+  each one says what the skill does and when to reach for it.
 
 ## Catalog
 
@@ -27,7 +26,6 @@ files rather than maintaining their own copies.
 | `forgetful-recall` | model | Context needed: task start, "have we solved this before" |
 | `forgetful-explore` | model | Flat search isn't enough; the connected picture matters |
 | `forgetful-entities` | model | A thing (person, system, component) needs modelling |
-| `forgetful-procedures` | model | A how-to worth storing or finding |
 | `forgetful-files` | model | Binary content (screenshot, PDF, asset) worth keeping |
 | `forgetful-context-gather` | user | Deep pre-work sweep producing a cited context pack |
 | `forgetful-encode-repo` | user | Bootstrap or refresh a repository in the knowledge base |

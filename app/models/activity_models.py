@@ -23,7 +23,6 @@ class EntityType(StrEnum):
     ENTITY_RELATIONSHIP = "entity_relationship"  # Entity-to-entity relationships
     ENTITY_PROJECT_LINK = "entity_project_link"  # Entity-to-project links
     FILE = "file"
-    SKILL = "skill"
 
 
 class ActionType(StrEnum):

@@ -161,9 +161,6 @@ def test_run_with_relative_output_mounts_absolute_dirs_holding_the_wheel(
         def start(self):
             pass
 
-        async def seed_skills(self, skills_dir, catalog):
-            pass
-
         def stop(self):
             pass
 
@@ -341,7 +338,7 @@ def test_run_checks_the_sdk_before_creating_the_run_dir_or_building(
     no_docker_sdk, tmp_path, monkeypatch,
 ):
     # Arrange: without the SDK the container step fails anyway, but only after the image
-    # build, the server boot and the skill seeding have been paid for
+    # build and the server boot have been paid for
     def unexpected(*args, **kwargs):
         raise AssertionError("work was started before the SDK was verified")
 

@@ -1,6 +1,6 @@
 """PostgreSQL reranked search: honour ``k`` and never hold a connection while awaiting providers.
 
-Runs the real PostgreSQL memory and skill repositories (pgvector, RLS sessions, default
+Runs the real PostgreSQL memory repository (pgvector, RLS sessions, default
 connection pool). Only the embedding provider and the cross-encoder are stubbed.
 """
 import asyncio
@@ -8,11 +8,9 @@ import asyncio
 import pytest
 
 from app.config.settings import settings
-from app.models.memory_models import MemoryCreate
-from app.models.skill_models import SkillCreate, SkillUpdate
+from app.models.memory_models import MemoryCreate, MemoryUpdate
 from app.models.user_models import UserCreate
 from app.repositories.postgres.memory_repository import PostgresMemoryRepository
-from app.repositories.postgres.skill_repository import PostgresSkillRepository
 from app.repositories.postgres.user_repository import PostgresUserRepository
 
 pytestmark = [
@@ -72,11 +70,21 @@ def embeddings(db_adapter):
     return SpyEmbeddings(db_adapter._engine.pool)
 
 
-async def _seed_skills(repo, user_id, count):
-    for index in range(count):
-        await repo.create_skill(user_id, SkillCreate(
-            name=f"skill-{index}", description=f"description {index}", content="body",
+async def _seed_memories(repo, user_id, count):
+    return [
+        await repo.create_memory(user_id, MemoryCreate(
+            title=f"memory {index}", content=f"content {index}", context="context",
+            keywords=["k"], tags=["t"], importance=7,
         ))
+        for index in range(count)
+    ]
+
+
+def _search(repo, user_id, query, k):
+    return repo.search_scored(
+        user_id=user_id, query=query, query_context="", k=k,
+        importance_threshold=None, project_ids=None, exclude_ids=None,
+    )
 
 
 async def test_memory_search_returns_k_when_k_exceeds_dense_candidates(
@@ -100,44 +108,52 @@ async def test_memory_search_returns_k_when_k_exceeds_dense_candidates(
     assert len(found) == 8
 
 
-async def test_skill_search_releases_connection_before_reranking(
-    db_adapter, user_id, embeddings,
+async def test_memory_search_releases_connection_before_reranking(
+    db_adapter, user_id, embeddings, monkeypatch,
 ):
+    monkeypatch.setattr(settings, "RERANKING_ENABLED", True)
+    monkeypatch.setattr(settings, "MEMORY_NUM_AUTO_LINK", 0)
     reranker = SpyReranker(embeddings.pool)
-    repo = PostgresSkillRepository(db_adapter, embeddings, reranker)
-    await _seed_skills(repo, user_id, 6)
+    repo = PostgresMemoryRepository(db_adapter, embeddings, reranker)
+    await _seed_memories(repo, user_id, 6)
 
-    found = await repo.search_skills(user_id, "description", k=2)
+    found = await _search(repo, user_id, "q", k=2)
 
     assert len(found) == 2
     assert reranker.document_counts == [6]
     assert reranker.checked_out == [0]
 
 
-async def test_concurrent_reranked_skill_searches_do_not_exhaust_connection_pool(
-    db_adapter, user_id, embeddings,
+async def test_concurrent_reranked_memory_searches_do_not_exhaust_connection_pool(
+    db_adapter, user_id, embeddings, monkeypatch,
 ):
+    monkeypatch.setattr(settings, "RERANKING_ENABLED", True)
+    monkeypatch.setattr(settings, "MEMORY_NUM_AUTO_LINK", 0)
     # More simultaneous searches than the default pool can hand out (5 + 10 overflow).
     searches = 20
     reranker = SpyReranker(embeddings.pool, expected_calls=searches)
-    repo = PostgresSkillRepository(db_adapter, embeddings, reranker)
-    await _seed_skills(repo, user_id, 6)
+    repo = PostgresMemoryRepository(db_adapter, embeddings, reranker)
+    await _seed_memories(repo, user_id, 6)
 
     results = await asyncio.gather(
-        *(repo.search_skills(user_id, f"description {index}", k=2) for index in range(searches)),
+        *(_search(repo, user_id, f"query {index}", k=2) for index in range(searches)),
     )
 
     assert [len(found) for found in results] == [2] * searches
     assert len(reranker.document_counts) == searches
 
 
-async def test_skill_update_embeds_without_holding_a_connection(db_adapter, user_id, embeddings):
-    repo = PostgresSkillRepository(db_adapter, embeddings, None)
-    await _seed_skills(repo, user_id, 1)
-    skill_id = (await repo.list_skills(user_id))[0].id
+async def test_memory_update_embeds_without_holding_a_connection(
+    db_adapter, user_id, embeddings, monkeypatch,
+):
+    monkeypatch.setattr(settings, "MEMORY_NUM_AUTO_LINK", 0)
+    repo = PostgresMemoryRepository(db_adapter, embeddings, None)
+    [memory] = await _seed_memories(repo, user_id, 1)
     embeddings.checked_out.clear()
 
-    updated = await repo.update_skill(user_id, skill_id, SkillUpdate(description="new description"))
+    updated = await repo.update_memory(
+        user_id, memory.id, MemoryUpdate(content="new content"), memory, search_fields_changed=True,
+    )
 
-    assert updated.description == "new description"
+    assert updated.content == "new content"
     assert embeddings.checked_out == [0]

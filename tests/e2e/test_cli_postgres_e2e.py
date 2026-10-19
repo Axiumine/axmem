@@ -18,7 +18,6 @@ _PATCHED_FIELDS = [
     "EMBEDDING_PROVIDER",
     "RERANKING_ENABLED",
     "FORGETFUL_SCOPES",
-    "SKILLS_ENABLED",
     "FILES_ENABLED",
     "ACTIVITY_ENABLED",
 ]
@@ -32,7 +31,6 @@ async def test_cli_local_executor_create_and_query_against_postgres(postgres_con
     settings.EMBEDDING_PROVIDER = "FastEmbed"
     settings.RERANKING_ENABLED = False
     settings.FORGETFUL_SCOPES = "*"
-    settings.SKILLS_ENABLED = False
     settings.FILES_ENABLED = False
     settings.ACTIVITY_ENABLED = False
 

@@ -30,7 +30,6 @@ if TYPE_CHECKING:
     from app.services.memory_service import MemoryService
     from app.services.project_service import ProjectService
     from app.services.re_embedding_service import ReEmbeddingService
-    from app.services.skill_service import SkillService
     from app.services.user_service import UserService
 
 logger = logging.getLogger(__name__)
@@ -147,16 +146,6 @@ def create_repositories(db_adapter, embeddings_adapter, reranker_adapter):
             from app.repositories.postgres.file_repository import PostgresFileRepository
             repos["file"] = PostgresFileRepository(db_adapter=db_adapter)
 
-        if settings.SKILLS_ENABLED:
-            from app.repositories.postgres.skill_repository import (
-                PostgresSkillRepository,
-            )
-            repos["skill"] = PostgresSkillRepository(
-                db_adapter=db_adapter,
-                embedding_adapter=embeddings_adapter,
-                rerank_adapter=reranker_adapter,
-            )
-
         return repos
     if settings.DATABASE == "SQLite":
         from app.repositories.sqlite.activity_repository import SqliteActivityRepository
@@ -187,38 +176,7 @@ def create_repositories(db_adapter, embeddings_adapter, reranker_adapter):
             from app.repositories.sqlite.file_repository import SqliteFileRepository
             repos["file"] = SqliteFileRepository(db_adapter=db_adapter)
 
-        if settings.SKILLS_ENABLED:
-            from app.repositories.sqlite.skill_repository import SqliteSkillRepository
-            repos["skill"] = SqliteSkillRepository(
-                db_adapter=db_adapter,
-                embedding_adapter=embeddings_adapter,
-                rerank_adapter=reranker_adapter,
-            )
-
         return repos
-    raise ValueError(f"Unsupported DATABASE setting: {settings.DATABASE}. Must be 'Postgres' or 'SQLite'")
-
-
-def create_skill_repository(db_adapter, embeddings_adapter, reranker_adapter=None):
-    """Create the skill repository for the configured database, whatever SKILLS_ENABLED says.
-
-    Re-embedding must reach the skill vectors even while the feature is switched off, or
-    switching it on later would meet vectors of the old dimensions.
-    """
-    if settings.DATABASE == "Postgres":
-        from app.repositories.postgres.skill_repository import PostgresSkillRepository
-        return PostgresSkillRepository(
-            db_adapter=db_adapter,
-            embedding_adapter=embeddings_adapter,
-            rerank_adapter=reranker_adapter,
-        )
-    if settings.DATABASE == "SQLite":
-        from app.repositories.sqlite.skill_repository import SqliteSkillRepository
-        return SqliteSkillRepository(
-            db_adapter=db_adapter,
-            embedding_adapter=embeddings_adapter,
-            rerank_adapter=reranker_adapter,
-        )
     raise ValueError(f"Unsupported DATABASE setting: {settings.DATABASE}. Must be 'Postgres' or 'SQLite'")
 
 
@@ -235,7 +193,6 @@ class Services:
     activity: ActivityService
     re_embedding: ReEmbeddingService
     file: FileService | None = None
-    skill: SkillService | None = None
 
 
 @dataclass
@@ -312,16 +269,6 @@ async def build_runtime() -> Runtime:
     else:
         logger.info("Files feature disabled (FILES_ENABLED=false)")
 
-    # Conditionally create skill service behind SKILLS_ENABLED
-    skill_service = None
-
-    if settings.SKILLS_ENABLED:
-        from app.services.skill_service import SkillService
-        skill_service = SkillService(repos["skill"], event_bus=event_bus)
-        logger.info("Skills feature enabled")
-    else:
-        logger.info("Skills feature disabled (SKILLS_ENABLED=false)")
-
     registry = ToolRegistry()
     register_all_tools_metadata(
         registry=registry,
@@ -333,7 +280,6 @@ async def build_runtime() -> Runtime:
         document_service=document_service,
         entity_service=entity_service,
         file_service=file_service,
-        skill_service=skill_service,
     )
 
     categories = registry.list_categories()
@@ -357,7 +303,6 @@ async def build_runtime() -> Runtime:
         activity=activity_service,
         re_embedding=re_embedding_service,
         file=file_service,
-        skill=skill_service,
     )
 
     return Runtime(

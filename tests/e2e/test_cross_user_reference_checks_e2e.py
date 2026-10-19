@@ -1,8 +1,8 @@
 """PostgreSQL E2E tests: referenced projects must belong to the caller.
 
 PostgreSQL has no row-level security policies in this repository and foreign keys
-only prove that the project id exists, so documents, code artifacts, files
-and skills could be attached to another user's project. The repositories now filter
+only prove that the project id exists, so documents, code artifacts
+and files could be attached to another user's project. The repositories now filter
 on the project owner. Mirrors the SQLite two-user tests.
 """
 import base64
@@ -51,18 +51,8 @@ CREATE_CASES = {
             "project_id": pid,
         },
     ),
-    "skills": (
-        "/api/v1/skills",
-        "skills",
-        lambda pid: {
-            "name": "linked-skill",
-            "description": "Skill with a project link",
-            "content": "# Linked skill\n\n1. Do the thing",
-            "project_id": pid,
-        },
-    ),
 }
-UPDATE_KINDS = ["documents", "code-artifacts", "files", "skills"]
+UPDATE_KINDS = ["documents", "code-artifacts", "files"]
 
 
 @contextmanager

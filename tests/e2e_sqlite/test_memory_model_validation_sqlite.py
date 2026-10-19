@@ -291,18 +291,15 @@ class TestBlankSearchQuery:
 
         await _create(http_client)
         memory_repo = sqlite_app.memory_service.memory_repo
-        skill_repo = sqlite_app.skill_service.skill_repo
         seen: list[str] = []
-        originals = {}
-        for repo in (memory_repo, skill_repo):
-            adapter = repo.embedding_adapter
-            originals[repo] = adapter.generate_embedding
+        adapter = memory_repo.embedding_adapter
+        original = adapter.generate_embedding
 
-            async def spy(*args, _original=adapter.generate_embedding, **kwargs):
-                seen.extend(list(args) + list(kwargs.values()))
-                return await _original(*args, **kwargs)
+        async def spy(*args, **kwargs):
+            seen.extend(list(args) + list(kwargs.values()))
+            return await original(*args, **kwargs)
 
-            adapter.generate_embedding = spy
+        adapter.generate_embedding = spy
 
         try:
             scored = await memory_repo.search_scored(
@@ -313,22 +310,11 @@ class TestBlankSearchQuery:
                 user_id=uuid4(), query="\n\t ", k=3,
                 importance_threshold=None, project_ids=None, exclude_ids=None,
             )
-            skills = await skill_repo.search_skills(user_id=uuid4(), query="   ")
         finally:
-            for repo, original in originals.items():
-                repo.embedding_adapter.generate_embedding = original
+            adapter.generate_embedding = original
 
-        assert (scored, semantic, skills) == ([], [], [])
+        assert (scored, semantic) == ([], [])
         assert seen == []
-
-    async def test_rest_skill_search_rejects_blank_query(self, http_client):
-        response = await http_client.get("/api/v1/skills/search", params={"query": "   "})
-
-        assert response.status_code == 400
-
-    async def test_mcp_search_skills_rejects_blank_query(self, mcp_client):
-        with pytest.raises(ToolError, match="whitespace only"):
-            await _call(mcp_client, "search_skills", {"query": "   "})
 
     async def test_normal_queries_still_return_hits(self, http_client):
         memory_id = await _create(http_client)

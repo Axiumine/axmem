@@ -23,7 +23,6 @@ _PATCHED_FIELDS = [
     "RERANKING_ENABLED",
     "FORGETFUL_SCOPES",
     "FORGETFUL_SERVER",
-    "SKILLS_ENABLED",
     "FILES_ENABLED",
     "ACTIVITY_ENABLED",
 ]
@@ -40,7 +39,6 @@ def cli_sqlite_env(tmp_path):
     settings.EMBEDDING_PROVIDER = "FastEmbed"
     settings.RERANKING_ENABLED = False
     settings.FORGETFUL_SCOPES = "*"
-    settings.SKILLS_ENABLED = True
     settings.FILES_ENABLED = True
     settings.ACTIVITY_ENABLED = False
     yield settings
@@ -61,7 +59,7 @@ def test_tools_list_prints_categories(cli_sqlite_env, monkeypatch, capsys):
     assert code == 0
     payload = json.loads(out)
     assert payload["total_count"] > 0
-    assert len(payload["tools_by_category"]) >= 8
+    assert len(payload["tools_by_category"]) >= 7
 
 
 def test_tools_list_category_filter(cli_sqlite_env, monkeypatch, capsys):

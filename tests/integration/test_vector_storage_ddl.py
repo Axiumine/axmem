@@ -12,9 +12,7 @@ from sqlalchemy import text
 
 from app.config.settings import settings
 from app.repositories.postgres.memory_repository import PostgresMemoryRepository
-from app.repositories.postgres.skill_repository import PostgresSkillRepository
 from app.repositories.sqlite.memory_repository import SqliteMemoryRepository
-from app.repositories.sqlite.skill_repository import SqliteSkillRepository
 from app.repositories.sqlite.sqlite_adapter import SqliteDatabaseAdapter
 from app.repositories.vector_ddl import (
     create_vec0_table_sql,
@@ -43,8 +41,8 @@ def test_create_vec0_table_sql_spells_out_the_table():
 
 
 def test_create_vec0_table_sql_can_be_idempotent():
-    assert create_vec0_table_sql("vec_skills", "skill_id", 8, if_not_exists=True).startswith(
-        "CREATE VIRTUAL TABLE IF NOT EXISTS vec_skills USING vec0(",
+    assert create_vec0_table_sql("vec_memories", "memory_id", 8, if_not_exists=True).startswith(
+        "CREATE VIRTUAL TABLE IF NOT EXISTS vec_memories USING vec0(",
     )
 
 
@@ -102,13 +100,8 @@ def postgres_memory_repo(adapter):
     return PostgresMemoryRepository(adapter, None)
 
 
-def postgres_skill_repo(adapter):
-    return PostgresSkillRepository(adapter, None)
-
-
 POSTGRES_REPOS = [
     pytest.param(postgres_memory_repo, "memories", "UPDATE memories SET embedding = NULL", id="memories"),
-    pytest.param(postgres_skill_repo, "skills", "UPDATE skills SET embedding = NULL", id="skills"),
 ]
 
 
@@ -150,7 +143,6 @@ async def test_postgres_reset_refuses_a_bad_width_before_touching_anything(
 
 SQLITE_REPOS = [
     pytest.param(SqliteMemoryRepository, "vec_memories", id="memories"),
-    pytest.param(SqliteSkillRepository, "vec_skills", id="skills"),
 ]
 
 

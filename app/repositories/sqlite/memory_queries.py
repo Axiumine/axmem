@@ -20,7 +20,6 @@ def with_relationships(stmt: Select[tuple[MemoryTable]]) -> Select[tuple[MemoryT
         selectinload(MemoryTable.code_artifacts),
         selectinload(MemoryTable.documents),
         selectinload(MemoryTable.files),
-        selectinload(MemoryTable.skills),
     )
 
 

@@ -11,7 +11,6 @@ from app.utils.embedding_helpers import (
     build_contextual_query,
     build_embedding_text,
     build_memory_text,
-    build_skill_embedding_text,
 )
 
 
@@ -90,15 +89,6 @@ class TestRerankText:
 
     def test_blank_title_and_content_keep_their_labels(self):
         assert build_memory_text(_stored_memory(title="", content="")) == "Title: \nContent: "
-
-
-def test_skill_embedding_text_is_the_description_alone():
-    class _Skill:
-        name = "my-skill"
-        description = "Reviews pull requests"
-        content = "long body"
-
-    assert build_skill_embedding_text(_Skill()) == "Reviews pull requests"
 
 
 def test_contextual_query_joins_query_and_context():

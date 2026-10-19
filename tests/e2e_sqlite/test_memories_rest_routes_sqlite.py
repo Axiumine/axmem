@@ -2,7 +2,7 @@
 
 Uses in-memory SQLite for test isolation. Covers:
 - POST/PUT /api/v1/memories with association ids that do not exist
-- POST /api/v1/memories reporting linked skill ids
+- POST /api/v1/memories reporting linked document and project ids
 - DELETE /api/v1/memories/{id} (soft delete) for unknown memories, bad
   ``superseded_by`` values, self-supersede and repeated deletes
 """
@@ -28,7 +28,6 @@ ASSOCIATION_FIELDS = [
     ("code_artifact_ids", "Code artifacts"),
     ("document_ids", "Documents"),
     ("file_ids", "Files"),
-    ("skill_ids", "Skills"),
 ]
 
 
@@ -82,15 +81,14 @@ class TestCreateMemoryResponse:
     """POST /api/v1/memories response mirrors the associations that were linked."""
 
     @pytest.mark.asyncio
-    async def test_response_reports_linked_skill_and_project_ids(self, http_client):
-        skill = await http_client.post("/api/v1/skills", json={
-            "name": "memory-route-skill",
-            "description": "Skill linked from a memory",
+    async def test_response_reports_linked_document_and_project_ids(self, http_client):
+        document = await http_client.post("/api/v1/documents", json={
+            "title": "Memory route document",
+            "description": "Document linked from a memory",
             "content": "# Steps\n1. Do it",
             "tags": ["test"],
-            "importance": 7,
         })
-        assert skill.status_code == 201, skill.text
+        assert document.status_code == 201, document.text
         project = await http_client.post("/api/v1/projects", json={
             "name": "Memory route project",
             "description": "Project linked from a memory",
@@ -100,13 +98,13 @@ class TestCreateMemoryResponse:
 
         response = await http_client.post(API, json={
             **MEMORY,
-            "skill_ids": [skill.json()["id"]],
+            "document_ids": [document.json()["id"]],
             "project_ids": [project.json()["id"]],
         })
 
         assert response.status_code == 201, response.text
         body = response.json()
-        assert body["skill_ids"] == [skill.json()["id"]]
+        assert body["document_ids"] == [document.json()["id"]]
         assert body["project_ids"] == [project.json()["id"]]
         assert body["file_ids"] == []
 

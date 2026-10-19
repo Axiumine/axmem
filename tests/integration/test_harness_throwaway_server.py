@@ -222,7 +222,7 @@ def test_health_probe_ignores_proxy_env(proxy_requests, tmp_path):
     assert proxy_requests == []
 
 
-def test_seeding_client_ignores_proxy_env(proxy_requests):
+def test_harness_client_ignores_proxy_env(proxy_requests):
     # Arrange: a real MCP server over streamable HTTP on loopback
     import uvicorn
     from fastmcp import FastMCP

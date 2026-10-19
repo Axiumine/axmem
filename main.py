@@ -29,7 +29,6 @@ from app.routes.api import (
     health,
     memories,
     projects,
-    skills,
 )
 from app.routes.mcp import meta_tools
 from app.routes.server_state import ForgetfulMCP
@@ -71,9 +70,6 @@ async def lifespan(app):
 
     if services.file:
         mcp.file_service = services.file
-
-    if services.skill:
-        mcp.skill_service = services.skill
 
     logger.info("Services initialized and attached to FastMCP instance")
 
@@ -131,48 +127,30 @@ activity.register(mcp)
 if settings.FILES_ENABLED:
     files.register(mcp)
 
-if settings.SKILLS_ENABLED:
-    skills.register(mcp)
-
 meta_tools.register(mcp)
 
 
-def _print_counts(total, skill_total):
+def _print_counts(total):
     print(f"  Memories to process: {total}")
-    if skill_total:
-        print(f"  Skills to process: {skill_total}")
 
 
 async def _count_without_migrating(embeddings_adapter):
-    """Count memories and skills as stored, for a dry run that must leave the database alone.
+    """Count memories as stored, for a dry run that must leave the database alone.
 
     Unlike init_db(), which runs Alembic migrations and creates the database file and the
     vector tables, this only reads. A database that does not exist yet holds nothing.
     """
-    from app.bootstrap import (
-        create_db_adapter,
-        create_repositories,
-        create_skill_repository,
-    )
+    from app.bootstrap import create_db_adapter, create_repositories
 
     if settings.DATABASE == "SQLite" and (
         settings.SQLITE_MEMORY or not Path(settings.SQLITE_PATH).exists()
     ):
-        return 0, 0
+        return 0
 
     db_adapter = create_db_adapter()
     try:
         repos = create_repositories(db_adapter, embeddings_adapter, None)
-        total = await repos["memory"].count_all_memories()
-        try:
-            skill_total = await create_skill_repository(
-                db_adapter, embeddings_adapter,
-            ).count_all_skills()
-        except Exception:  # noqa: BLE001
-            # A database from before the skills feature has no skills table, and a preview
-            # must not migrate it. It has no skills to count either.
-            skill_total = 0
-        return total, skill_total
+        return await repos["memory"].count_all_memories()
     finally:
         await db_adapter.dispose()
 
@@ -245,10 +223,9 @@ def _print_reembed_configuration(batch_size):
 
 async def _dry_run_reembed(embeddings_adapter):
     """Report what a re-embed would process, without touching the database."""
-    total, skill_total = await _count_without_migrating(embeddings_adapter)
-    _print_counts(total, skill_total)
-    skills_note = f" and {skill_total} skills" if skill_total else ""
-    print(f"\n[DRY RUN] Would re-embed {total} memories{skills_note} with the above configuration.")
+    total = await _count_without_migrating(embeddings_adapter)
+    _print_counts(total)
+    print(f"\n[DRY RUN] Would re-embed {total} memories with the above configuration.")
     print("  No changes were made.")
 
 
@@ -270,28 +247,24 @@ async def _build_reembed_service(db_adapter, embeddings_adapter, batch_size):
     """Wire the re-embedding service and print what it will process.
 
     Returns:
-        (service, memory count, skill count)
+        (service, memory count)
     """
-    from app.bootstrap import create_repositories, create_skill_repository
+    from app.bootstrap import create_repositories
     from app.services.re_embedding_service import ReEmbeddingService
 
-    # Create repositories (reranker not needed for re-embedding). Skills share the embedding
-    # provider and dimensions, so they are migrated even when the skills feature is switched off.
+    # Create repositories (reranker not needed for re-embedding)
     repos = create_repositories(db_adapter, embeddings_adapter, None)
     memory_repository = repos["memory"]
-    skill_repository = create_skill_repository(db_adapter, embeddings_adapter)
 
     total = await memory_repository.count_all_memories()
-    skill_total = await skill_repository.count_all_skills()
-    _print_counts(total, skill_total)
+    _print_counts(total)
 
     service = ReEmbeddingService(
         memory_repository=memory_repository,
         embedding_adapter=embeddings_adapter,
         batch_size=batch_size,
-        skill_repository=skill_repository,
     )
-    return service, total, skill_total
+    return service, total
 
 
 async def _create_reembed_backup(backup_service):
@@ -338,24 +311,21 @@ def _print_validation(result):
           f"{'OK' if result.validation.count_ok else 'FAILED'}")
     print(f"  Dimension check: {'OK' if result.validation.dimensions_ok else 'FAILED'}")
     print(f"  Search check: {'OK' if result.validation.search_ok else 'FAILED'}")
-    if result.total_skills:
-        print(f"  Skills: {result.skills_processed}/{result.total_skills} re-embedded")
 
 
 def _print_reembed_success(result, backup_path):
-    skills_note = f" and {result.skills_processed} skills" if result.total_skills else ""
-    print(f"\n  Successfully re-embedded {result.total_processed} memories{skills_note}")
+    print(f"\n  Successfully re-embedded {result.total_processed} memories")
     if backup_path:
         print(f"  Backup retained at: {backup_path}")
         print("  (Delete manually when satisfied with results)")
 
 
 async def _rebuild_vectors(service):
-    """Steps 3 and 4: reset the vector storage, then re-embed every memory and skill."""
+    """Steps 3 and 4: reset the vector storage, then re-embed every memory."""
     print("\n[3/5] Updating vector schema...")
     await service.reset_vector_storage()
     if settings.DATABASE == "SQLite":
-        print(f"  Recreated vec_memories and vec_skills tables with {settings.EMBEDDING_DIMENSIONS} dimensions")
+        print(f"  Recreated vec_memories table with {settings.EMBEDDING_DIMENSIONS} dimensions")
     else:
         print(f"  Altered embedding columns to vector({settings.EMBEDDING_DIMENSIONS})")
 
@@ -435,11 +405,11 @@ async def _run_reembed(args):
         return
 
     db_adapter = await _open_database()
-    service, total, skill_total = await _build_reembed_service(
+    service, total = await _build_reembed_service(
         db_adapter, embeddings_adapter, args.batch_size,
     )
 
-    if total == 0 and skill_total == 0:
+    if total == 0:
         # Nothing to re-embed or lose, so no backup is needed. The vector storage must still
         # match the configured dimensions though, and init_db() never resizes existing tables.
         print("\n  No memories to re-embed. Updating vector schema only...")

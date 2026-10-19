@@ -14,7 +14,6 @@ from app.models.document_models import DocumentCreate
 from app.models.entity_models import EntityCreate, EntityRelationshipCreate, EntityType
 from app.models.memory_models import MemoryCreate
 from app.models.project_models import ProjectCreate, ProjectType, ProjectUpdate
-from app.models.skill_models import SkillCreate
 from app.utils.provenance import (
     apply_provenance_defaults,
     apply_provenance_defaults_for_update,
@@ -144,9 +143,6 @@ class TestApplyProvenanceDefaults:
             ),
             CodeArtifactCreate(
                 title="test", description="test", code="print('hello')", language="python",
-            ),
-            SkillCreate(
-                name="test-skill", description="test", content="# test",
             ),
             EntityCreate(
                 name="Test Entity", entity_type=EntityType.ORGANIZATION,

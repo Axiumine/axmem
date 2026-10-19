@@ -1,27 +1,30 @@
-"""E2E tests: the throwaway server boots and seeds whatever the host looks like.
+"""E2E tests: the throwaway server boots and takes writes whatever the host looks like.
 
 Boots the real `forgetful serve` console script as an OS subprocess (file-backed SQLite,
 no auth) from hosts that used to break the harness: a shell or user-config dotenv file
 restricting the instance's scopes, and an un-activated venv with a proxy configured for
-every non-loopback request. Seeding (import_skill) is the canary - it needs the write
-scopes and a working harness-to-server connection.
+every non-loopback request. A write tool call (create_project) is the canary - it needs
+the write scopes and a working harness-to-server connection.
 """
 import pytest
 
-from test_harness.config import HarnessConfig
 from test_harness.server import ThrowawayForgetful, _ephemeral_port
 
-SKILL = "forgetful-recall"
+PROJECT = "harness-canary"
 
 
-async def _boot_and_seed(run_dir) -> list[str]:
+async def _boot_and_write(run_dir) -> str:
     server = ThrowawayForgetful(run_dir=run_dir)
     server.start()
     try:
-        seeded = await server.seed_skills(HarnessConfig().skills_dir, [SKILL])
+        created = await server.execute("create_project", {
+            "name": PROJECT,
+            "description": "Written by the harness canary",
+            "project_type": "development",
+        })
     finally:
         server.stop()
-    return [skill["name"] for skill in seeded]
+    return created["name"]
 
 
 @pytest.fixture
@@ -40,10 +43,10 @@ async def test_scopes_exported_in_the_shell_do_not_restrict_the_instance(
     monkeypatch.setenv("FORGETFUL_SCOPES", "read")
 
     # Act
-    seeded = await _boot_and_seed(run_dir)
+    written = await _boot_and_write(run_dir)
 
-    # Assert: import_skill needs write:skills, so the instance is unrestricted
-    assert seeded == [SKILL]
+    # Assert: create_project needs write:projects, so the instance is unrestricted
+    assert written == PROJECT
 
 
 @pytest.mark.asyncio
@@ -59,14 +62,14 @@ async def test_scopes_in_the_user_config_do_not_restrict_the_instance(
     monkeypatch.delenv("FORGETFUL_SCOPES", raising=False)
 
     # Act
-    seeded = await _boot_and_seed(run_dir)
+    written = await _boot_and_write(run_dir)
 
     # Assert
-    assert seeded == [SKILL]
+    assert written == PROJECT
 
 
 @pytest.mark.asyncio
-async def test_boots_and_seeds_from_an_unactivated_venv_behind_a_proxy(
+async def test_boots_and_takes_writes_from_an_unactivated_venv_behind_a_proxy(
     run_dir, monkeypatch,
 ):
     # Arrange: no venv bin dir on PATH (`.venv/bin/python -m pytest`), and a proxy that
@@ -80,7 +83,7 @@ async def test_boots_and_seeds_from_an_unactivated_venv_behind_a_proxy(
     monkeypatch.setenv("http_proxy", dead_proxy)
 
     # Act
-    seeded = await _boot_and_seed(run_dir)
+    written = await _boot_and_write(run_dir)
 
     # Assert
-    assert seeded == [SKILL]
+    assert written == PROJECT

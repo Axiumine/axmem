@@ -3,7 +3,7 @@
 Exit codes: 0 = every session completed (issues found are the product's problem, not the
 harness's); 1 = one or more sessions did not complete (timeout/error) so the UAT is
 partial; 2 = harness infrastructure failure (docker/image/container problem, server
-boot/seed failed, agent unhealthy, throwaway server unreachable from the container) or
+boot failed, agent unhealthy, throwaway server unreachable from the container) or
 invalid usage/configuration (nothing was started); 143 = terminated by SIGTERM (after the
 same teardown as Ctrl-C).
 """
@@ -95,7 +95,7 @@ def _cancel_on_sigterm(teardown: ExitStack) -> None:
 
 async def _run(config: HarnessConfig) -> int:
     # Fail before any work: the container step would only hit a missing SDK after the
-    # image build, the server boot and the skill seeding.
+    # image build and the server boot.
     docker_sdk()
     if FIXTURE_SKILL in config.skills:
         preflight_fixture_repo()
@@ -119,13 +119,6 @@ async def _run(config: HarnessConfig) -> int:
             server_url=server.url.replace("127.0.0.1", HOST_ALIAS),
         )
         teardown.callback(container.stop)
-
-        catalog = sorted(
-            path.name for path in config.skills_dir.iterdir()
-            if (path / "SKILL.md").is_file()
-        )
-        print(f"seeding {len(catalog)} skills into the throwaway instance ...")
-        await server.seed_skills(config.skills_dir, catalog)
 
         print("starting sandbox container (installs the working tree) ...")
         await asyncio.to_thread(container.start)

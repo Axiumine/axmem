@@ -230,36 +230,6 @@ async def test_entity_relationship_provenance_roundtrip(mcp_client):
 
 
 # ============================================================================
-# Skill provenance round-trip
-# ============================================================================
-
-
-@pytest.mark.asyncio
-async def test_skill_provenance_roundtrip(mcp_client):
-    """Create skill with all provenance fields, retrieve, verify persistence."""
-    result = await mcp_client.call_tool(
-        "execute_forgetful_tool",
-        {
-            "tool_name": "create_skill",
-            "arguments": {
-                "name": "provenance-skill",
-                "description": "Testing provenance on skills",
-                "content": "# Skill content\nStep 1: do something",
-                **PROVENANCE_FIELDS_9,
-            },
-        },
-    )
-    assert result.data is not None
-    skill_id = result.data["id"]
-
-    get_result = await mcp_client.call_tool(
-        "execute_forgetful_tool",
-        {"tool_name": "get_skill", "arguments": {"skill_id": skill_id}},
-    )
-    assert_provenance_fields(get_result.data, PROVENANCE_FIELDS_9)
-
-
-# ============================================================================
 # File provenance round-trip
 # ============================================================================
 

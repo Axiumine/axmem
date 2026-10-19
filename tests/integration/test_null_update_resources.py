@@ -28,10 +28,7 @@ from app.models.entity_models import (
 from app.models.entity_models import EntityType as EntityKind
 from app.models.file_models import FileCreate, FileUpdate
 from app.models.project_models import ProjectCreate, ProjectType, ProjectUpdate
-from app.models.skill_models import SkillCreate, SkillUpdate
 from app.models.user_models import User
-from app.services.skill_service import SkillService
-from tests.integration.conftest import CollectingEventBus
 
 FILE_BYTES = base64.b64encode(b"Hello, World!").decode("utf-8")
 
@@ -205,43 +202,7 @@ CASES = [
         same={"name": "Proj", "notes": "keep me"},
         entity_type=EntityType.PROJECT,
     ),
-    Case(
-        name="skill",
-        fixture="skill_service_with_event_bus",
-        model=SkillUpdate,
-        create=lambda s, u: s.create_skill(
-            u,
-            SkillCreate(
-                name="my-skill",
-                description="Does a thing",
-                content="# steps",
-                license="MIT",
-                tags=["keep"],
-                importance=6,
-            ),
-        ),
-        update=lambda s, u, i, d: s.update_skill(u, i, d),
-        get=lambda s, u, i: s.get_skill(u, i),
-        null_fields={
-            "name": None,
-            "description": None,
-            "content": None,
-            "license": None,
-            "tags": None,
-            "importance": None,
-            "project_id": None,
-        },
-        change={"importance": 9},
-        same={"importance": 6, "tags": ["keep"]},
-        entity_type=EntityType.SKILL,
-    ),
 ]
-
-
-@pytest.fixture
-def skill_service_with_event_bus(mock_skill_repository):
-    bus = CollectingEventBus()
-    return SkillService(mock_skill_repository, event_bus=bus), bus
 
 
 def _ids(cases):
@@ -366,28 +327,6 @@ async def test_service_empty_update_keeps_updated_at(case, test_user, request):
     result = await case.update(service, test_user.id, created.id, case.model())
 
     assert result.updated_at == updated_at
-
-
-async def test_skill_noop_update_does_not_touch_repository(mock_skill_repository, test_user):
-    """The skill repository re-embeds the description on every call that sets it."""
-    service = SkillService(mock_skill_repository, event_bus=None)
-    skill = await service.create_skill(
-        test_user.id,
-        SkillCreate(name="my-skill", description="Does a thing", content="# steps"),
-    )
-    calls = []
-    original = mock_skill_repository.update_skill
-
-    async def spy(*args, **kwargs):
-        calls.append(kwargs or args)
-        return await original(*args, **kwargs)
-
-    mock_skill_repository.update_skill = spy
-
-    await service.update_skill(test_user.id, skill.id, SkillUpdate(description="Does a thing"))
-    await service.update_skill(test_user.id, skill.id, SkillUpdate(description=None))
-
-    assert calls == []
 
 
 # ---------------------------------------------------------------------------

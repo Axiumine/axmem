@@ -32,7 +32,6 @@ async def _obsolete(http_client, memory_id, body=None):
     ("code_artifact_ids", "Code artifacts"),
     ("document_ids", "Documents"),
     ("file_ids", "Files"),
-    ("skill_ids", "Skills"),
 ])
 async def test_create_with_unknown_association_id_is_404(http_client, field, label):
     response = await http_client.post(API, json={**MEMORY, field: [999999]})
@@ -52,20 +51,19 @@ async def test_update_with_unknown_project_names_the_association(http_client):
 
 
 @pytest.mark.e2e
-async def test_create_response_reports_linked_skill_ids(http_client):
-    skill = await http_client.post("/api/v1/skills", json={
-        "name": "pg-memory-route-skill",
-        "description": "Skill linked from a memory",
+async def test_create_response_reports_linked_document_ids(http_client):
+    document = await http_client.post("/api/v1/documents", json={
+        "title": "pg-memory-route-document",
+        "description": "Document linked from a memory",
         "content": "# Steps\n1. Do it",
         "tags": ["test"],
-        "importance": 7,
     })
-    assert skill.status_code == 201, skill.text
+    assert document.status_code == 201, document.text
 
-    response = await http_client.post(API, json={**MEMORY, "skill_ids": [skill.json()["id"]]})
+    response = await http_client.post(API, json={**MEMORY, "document_ids": [document.json()["id"]]})
 
     assert response.status_code == 201, response.text
-    assert response.json()["skill_ids"] == [skill.json()["id"]]
+    assert response.json()["document_ids"] == [document.json()["id"]]
 
 
 @pytest.mark.e2e

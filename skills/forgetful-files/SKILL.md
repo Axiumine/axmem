@@ -2,9 +2,8 @@
 name: forgetful-files
 description: >-
   File binary content into the knowledge base — screenshots, PDFs, diagrams, fonts, assets.
-  Use when a binary artifact is worth keeping alongside knowledge, or when a stored
-  procedure needs a bundled asset. The description is the entire search surface: say what
-  the file shows and when to reach for it.
+  Use when a binary artifact is worth keeping alongside knowledge. The description is the
+  entire search surface: say what the file shows and when to reach for it.
 license: MIT
 tags: [files, binary, assets, multi-modal]
 allowed-tools:
@@ -49,11 +48,11 @@ used" on its own.
 A file no path leads to is lost the moment this session ends. Two attachment routes exist:
 
 - `project_id` (at create, or later via `update_file`) puts the file in a project's world.
-- `link_skill_to_file` bundles it to a stored procedure as its asset (see
-  `forgetful-procedures`).
+- A memory's `file_ids` (at create or via `update_memory`) links the file to the memory
+  that explains it.
 
 For knowledge that *discusses* the file, save a memory (`forgetful-remember`) that cites
 the file ID in its content, so recall surfaces the pointer.
 
-Done when: at least one route reaches the file — its project, a linked procedure, or a
+Done when: at least one route reaches the file — its project, a linked memory, or a
 citing memory.

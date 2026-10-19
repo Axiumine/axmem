@@ -19,7 +19,7 @@
 > [Forgetful](https://github.com/ScottRBK/forgetful) codebase by Scott Raisbeck (MIT) and goes
 > in directions an upstream-tracking fork cannot. Planned direction, not yet shipped:
 >
-> 1. **Qdrant as the mandatory vector store** (search, auto-linking, skills, re-embedding), with
+> 1. **Qdrant as the mandatory vector store** (search, auto-linking, re-embedding), with
 >    PostgreSQL as the relational source of truth and a transactional outbox between the two.
 > 2. **SQLite removed**: PostgreSQL is the only relational backend.
 >
@@ -60,7 +60,7 @@ In this sense **Axmem** becomes a little like Obsidian for AI agents, where the 
 
 We find, [as do others (A-MEM: Agentic Memory for LLM Agents)](https://arxiv.org/abs/2502.12110), all this helps in ensuring that when the agent requires relevant information from the memory system later, the correct information is returned.
 
-In addition to memories, **Axmem** also has the concept of entities (think organisation, people, products), projects, documents, code artifacts, skills (procedural knowledge following the [Agent Skills](https://agentskills.io) standard), all of which can be associated with one or more memories.
+In addition to memories, **Axmem** also has the concept of entities (think organisation, people, products), projects, documents and code artifacts, all of which can be associated with one or more memories.
 
 
 ![Architecture](docs/images/Forgetful%20Architecture.drawio_transparent.png)
@@ -74,7 +74,6 @@ In addition to memories, **Axmem** also has the concept of entities (think organ
 - Cross-encoder reranking to improve recall and precision of memory retrieval.
 - Flexible embedding and cross-encoder providers; run everything locally without calls to the cloud thanks to FastEmbed
 - Automatic linking of semantically similar memories, automating the creation of the knowledge graph.
-- Skills for procedural memory -- store step-by-step instructions and agent capabilities with semantic search, import/export in Agent Skills SKILL.md format, and cross-referencing with memories.
 
 For the complete roadmap, see [Features Roadmap](docs/features_roadmap.md).
 
@@ -344,7 +343,7 @@ results = execute_forgetful_tool(
 ### Tool Categories
 
 The core catalog covers users, memories, projects, entities, code artifacts, and documents.
-Skills and files appear when their feature flags are enabled.
+Files appear when their feature flag is enabled.
 
 For complete documentation with extensive examples, see [Complete Tool Reference](docs/tool_reference.md).
 

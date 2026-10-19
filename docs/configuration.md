@@ -493,7 +493,7 @@ These settings control the atomic memory system's behavior and constraints.
 The length and count limits below are checked when a memory is created or updated. Lowering
 one later does not make memories that were stored under the old limit unreadable.
 
-**PostgreSQL column widths**: on PostgreSQL several `*_MAX_LENGTH` settings map to fixed-width `VARCHAR` columns (skill name/description/license/compatibility, code artifact and document title, file name, entity name/type and relationship type). A value above the column width is lowered to it at startup with a warning, because PostgreSQL would reject longer values. SQLite does not enforce `VARCHAR` length, so the configured value is used as is.
+**PostgreSQL column widths**: on PostgreSQL several `*_MAX_LENGTH` settings map to fixed-width `VARCHAR` columns (code artifact and document title, file name, entity name/type and relationship type). A value above the column width is lowered to it at startup with a warning, because PostgreSQL would reject longer values. SQLite does not enforce `VARCHAR` length, so the configured value is used as is.
 
 ### `MEMORY_TITLE_MAX_LENGTH`
 - **Default**: `200`
@@ -662,59 +662,6 @@ one later does not make memories that were stored under the old limit unreadable
 
 ---
 
-## Skill Configuration
-
-These settings control the procedural memory (skills) feature.
-
-### `SKILLS_ENABLED`
-- **Default**: `false`
-- **Description**: Master feature flag for the skills system
-- **Values**: `true`, `false`
-- **Behavior**: When disabled, no skill tools or API routes are registered
-- **Example**: `SKILLS_ENABLED=true`
-
-### `SKILL_NAME_MAX_LENGTH`
-- **Default**: `64`
-- **Description**: Maximum characters for skill names (kebab-case)
-- **Example**: `SKILL_NAME_MAX_LENGTH=64`
-
-### `SKILL_DESCRIPTION_MAX_LENGTH`
-- **Default**: `1024`
-- **Description**: Maximum characters for skill descriptions (embedded for semantic search)
-- **Example**: `SKILL_DESCRIPTION_MAX_LENGTH=1024`
-
-### `SKILL_CONTENT_MAX_LENGTH`
-- **Default**: `100000`
-- **Description**: Maximum characters for skill content (~100KB for detailed instructions)
-- **Example**: `SKILL_CONTENT_MAX_LENGTH=100000`
-
-### `SKILL_LICENSE_MAX_LENGTH`
-- **Default**: `100`
-- **Description**: Maximum characters for license identifiers (e.g., 'MIT', 'Apache-2.0')
-- **Example**: `SKILL_LICENSE_MAX_LENGTH=100`
-
-### `SKILL_COMPATIBILITY_MAX_LENGTH`
-- **Default**: `500`
-- **Description**: Maximum characters for compatibility/requirements description
-- **Example**: `SKILL_COMPATIBILITY_MAX_LENGTH=500`
-
-### `SKILL_ALLOWED_TOOLS_MAX_LENGTH`
-- **Default**: `2000`
-- **Description**: Maximum total characters for the allowed tools list
-- **Example**: `SKILL_ALLOWED_TOOLS_MAX_LENGTH=2000`
-
-### `SKILL_TAGS_MAX_COUNT`
-- **Default**: `10`
-- **Description**: Maximum number of tags per skill
-- **Example**: `SKILL_TAGS_MAX_COUNT=10`
-
-### `SKILL_TAG_MAX_LENGTH`
-- **Default**: `255`
-- **Description**: Maximum characters per skill tag. Longer tags are rejected with a validation error. Tags are GIN indexed in PostgreSQL, which cannot index a key above roughly 2.7KB, so keep this below 600 (up to 4 bytes per character)
-- **Example**: `SKILL_TAG_MAX_LENGTH=255`
-
----
-
 ## Entity Configuration
 
 ### `ENTITY_NAME_MAX_LENGTH`
@@ -854,7 +801,7 @@ REST listing does not emit those events.
 Some internal lookups check that an object exists or hydrate a response, and do not count as
 reads. These emit no `read`/`queried` events and do not touch `access_count`:
 
-- linking and unlinking memories, and linking and unlinking skills
+- linking and unlinking memories
 
 This does not cover `GET /api/v1/memories/{memory_id}/links`. It still reads through the public
 service methods, so with `ACTIVITY_TRACK_READS=true` it can emit `memory.read` events with an

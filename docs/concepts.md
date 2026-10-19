@@ -77,21 +77,6 @@ Attach working code to memories so agents can retrieve not just the concept but 
 - FastAPI dependency injection pattern
 - React form validation hook
 
-### Skills
-
-**Procedural knowledge** - step-by-step instructions and agent capabilities.
-
-Skills bridge the gap between knowledge (memories) and action. While memories capture WHAT you know, skills capture HOW to do things. Each skill follows the [Agent Skills](https://agentskills.io) open standard with a kebab-case name, description, and markdown instructions.
-
-Skills have semantic search via embedded descriptions, making them discoverable by capability rather than exact name. They can be imported/exported as SKILL.md files for portability across 30+ agent platforms (Claude Code, Cursor, Gemini CLI, etc.).
-
-**Examples:**
-- "code-review" - Systematic code review process for pull requests
-- "deploy-staging" - Deploy application to staging environment
-- "data-pipeline-etl" - Extract, transform, and load data from external sources
-
-**Fields:** kebab-case name (max 64), description (max 1024), content (markdown, max 100KB), license, compatibility, allowed_tools, metadata, tags, importance
-
 ### Projects
 
 **Organizational scope** - groups memories by context.
@@ -125,7 +110,7 @@ Forgetful supports optional provenance fields on all object types so you can tra
 
 ### Coverage by Object Type
 
-- **All 9 fields**: Memories, Projects, Documents, Code Artifacts, Skills, Files, Entities
+- **All 9 fields**: Memories, Projects, Documents, Code Artifacts, Files, Entities
 - **8 fields (no `confidence`)**: Entity relationships — these already carry their own relationship-level confidence
 - Memories previously had 6 fields; `agent_id`, `agent_version`, and `agent_model` were added to bring them in line with all other types
 
@@ -152,7 +137,6 @@ When `false` (the default), agent-provided values take precedence and env values
 | Question | Answer |
 |----------|--------|
 | Is it a person, org, device, or product? | **Entity** |
-| Is it step-by-step procedural knowledge? | **Skill** |
 | Is it detailed analysis or a guide (>300 words)? | **Document** |
 | Is it a single fact, decision, or preference? | **Memory** |
 | Is it reusable code? | **Code Artifact** |
@@ -181,16 +165,6 @@ Ask: "Is this ONE idea or MANY?" One idea = memory. Many related ideas = documen
 
 - "Chose XTTS-v2 for voice cloning" - Memory
 - "TTS Engine Evaluation comparing 5 engines with benchmarks" - Document
-
-### Skill vs Memory
-
-**Skill** = how to do something (procedural, reusable steps)
-**Memory** = knowledge about something (declarative fact or decision)
-
-Ask: "Is this a procedure someone would follow, or a fact someone would recall?" Steps to follow = skill. Facts to know = memory.
-
-- "How to review pull requests in this project" - Skill
-- "We use conventional commits for all PRs" - Memory
 
 ### When to Use Projects
 
@@ -275,7 +249,6 @@ You're developing a coding assistant agent. Here's the breakdown:
 | Entity | N/A | Real-world thing | Other Entities, Memories |
 | Document | >300 words | Multiple concepts | Memories |
 | Code Artifact | Variable | Working code | Memories |
-| Skill | Variable | Procedural instructions | Memories, Projects |
 | Project | N/A | Scope/context | Memories |
 
-The knowledge graph emerges from these connections. Memories are the atoms; entities, documents, skills, and projects provide structure and context.
+The knowledge graph emerges from these connections. Memories are the atoms; entities, documents, and projects provide structure and context.

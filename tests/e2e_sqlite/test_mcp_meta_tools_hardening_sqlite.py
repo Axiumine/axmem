@@ -144,20 +144,6 @@ class TestExecuteErrorsAreSanitised:
         assert_no_leak(message)
         assert GENERIC_FAILURE in message
 
-    async def test_invalid_skill_yaml_is_short(self, mcp_client):
-        message = await tool_error(
-            mcp_client,
-            "import_skill",
-            {"skill_md_content": "---\nname: [unclosed\n---\nbody", "importance": 8},
-        )
-
-        # The import reports the problem and its line itself (fix/skill-import-export-yaml);
-        # the parser's multi-line text with its quoted input must not reach the client.
-        assert "Invalid YAML frontmatter" in message
-        assert "while parsing" not in message
-        assert "<unicode string>" not in message
-        assert len(message) < 200
-
     async def test_domain_not_found_message_is_kept(self, mcp_client):
         message = await tool_error(mcp_client, "get_memory", {"memory_id": 987654})
 

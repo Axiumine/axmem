@@ -37,16 +37,6 @@ async def _create_entity(api, name="Entity"):
     )
 
 
-async def _create_skill(api, name="skill-one"):
-    return await _create(api, "/api/v1/skills", {
-        "name": name,
-        "description": f"Deploy docker application {name}",
-        "content": "# Skill\n\nsteps",
-        "tags": ["t"],
-        "importance": 7,
-    })
-
-
 def _assert_validation_error(response, label):
     """A 400 whose body is a JSON list of pydantic-style field errors."""
     assert response.status_code == 400, f"{label}: {response.status_code} {response.text[:200]}"
@@ -221,7 +211,6 @@ class TestIntegerQueryParams:
         "/api/v1/documents",
         "/api/v1/files",
         "/api/v1/code-artifacts",
-        "/api/v1/skills",
         "/api/v1/memories",
     ])
     async def test_list_project_id_out_of_range_returns_400(self, api, path):
@@ -232,9 +221,6 @@ class TestIntegerQueryParams:
     @pytest.mark.asyncio
     async def test_other_out_of_range_query_ints_return_400(self, api):
         urls = [
-            f"/api/v1/skills?importance_threshold={BIG}",
-            f"/api/v1/skills/search?query=x&project_id={BIG}",
-            f"/api/v1/skills/search?query=x&k={BIG}",
             f"/api/v1/entities?offset={2**63}",
             f"/api/v1/memories?offset={2**63}",
             f"/api/v1/memories?project_id=-{BIG}",
@@ -253,7 +239,6 @@ class TestIntegerQueryParams:
             "/api/v1/documents?project_id=",
             "/api/v1/files?project_id=",
             "/api/v1/code-artifacts?project_id=",
-            "/api/v1/skills?project_id=&importance_threshold=",
             f"/api/v1/entities?offset={INT64_MAX}",
         ]
         for url in urls:
@@ -263,26 +248,6 @@ class TestIntegerQueryParams:
 
 class TestLinkBodyIds:
     """Ids in link request bodies must be integers within range; unknown ids stay 404."""
-
-    @pytest.mark.asyncio
-    @pytest.mark.parametrize("value", [BIG, -BIG, [1], {"a": 1}, "1", 1.5, True])
-    async def test_skill_link_routes_reject_invalid_ids(self, api, value):
-        skill_id = await _create_skill(api)
-        routes = {
-            "files": "file_id",
-            "documents": "document_id",
-            "code-artifacts": "code_artifact_id",
-        }
-        for route, key in routes.items():
-            response = await api.post(f"/api/v1/skills/{skill_id}/{route}", json={key: value})
-            assert response.status_code == 400, f"{route} {key}={value!r}: {response.status_code}"
-            assert key in response.json()["error"]
-
-    @pytest.mark.asyncio
-    async def test_skill_link_unknown_integer_id_is_still_404(self, api):
-        skill_id = await _create_skill(api)
-        response = await api.post(f"/api/v1/skills/{skill_id}/files", json={"file_id": 987654})
-        assert response.status_code == 404
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("value", [BIG, -BIG, [1], {"a": 1}, "1", 1.5, True])
@@ -301,14 +266,6 @@ class TestLinkBodyIds:
             f"/api/v1/entities/{entity_id}/memories", json={"memory_id": 987654},
         )
         assert response.status_code == 404
-
-    @pytest.mark.asyncio
-    @pytest.mark.parametrize("value", [123, [1, 2], {"a": 1}, 1.5])
-    async def test_skill_import_rejects_non_string_skill_md(self, api, value):
-        response = await api.post("/api/v1/skills/import", json={"skill_md": value})
-        assert response.status_code == 400, f"skill_md={value!r}: {response.status_code}"
-        assert "skill_md" in response.json()["error"]
-
 
 class TestSearchLimits:
     """limit/k below 1 must not turn into LIMIT -1 (unbounded) or LIMIT 0."""
@@ -342,17 +299,3 @@ class TestSearchLimits:
 
         default = await api.post("/api/v1/entities/search", json={"query": "Bulk"})
         assert default.status_code == 200
-
-    @pytest.mark.asyncio
-    async def test_skill_search_k_below_one_returns_400(self, api):
-        for index in range(3):
-            await _create_skill(api, f"deploy-skill-{index}")
-
-        for k in (-1, 0):
-            response = await api.get(f"/api/v1/skills/search?query=deploy+docker&k={k}")
-            assert response.status_code == 400, f"k={k}: {response.status_code}"
-            assert "Invalid k" in response.json()["error"]
-
-        valid = await api.get("/api/v1/skills/search?query=deploy+docker&k=2")
-        assert valid.status_code == 200
-        assert len(valid.json()["skills"]) == 2

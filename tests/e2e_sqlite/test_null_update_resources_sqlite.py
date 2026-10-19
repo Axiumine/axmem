@@ -14,21 +14,17 @@ import pytest
 from app.config.settings import settings
 
 
-class CountingEmbeddingAdapter:
-    """Deterministic embedder that records how often it is asked to embed."""
-
-    def __init__(self):
-        self.calls = 0
+class StubEmbeddingAdapter:
+    """Deterministic embedder, so the module never loads a model."""
 
     async def generate_embedding(self, text: str) -> list[float]:
         assert isinstance(text, str), f"embedding requested for {text!r}"
-        self.calls += 1
         return [0.01] * settings.EMBEDDING_DIMENSIONS
 
 
 @pytest.fixture(scope="module")
 def embedding_adapter():
-    return CountingEmbeddingAdapter()
+    return StubEmbeddingAdapter()
 
 
 @pytest.fixture(scope="module")
@@ -118,23 +114,6 @@ RESOURCES = [
         null_fields=("name", "entity_type", "notes", "tags", "aka"),
         same_field="name",
     ),
-    Resource(
-        name="skill",
-        base="/api/v1/skills",
-        payload={
-            "name": "null-patch-skill",
-            "description": "Original description",
-            "content": "# Original content",
-            "license": "MIT",
-            "compatibility": "claude-code",
-            "tags": ["keep"],
-            "importance": 6,
-        },
-        null_fields=(
-            "name", "description", "content", "license", "compatibility", "tags", "importance",
-        ),
-        same_field="name",
-    ),
 ]
 
 FIELD_CASES = [
@@ -190,8 +169,6 @@ async def test_put_value_next_to_null_applies_only_the_value(http_client, resour
     before = await _get(http_client, resource, resource_id)
     other_nulls = [field for field in resource.null_fields if field != resource.same_field]
     new_value = "Renamed" if resource.name != "file" else "renamed.txt"
-    if resource.name == "skill":
-        new_value = "renamed-skill"
     body = {**dict.fromkeys(other_nulls), resource.same_field: new_value}
 
     response = await http_client.put(f"{resource.base}/{resource_id}", json=body)
@@ -248,17 +225,6 @@ async def test_put_null_strength_keeps_relationship_value(http_client):
     assert [item["strength"] for item in listed["relationships"]] == [0.7]
 
 
-async def test_skill_null_description_is_not_re_embedded(http_client, embedding_adapter):
-    skill = next(item for item in RESOURCES if item.name == "skill")
-    skill_id = await _create(http_client, skill)
-    calls = embedding_adapter.calls
-
-    response = await http_client.put(f"{skill.base}/{skill_id}", json={"description": None})
-
-    assert response.status_code == 200, response.text
-    assert embedding_adapter.calls == calls
-
-
 # ---------------------------------------------------------------------------
 # Updates that change nothing do not touch the record
 # ---------------------------------------------------------------------------
@@ -278,21 +244,3 @@ async def test_put_without_changes_keeps_updated_at(http_client, resource):
     assert same.status_code == 200, same.text
     assert empty.status_code == 200, empty.text
     assert (await _get(http_client, resource, resource_id))["updated_at"] == before["updated_at"]
-
-
-async def test_skill_unchanged_description_is_not_re_embedded(http_client, embedding_adapter):
-    skill = next(item for item in RESOURCES if item.name == "skill")
-    skill_id = await _create(http_client, skill)
-    calls = embedding_adapter.calls
-
-    same = await http_client.put(
-        f"{skill.base}/{skill_id}", json={"description": skill.payload["description"]},
-    )
-
-    assert same.status_code == 200, same.text
-    assert embedding_adapter.calls == calls
-
-    changed = await http_client.put(f"{skill.base}/{skill_id}", json={"description": "Something new"})
-
-    assert changed.status_code == 200, changed.text
-    assert embedding_adapter.calls == calls + 1

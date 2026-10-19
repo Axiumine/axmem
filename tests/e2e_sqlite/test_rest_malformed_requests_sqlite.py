@@ -19,11 +19,10 @@ from app.routes.api import (
     files,
     memories,
     projects,
-    skills,
 )
 
 API_MODULES = (
-    code_artifacts, documents, entities, files, memories, projects, skills,
+    code_artifacts, documents, entities, files, memories, projects,
 )
 IGNORED_METHODS = {"HEAD", "OPTIONS"}
 BAD_IDS = [
@@ -95,8 +94,8 @@ async def client(sqlite_app):
 
 def test_inventory_covers_the_rest_api():
     """Guard the sweeps below: they must actually see the routes."""
-    assert len(ROUTES_WITH_IDS) > 35
-    assert len(ROUTES_WITH_BODY) > 20
+    assert len(ROUTES_WITH_IDS) > 25
+    assert len(ROUTES_WITH_BODY) > 15
 
 
 class TestPathIds:

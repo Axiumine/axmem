@@ -39,7 +39,6 @@ CATEGORY_TO_SCOPE: dict[str, str] = {
     ToolCategory.ENTITY.value: "entities",
     ToolCategory.LINKING.value: "entities",  # linking tools are entity-scoped
     ToolCategory.FILE.value: "files",
-    ToolCategory.SKILL.value: "skills",
 }
 
 # Reverse map: scope category -> ToolCategory enum values

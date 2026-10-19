@@ -19,7 +19,6 @@ from app.models.entity_models import Entity, EntityCreate, EntityType
 from app.models.file_models import FileCreate
 from app.models.memory_models import Memory, MemoryCreate
 from app.models.project_models import ProjectCreate, ProjectType
-from app.models.skill_models import Skill, SkillCreate
 from app.models.user_models import UserCreate
 from app.repositories.postgres.code_artifact_repository import (
     PostgresCodeArtifactRepository,
@@ -30,7 +29,6 @@ from app.repositories.postgres.file_repository import PostgresFileRepository
 from app.repositories.postgres.memory_repository import PostgresMemoryRepository
 from app.repositories.postgres.postgres_adapter import PostgresDatabaseAdapter
 from app.repositories.postgres.project_repository import PostgresProjectRepository
-from app.repositories.postgres.skill_repository import PostgresSkillRepository
 from app.repositories.postgres.user_repository import PostgresUserRepository
 
 # Fits the INTEGER id columns and is never reached by the sequences of a test run
@@ -72,7 +70,6 @@ class RepositoryWorld:
     entities: PostgresEntityRepository
     memories: PostgresMemoryRepository
     projects: PostgresProjectRepository
-    skills: PostgresSkillRepository
     files: PostgresFileRepository
     code_artifacts: PostgresCodeArtifactRepository
     documents: PostgresDocumentRepository
@@ -94,7 +91,6 @@ async def build_world(db_adapter: PostgresDatabaseAdapter) -> RepositoryWorld:
         entities=PostgresEntityRepository(db_adapter),
         memories=PostgresMemoryRepository(db_adapter, embeddings),
         projects=PostgresProjectRepository(db_adapter),
-        skills=PostgresSkillRepository(db_adapter, embeddings),
         files=PostgresFileRepository(db_adapter),
         code_artifacts=PostgresCodeArtifactRepository(db_adapter),
         documents=PostgresDocumentRepository(db_adapter),
@@ -130,20 +126,6 @@ async def new_project(world: RepositoryWorld, user_id: UUID, name: str = "Projec
         ProjectCreate(name=name, description="d", project_type=ProjectType.DEVELOPMENT),
     )
     return project.id
-
-
-async def new_skill(
-    world: RepositoryWorld, user_id: UUID, name: str = "pdf-processing", **fields,
-) -> Skill:
-    return await world.skills.create_skill(
-        user_id,
-        SkillCreate(
-            name=name,
-            description=fields.pop("description", f"Skill {name}"),
-            content=fields.pop("content", "# Steps\n1. Do the thing"),
-            **fields,
-        ),
-    )
 
 
 async def new_file(world: RepositoryWorld, user_id: UUID) -> int:

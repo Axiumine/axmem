@@ -1,6 +1,6 @@
 """Throwaway Forgetful server: a real `forgetful serve` subprocess the agent can reach.
 
-File-backed SQLite (in-memory dies at the process boundary), all feature flags on, no
+File-backed SQLite (in-memory dies at the process boundary), the files feature on, no
 auth, FastEmbed with the default (warm) model cache. Env is injected at launch because
 settings freeze at import time in the child. The instance must not depend on whoever
 runs the harness: cwd is the run directory so no repo-local dotenv file leaks in, but
@@ -11,7 +11,7 @@ harness-to-server traffic is direct (loopback must never go through HTTP(S)_PROX
 Readiness = GET /health -> 200 (503 while initialising).
 
 Everything here is harness-side infrastructure: failures raise (trust boundary — never
-misreported as agent findings). Seeding and state inspection reuse the CLI's own
+misreported as agent findings). Harness-side calls reuse the CLI's own
 RemoteExecutor with a plain no-auth client, which dogfoods the meta-tool path and its
 object-root wire handling.
 """
@@ -22,7 +22,6 @@ import socket
 import subprocess  # nosec B404 - starts the throwaway server with a fixed argv list, never a shell
 import sys
 import time
-from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
@@ -139,7 +138,6 @@ class ThrowawayForgetful:
             "DATABASE": "SQLite",
             "SQLITE_MEMORY": "false",
             "SQLITE_PATH": str(self.run_dir / "forgetful.db"),
-            "SKILLS_ENABLED": "true",
             "FILES_ENABLED": "true",
             "EMBEDDING_PROVIDER": "FastEmbed",
             "EMBEDDING_MODEL": "BAAI/bge-small-en-v1.5",
@@ -207,16 +205,3 @@ class ThrowawayForgetful:
             return await executor.execute(tool_name, arguments)
         finally:
             await executor.close()
-
-    async def seed_skills(self, skills_dir: Path, names: Iterable[str]) -> list[dict]:
-        """Import canonical SKILL.md files; the store then holds the docs under review."""
-        seeded = []
-        for name in names:
-            skill_md = (skills_dir / name / "SKILL.md").read_text(encoding="utf-8")
-            try:
-                seeded.append(
-                    await self.execute("import_skill", {"skill_md_content": skill_md}),
-                )
-            except Exception as exc:
-                raise HarnessInfraError(f"seeding skill {name!r} failed: {exc}") from exc
-        return seeded

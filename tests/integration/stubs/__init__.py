@@ -11,7 +11,6 @@ from tests.integration.stubs.entities import InMemoryEntityRepository
 from tests.integration.stubs.files import InMemoryFileRepository
 from tests.integration.stubs.memories import InMemoryMemoryRepository
 from tests.integration.stubs.projects import InMemoryProjectRepository
-from tests.integration.stubs.skills import InMemorySkillRepository
 from tests.integration.stubs.users import InMemoryUserRepository
 
 __all__ = [
@@ -22,7 +21,6 @@ __all__ = [
     "InMemoryFileRepository",
     "InMemoryMemoryRepository",
     "InMemoryProjectRepository",
-    "InMemorySkillRepository",
     "InMemoryUserRepository",
     "MockEmbeddingsAdapter",
 ]

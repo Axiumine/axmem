@@ -4,7 +4,7 @@ Covers:
 - list_entities pagination over DISTINCT entities when filtering by project_ids
 - project_ids=[] behaving as "no project filter" (as memory listing does)
 - soft-deleted (obsolete) memories being hidden from the entity memory lookup,
-  the skill link reverse lookup and the project memory_count
+  and the project memory_count
 """
 import pytest
 
@@ -198,46 +198,6 @@ async def test_entity_memories_tool_excludes_obsolete_memory(mcp_client):
     assert after.data["memory_ids"] == []
     assert after.data["count"] == 0
     assert after.data["memories"] == []
-
-
-@pytest.mark.asyncio
-async def test_skill_links_exclude_obsolete_memory(mcp_client):
-    """The get_skill_links reverse lookup no longer reports a memory marked obsolete."""
-    skill = await _call(mcp_client, "create_skill", {
-        "name": "obsolete-links-skill",
-        "description": "Skill used to check obsolete memory visibility",
-        "content": "# Content",
-        "tags": [],
-        "importance": 7,
-    })
-    skill_id = skill.data["id"]
-
-    memory_ids = []
-    for title in ("Kept skill memory", "Doomed skill memory"):
-        memory = await _call(mcp_client, "create_memory", {
-            "title": title,
-            "content": f"content of {title}",
-            "context": "obsolete visibility test",
-            "keywords": ["visibility"],
-            "tags": ["visibility"],
-            "importance": 7,
-        })
-        memory_ids.append(memory.data["id"])
-        await _call(mcp_client, "link_skill_to_memory", {
-            "skill_id": skill_id, "memory_id": memory.data["id"],
-        })
-    kept, doomed = memory_ids
-
-    before = await _call(mcp_client, "get_skill_links", {"skill_id": skill_id})
-    assert sorted(before.data["memory_ids"]) == sorted([kept, doomed])
-
-    await _call(mcp_client, "mark_memory_obsolete", {
-        "memory_id": doomed, "reason": "superseded",
-    })
-
-    after = await _call(mcp_client, "get_skill_links", {"skill_id": skill_id})
-    assert after.data["memory_ids"] == [kept]
-    assert after.data["total_count"] == 1
 
 
 @pytest.mark.asyncio

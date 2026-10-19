@@ -14,8 +14,6 @@ from app.models.code_artifact_models import CodeArtifactCreate
 from app.models.document_models import DocumentCreate
 from app.models.entity_models import EntityCreate
 from app.models.entity_models import EntityType as EntityKind
-from app.models.skill_models import SkillCreate
-from app.services.skill_service import SkillService
 from tests.integration.stubs import CollectingEventBus
 
 USER_ID = uuid4()
@@ -95,18 +93,3 @@ async def test_searching_entities_emits_a_queried_event_with_the_search_text(
     event = _only_event(bus, EntityType.ENTITY)
     assert event.snapshot == {"result_ids": [entity.id], "total_count": 1}
     assert event.metadata["search_query"] == "Ada"
-
-
-async def test_listing_skills_emits_a_queried_event_with_the_returned_ids(mock_skill_repository):
-    bus = CollectingEventBus()
-    service = SkillService(mock_skill_repository, event_bus=bus)
-    skill = await service.create_skill(
-        USER_ID, SkillCreate(name="skill-one", description="d", content="# body"),
-    )
-    bus.collected_events.clear()
-
-    await service.list_skills(USER_ID, importance_threshold=1)
-
-    event = _only_event(bus, EntityType.SKILL)
-    assert event.snapshot == {"result_ids": [skill.id], "total_count": 1}
-    assert event.metadata["importance_threshold"] == 1

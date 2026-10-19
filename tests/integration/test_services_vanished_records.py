@@ -18,9 +18,6 @@ from app.models.entity_models import EntityCreate
 from app.models.entity_models import EntityType as EntityKind
 from app.models.file_models import FileCreate
 from app.models.project_models import ProjectCreate, ProjectType
-from app.models.skill_models import SkillCreate
-from app.services.skill_service import SkillService
-from tests.integration.stubs import CollectingEventBus
 
 USER_ID = uuid4()
 
@@ -35,10 +32,6 @@ def _create_code_artifact(service):
     return service.create_code_artifact(
         USER_ID, CodeArtifactCreate(title="Art", description="d", code="print(1)", language="python"),
     )
-
-
-def _create_skill(service):
-    return service.create_skill(USER_ID, SkillCreate(name="skill-one", description="d", content="# body"))
 
 
 def _create_entity(service):
@@ -93,23 +86,6 @@ async def test_delete_without_a_readable_snapshot_succeeds_but_emits_no_deleted_
 
     assert await getattr(service, delete)(USER_ID, record.id) is True
     assert [e for e in bus.collected_events if e.entity_type == entity_type] == []
-
-
-async def test_skill_delete_without_a_readable_snapshot_succeeds_but_emits_no_deleted_event(
-    mock_skill_repository, monkeypatch,
-):
-    bus = CollectingEventBus()
-    service = SkillService(mock_skill_repository, event_bus=bus)
-    skill = await _create_skill(service)
-    bus.collected_events.clear()
-
-    async def unreadable(**_):
-        return None
-
-    monkeypatch.setattr(service.skill_repo, "get_skill_by_id", unreadable)
-
-    assert await service.delete_skill(USER_ID, skill.id) is True
-    assert [e for e in bus.collected_events if e.entity_type == EntityType.SKILL] == []
 
 
 async def test_project_delete_that_loses_a_race_returns_false_without_a_deleted_event(

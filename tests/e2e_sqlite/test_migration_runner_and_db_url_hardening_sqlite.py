@@ -158,7 +158,7 @@ class TestFailedFirstStartDoesNotBrickTheDatabase:
 
         tables, versions = snapshot(file_db)
         assert versions, "the database must be stamped after a successful start"
-        assert {"users", "vec_memories", "vec_skills"} <= tables
+        assert {"users", "vec_memories"} <= tables
 
     async def test_second_start_on_a_migrated_database_is_a_no_op(self, file_db):
         await init_and_dispose(SqliteDatabaseAdapter())
@@ -217,7 +217,7 @@ class TestConcurrentFirstStart:
         assert [process.returncode for process in processes] == [0, 0, 0], outputs
         tables, versions = snapshot(database)
         assert len(versions) == 1
-        assert {"users", "vec_memories", "vec_skills"} <= tables
+        assert {"users", "vec_memories"} <= tables
 
 
 class TestPercentSignInDatabasePath:

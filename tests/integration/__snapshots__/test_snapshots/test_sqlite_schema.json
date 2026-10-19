@@ -77,30 +77,10 @@
   "memory_project_association": [
     "CREATE TABLE memory_project_association (\n\tmemory_id INTEGER NOT NULL, \n\tproject_id INTEGER NOT NULL, \n\tPRIMARY KEY (memory_id, project_id), \n\tFOREIGN KEY(memory_id) REFERENCES memories (id) ON DELETE CASCADE, \n\tFOREIGN KEY(project_id) REFERENCES projects (id) ON DELETE CASCADE\n)"
   ],
-  "memory_skill_association": [
-    "CREATE TABLE memory_skill_association (\n\tmemory_id INTEGER NOT NULL, \n\tskill_id INTEGER NOT NULL, \n\tPRIMARY KEY (memory_id, skill_id), \n\tFOREIGN KEY(memory_id) REFERENCES memories (id) ON DELETE CASCADE, \n\tFOREIGN KEY(skill_id) REFERENCES skills (id) ON DELETE CASCADE\n)"
-  ],
   "projects": [
     "CREATE TABLE projects (\n\tid INTEGER NOT NULL, \n\tuser_id VARCHAR(36) NOT NULL, \n\tname VARCHAR(500) NOT NULL, \n\tdescription TEXT NOT NULL, \n\tproject_type VARCHAR(50), \n\tstatus VARCHAR(50) NOT NULL, \n\trepo_name VARCHAR(255), \n\tlast_encoding_point VARCHAR(255), \n\tnotes TEXT, \n\tsource_repo TEXT, \n\tsource_files JSON, \n\tsource_url TEXT, \n\tconfidence FLOAT, \n\tencoding_agent TEXT, \n\tencoding_version TEXT, \n\tagent_id TEXT, \n\tagent_version TEXT, \n\tagent_model TEXT, \n\tcreated_at DATETIME NOT NULL, \n\tupdated_at DATETIME NOT NULL, \n\tPRIMARY KEY (id), \n\tFOREIGN KEY(user_id) REFERENCES users (id) ON DELETE CASCADE\n)",
     "CREATE INDEX ix_projects_status ON projects (status)",
     "CREATE INDEX ix_projects_user_id ON projects (user_id)"
-  ],
-  "skill_code_artifact_association": [
-    "CREATE TABLE skill_code_artifact_association (\n\tskill_id INTEGER NOT NULL, \n\tcode_artifact_id INTEGER NOT NULL, \n\tPRIMARY KEY (skill_id, code_artifact_id), \n\tFOREIGN KEY(skill_id) REFERENCES skills (id) ON DELETE CASCADE, \n\tFOREIGN KEY(code_artifact_id) REFERENCES code_artifacts (id) ON DELETE CASCADE\n)"
-  ],
-  "skill_document_association": [
-    "CREATE TABLE skill_document_association (\n\tskill_id INTEGER NOT NULL, \n\tdocument_id INTEGER NOT NULL, \n\tPRIMARY KEY (skill_id, document_id), \n\tFOREIGN KEY(skill_id) REFERENCES skills (id) ON DELETE CASCADE, \n\tFOREIGN KEY(document_id) REFERENCES documents (id) ON DELETE CASCADE\n)"
-  ],
-  "skill_file_association": [
-    "CREATE TABLE skill_file_association (\n\tskill_id INTEGER NOT NULL, \n\tfile_id INTEGER NOT NULL, \n\tPRIMARY KEY (skill_id, file_id), \n\tFOREIGN KEY(skill_id) REFERENCES skills (id) ON DELETE CASCADE, \n\tFOREIGN KEY(file_id) REFERENCES files (id) ON DELETE CASCADE\n)"
-  ],
-  "skills": [
-    "CREATE TABLE skills (\n\tid INTEGER NOT NULL, \n\tuser_id VARCHAR(36) NOT NULL, \n\tproject_id INTEGER, \n\tname VARCHAR(64) NOT NULL, \n\tdescription VARCHAR(1024) NOT NULL, \n\tcontent TEXT NOT NULL, \n\tlicense VARCHAR(100), \n\tcompatibility VARCHAR(500), \n\tallowed_tools JSON, \n\tskill_metadata JSON, \n\ttags JSON NOT NULL, \n\timportance INTEGER NOT NULL, \n\tsource_repo TEXT, \n\tsource_files JSON, \n\tsource_url TEXT, \n\tconfidence FLOAT, \n\tencoding_agent TEXT, \n\tencoding_version TEXT, \n\tagent_id TEXT, \n\tagent_version TEXT, \n\tagent_model TEXT, \n\tcreated_at DATETIME NOT NULL, \n\tupdated_at DATETIME NOT NULL, \n\tPRIMARY KEY (id), \n\tFOREIGN KEY(user_id) REFERENCES users (id) ON DELETE CASCADE, \n\tFOREIGN KEY(project_id) REFERENCES projects (id) ON DELETE SET NULL\n)",
-    "CREATE INDEX ix_skills_importance ON skills (importance)",
-    "CREATE INDEX ix_skills_name ON skills (name)",
-    "CREATE INDEX ix_skills_project_id ON skills (project_id)",
-    "CREATE INDEX ix_skills_user_id ON skills (user_id)",
-    "CREATE UNIQUE INDEX ix_skills_user_name ON skills (user_id, name)"
   ],
   "users": [
     "CREATE TABLE users (\n\tid VARCHAR(36) NOT NULL, \n\texternal_id VARCHAR(255) NOT NULL, \n\tname VARCHAR(255) NOT NULL, \n\temail VARCHAR(255) NOT NULL, \n\tidp_metadata JSON, \n\tnotes TEXT, \n\tupdated_at DATETIME NOT NULL, \n\tcreated_at DATETIME NOT NULL, \n\tPRIMARY KEY (id)\n)",

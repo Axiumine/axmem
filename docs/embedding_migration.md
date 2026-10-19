@@ -52,9 +52,8 @@ uv run main.py --re-embed
 Runs the re-embedding migration instead of starting the server. Processes all memories across all
 users, including obsolete memories, with the currently configured embedding provider and dimensions.
 Counts and progress include obsolete memories. Their status and supersession metadata are preserved.
-Skills are re-embedded in the same run (from their description), whether or not `SKILLS_ENABLED`
-is set, so they keep working with the new model. The vector storage is resized to the configured
-dimensions even when the database holds no memories yet.
+The vector storage is resized to the configured dimensions even when the database holds no
+memories yet.
 
 ```bash
 forgetful --re-embed [--batch-size N] [--dry-run]
@@ -115,20 +114,20 @@ Creates a timestamped backup of your database:
 - **PostgreSQL**: Runs `pg_dump --clean --if-exists` to `forgetful-pg-YYYYMMDD-HHMMSS.sql`
 
 The backup is kept alongside your database, in the directory of `SQLITE_PATH`, unless [`BACKUP_DIR`](./configuration.md#backup_dir) points elsewhere. Backups contain all of your data, so they are created readable by their owner only (`0600`, in a `0700` directory if Forgetful creates it). In-memory SQLite databases skip this step, and so do
-databases without any memories or skills: there is nothing to lose, so only the vector storage is
+databases without any memories: there is nothing to lose, so only the vector storage is
 resized to the configured dimensions.
 
 ### Step 3: Update Vector Schema
 
 Resizes the vector storage to match the new `EMBEDDING_DIMENSIONS`:
 
-- **SQLite**: Drops and recreates the `vec_memories` and `vec_skills` virtual tables
-- **PostgreSQL**: Alters the `embedding` column type of `memories` and `skills` to `vector(N)`.
+- **SQLite**: Drops and recreates the `vec_memories` virtual table
+- **PostgreSQL**: Alters the `embedding` column type of `memories` to `vector(N)`.
   The `NOT NULL` constraint is lifted while the vectors are rebuilt and restored once validation passes.
 
-### Step 4: Re-embed Memories and Skills
+### Step 4: Re-embed Memories
 
-Processes all active and obsolete memories in batches, followed by all skills:
+Processes all active and obsolete memories in batches:
 1. Reads a batch of memories from the database
 2. Generates new embeddings using the configured provider
 3. Writes the new embeddings back
@@ -143,7 +142,7 @@ Processes all active and obsolete memories in batches, followed by all skills:
 
 Runs three automated checks:
 
-1. **Count check** - Verifies every memory, including obsolete memories, and every skill has an embedding
+1. **Count check** - Verifies every memory, including obsolete memories, has an embedding
 2. **Dimension check** - Samples embeddings and confirms correct dimension count
 3. **Search check** - Tests vector retrieval, including when all memories are obsolete
 

@@ -3,7 +3,7 @@ name: forgetful-context-gather
 description: >-
   Gather deep context before planning or implementing — one pass that turns a task
   description into a cited context pack: relevant decisions, patterns, constraints, code
-  pointers, procedures, and explicit gaps. Runs recall from several angles, explores the
+  pointers, and explicit gaps. Runs recall from several angles, explores the
   graph around the strongest hits, and opens the linked material.
 license: MIT
 disable-model-invocation: true
@@ -47,9 +47,8 @@ Done when: the angles are listed before any query runs.
 
 `query_memory` per angle — `query` and `query_context` are both required, and
 `query_context` should carry the task's intent (per `forgetful-recall`: reads cross-project
-by default, identifiers verbatim, `truncated` handled). Skills referenced by name in this
-skill resolve via `search_skills` → `export_skill` when not already available. Track which
-angles hit and which came up dry.
+by default, identifiers verbatim, `truncated` handled). Track which angles hit and which
+came up dry.
 
 Done when: every angle has run and its outcome is recorded.
 
@@ -64,8 +63,7 @@ Done when: the strongest hits have their neighbourhood mapped, not just their ow
 ## Step 4 — Open the linked material
 
 Hits point outward — follow the pointers: `get_document` for linked documents,
-`get_code_artifact` for reusable code, `search_skills` + `get_skill` for procedures that
-already do the task, `get_skill_links` for what those procedures bundle.
+`get_code_artifact` for reusable code.
 
 Done when: load-bearing linked material is read, not just listed.
 
@@ -74,8 +72,7 @@ Done when: load-bearing linked material is read, not just listed.
 Link-following only surfaces what a hit already points to — a document or code artifact
 that no surfaced memory links to stays invisible to that flow. Close the gap:
 `list_documents` and `list_code_artifacts`, scoped with `project_id` when the task is
-project-bound, then scan titles for relevance. `search_skills` already searches skills
-directly, so no separate sweep is needed there.
+project-bound, then scan titles for relevance.
 
 Done when: documents and code artifacts have been swept by title, not just reached by link.
 
@@ -87,7 +84,6 @@ Assemble, in order of usefulness to the task:
 - **Patterns and preferences** that shape how it should be done
 - **Constraints** — things ruled out, with the reason
 - **Code pointers** — artifacts and source references worth opening
-- **Procedures** — stored skills that cover part of the task
 - **Gaps** — every angle that came up dry, stated as "no existing knowledge about X"
 
 Done when: the pack cites its sources, states its gaps, and the task could start from it

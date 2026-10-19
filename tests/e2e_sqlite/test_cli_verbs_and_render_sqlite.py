@@ -22,7 +22,6 @@ _PATCHED_FIELDS = [
     "RERANKING_ENABLED",
     "FORGETFUL_SCOPES",
     "FORGETFUL_SERVER",
-    "SKILLS_ENABLED",
     "FILES_ENABLED",
     "ACTIVITY_ENABLED",
 ]
@@ -41,7 +40,6 @@ def cli_env(tmp_path, monkeypatch):
     settings.RERANKING_ENABLED = False
     settings.FORGETFUL_SCOPES = "*"
     settings.FORGETFUL_SERVER = ""
-    settings.SKILLS_ENABLED = False
     settings.FILES_ENABLED = False
     settings.ACTIVITY_ENABLED = False
     monkeypatch.delenv("FORGETFUL_TOKEN", raising=False)

@@ -7,7 +7,6 @@ stay readable after a limit is lowered.
 """
 
 import json
-from uuid import uuid4
 
 import pytest
 from pydantic import ValidationError
@@ -20,7 +19,6 @@ from app.models.memory_models import (
     MemoryQueryRequest,
     MemoryUpdate,
 )
-from app.models.skill_models import SkillCreate
 
 BLANKS = ["   ", "\n\n", "\t \n"]
 LONE_SURROGATE = "bad\ud83dtext"
@@ -308,17 +306,3 @@ def test_query_rejects_lone_surrogates():
 
 def test_query_accepts_normal_text_verbatim():
     assert _query(query="  python logging  ").query == "  python logging  "
-
-
-async def test_skill_search_rejects_blank_query(test_skill_service):
-    user_id = uuid4()
-    await test_skill_service.create_skill(
-        user_id,
-        SkillCreate(name="pdf-extract", description="Extract text from PDF", content="body", tags=["pdf"]),
-    )
-
-    for blank in BLANKS:
-        with pytest.raises(ValueError, match="cannot be empty or whitespace only"):
-            await test_skill_service.search_skills(user_id, query=blank)
-
-    assert [s.name for s in await test_skill_service.search_skills(user_id, query="PDF")] == ["pdf-extract"]

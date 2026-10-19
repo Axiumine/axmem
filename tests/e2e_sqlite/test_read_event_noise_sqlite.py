@@ -17,7 +17,6 @@ from app.models.document_models import DocumentCreate
 from app.models.file_models import FileCreate
 from app.models.memory_models import MemoryCreate
 from app.models.project_models import ProjectCreate, ProjectType
-from app.models.skill_models import SkillCreate
 from app.models.user_models import UserCreate
 from app.repositories.sqlite.activity_repository import SqliteActivityRepository
 from app.repositories.sqlite.code_artifact_repository import (
@@ -27,7 +26,6 @@ from app.repositories.sqlite.document_repository import SqliteDocumentRepository
 from app.repositories.sqlite.file_repository import SqliteFileRepository
 from app.repositories.sqlite.memory_repository import SqliteMemoryRepository
 from app.repositories.sqlite.project_repository import SqliteProjectRepository
-from app.repositories.sqlite.skill_repository import SqliteSkillRepository
 from app.repositories.sqlite.sqlite_adapter import SqliteDatabaseAdapter
 from app.repositories.sqlite.user_repository import SqliteUserRepository
 from app.services.activity_service import ActivityService
@@ -36,7 +34,6 @@ from app.services.document_service import DocumentService
 from app.services.file_service import FileService
 from app.services.memory_service import MemoryService
 from app.services.project_service import ProjectService
-from app.services.skill_service import SkillService
 from tests.integration.conftest import CollectingEventBus
 
 NOISY_ACTIONS = (ActionType.READ, ActionType.QUERIED)
@@ -79,10 +76,6 @@ async def stack(monkeypatch):
             SqliteCodeArtifactRepository(db_adapter=db), event_bus=bus,
         )
         file_service = FileService(SqliteFileRepository(db_adapter=db), event_bus=bus)
-        skill_service = SkillService(
-            SqliteSkillRepository(db_adapter=db, embedding_adapter=embeddings, rerank_adapter=None),
-            event_bus=bus,
-        )
         yield {
             "user_id": user.id,
             "bus": bus,
@@ -93,14 +86,13 @@ async def stack(monkeypatch):
             "document": document_service,
             "artifact": artifact_service,
             "file": file_service,
-            "skill": skill_service,
         }
     finally:
         await db.dispose()
 
 
 async def _seed_project_content(s):
-    """A project holding one document, artifact, file and skill."""
+    """A project holding one document, artifact and file."""
     uid = s["user_id"]
     project = await s["project"].create_project(
         uid, ProjectCreate(name="P", description="proj", project_type=ProjectType.DEVELOPMENT),
@@ -126,9 +118,6 @@ async def _seed_project_content(s):
             project_id=pid,
         ),
     )).id
-    ids["skill"] = (await s["skill"].create_skill(
-        uid, SkillCreate(name="noise-skill", description="d", content="# body", project_id=pid),
-    )).id
     await s["bus"].wait_for_pending()
     s["bus"].collected_events.clear()
     return ids
@@ -153,7 +142,6 @@ async def test_explicit_gets_still_emit_read_events(stack):
     await s["document"].get_document(uid, ids["document"])
     await s["artifact"].get_code_artifact(uid, ids["code_artifact"])
     await s["file"].get_file(uid, ids["file"])
-    await s["skill"].get_skill(uid, ids["skill"])
     await s["file"].list_files(uid)
 
     assert {(kind, action) for kind, _id, action in _noisy_events(s)} == {
@@ -161,7 +149,6 @@ async def test_explicit_gets_still_emit_read_events(stack):
         ("document", "read"),
         ("code_artifact", "read"),
         ("file", "read"),
-        ("skill", "read"),
         ("file", "queried"),
     }
 

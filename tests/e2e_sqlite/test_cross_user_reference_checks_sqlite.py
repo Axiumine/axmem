@@ -1,6 +1,6 @@
 """SQLite E2E tests: referenced projects and embeddings must belong to the caller.
 
-Documents, code artifacts, files and skills accepted any ``project_id``.
+Documents, code artifacts and files accepted any ``project_id``.
 The foreign key only checks that the id exists, so a user could attach rows to
 another user's project (and the project owner's later delete then rewrote or
 cascade-deleted those rows), and an unused id surfaced as a raw
@@ -63,18 +63,8 @@ CREATE_CASES = {
             "project_id": pid,
         },
     ),
-    "skills": (
-        "/api/v1/skills",
-        "skills",
-        lambda pid: {
-            "name": "linked-skill",
-            "description": "Skill with a project link",
-            "content": "# Linked skill\n\n1. Do the thing",
-            "project_id": pid,
-        },
-    ),
 }
-UPDATE_KINDS = ["documents", "code-artifacts", "files", "skills"]
+UPDATE_KINDS = ["documents", "code-artifacts", "files"]
 
 
 @contextmanager
@@ -194,22 +184,6 @@ async def test_update_with_own_project_still_works(http_client, kind):
 
     assert response.status_code == 200
     assert response.json()["project_id"] == project_id
-
-
-@pytest.mark.asyncio
-async def test_import_skill_rejects_other_users_project(http_client, monkeypatch):
-    """The import path goes through skill creation, so it is guarded as well."""
-    alice_project = await _create_project(http_client, "Alice private")
-    skill_md = "---\nname: imported-skill\ndescription: Imported skill\n---\n\n# Steps\n1. Do it\n"
-
-    with acting_as(monkeypatch, "bob"):
-        response = await http_client.post("/api/v1/skills/import", json={
-            "skill_md": skill_md,
-            "project_id": alice_project,
-        })
-
-        assert response.status_code == 404
-        assert await _count(http_client, "skills") == 0
 
 
 @pytest.mark.asyncio

@@ -332,13 +332,6 @@ async def test_update_memory_rejects_unknown_parameters_naming_all_of_them(mcp_c
     assert current["importance"] == 5
 
 
-async def test_update_memory_does_not_pretend_to_support_skill_ids(mcp_client):
-    memory_id = await _create_memory(mcp_client, "update skill ids")
-
-    with pytest.raises(ToolError, match="skill_ids"):
-        await _exec(mcp_client, "update_memory", {"memory_id": memory_id, "skill_ids": [1]})
-
-
 @pytest.mark.parametrize(
     "tool_name",
     ["get_memory", "unobsolete_memory", "link_memories", "unlink_memories"],

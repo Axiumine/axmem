@@ -76,20 +76,6 @@ async def test_full_re_embedding_stops_when_memories_vanish_while_paging():
     assert [memory_id for memory_id, _ in repo.bulk_update_embeddings.await_args.args[0]] == [1, 2]
 
 
-async def test_full_re_embedding_reports_skills_that_vanish_while_paging():
-    repo = _valid_repo()
-    repo.count_all_memories.return_value = 0
-    skills = _valid_repo()
-    skills.count_all_skills.return_value = 3
-    skills.get_skills_for_reembedding.return_value = []
-
-    service = ReEmbeddingService(repo, _adapter(), batch_size=2, skill_repository=skills)
-    result = await service.re_embed_all()
-
-    assert (result.total_skills, result.skills_processed) == (3, 0)
-    skills.bulk_update_embeddings.assert_not_awaited()
-
-
 def _scoped_repo(matched_in_project: int) -> AsyncMock:
     """A repository that finds ``matched_in_project`` of the memories inside the project."""
     repo = AsyncMock()

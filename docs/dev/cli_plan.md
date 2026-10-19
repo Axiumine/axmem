@@ -205,7 +205,7 @@ Pure refactor; zero behaviour change.
 Tests first (`tests/integration/test_bootstrap.py`):
 1. `build_runtime()` with `SQLITE_MEMORY=true` returns wired services + registry
    (spot-check: registry tool count > 0, `services.memory` usable end-to-end for one create).
-2. Feature flags respected: `SKILLS_ENABLED=false` → `services.skill is None` and no skill
+2. Feature flags respected: `FILES_ENABLED=false` → `services.file is None` and no file
    tools registered.
 3. `dispose_runtime()` closes the DB adapter (idempotent).
 

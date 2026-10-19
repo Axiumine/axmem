@@ -55,17 +55,17 @@ variable, and the [FastMCP Auth Documentation](https://fastmcp.wiki/en/servers/a
 | 400 | Bad Request (validation error, malformed or non-object JSON body, `NaN`/infinite numbers in a body, invalid query parameter) |
 | 401 | Unauthorized (missing/invalid token) |
 | 404 | Not Found (including a path id that is not an integer id, such as `/api/v1/memories/abc`, and a referenced `project_id` that does not exist or belongs to another user) |
-| 409 | Conflict (`ConflictError` -- for example a duplicate entity relationship or skill name) |
+| 409 | Conflict (`ConflictError` -- for example a duplicate entity relationship) |
 | 422 | Unprocessable Entity (`InvalidStateTransitionError` -- for example marking an already obsolete memory obsolete) |
 | 500 | Internal Server Error |
 
 ## Update Requests (PUT)
 
-`PUT` endpoints for projects, entities, entity relationships, documents, code artifacts, files and skills
+`PUT` endpoints for projects, entities, entity relationships, documents, code artifacts and files
 use PATCH semantics: send only the fields you want to change.
 
 - A field that is omitted or sent as `null` is left unchanged. For projects, entities, documents, code
-  artifacts, files and skills, a body that changes nothing returns the current record and does not modify
+  artifacts and files, a body that changes nothing returns the current record and does not modify
   `updated_at`. Entity relationships have no change detection: a body that changes nothing still refreshes
   `updated_at` and records an update event.
 - `null` never clears a field. Fields such as `project_id`, `source_url` and `confidence` therefore cannot
@@ -205,12 +205,11 @@ blank `context`.
   "code_artifact_ids": [],
   "document_ids": [],
   "file_ids": [],
-  "skill_ids": [],
   "similar_memories": []
 }
 ```
 
-**Errors:** `404` with a message such as `Projects not found: {999}` when an id in `project_ids`, `code_artifact_ids`, `document_ids`, `file_ids` or `skill_ids` does not exist (or belongs to another user). Nothing is created in that case.
+**Errors:** `404` with a message such as `Projects not found: {999}` when an id in `project_ids`, `code_artifact_ids`, `document_ids` or `file_ids` does not exist (or belongs to another user). Nothing is created in that case.
 
 ### PUT /api/v1/memories/{id}
 
@@ -234,7 +233,7 @@ Update an existing memory.
 
 Provenance fields can be added or updated after memory creation. See POST /api/v1/memories for field descriptions.
 
-A field that is omitted or `null` is left unchanged. The link lists `project_ids`, `code_artifact_ids`, `document_ids`, `file_ids` and `skill_ids` replace the existing links when provided, and an empty list removes them all.
+A field that is omitted or `null` is left unchanged. The link lists `project_ids`, `code_artifact_ids`, `document_ids` and `file_ids` replace the existing links when provided, and an empty list removes them all.
 
 **Response:** Updated memory object
 
@@ -700,114 +699,6 @@ Update an existing code artifact.
 ### DELETE /api/v1/code-artifacts/{id}
 
 Delete a code artifact.
-
----
-
-## Skills
-
-**Requires:** `SKILLS_ENABLED=true`
-
-### GET /api/v1/skills
-
-List all skills.
-
-**Query Parameters:**
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `project_id` | int | Filter by project |
-| `tags` | string | Comma-separated tags (OR logic) |
-| `importance_threshold` | int | Minimum importance level |
-
-**Response:**
-```json
-{
-  "skills": [
-    {
-      "id": 1,
-      "name": "code-review",
-      "description": "Systematic code review process",
-      "license": "MIT",
-      "tags": ["development", "review"],
-      "importance": 8,
-      "project_id": null,
-      "created_at": "2024-12-05T10:00:00Z",
-      "updated_at": "2024-12-05T10:00:00Z"
-    }
-  ],
-  "total": 5
-}
-```
-
-### GET /api/v1/skills/search
-
-Semantic search for skills by description similarity.
-
-**Query Parameters:**
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `query` | string | (required) | Search query; blank (whitespace-only) values return `400` |
-| `k` | int | 5 | Number of results (at least 1; smaller values return HTTP 400) |
-| `project_id` | int | - | Filter by project |
-
-### GET /api/v1/skills/{id}
-
-Get a single skill by ID (includes full content).
-
-### POST /api/v1/skills
-
-Create a new skill.
-
-**Request Body:**
-```json
-{
-  "name": "code-review",
-  "description": "Systematic code review process",
-  "content": "# Code Review\n\n## Steps\n1. Check for...",
-  "license": "MIT",
-  "compatibility": "Requires Python 3.12+",
-  "allowed_tools": ["Read", "Grep"],
-  "metadata": {"author": "team"},
-  "tags": ["development", "review"],
-  "importance": 8,
-  "project_id": 1
-}
-```
-
-Skill names are unique per user. Creating a skill whose name is already in use returns `400`.
-
-### PUT /api/v1/skills/{id}
-
-Update an existing skill (PATCH semantics). Renaming a skill to a name another of your skills already uses returns `400`.
-
-### DELETE /api/v1/skills/{id}
-
-Delete a skill.
-
-### POST /api/v1/skills/import
-
-Import a skill from Agent Skills markdown format.
-
-**Request Body:**
-```json
-{
-  "skill_md": "---\nname: code-review\ndescription: ...\n---\n\n# Content...",
-  "project_id": 1,
-  "importance": 8
-}
-```
-
-### GET /api/v1/skills/{id}/export
-
-Export a skill to Agent Skills markdown format (SKILL.md).
-
-**Response:**
-```json
-{
-  "skill_md": "---\nname: code-review\ndescription: ...\n---\n\n# Content..."
-}
-```
 
 ---
 

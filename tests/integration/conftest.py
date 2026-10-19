@@ -12,7 +12,6 @@ from app.services.entity_service import EntityService
 from app.services.file_service import FileService
 from app.services.memory_service import MemoryService
 from app.services.project_service import ProjectService
-from app.services.skill_service import SkillService
 from app.services.user_service import UserService
 from tests.integration.stubs import (
     CollectingEventBus,
@@ -22,7 +21,6 @@ from tests.integration.stubs import (
     InMemoryFileRepository,
     InMemoryMemoryRepository,
     InMemoryProjectRepository,
-    InMemorySkillRepository,
     InMemoryUserRepository,
     MockEmbeddingsAdapter,
 )
@@ -193,19 +191,6 @@ def test_entity_service_with_event_bus(mock_entity_repository):
     return service, event_bus
 
 
-# ============ Skill Testing Fixtures ============
-
-
-@pytest.fixture
-def mock_skill_repository():
-    return InMemorySkillRepository()
-
-
-@pytest.fixture
-def test_skill_service(mock_skill_repository):
-    return SkillService(mock_skill_repository, event_bus=None)
-
-
 # =============================================================================
 # Real-runtime settings fixture (bootstrap factory / CLI executor tests)
 # =============================================================================
@@ -216,7 +201,6 @@ _SQLITE_RUNTIME_FIELDS = [
     "EMBEDDING_PROVIDER",
     "RERANKING_ENABLED",
     "FORGETFUL_SCOPES",
-    "SKILLS_ENABLED",
     "FILES_ENABLED",
     "ACTIVITY_ENABLED",
 ]
@@ -237,7 +221,6 @@ def sqlite_runtime_settings():
     settings.EMBEDDING_PROVIDER = "FastEmbed"
     settings.RERANKING_ENABLED = False
     settings.FORGETFUL_SCOPES = "*"
-    settings.SKILLS_ENABLED = False
     settings.FILES_ENABLED = False
     settings.ACTIVITY_ENABLED = False
     yield settings

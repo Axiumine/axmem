@@ -64,9 +64,8 @@ def test_empty_model_cache_in_local_only_mode_warns_models_must_exist(model_cach
     [
         lambda: bootstrap.create_db_adapter(),
         lambda: bootstrap.create_repositories(None, None, None),
-        lambda: bootstrap.create_skill_repository(None, None),
     ],
-    ids=["db-adapter", "repositories", "skill-repository"],
+    ids=["db-adapter", "repositories"],
 )
 def test_unsupported_database_setting_is_rejected(factory, monkeypatch):
     monkeypatch.setattr(settings, "DATABASE", "MySQL")

@@ -135,7 +135,7 @@ async def test_stop_request_while_a_restore_is_running_is_ignored():
     ids=["no-backup", "with-backup"],
 )
 def test_success_report_mentions_the_backup_only_when_one_was_made(backup_path, mentions_backup, capsys):
-    result = SimpleNamespace(total_processed=3, total_skills=0, skills_processed=0)
+    result = SimpleNamespace(total_processed=3)
 
     main._print_reembed_success(result, backup_path)
 

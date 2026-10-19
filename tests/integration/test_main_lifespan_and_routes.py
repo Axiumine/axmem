@@ -19,7 +19,6 @@ import main
 from app.config.settings import settings
 from app.middleware.auth import TokenCache
 from app.services.file_service import FileService
-from app.services.skill_service import SkillService
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -30,7 +29,6 @@ _LIST_ROUTES = (
 
 FEATURE_ROUTES = {
     "/api/v1/files",
-    "/api/v1/skills",
 }
 
 
@@ -58,11 +56,9 @@ async def test_lifespan_attaches_every_enabled_optional_service(
     sqlite_runtime_settings, quiet_logging, pristine_server, monkeypatch,
 ):
     monkeypatch.setattr(settings, "FILES_ENABLED", True)
-    monkeypatch.setattr(settings, "SKILLS_ENABLED", True)
 
     async with main.lifespan(main.mcp):
         assert isinstance(pristine_server.file_service, FileService)
-        assert isinstance(pristine_server.skill_service, SkillService)
 
 
 async def test_lifespan_leaves_the_token_cache_unset_when_it_is_disabled(
@@ -92,7 +88,6 @@ def _routes_with_flags(tmp_path, enabled: bool) -> set[str]:
         "SQLITE_MEMORY": "true",
         "FASTMCP_SERVER_AUTH": "",
         "FILES_ENABLED": str(enabled).lower(),
-        "SKILLS_ENABLED": str(enabled).lower(),
     }
     completed = subprocess.run(  # noqa: S603 - fixed argv, no shell
         [sys.executable, "-c", _LIST_ROUTES],

@@ -53,34 +53,6 @@ async def test_build_runtime_wires_registry_and_memory_service(sqlite_runtime_se
         await dispose_runtime(runtime)
 
 
-async def test_skills_flag_off_omits_skill_service_and_tools(sqlite_runtime_settings):
-    """SKILLS_ENABLED=false -> services.skill is None and no skill tools registered."""
-    settings.SKILLS_ENABLED = False
-
-    runtime = await build_runtime()
-
-    try:
-        assert runtime.services.skill is None
-        tool_names = {meta.name for meta in runtime.registry.list_all_tools()}
-        assert "create_skill" not in tool_names
-    finally:
-        await dispose_runtime(runtime)
-
-
-async def test_skills_flag_on_wires_skill_service_and_tools(sqlite_runtime_settings):
-    """SKILLS_ENABLED=true -> services.skill wired and skill tools registered."""
-    settings.SKILLS_ENABLED = True
-
-    runtime = await build_runtime()
-
-    try:
-        assert runtime.services.skill is not None
-        tool_names = {meta.name for meta in runtime.registry.list_all_tools()}
-        assert "create_skill" in tool_names
-    finally:
-        await dispose_runtime(runtime)
-
-
 async def test_dispose_runtime_is_idempotent(sqlite_runtime_settings):
     """dispose_runtime() closes the DB adapter and tolerates being called twice."""
     runtime = await build_runtime()

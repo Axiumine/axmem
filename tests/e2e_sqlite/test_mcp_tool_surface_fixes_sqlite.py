@@ -1,6 +1,6 @@
 """E2E tests for MCP tool-surface argument validation with in-memory SQLite
 
-Covers the document, code artifact, entity, file, project and skill link tools reached through
+Covers the document, code artifact, entity, file and project link tools reached through
 ``execute_forgetful_tool``.
 """
 import base64
@@ -350,31 +350,3 @@ async def test_get_entity_relationships_direction_is_normalised_or_rejected(mcp_
     for unknown in ("sideways", "in"):
         with pytest.raises(ToolError, match="direction"):
             await count(unknown)
-
-
-@pytest.mark.asyncio
-async def test_skill_unlink_reports_whether_a_link_was_removed(mcp_client):
-    """The tools return the service confirmation, not an always-truthy wrapper."""
-    skill = await call(
-        mcp_client, "create_skill", name="unlink-skill", description="d", content="# body",
-    )
-    skill_id = skill.data["id"]
-    memory_id = await make_memory(mcp_client)
-
-    linked = await call(mcp_client, "link_skill_to_memory", skill_id=skill_id, memory_id=memory_id)
-    assert linked.data["skill_id"] == skill_id
-    assert linked.data["memory_id"] == memory_id
-    assert "success" not in linked.data
-
-    first = await call(
-        mcp_client, "unlink_skill_from_memory", skill_id=skill_id, memory_id=memory_id,
-    )
-    second = await call(
-        mcp_client, "unlink_skill_from_memory", skill_id=skill_id, memory_id=memory_id,
-    )
-    assert first.data["unlinked"] is True
-    assert second.data["unlinked"] is False
-
-    never_linked = await call(mcp_client, "unlink_skill_from_file", skill_id=skill_id, file_id=999)
-    assert never_linked.data["unlinked"] is False
-    assert never_linked.data["file_id"] == 999
