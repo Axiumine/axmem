@@ -2,7 +2,8 @@
 
 Covers, with stubbed services and no database:
 - ``client_error_detail`` keeps authored messages and hides driver details.
-- the per-category entity tools never put SQL, bound parameters or driver text in a ToolError.
+- ``execute_forgetful_tool`` never puts SQL, bound parameters or driver text from an entity
+  operation in a ToolError.
 - ``discover_forgetful_tools`` honours the advertised ``linking`` category.
 - ``execute_forgetful_tool`` rejects argument names that cannot be keyword arguments.
 - an unknown tool or category name is quoted with ``repr`` inside the error text, so ESC, CR and
@@ -26,19 +27,21 @@ from app.exceptions import (
     NotFoundError,
 )
 from app.models.tool_registry_models import ToolCategory, ToolParameter
-from app.routes.mcp import entity_tools
+from app.routes.mcp import meta_tools
 from app.routes.mcp.meta_tools import (
     build_discovery_payload,
     build_tool_documentation,
     ensure_tool_executable,
     reject_invalid_argument_names,
 )
+from app.routes.mcp.tool_adapters import create_entity_adapters
 from app.routes.mcp.tool_errors import (
     CONSTRAINT_FAILURE,
     GENERIC_FAILURE,
     INVALID_YAML_FAILURE,
     client_error_detail,
 )
+from app.routes.mcp.tool_metadata_registry import register_entity_tools_metadata
 from app.routes.mcp.tool_registry import ToolRegistry
 
 SECRET_USER_ID = "7f1c2b9e-0000-4000-8000-00000000abcd"
@@ -127,79 +130,62 @@ class _FailingEntityService:
 
 
 def _entity_tools_server(error: Exception) -> FastMCP:
+    """The mounted surface (the three meta-tools) over entity adapters whose service fails."""
+    user_service = _StubUserService()
+    registry = ToolRegistry()
+    register_entity_tools_metadata(
+        registry, create_entity_adapters(_FailingEntityService(error), user_service),
+    )
     server = FastMCP("entity-tools-error-test")
-    server.user_service = _StubUserService()
-    server.entity_service = _FailingEntityService(error)
-    entity_tools.register(server)
+    server.user_service = user_service
+    server.registry = registry
+    meta_tools.register(server)
     return server
 
 
+async def _execute(client: Client, tool_name: str, arguments: dict):
+    return await client.call_tool(
+        "execute_forgetful_tool", {"tool_name": tool_name, "arguments": arguments},
+    )
+
+
 ENTITY_TOOL_CALLS = [
-    ("create_entity", {"name": "Sarah", "entity_type": "Individual"}, "Failed to create entity"),
-    ("get_entity", {"entity_id": 1}, "Failed to get entity"),
-    ("list_entities", {}, "Failed to list entities"),
-    ("search_entities", {"query": "sar"}, "Failed to search entities"),
-    ("update_entity", {"entity_id": 1, "name": "S"}, "Failed to update entity"),
-    ("delete_entity", {"entity_id": 1}, "Failed to delete entity"),
-    (
-        "link_entity_to_memory",
-        {"entity_id": 1, "memory_id": 2},
-        "Failed to link entity to memory",
-    ),
-    (
-        "unlink_entity_from_memory",
-        {"entity_id": 1, "memory_id": 2},
-        "Failed to unlink entity from memory",
-    ),
-    (
-        "link_entity_to_project",
-        {"entity_id": 1, "project_id": 2},
-        "Failed to link entity to project",
-    ),
-    (
-        "unlink_entity_from_project",
-        {"entity_id": 1, "project_id": 2},
-        "Failed to unlink entity from project",
-    ),
+    ("create_entity", {"name": "Sarah", "entity_type": "Individual"}),
+    ("get_entity", {"entity_id": 1}),
+    ("list_entities", {}),
+    ("search_entities", {"query": "sar"}),
+    ("update_entity", {"entity_id": 1, "name": "S"}),
+    ("delete_entity", {"entity_id": 1}),
+    ("link_entity_to_memory", {"entity_id": 1, "memory_id": 2}),
+    ("unlink_entity_from_memory", {"entity_id": 1, "memory_id": 2}),
+    ("link_entity_to_project", {"entity_id": 1, "project_id": 2}),
+    ("unlink_entity_from_project", {"entity_id": 1, "project_id": 2}),
     (
         "create_entity_relationship",
         {"source_entity_id": 1, "target_entity_id": 2, "relationship_type": "works_with"},
-        "Failed to create entity relationship",
     ),
-    (
-        "get_entity_relationships",
-        {"entity_id": 1},
-        "Failed to get entity relationships",
-    ),
-    (
-        "update_entity_relationship",
-        {"relationship_id": 1, "strength": 0.5},
-        "Failed to update entity relationship",
-    ),
-    (
-        "delete_entity_relationship",
-        {"relationship_id": 1},
-        "Failed to delete entity relationship",
-    ),
-    ("get_entity_memories", {"entity_id": 1}, "Failed to get entity memories"),
+    ("get_entity_relationships", {"entity_id": 1}),
+    ("update_entity_relationship", {"relationship_id": 1, "strength": 0.5}),
+    ("delete_entity_relationship", {"relationship_id": 1}),
+    ("get_entity_memories", {"entity_id": 1}),
 ]
 
 
 class TestEntityToolErrors:
-    """Entity tools return a short message for database errors and keep authored ones."""
+    """Entity operations return a short message for database errors and keep authored ones."""
 
     @pytest.mark.parametrize(
-        ("tool_name", "arguments", "prefix"),
+        ("tool_name", "arguments"),
         ENTITY_TOOL_CALLS,
         ids=[call[0] for call in ENTITY_TOOL_CALLS],
     )
-    async def test_database_error_text_is_not_returned(self, tool_name, arguments, prefix):
+    async def test_database_error_text_is_not_returned(self, tool_name, arguments):
         async with Client(_entity_tools_server(_integrity_error())) as client:
             with pytest.raises(ToolError) as caught:
-                await client.call_tool(tool_name, arguments)
+                await _execute(client, tool_name, arguments)
 
         message = str(caught.value)
-        assert prefix in message
+        assert f"Failed to execute {tool_name!r}" in message
         assert CONSTRAINT_FAILURE in message
         assert not [marker for marker in LEAK_MARKERS if marker in message], message
 
@@ -208,7 +194,7 @@ class TestEntityToolErrors:
 
         async with Client(server) as client:
             with pytest.raises(ToolError) as caught:
-                await client.call_tool("get_entity_memories", {"entity_id": 1})
+                await _execute(client, "get_entity_memories", {"entity_id": 1})
 
         assert SECRET_USER_ID not in str(caught.value)
         assert GENERIC_FAILURE in str(caught.value)
@@ -218,14 +204,15 @@ class TestEntityToolErrors:
 
         async with Client(server) as client:
             with pytest.raises(ToolError, match="Entity 1 not found"):
-                await client.call_tool("get_entity", {"entity_id": 1})
+                await _execute(client, "get_entity", {"entity_id": 1})
 
     async def test_conflict_message_is_kept(self):
         server = _entity_tools_server(ConflictError("Relationship already exists"))
 
         async with Client(server) as client:
             with pytest.raises(ToolError, match="Relationship already exists"):
-                await client.call_tool(
+                await _execute(
+                    client,
                     "create_entity_relationship",
                     {"source_entity_id": 1, "target_entity_id": 2, "relationship_type": "owns"},
                 )

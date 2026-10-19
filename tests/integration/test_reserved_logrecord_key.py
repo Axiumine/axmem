@@ -36,8 +36,6 @@ AFFECTED_LOGGERS = (
     "app.repositories.postgres.project_repository",
     "app.repositories.sqlite.skill_repository",
     "app.repositories.sqlite.project_repository",
-    "app.routes.mcp.project_tools",
-    "app.routes.mcp.skill_tools",
 )
 
 LOG_METHODS = {"debug", "info", "warning", "warn", "error", "exception", "critical", "log"}
@@ -232,59 +230,3 @@ async def test_repository_list_projects_logs_with_info_logging(backend, info_log
 
     record = _single_record(info_logging, Repo.__module__, "Listing projects")
     assert record.name_filter == "forget"
-
-
-@pytest.fixture
-def legacy_mcp(info_logging):
-    """FastMCP instance with the legacy project/skill tool modules over in-memory stubs."""
-    from fastmcp import FastMCP
-
-    from app.routes.mcp import project_tools
-    from app.services.project_service import ProjectService
-    from app.services.skill_service import SkillService
-    from app.services.user_service import UserService
-    from tests.integration.conftest import (
-        InMemoryProjectRepository,
-        InMemorySkillRepository,
-        InMemoryUserRepository,
-    )
-
-    mcp = FastMCP("reserved-logrecord-key")
-    mcp.user_service = UserService(InMemoryUserRepository())
-    mcp.project_service = ProjectService(InMemoryProjectRepository())
-    mcp.skill_service = SkillService(InMemorySkillRepository())
-    project_tools.register(mcp)
-    return mcp
-
-
-async def test_legacy_list_projects_tool_with_info_logging(legacy_mcp, info_logging):
-    from fastmcp import Client
-
-    async with Client(legacy_mcp) as client:
-        await client.call_tool("list_projects", {"name": "forget"})
-
-    record = _single_record(
-        info_logging, "app.routes.mcp.project_tools", "MCP Tool Called -> list_projects",
-    )
-    assert record.name_filter == "forget"
-
-
-async def test_legacy_create_skill_tool_with_info_logging(legacy_mcp, info_logging):
-    skill_tools = pytest.importorskip("app.routes.mcp.skill_tools")
-    from fastmcp import Client
-
-    skill_tools.register(legacy_mcp)
-    async with Client(legacy_mcp) as client:
-        await client.call_tool(
-            "create_skill",
-            {
-                "name": "legacy-skill",
-                "description": "created through the legacy tool",
-                "content": "# Steps\n1. do the thing",
-            },
-        )
-
-    record = _single_record(
-        info_logging, "app.routes.mcp.skill_tools", "MCP Tool Called -> create_skill",
-    )
-    assert record.skill_name == "legacy-skill"
