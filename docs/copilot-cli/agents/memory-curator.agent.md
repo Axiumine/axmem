@@ -88,30 +88,6 @@ Proactively curate when:
 - Project decisions are reversed
 - Multiple memories cover the same concept
 
-## Entity Linking
-
-Connect memories to real-world entities:
-
-```
-execute_forgetful_tool("link_entity_to_memory", {
-  "entity_id": <entity_id>,
-  "memory_id": <memory_id>
-})
-```
-
-**When to link entities:**
-- Memory references a specific person, organization, or device
-- Building context around a team member or project
-- Tracking decisions made by specific people
-
-To unlink:
-```
-execute_forgetful_tool("unlink_entity_from_memory", {
-  "entity_id": <entity_id>,
-  "memory_id": <memory_id>
-})
-```
-
 ## Quality Checks
 
 When curating, verify:
@@ -131,7 +107,6 @@ Curation complete:
 - Updated: [count] memories
 - Marked obsolete: [count] memories
 - Linked: [count] new connections
-- Entities linked: [count]
 ```
 
 ## Available Tools
@@ -142,7 +117,5 @@ Curation complete:
 | `mark_memory_obsolete` | `memory_id`, `reason` | Soft delete with audit |
 | `link_memories` | `memory_id`, `related_ids` | Manual bidirectional linking |
 | `unlink_memories` | `memory_id`, `related_id` | Remove link |
-| `link_entity_to_memory` | `entity_id`, `memory_id` | Connect entity to memory |
-| `unlink_entity_from_memory` | `entity_id`, `memory_id` | Remove entity-memory link |
 | `query_memory` | `query`, `query_context` | Semantic search |
 | `get_memory` | `memory_id` | Get full memory details |

@@ -4,8 +4,7 @@ Uses in-process FastMCP server with real PostgreSQL to test the activity trackin
 Tests the /api/v1/activity endpoints via ASGI transport (async http_client).
 
 Related modules: ``test_api_activity_stream_e2e`` (SSE stream) and
-``test_api_activity_projects_e2e`` / ``test_api_activity_entities_e2e``
-(events per resource type).
+``test_api_activity_projects_e2e`` (project events).
 """
 import pytest
 

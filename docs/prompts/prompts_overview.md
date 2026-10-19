@@ -10,7 +10,7 @@ AI-agent optimized prompts for understanding codebases and managing project know
 
 | Prompt | Depth | Use When | Output |
 |--------|-------|----------|--------|
-| **[Custom Agent Integration](custom_agent_integration.md)** | Comprehensive | Building custom agents, system prompts, deep entity/knowledge graph coverage | Agent with full Forgetful capability |
+| **[Custom Agent Integration](custom_agent_integration.md)** | Comprehensive | Building custom agents, system prompts, deep knowledge graph coverage | Agent with full Forgetful capability |
 | **[Example System Prompt](example_system_prompt.md)** | Reference | Adding Forgetful context to CLAUDE.md or system prompts | Ready-to-copy prompt |
 | **[Rapid Scan](rapid_project_scan_prompt.md)** | Surface | Bug fixes, quick features, evaluation, initial orientation | Quick orientation map |
 | **[Comprehensive Understanding](comprehensive_project_understanding_prompt.md)** | Deep | Major refactoring, architectural changes, deep debugging | Understanding document |
@@ -23,7 +23,7 @@ AI-agent optimized prompts for understanding codebases and managing project know
 | Your Goal | Use This |
 |-----------|----------|
 | Build a custom agent with Forgetful | Custom Agent Integration |
-| Understand entities & knowledge graphs | Custom Agent Integration |
+| Understand knowledge graphs | Custom Agent Integration |
 | Fix a bug | Rapid Scan |
 | Add small feature | Rapid Scan |
 | Understand architecture | Comprehensive Understanding |
@@ -109,7 +109,7 @@ KB Bootstrap includes Phase 0 that checks existing coverage—prevents duplicate
 - Specific `query_memory`, `create_memory`, `update_memory` calls
 - `discover_forgetful_tools` usage
 - Auto-linking mechanics (similarity ≥0.7 by default)
-- Project/memory/entity patterns
+- Project/memory patterns
 
 **Phase 0 Discovery (KB Bootstrap):**
 Prevents duplicate creation by checking existing project/memories, comparing with current codebase, performing gap analysis, then creating targeted bootstrap plan.
@@ -161,7 +161,7 @@ Most memories should be 7-8, reserve 9-10 for foundational decisions.
 
 **KB Bootstrap:**
 - Phase 0: Discovery & Assessment (prevents duplicates)
-- Phases 1-8: Project → Architecture → Patterns → Features → Decisions → Config → Entities → Linking
+- Phases 1-7: Project → Architecture → Patterns → Features → Decisions → Config → Linking
 - Atomic memory creation (200-400 words)
 - Auto-linking verification (≥0.7 similarity by default)
 - Gap analysis for existing projects

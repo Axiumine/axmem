@@ -51,6 +51,10 @@
     "down_revision": "20261019_drop_files",
     "revision": "20261019_drop_docs_artifacts"
   },
+  "20261019_drop_entities_tables.py": {
+    "down_revision": "20261019_drop_docs_artifacts",
+    "revision": "20261019_drop_entities"
+  },
   "20261019_drop_files_tables.py": {
     "down_revision": "20261019_drop_skills",
     "revision": "20261019_drop_files"

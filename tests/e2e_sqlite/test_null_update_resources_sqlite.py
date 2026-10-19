@@ -58,19 +58,6 @@ RESOURCES = [
         ),
         same_field="name",
     ),
-    Resource(
-        name="entity",
-        base="/api/v1/entities",
-        payload={
-            "name": "Ent",
-            "entity_type": "Individual",
-            "notes": "keep me",
-            "tags": ["a", "b"],
-            "aka": ["x"],
-        },
-        null_fields=("name", "entity_type", "notes", "tags", "aka"),
-        same_field="name",
-    ),
 ]
 
 FIELD_CASES = [
@@ -139,7 +126,7 @@ async def test_put_value_next_to_null_applies_only_the_value(http_client, resour
 
 @pytest.mark.parametrize(
     ("resource_name", "field"),
-    [("project", "notes"), ("project", "repo_name"), ("entity", "notes")],
+    [("project", "notes"), ("project", "repo_name")],
 )
 async def test_empty_string_still_clears_optional_field(http_client, resource_name, field):
     """Null is ignored, but the documented way to clear a field keeps working."""
@@ -153,33 +140,6 @@ async def test_empty_string_still_clears_optional_field(http_client, resource_na
 
     assert response.status_code == 200, response.text
     assert (await _get(http_client, resource, resource_id))[field] is None
-
-
-async def test_put_null_strength_keeps_relationship_value(http_client):
-    source = (await http_client.post("/api/v1/entities", json={
-        "name": "Source", "entity_type": "Organization",
-    })).json()["id"]
-    target = (await http_client.post("/api/v1/entities", json={
-        "name": "Target", "entity_type": "Team",
-    })).json()["id"]
-    created = await http_client.post(f"/api/v1/entities/{source}/relationships", json={
-        "target_entity_id": target, "relationship_type": "manages", "strength": 0.7, "confidence": 0.9,
-    })
-    assert created.status_code == 201, created.text
-    relationship_id = created.json()["id"]
-
-    response = await http_client.put(
-        f"/api/v1/entities/relationships/{relationship_id}",
-        json={"relationship_type": None, "strength": None, "confidence": None, "metadata": None},
-    )
-
-    assert response.status_code == 200, response.text
-    body = response.json()
-    assert body["relationship_type"] == "manages"
-    assert body["strength"] == 0.7
-    assert body["confidence"] == 0.9
-    listed = (await http_client.get(f"/api/v1/entities/{source}/relationships")).json()
-    assert [item["strength"] for item in listed["relationships"]] == [0.7]
 
 
 # ---------------------------------------------------------------------------

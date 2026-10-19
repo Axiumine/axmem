@@ -3,8 +3,8 @@ name: forgetful-remember
 description: >-
   Remember knowledge worth keeping — a decision made, a solution found, a preference stated,
   a pattern confirmed. Use when work surfaces something future sessions will need, or the
-  user asks to remember something. Routes content to the right store (memory or entity) and
-  enforces query-before-create.
+  user asks to remember something. Routes content to the right store and enforces
+  query-before-create.
 license: MIT
 tags: [memory, capture, curation, knowledge-management]
 allowed-tools:
@@ -38,7 +38,6 @@ Get any operation's schema at runtime: `how_to_use_forgetful_tool` (MCP) or
 |---|---|---|
 | A single fact, decision, or preference | Memory | this skill, step 4 |
 | Detailed analysis or a guide (>300 words) | Several linked atomic memories | this skill, step 4 |
-| A person, org, device, product, component | Entity | `forgetful-entities` |
 | A goal decomposing into steps / a work item | Plan / Task | feature-flagged; check discovery |
 
 Done when: exactly one type is chosen, and routed-away types are handled by their skill.

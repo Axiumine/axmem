@@ -1,8 +1,8 @@
 ---
 name: forgetful-encode-repo
 description: >-
-  Encode a repository into the Forgetful knowledge base — bootstrap the project, its
-  entities, and memories from the codebase itself. Use when bringing a new repo
+  Encode a repository into the Forgetful knowledge base — bootstrap the project and its
+  memories from the codebase itself. Use when bringing a new repo
   under Forgetful or refreshing a stale encoding. Re-encoding is an update pass:
   query-before-create makes it supersession, not duplication.
 license: MIT
@@ -17,14 +17,13 @@ allowed-tools:
 
 # Encoding a repository
 
-The goal is a knowledge base a future session can lean on: the system modelled as entities,
-the decisions and conventions and the long-form understanding as atomic memories,
-everything provenance-stamped back to the source. Encode twice and the second pass updates
-— never duplicates.
+The goal is a knowledge base a future session can lean on: the decisions, conventions and long-form
+understanding as atomic memories, everything provenance-stamped back to the source. Encode
+twice and the second pass updates — never duplicates.
 
 ## Invoking operations
 
-Operations are named by registry name (`create_project`, `create_entity`, ...). Invoke via
+Operations are named by registry name (`create_project`, `create_memory`, ...). Invoke via
 whichever surface this agent has:
 
 - **MCP**: `execute_forgetful_tool(tool_name="create_project", arguments={...})`
@@ -49,16 +48,7 @@ Note the current commit — every write in this run cites it via provenance.
 
 Done when: there is a source list of what will be encoded, ordered by signal.
 
-## Step 3 — Model the system as entities
-
-Per `forgetful-entities`: the system itself and its key components
-(services, packages, databases, external dependencies that matter) as `entity_type:
-"System"`, and their structure as relationships — `part_of` for composition, `depends_on`
-for coupling. Dedupe against existing entities on a refresh.
-
-Done when: the architecture is walkable as a graph, components to system, dependencies out.
-
-## Step 4 — Store the knowledge
+## Step 3 — Store the knowledge
 
 Atomic memories, per `forgetful-remember` (its routing, atomicity test, and importance rubric
 govern every write here):
@@ -67,8 +57,8 @@ govern every write here):
   is split into several atomic memories, one per decision, fact or pattern, tied together
   with `link_memories`.
 - **Decisions, conventions, patterns, constraints** are memories of their own, stamped with
-  `source_repo` and `source_files`, and linked to the entities they concern via a separate
-  `link_entity_to_memory` call (not something `create_memory` does for you).
+  `source_repo` and `source_files`, and linked to the memories they relate to with
+  `link_memories`.
 
 On a refresh, query first per source area: update what drifted, mark obsolete what the code
 contradicts, create only what is new.
@@ -76,9 +66,9 @@ contradicts, create only what is new.
 Done when: each surveyed source area has produced its memories,
 or explicitly had nothing worth encoding.
 
-## Step 5 — Report coverage
+## Step 4 — Report coverage
 
-Close with a coverage report, in place of "done": project ID, entities created/updated,
+Close with a coverage report, in place of "done": project ID,
 memories created/updated/obsoleted, source areas skipped and why, and
 the areas where knowledge is thin. Note repo-level gaps the survey turned up too — missing
 docs, absent CI, and the like — not only gaps in the encoding itself. Deliver the report in

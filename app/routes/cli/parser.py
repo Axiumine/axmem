@@ -116,7 +116,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     tools_list.add_argument(
         "--category",
-        help="Filter by tool category (e.g. memory, project, entity)",
+        help="Filter by tool category (e.g. memory, project)",
     )
     tools_info = tools_sub.add_parser(
         "info",

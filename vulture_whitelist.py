@@ -13,7 +13,6 @@ from app.config.settings import Settings
 from app.events.event_bus import EventBus
 from app.middleware.auth import TokenCache
 from app.models.activity_models import ActorType
-from app.models.entity_models import EntityType
 from app.models.memory_models import Memory, MemoryScore, MemorySummary, ObsoleteMatch
 from app.models.project_models import ProjectStatus, ProjectType
 from app.models.user_models import UserCreate, UserUpdate
@@ -42,11 +41,6 @@ Settings.AGENT_MODEL
 # interfaces, so removing an unreferenced one would change what clients may send.
 ActorType.SYSTEM
 ActorType.LLM_MAINTENANCE
-EntityType.ORGANIZATION
-EntityType.INDIVIDUAL
-EntityType.TEAM
-EntityType.DEVICE
-EntityType.SYSTEM
 ProjectStatus.ARCHIVED
 ProjectStatus.COMPLETED
 ProjectType.PERSONAL
@@ -91,12 +85,8 @@ FastEmbedKwargs.local_files_only
 # relationship names are the back_populates targets of the other side of the mapping.
 sqlite_tables.UsersTable.idp_metadata
 sqlite_tables.MemoryTable.last_accessed_at
-sqlite_tables.EntitiesTable.outgoing_relationships
-sqlite_tables.EntitiesTable.incoming_relationships
 postgres_tables.UsersTable.idp_metadata
 postgres_tables.MemoryTable.last_accessed_at
-postgres_tables.EntitiesTable.outgoing_relationships
-postgres_tables.EntitiesTable.incoming_relationships
 
 # --- Read-only observation accessors that the tests of live behaviour assert on -------
 # Nothing in production calls these; they expose state that tests/ read to prove the

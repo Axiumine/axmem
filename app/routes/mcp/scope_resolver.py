@@ -12,7 +12,7 @@ Scope tokens:
   read:<category>  -> category read tools only
   write:<category> -> category write tools only
 
-Categories: users, memories, projects, entities
+Categories: users, memories, projects
 """
 from __future__ import annotations
 
@@ -34,8 +34,7 @@ CATEGORY_TO_SCOPE: dict[str, str] = {
     ToolCategory.USER.value: "users",
     ToolCategory.MEMORY.value: "memories",
     ToolCategory.PROJECT.value: "projects",
-    ToolCategory.ENTITY.value: "entities",
-    ToolCategory.LINKING.value: "entities",  # linking tools are entity-scoped
+    ToolCategory.LINKING.value: "memories",  # linking tools are memory-scoped
 }
 
 # Reverse map: scope category -> ToolCategory enum values

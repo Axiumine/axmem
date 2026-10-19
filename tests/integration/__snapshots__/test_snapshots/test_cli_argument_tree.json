@@ -760,7 +760,7 @@
       "flags": [
         "--category"
       ],
-      "help": "Filter by tool category (e.g. memory, project, entity)",
+      "help": "Filter by tool category (e.g. memory, project)",
       "nargs": null,
       "required": false,
       "type": null

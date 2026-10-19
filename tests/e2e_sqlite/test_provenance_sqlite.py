@@ -24,9 +24,6 @@ PROVENANCE_FIELDS_9 = {
     "agent_model": "claude-sonnet-4-6",
 }
 
-# Entity relationships skip confidence
-PROVENANCE_FIELDS_8 = {k: v for k, v in PROVENANCE_FIELDS_9.items() if k != "confidence"}
-
 
 def assert_provenance_fields(data: dict, expected: dict):
     """Assert all provenance fields match expected values."""
@@ -99,72 +96,6 @@ async def test_memory_provenance_roundtrip(mcp_client):
         {"tool_name": "get_memory", "arguments": {"memory_id": memory_id}},
     )
     assert_provenance_fields(get_result.data, PROVENANCE_FIELDS_9)
-
-
-# ============================================================================
-# Entity provenance round-trip
-# ============================================================================
-
-
-@pytest.mark.asyncio
-async def test_entity_provenance_roundtrip(mcp_client):
-    """Create entity with all provenance fields, retrieve, verify persistence."""
-    result = await mcp_client.call_tool(
-        "execute_forgetful_tool",
-        {
-            "tool_name": "create_entity",
-            "arguments": {
-                "name": "Provenance Org",
-                "entity_type": "Organization",
-                **PROVENANCE_FIELDS_9,
-            },
-        },
-    )
-    assert result.data is not None
-    entity_id = result.data["id"]
-
-    get_result = await mcp_client.call_tool(
-        "execute_forgetful_tool",
-        {"tool_name": "get_entity", "arguments": {"entity_id": entity_id}},
-    )
-    assert_provenance_fields(get_result.data, PROVENANCE_FIELDS_9)
-
-
-# ============================================================================
-# Entity Relationship provenance round-trip (8 fields, skip confidence)
-# ============================================================================
-
-
-@pytest.mark.asyncio
-async def test_entity_relationship_provenance_roundtrip(mcp_client):
-    """Create entity relationship with provenance (no confidence), verify persistence."""
-    # Create two entities first
-    e1 = await mcp_client.call_tool(
-        "execute_forgetful_tool",
-        {"tool_name": "create_entity", "arguments": {"name": "Org A", "entity_type": "Organization"}},
-    )
-    e2 = await mcp_client.call_tool(
-        "execute_forgetful_tool",
-        {"tool_name": "create_entity", "arguments": {"name": "Person B", "entity_type": "Individual"}},
-    )
-
-    result = await mcp_client.call_tool(
-        "execute_forgetful_tool",
-        {
-            "tool_name": "create_entity_relationship",
-            "arguments": {
-                "source_entity_id": e1.data["id"],
-                "target_entity_id": e2.data["id"],
-                "relationship_type": "employs",
-                "confidence": 0.9,  # This is the relationship's own confidence
-                **PROVENANCE_FIELDS_8,
-            },
-        },
-    )
-    assert result.data is not None
-    assert_provenance_fields(result.data, PROVENANCE_FIELDS_8)
-    # Relationship's own confidence should be preserved independently
-    assert result.data["confidence"] == 0.9
 
 
 # ============================================================================

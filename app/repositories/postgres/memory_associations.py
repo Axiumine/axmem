@@ -17,7 +17,7 @@ AssociatedTable = ProjectsTable
 
 @dataclass(frozen=True)
 class AssociationKind:
-    """One kind of entity a memory can be associated with."""
+    """One kind of item a memory can be associated with."""
 
     ids_field: str  # field of MemoryCreate / MemoryUpdate holding the ids
     relationship: str  # MemoryTable relationship that stores the association
@@ -41,7 +41,7 @@ async def link_associations(
         ids: list[int],
         user_id: UUID,
 ) -> None:
-    """Link the memory to the user's entities of one kind, all of which must exist."""
+    """Link the memory to the user's items of one kind, all of which must exist."""
     stmt = select(kind.table).where(
         kind.table.id.in_(ids),
         kind.table.user_id == user_id,
@@ -63,7 +63,7 @@ async def attach_associations(
         data: MemoryCreate,
         user_id: UUID,
 ) -> None:
-    """Link a new memory to every kind of entity the creation data names."""
+    """Link a new memory to every kind of item the creation data names."""
     for kind in ASSOCIATION_KINDS:
         ids = getattr(data, kind.ids_field)
         if ids:

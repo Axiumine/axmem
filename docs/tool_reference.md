@@ -11,7 +11,6 @@ This guide provides comprehensive documentation for all tools available in the F
 - [User Tools](#user-tools)
 - [Memory Tools](#memory-tools)
 - [Project Tools](#project-tools)
-- [Entity Tools](#entity-tools)
 - [Cross-Category Workflows](#cross-category-workflows)
 
 ---
@@ -28,7 +27,7 @@ scopes.
 List available tools, optionally filtered by category.
 
 **Parameters:**
-- `category` (optional): Filter by category (`user`, `memory`, `project`, `entity`) or by `linking`, which is not a category of its own but selects the link and unlink tools of the memory and entity categories. An unknown value is rejected with the list of valid categories
+- `category` (optional): Filter by category (`user`, `memory`, `project`) or by `linking`, which is not a category of its own but selects the link and unlink tools of the memory category. An unknown value is rejected with the list of valid categories
 
 **Returns:**
 - `tools_by_category`: Tools grouped by category
@@ -96,7 +95,7 @@ execute_forgetful_tool(
 
 ## Tool Categories Overview
 
-The catalog covers users, memories, projects, and entities. Call
+The catalog covers users, memories and projects. Call
 `discover_forgetful_tools()` for the exact catalog exposed by the running server.
 
 ---
@@ -596,7 +595,7 @@ execute_forgetful_tool(
 
 ### `delete_project`
 
-Delete project while preserving linked memories and entities.
+Delete project while preserving linked memories.
 
 **Parameters:**
 - `project_id` (required): Project ID
@@ -607,431 +606,6 @@ Delete project while preserving linked memories and entities.
 **Example:**
 ```python
 execute_forgetful_tool("delete_project", {"project_id": 22})
-```
-
----
-
-## Entity Tools
-
-Track real-world entities (people, organizations, teams, devices) and build knowledge graphs through relationships.
-
-### Entity Types
-- `Organization` - Companies, institutions
-- `Individual` - People, team members
-- `Team` - Groups within organizations
-- `Device` - Servers, infrastructure
-- `Other` - Custom entity types (requires `custom_type` field)
-
-### Relationship Types
-- `works_for` - Employment relationships
-- `member_of` - Team membership
-- `owns` - Ownership
-- `reports_to` - Reporting structure
-- `collaborates_with` - Collaboration
-- Custom types - Define your own
-
-### Entity CRUD Operations
-
-#### `create_entity`
-
-Create an entity representing a real-world thing.
-
-**Parameters:**
-- `name` (required): Entity name
-- `entity_type` (required): Type (`Organization`, `Individual`, `Team`, `Device`, `System`, `Other`)
-- `description` (optional): Entity description
-- `tags` (optional): Categorization tags
-- `aka` (optional): Alternative names/aliases (max 10). Searchable via `search_entities`.
-- `project_id` (optional): Link to project
-- `custom_type` (optional): Custom type name (required if entity_type is `Other`)
-- `metadata` (optional): Additional JSON metadata
-
-**Returns:**
-- Created entity with `entity_id`
-
-**Example:**
-```python
-# Create a person with aliases
-person = execute_forgetful_tool(
-    "create_entity",
-    {
-        "name": "Sarah Chen",
-        "entity_type": "Individual",
-        "description": "Senior Backend Engineer, specializes in distributed systems",
-        "tags": ["engineering", "backend", "distributed-systems"],
-        "aka": ["Sarah", "S.C."],  # Alternative names for search
-        "metadata": {"start_date": "2024-03-15", "location": "San Francisco"}
-    }
-)
-# Returns: {"entity_id": 42, "name": "Sarah Chen", "aka": ["Sarah", "S.C."], ...}
-
-# Create an organization with stock ticker alias
-org = execute_forgetful_tool(
-    "create_entity",
-    {
-        "name": "TechFlow Systems",
-        "entity_type": "Organization",
-        "description": "SaaS platform for workflow automation",
-        "tags": ["company", "saas", "b2b"],
-        "aka": ["TechFlow", "TFS"]  # Can search by "TFS" to find this
-    }
-)
-# Returns: {"entity_id": 43, ...}
-
-# Create infrastructure
-server = execute_forgetful_tool(
-    "create_entity",
-    {
-        "name": "Cache Server 01",
-        "entity_type": "Device",
-        "description": "Redis cluster primary node - production",
-        "tags": ["infrastructure", "cache", "production", "redis"],
-        "aka": ["redis-primary", "cache-01"],
-        "metadata": {"ip": "10.0.1.50", "region": "us-west-2"}
-    }
-)
-# Returns: {"entity_id": 44, ...}
-```
-
-#### `list_entities`
-
-List entities with optional filtering.
-
-**Parameters:**
-- `entity_type` (optional): Filter by type
-- `tags` (optional): Filter by tags
-- `project_id` (optional): Filter by project
-
-**Returns:**
-- List of matching entities
-
-**Example:**
-```python
-# Find all team members
-team = execute_forgetful_tool(
-    "list_entities",
-    {"entity_type": "Individual", "tags": ["engineering"]}
-)
-```
-
-#### `search_entities`
-
-Search entities by name or alternative names (aka). Case-insensitive text matching.
-
-**Parameters:**
-- `query` (required): Search term (matches name or any single aka, partial match supported; `%`, `_` and `\` are matched literally and a match never spans two aliases)
-- `entity_type` (optional): Filter by entity type
-- `tags` (optional): Filter by tags
-- `limit` (optional): Maximum results (1-100, default 20)
-
-**Returns:**
-- List of entities matching the search term (via name or aka)
-
-**Example:**
-```python
-# Find entities with "Chen" in the name
-results = execute_forgetful_tool(
-    "search_entities",
-    {"query": "Chen"}
-)
-# Returns: [{"entity_id": 42, "name": "Sarah Chen", "aka": ["Sarah", "S.C."], ...}, ...]
-
-# Search by alias - finds "TechFlow Systems" via its "TFS" alias
-results = execute_forgetful_tool(
-    "search_entities",
-    {"query": "TFS"}
-)
-# Returns: [{"entity_id": 43, "name": "TechFlow Systems", "aka": ["TechFlow", "TFS"], ...}]
-```
-
-#### `get_entity`
-
-Retrieve complete entity details by ID.
-
-**Parameters:**
-- `entity_id` (required): Entity ID
-
-**Returns:**
-- Complete entity object
-
-**Example:**
-```python
-entity = execute_forgetful_tool("get_entity", {"entity_id": 42})
-```
-
-#### `update_entity`
-
-Update entity (PATCH semantics - only provided fields changed).
-
-**Parameters:**
-- `entity_id` (required): Entity ID
-- `name`, `description`, `tags`, `aka`, `metadata` (all optional)
-- `aka`: Replaces existing aliases. Empty list `[]` clears all aliases.
-- `custom_type`: Required while the entity type is `Other` (clearing it is rejected). Changing the type away from `Other` clears it.
-- `project_ids`: Replaces existing project links. An unknown or foreign project id is rejected and the existing links are kept.
-
-**Returns:**
-- Updated entity object
-
-**Example:**
-```python
-# Update description and add aliases
-execute_forgetful_tool(
-    "update_entity",
-    {
-        "entity_id": 42,
-        "description": "Principal Backend Engineer, Tech Lead for distributed systems",
-        "aka": ["Sarah", "S.C.", "Chen"],  # Replaces existing aka list
-        "metadata": {"promotion_date": "2025-01-01", "title": "Principal Engineer"}
-    }
-)
-```
-
-#### `delete_entity`
-
-Delete entity (cascade removes memory links and relationships).
-
-**Parameters:**
-- `entity_id` (required): Entity ID
-
-**Returns:**
-- Confirmation of deletion
-
-**Example:**
-```python
-execute_forgetful_tool("delete_entity", {"entity_id": 42})
-```
-
-### Entity-Memory Linking
-
-#### `link_entity_to_memory`
-
-Link an entity to a memory (establishes reference relationship).
-
-**Parameters:**
-- `entity_id` (required): Entity ID
-- `memory_id` (required): Memory ID
-
-**Returns:**
-- Confirmation of link
-
-**Example:**
-```python
-# Link Sarah to a memory about an architecture decision she made
-execute_forgetful_tool(
-    "link_entity_to_memory",
-    {
-        "entity_id": 42,  # Sarah Chen
-        "memory_id": 156  # "API rate limiting decision"
-    }
-)
-```
-
-#### `unlink_entity_from_memory`
-
-Remove entity-memory link.
-
-**Parameters:**
-- `entity_id` (required): Entity ID
-- `memory_id` (required): Memory ID
-
-**Returns:**
-- Confirmation of unlink
-
-**Example:**
-```python
-execute_forgetful_tool(
-    "unlink_entity_from_memory",
-    {"entity_id": 42, "memory_id": 156}
-)
-```
-
-#### `get_memory_entities`
-
-Get every entity directly linked to a memory (reverse of `get_entity_memories`).
-
-**Parameters:**
-- `memory_id` (required): Memory ID
-
-**Returns:**
-- `entity_ids`: Linked entity IDs, ordered by ID
-- `count`: Number of linked entities
-- `entities`: `{id, name, entity_type}` objects in the same order as `entity_ids`
-- The full set is always returned (no pagination). An existing memory with no links returns empty lists; a missing or inaccessible memory raises a not found error.
-
-**Example:**
-```python
-execute_forgetful_tool("get_memory_entities", {"memory_id": 156})
-# Returns: {"entity_ids": [42], "count": 1, "entities": [{"id": 42, "name": "Sarah Chen", "entity_type": "Individual"}]}
-```
-
-### Entity-Project Linking
-
-#### `link_entity_to_project`
-
-Link an entity to a project for organizational grouping.
-
-**Parameters:**
-- `entity_id` (required): Entity ID
-- `project_id` (required): Project ID
-
-**Returns:**
-- `{"success": true}` on success
-
-**Example:**
-```python
-# Link Sarah to the API Gateway project
-execute_forgetful_tool(
-    "link_entity_to_project",
-    {
-        "entity_id": 42,  # Sarah Chen
-        "project_id": 12  # API Gateway project
-    }
-)
-```
-
-#### `unlink_entity_from_project`
-
-Remove entity-project link.
-
-**Parameters:**
-- `entity_id` (required): Entity ID
-- `project_id` (required): Project ID
-
-**Returns:**
-- `{"success": true}` if unlinked, `{"success": false}` if link didn't exist
-
-**Example:**
-```python
-execute_forgetful_tool(
-    "unlink_entity_from_project",
-    {"entity_id": 42, "project_id": 12}
-)
-```
-
-### Entity Relationships (Knowledge Graph)
-
-Build directional knowledge graphs showing how entities relate to each other.
-
-#### `create_entity_relationship`
-
-Create a typed relationship between two entities.
-
-**Parameters:**
-- `from_entity_id` (required): Source entity ID
-- `to_entity_id` (required): Target entity ID
-- `relationship_type` (required): Relationship type (see list above, or custom)
-- `strength` (optional): Relationship strength 0.0-1.0 (default: 1.0)
-- `confidence` (optional): Confidence level 0.0-1.0 (default: 1.0)
-- `metadata` (optional): Additional JSON metadata
-
-A relationship is unique per source entity, target entity and type. Creating a second one with the same type fails with a "already exists" error instead of storing a duplicate.
-
-**Returns:**
-- Created relationship with `relationship_id`
-
-**Example:**
-```python
-# Sarah works for TechFlow
-relationship = execute_forgetful_tool(
-    "create_entity_relationship",
-    {
-        "from_entity_id": 42,  # Sarah Chen
-        "to_entity_id": 43,    # TechFlow Systems
-        "relationship_type": "works_for",
-        "strength": 1.0,
-        "metadata": {
-            "role": "Principal Backend Engineer",
-            "department": "Platform Engineering",
-            "start_date": "2024-03-15"
-        }
-    }
-)
-# Returns: {"relationship_id": 12, ...}
-
-# Server owned by TechFlow
-execute_forgetful_tool(
-    "create_entity_relationship",
-    {
-        "from_entity_id": 43,  # TechFlow Systems
-        "to_entity_id": 44,    # Cache Server 01
-        "relationship_type": "owns",
-        "metadata": {"purchased": "2024-06-01", "cost_center": "engineering"}
-    }
-)
-```
-
-#### `get_entity_relationships`
-
-Get relationships for an entity with optional filtering.
-
-**Parameters:**
-- `entity_id` (required): Entity ID
-- `relationship_type` (optional): Filter by relationship type
-- `direction` (optional): `outgoing`, `incoming`, or `both` (default: `both`); case-insensitive, any other value is rejected
-
-**Returns:**
-- List of relationships
-
-**Example:**
-```python
-# Get all of Sarah's relationships
-relationships = execute_forgetful_tool(
-    "get_entity_relationships",
-    {"entity_id": 42}
-)
-
-# Get only employment relationships
-employment = execute_forgetful_tool(
-    "get_entity_relationships",
-    {
-        "entity_id": 42,
-        "relationship_type": "works_for",
-        "direction": "outgoing"
-    }
-)
-```
-
-#### `update_entity_relationship`
-
-Update entity relationship (PATCH semantics).
-
-**Parameters:**
-- `relationship_id` (required): Relationship ID
-- `relationship_type`, `strength`, `confidence`, `metadata` (all optional)
-
-**Returns:**
-- Updated relationship object
-
-**Example:**
-```python
-# Update Sarah's role after promotion
-execute_forgetful_tool(
-    "update_entity_relationship",
-    {
-        "relationship_id": 12,
-        "metadata": {
-            "role": "Engineering Director",
-            "department": "Platform Engineering",
-            "promotion_date": "2025-01-01"
-        }
-    }
-)
-```
-
-#### `delete_entity_relationship`
-
-Delete entity relationship (removes knowledge graph edge).
-
-**Parameters:**
-- `relationship_id` (required): Relationship ID
-
-**Returns:**
-- Confirmation of deletion
-
-**Example:**
-```python
-execute_forgetful_tool("delete_entity_relationship", {"relationship_id": 12})
 ```
 
 ---
@@ -1088,28 +662,7 @@ execute_forgetful_tool(
     {"memory_id": decision_memory["id"], "related_ids": [middleware_memory["id"]]}
 )
 
-# 4. Create entity for the engineer who implemented it
-engineer = execute_forgetful_tool(
-    "create_entity",
-    {
-        "name": "Alex Kim",
-        "entity_type": "Individual",
-        "notes": "Senior Full-Stack Engineer",
-        "tags": ["engineering", "fullstack"],
-        "aka": ["Alex", "A.K."]
-    }
-)
-
-# 5. Link engineer to the decision memory
-execute_forgetful_tool(
-    "link_entity_to_memory",
-    {
-        "entity_id": engineer["id"],
-        "memory_id": decision_memory["id"]
-    }
-)
-
-# 6. Later, query everything about auth
+# 4. Later, query everything about auth
 results = execute_forgetful_tool(
     "query_memory",
     {
@@ -1118,49 +671,15 @@ results = execute_forgetful_tool(
         "project_ids": [project_id]
     }
 )
-# Returns decision_memory + auto-linked memories + linked entity
+# Returns decision_memory + auto-linked memories + linked memories
 ```
 
 ### Scenario 2: New Team Member Onboarding
 
-**Context:** A new engineer joins, you want to capture their information and link relevant knowledge.
+**Context:** A new engineer joins, you want to capture their focus areas and link relevant knowledge.
 
 ```python
-# 1. Create entity for new engineer
-new_hire = execute_forgetful_tool(
-    "create_entity",
-    {
-        "name": "Jordan Taylor",
-        "entity_type": "Individual",
-        "notes": "Backend Engineer - Payments Team",
-        "tags": ["engineering", "backend", "payments"],
-        "aka": ["Jordan", "J.T."]
-    }
-)
-
-# 2. Get company entity (assuming it exists) - can search by name or alias
-company = execute_forgetful_tool(
-    "search_entities",
-    {"query": "TechFlow"}
-)
-company_id = company["entities"][0]["id"]
-
-# 3. Create employment relationship
-execute_forgetful_tool(
-    "create_entity_relationship",
-    {
-        "from_entity_id": new_hire["id"],
-        "to_entity_id": company_id,
-        "relationship_type": "works_for",
-        "metadata": {
-            "role": "Backend Engineer II",
-            "department": "Payments",
-            "team": "Checkout"
-        }
-    }
-)
-
-# 4. Create onboarding memory
+# 1. Create onboarding memory
 onboarding_memory = execute_forgetful_tool(
     "create_memory",
     {
@@ -1173,16 +692,7 @@ onboarding_memory = execute_forgetful_tool(
     }
 )
 
-# 5. Link new hire to onboarding memory
-execute_forgetful_tool(
-    "link_entity_to_memory",
-    {
-        "entity_id": new_hire["id"],
-        "memory_id": onboarding_memory["id"]
-    }
-)
-
-# 6. Query existing payment system memories and link relevant ones
+# 2. Query existing payment system memories
 payment_memories = execute_forgetful_tool(
     "query_memory",
     {
@@ -1192,14 +702,14 @@ payment_memories = execute_forgetful_tool(
     }
 )
 
-for memory in payment_memories["primary_memories"]:
-    execute_forgetful_tool(
-        "link_entity_to_memory",
-        {
-            "entity_id": new_hire["id"],
-            "memory_id": memory["id"]
-        }
-    )
+# 3. Link the relevant ones to the onboarding memory
+execute_forgetful_tool(
+    "link_memories",
+    {
+        "memory_id": onboarding_memory["id"],
+        "related_ids": [memory["id"] for memory in payment_memories["primary_memories"]]
+    }
+)
 ```
 
 ### Scenario 3: Infrastructure Incident Capture
@@ -1207,14 +717,7 @@ for memory in payment_memories["primary_memories"]:
 **Context:** Redis server failed, you resolved it and want to record it for future reference.
 
 ```python
-# 1. Get the server entity (can also search by alias like "redis-primary")
-server = execute_forgetful_tool(
-    "search_entities",
-    {"query": "Cache Server 01"}
-)
-server_id = server["entities"][0]["id"]
-
-# 2. Create incident memory
+# 1. Create incident memory
 incident = execute_forgetful_tool(
     "create_memory",
     {
@@ -1227,25 +730,7 @@ incident = execute_forgetful_tool(
     }
 )
 
-# 3. Link incident to server
-execute_forgetful_tool(
-    "link_entity_to_memory",
-    {
-        "entity_id": server_id,
-        "memory_id": incident["id"]
-    }
-)
-
-# 4. Update server metadata with fix
-execute_forgetful_tool(
-    "update_entity",
-    {
-        "entity_id": server_id,
-        "notes": "4 GB maxmemory, allkeys-lru policy, monitoring enabled"
-    }
-)
-
-# 5. Record the follow-up as a memory
+# 2. Record the follow-up as a memory
 followup = execute_forgetful_tool(
     "create_memory",
     {
@@ -1258,7 +743,7 @@ followup = execute_forgetful_tool(
     }
 )
 
-# 6. Link the follow-up to the incident memory
+# 3. Link the follow-up to the incident memory
 execute_forgetful_tool(
     "link_memories",
     {"memory_id": incident["id"], "related_ids": [followup["id"]]}
@@ -1361,11 +846,10 @@ execute_forgetful_tool(
 - **Archive completed projects** - Don't delete - preserve knowledge with context
 - **Link related projects** - Create memories that reference multiple projects
 
-### Entity & Knowledge Graph
-- **Entities for concrete things, memories for concepts** - "Sarah Chen" is an entity, "Sarah's API design preference" is a memory
-- **Build relationships as you learn** - Don't wait to build complete graphs
-- **Use metadata liberally** - Capture temporal and contextual information
-- **Link entities to relevant memories** - Creates rich context for queries
+### Knowledge Graph
+- **Build links as you learn** - Don't wait to build complete graphs
+- **Capture context liberally** - Record temporal and contextual information in the `context` field
+- **Link related memories** - Creates rich context for queries
 
 ### Long-form Knowledge
 - **Split detailed content (>400 words) into atomic memories** - ADRs, research and specifications become several memories, one concept each

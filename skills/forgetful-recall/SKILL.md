@@ -66,8 +66,8 @@ Done when: results are judged sufficient, or absence is confirmed from more than
 
 ## Step 4 — Expand or escalate
 
-Promising hits get `get_memory` for full content and links. When hits arrive as fragments,
-reference entities, or trail across domains, the flat list is the wrong shape — switch to
+Promising hits get `get_memory` for full content and links. When hits arrive as fragments or
+trail across domains, the flat list is the wrong shape — switch to
 `forgetful-explore` and walk the graph instead.
 
 Done when: enough context is in hand, or the exploration skill has taken over.

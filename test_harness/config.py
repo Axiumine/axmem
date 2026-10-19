@@ -16,7 +16,6 @@ from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 SKILL_ORDER: tuple[str, ...] = (
     "forgetful-cli-setup",
     "forgetful-remember",
-    "forgetful-entities",
     "forgetful-recall",
     "forgetful-explore",
     "forgetful-context-gather",

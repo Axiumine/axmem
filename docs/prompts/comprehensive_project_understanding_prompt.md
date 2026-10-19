@@ -24,7 +24,6 @@ Use `discover_forgetful_tools` and execute these queries:
 # Discover available tools
 discover_forgetful_tools(category="memory")
 discover_forgetful_tools(category="project")
-discover_forgetful_tools(category="entity")
 
 # Query for project information
 query_memory({
@@ -53,8 +52,6 @@ query_memory({
 
 # List all project content
 list_memories({"project_id": project_id})
-list_entities({"entity_type": "Individual"})
-list_entities({"entity_type": "Device/System"})
 ```
 
 ### Compile KB Summary
@@ -85,7 +82,7 @@ Organize findings into:
 
 **E. Knowledge Graph**
 - Code patterns stored in memories
-- Entities and relationships
+- Links between memories
 - Historical context and evolution
 
 **F. Design Rationale**
@@ -94,7 +91,7 @@ Organize findings into:
 - Known limitations
 
 **G. Statistics**
-- Number of memories and entities
+- Number of memories and projects
 - Coverage areas and gaps
 
 ---

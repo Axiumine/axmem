@@ -1,16 +1,13 @@
 """Configuration Management For the Service
 """
-import logging
 from pathlib import Path
-from typing import Self, cast
+from typing import cast
 
 from platformdirs import user_config_dir, user_data_dir
-from pydantic import Field, ValidationInfo, field_validator, model_validator
+from pydantic import Field, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.version import get_version
-
-logger = logging.getLogger(__name__)
 
 # NOTE: We deliberately do NOT call dotenv.load_dotenv() here. It promotes a
 # discovered .env into os.environ, which pydantic-settings ranks above every
@@ -44,15 +41,6 @@ PROVENANCE_MAX_LENGTHS = {
     "AGENT_VERSION": 50,
     "AGENT_MODEL": 100,
 }
-
-# Tunable *_MAX_LENGTH settings that feed fixed-width PostgreSQL VARCHAR columns
-# (postgres_tables.py). PostgreSQL rejects longer values; SQLite does not enforce VARCHAR length.
-POSTGRES_COLUMN_WIDTHS = {
-    "ENTITY_NAME_MAX_LENGTH": 200,
-    "ENTITY_TYPE_MAX_LENGTH": 100,
-    "ENTITY_RELATIONSHIP_TYPE_MAX_LENGTH": 100,
-}
-
 
 def canonical_choice(setting: str, value: str, choices: tuple[str, ...]) -> str:
     """Resolve ``value`` to its canonical spelling in ``choices``, ignoring case and padding.
@@ -167,7 +155,7 @@ class Settings(BaseSettings):
     TOKEN_CACHE_MAX_SIZE: int = 1000           # Maximum cached tokens
 
     # Scoped Permissions Configuration
-    FORGETFUL_SCOPES: str = "*"               # Comma-separated scopes (e.g. "read", "write:memories", "read,write:entities")
+    FORGETFUL_SCOPES: str = "*"               # Comma-separated scopes (e.g. "read", "write:memories", "read,write:projects")
 
     # CLI Remote Mode Configuration
     FORGETFUL_SERVER: str = ""                # Remote deployment URL for the CLI (empty = local mode)
@@ -194,14 +182,6 @@ class Settings(BaseSettings):
     # Project Configuration
     PROJECT_DESCRIPTION_MAX_LENGTH: int = 5000  # Text field, no DB limit - reasonable cap
     PROJECT_NOTES_MAX_LENGTH: int = 4000        # Text field, no DB limit - reasonable cap
-
-    # Entity Configuration
-    ENTITY_NAME_MAX_LENGTH: int = 200            # DB limit: String(200)
-    ENTITY_TYPE_MAX_LENGTH: int = 100            # For custom entity types
-    ENTITY_NOTES_MAX_LENGTH: int = 4000          # Reasonable cap for text field
-    ENTITY_TAGS_MAX_COUNT: int = 10              # For categorization
-    ENTITY_AKA_MAX_COUNT: int = 10               # Maximum alternative names per entity
-    ENTITY_RELATIONSHIP_TYPE_MAX_LENGTH: int = 100  # e.g., "works_at", "owns", "manages"
 
     # Provenance Defaults (auto-applied to all writes when set via MCP env config)
     ENCODING_AGENT: str = ""        # Software running the agent (e.g., "OpenCode")
@@ -292,20 +272,6 @@ class Settings(BaseSettings):
         if len(value) > limit:
             raise ValueError(f"{field_name} must be at most {limit} characters (got {len(value)})")
         return value
-
-    @model_validator(mode="after")
-    def _clamp_max_lengths_to_postgres_columns(self) -> Self:
-        if self.DATABASE != "Postgres":
-            return self
-        for name, width in POSTGRES_COLUMN_WIDTHS.items():
-            configured = getattr(self, name)
-            if configured > width:
-                logger.warning(
-                    "%s=%d exceeds the PostgreSQL column width; using %d instead",
-                    name, configured, width,
-                )
-                setattr(self, name, width)
-        return self
 
     @field_validator("RERANKING_ONNX_PROVIDERS", "EMBEDDING_ONNX_PROVIDERS")
     @classmethod

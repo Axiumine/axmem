@@ -77,7 +77,7 @@ See what's been added recently:
 
 ### Explore the Knowledge Graph
 
-Deep traversal of related memories and entities:
+Deep traversal of related memories:
 
 ```
 /memory-explore payment processing

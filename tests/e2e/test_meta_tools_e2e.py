@@ -364,82 +364,6 @@ async def test_execute_list_projects_via_meta_tools_e2e(mcp_client):
     assert _has_field(list_result.data, "count")
 
 
-# ============================================================================
-# Entity Tools via Meta-Tools
-# ============================================================================
-
-@pytest.mark.e2e
-async def test_execute_create_entity_via_meta_tools_e2e(mcp_client):
-    """Test creating an entity through meta-tools"""
-    result = await mcp_client.call_tool(
-        "execute_forgetful_tool",
-        {
-            "tool_name": "create_entity",
-            "arguments": {
-                "name": "Test Organization",
-                "entity_type": "Organization",
-                "notes": "A test organization created via meta-tools",
-            },
-        },
-    )
-
-    assert result.data is not None
-    assert _has_field(result.data, "id")
-    assert _has_field(result.data, "name")
-
-
-@pytest.mark.e2e
-async def test_execute_entity_workflow_via_meta_tools_e2e(mcp_client):
-    """Test complete entity workflow: create → get → update → list"""
-    # Create entity
-    create_result = await mcp_client.call_tool(
-        "execute_forgetful_tool",
-        {
-            "tool_name": "create_entity",
-            "arguments": {
-                "name": "Anthropic",
-                "entity_type": "Organization",
-                "tags": ["ai", "research"],
-            },
-        },
-    )
-    assert create_result.data is not None
-    entity_id = create_result.data.id if hasattr(create_result.data, "id") else create_result.data["id"]
-
-    # Get entity
-    get_result = await mcp_client.call_tool(
-        "execute_forgetful_tool",
-        {
-            "tool_name": "get_entity",
-            "arguments": {"entity_id": entity_id},
-        },
-    )
-    assert get_result.data is not None
-
-    # Update entity
-    update_result = await mcp_client.call_tool(
-        "execute_forgetful_tool",
-        {
-            "tool_name": "update_entity",
-            "arguments": {
-                "entity_id": entity_id,
-                "notes": "Updated via meta-tools",
-            },
-        },
-    )
-    assert update_result.data is not None
-
-    # List entities
-    list_result = await mcp_client.call_tool(
-        "execute_forgetful_tool",
-        {
-            "tool_name": "list_entities",
-            "arguments": {},
-        },
-    )
-    assert list_result.data is not None
-
-
 @pytest.mark.e2e
 async def test_discover_all_categories_e2e(mcp_client):
     """Test that all tool categories are discoverable"""
@@ -448,11 +372,11 @@ async def test_discover_all_categories_e2e(mcp_client):
     assert result.data is not None
     categories = result.data["categories_available"]
 
-    # Should have all 4 categories
+    # Should have all 3 categories
     assert "user" in categories
     assert "memory" in categories
     assert "project" in categories
-    assert "entity" in categories
+    assert "entity" not in categories
 
     # Should have significant number of total tools
-    assert result.data["total_count"] >= 33  # At least 33 tools total
+    assert result.data["total_count"] >= 17  # At least 17 tools total

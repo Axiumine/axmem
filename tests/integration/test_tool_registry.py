@@ -5,8 +5,6 @@ Tests the registry methods in isolation without external dependencies.
 import pytest
 
 from app.models.tool_registry_models import ToolCategory, ToolParameter
-from app.routes.mcp.tool_adapters import create_entity_adapters
-from app.routes.mcp.tool_metadata_registry import register_entity_tools_metadata
 from app.routes.mcp.tool_registry import ToolRegistry
 
 
@@ -483,44 +481,3 @@ async def test_mutates_in_detailed_dict(empty_registry, sample_tool_impl):
     detailed = tool.metadata.to_detailed_dict()
     assert "mutates" in detailed
     assert detailed["mutates"] is False
-
-
-# ============================================================================
-# Curated docs: relationship vocabulary (structural + people terms)
-# ============================================================================
-
-
-@pytest.fixture
-def entity_registry(empty_registry):
-    """Registry populated with the real entity tool metadata (not test doubles)."""
-    adapters = create_entity_adapters(None, None)
-    register_entity_tools_metadata(empty_registry, adapters)
-    return empty_registry
-
-
-def test_create_entity_relationship_docs_blend_structural_and_people_terms(
-    entity_registry,
-):
-    """relationship_type docs must not steer agents toward people-only vocab.
-
-    Skills teach structural terms (part_of, depends_on, uses) for modelling
-    software. The curated tool docs must surface those alongside the
-    people-flavoured terms (works_for, member_of, owns) so agents following
-    the schema examples aren't steered away from the skills' vocabulary.
-    """
-    tool = entity_registry.get_tool("create_entity_relationship")
-    rel_param = next(p for p in tool.metadata.parameters if p.name == "relationship_type")
-
-    for term in ("part_of", "depends_on", "uses", "works_for", "member_of"):
-        assert term in rel_param.description
-
-    assert any("part_of" in ex for ex in tool.metadata.examples)
-    assert any("works_for" in ex for ex in tool.metadata.examples)
-
-
-def test_get_entity_relationships_filter_example_is_structural(entity_registry):
-    """The relationship_type filter example should not be people-only either."""
-    tool = entity_registry.get_tool("get_entity_relationships")
-    rel_param = next(p for p in tool.metadata.parameters if p.name == "relationship_type")
-
-    assert rel_param.example == "part_of"

@@ -13,13 +13,12 @@ from fastmcp import Client, FastMCP
 from httpx import ASGITransport, AsyncClient
 
 from app.routes.api import (
-    entities,
     memories,
     projects,
 )
 
 API_MODULES = (
-    entities, memories, projects,
+    memories, projects,
 )
 IGNORED_METHODS = {"HEAD", "OPTIONS"}
 BAD_IDS = [
@@ -91,8 +90,8 @@ async def client(sqlite_app):
 
 def test_inventory_covers_the_rest_api():
     """Guard the sweeps below: they must actually see the routes."""
-    assert len(ROUTES_WITH_IDS) > 16
-    assert len(ROUTES_WITH_BODY) > 10
+    assert len(ROUTES_WITH_IDS) > 8
+    assert len(ROUTES_WITH_BODY) > 5
 
 
 class TestPathIds:
@@ -108,10 +107,6 @@ class TestPathIds:
                     if response.status_code != 404 or not response.json()["error"].startswith("Invalid "):
                         failures.append(f"{method} {path[:80]} -> {response.status_code}")
         assert not failures, "\n".join(failures)
-
-    async def test_entity_search_is_not_swallowed_as_an_entity_id(self, client):
-        response = await client.get("/api/v1/entities/search")
-        assert response.status_code == 404
 
     async def test_valid_missing_id_is_still_a_plain_not_found(self, client):
         response = await client.get("/api/v1/projects/999999")

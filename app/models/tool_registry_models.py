@@ -13,7 +13,6 @@ class ToolCategory(StrEnum):
     USER = "user"
     MEMORY = "memory"
     PROJECT = "project"
-    ENTITY = "entity"
     LINKING = "linking"
 
 class ToolParameterDef(TypedDict):

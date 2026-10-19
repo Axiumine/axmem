@@ -68,59 +68,39 @@ class TestExecuteErrorsAreSanitised:
         # driver's constraint error is raised by the repository itself.
         async def failing_insert(*args, **kwargs):
             raise IntegrityError(
-                "INSERT INTO entities (name, notes) VALUES (?, ?)",
+                "INSERT INTO projects (name, notes) VALUES (?, ?)",
                 (SECRET_DESCRIPTION, SECRET_CONTENT),
                 Exception("FOREIGN KEY constraint failed"),
             )
 
-        monkeypatch.setattr(sqlite_app.entity_service.entity_repo, "create_entity", failing_insert)
+        monkeypatch.setattr(sqlite_app.project_service.project_repo, "create_project", failing_insert)
 
         message = await tool_error(
             mcp_client,
-            "create_entity",
+            "create_project",
             {
                 "name": SECRET_DESCRIPTION,
-                "entity_type": "Organization",
+                "description": "d",
+                "project_type": "development",
                 "notes": SECRET_CONTENT,
             },
         )
 
         assert_no_leak(message)
-        assert message.startswith("Failed to execute 'create_entity'")
+        assert message.startswith("Failed to execute 'create_project'")
         assert CONSTRAINT_FAILURE in message
 
     async def test_unknown_project_is_reported_as_not_found_without_driver_text(self, mcp_client):
         arguments = {
-            "name": SECRET_DESCRIPTION, "entity_type": "Organization",
-            "notes": SECRET_CONTENT, "project_ids": [9999],
+            "title": SECRET_DESCRIPTION, "content": SECRET_CONTENT, "context": "ctx",
+            "keywords": ["k"], "tags": ["t"], "importance": 5, "project_ids": [9999],
         }
 
-        message = await tool_error(mcp_client, "create_entity", arguments)
+        message = await tool_error(mcp_client, "create_memory", arguments)
 
         assert_no_leak(message)
-        assert message.startswith("Failed to execute 'create_entity'")
-        assert "Projects not found: [9999]" in message
-
-    async def test_duplicate_entity_relationship_is_sanitised(self, mcp_client):
-        ids = []
-        for name in ("dup-a", "dup-b"):
-            created = await execute(
-                mcp_client, "create_entity",
-                {"name": name, "entity_type": "Individual", "tags": []},
-            )
-            ids.append(created.data["id"])
-        relationship = {
-            "source_entity_id": ids[0],
-            "target_entity_id": ids[1],
-            "relationship_type": "works_with",
-        }
-        await execute(mcp_client, "create_entity_relationship", relationship)
-
-        message = await tool_error(mcp_client, "create_entity_relationship", relationship)
-
-        # The repository turns the unique-constraint violation into an authored ConflictError
-        assert_no_leak(message)
-        assert "already exists between these entities" in message
+        assert message.startswith("Failed to execute 'create_memory'")
+        assert "Projects not found: {9999}" in message
 
     async def test_driver_error_for_huge_id_is_generic(self, mcp_client):
         message = await tool_error(mcp_client, "get_memory", {"memory_id": 10**30})

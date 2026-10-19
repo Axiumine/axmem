@@ -22,7 +22,7 @@ class TestBuildCategoryList:
         result = _build_category_list()
 
         assert result.split(", ") == [
-            "user", "memory", "project", "entity", "linking",
+            "user", "memory", "project", "linking",
         ]
 
 
@@ -33,7 +33,7 @@ class TestBuildToolCategoriesLine:
         result = _build_tool_categories_line()
 
         assert result.split(" | ") == [
-            "memory", "project", "entity", "linking", "user",
+            "memory", "project", "linking", "user",
         ]
 
 
@@ -79,7 +79,7 @@ class TestDiscoverDocstring:
 
         assert "**User Tools**" in doc
         assert "**Memory Tools**" in doc
-        assert "**Entity Tools**" in doc
+        assert "**Project Tools**" in doc
 
     def test_workflow_section_always_present(self):
         """The workflow section is always appended."""

@@ -70,8 +70,7 @@ Query the knowledge base for existing content:
 2. query_memory: "[project-name] overview" with include_links=true
 3. query_memory: "[project-name] patterns" to check pattern coverage
 4. list_memories: Filter by project_id to count total memories
-5. list_entities: Check for team members, external systems
-6. Note: Check auto-linking quality (similarity ≥0.7 by default)
+5. Note: Check auto-linking quality (similarity ≥0.7 by default)
 ```
 
 #### Step 4: Analyze Current Codebase State
@@ -197,7 +196,7 @@ Rationale: [gap analysis summary and why these targets]"
 
 ### Phase 1: Project Foundation (Create 5-10 memories)
 
-**First: Create/Update Project Entity**
+**First: Create/Update the Project**
 
 If project doesn't exist, use `create_project`:
 ```
@@ -218,7 +217,7 @@ notes: Operational details (max 4000 chars):
   - Important files/directories (entry points, configs, key modules)
 ```
 
-**Save the project_id** - required for linking all memories and entities.
+**Save the project_id** - required for linking all memories.
 
 ---
 
@@ -526,30 +525,9 @@ Importance: 7-8
 
 ---
 
-### Phase 7: Entities (Create as discovered)
+### Phase 7: Link Everything Together
 
-Create entities for people, teams, and systems using `create_entity`:
-
-#### Entity Types:
-- **Individual**: Developers, architects, stakeholders, maintainers
-- **Organization**: Company, department, external vendors
-- **Team**: Development teams, cross-functional teams
-- **Device/System**: Servers, services, databases, external APIs
-- **Custom**: Project-specific entity types
-
-#### When to Create Entities:
-- Project maintainers/contributors (link to architectural decisions)
-- External services/APIs (link to integration memories)
-- Deployment targets (link to deployment/config memories)
-- Teams responsible for features (link to feature memories)
-
-**Link entities to relevant memories** to ground abstract concepts in real systems/people.
-
----
-
-### Phase 8: Link Everything Together
-
-Go back and connect memories to each other and to entities using `link_memories` and `link_entity_to_memory`:
+Go back and connect memories to each other using `link_memories`:
 
 #### Linking Strategy:
 ```
@@ -707,7 +685,7 @@ query_memory({
 
 **Monorepos:**
 - **Strategy**: Bootstrap in layers (shared → packages → integration)
-- **Create multiple project entities**: One for monorepo, one per major package
+- **Create multiple projects**: One for monorepo, one per major package
 - **Phase 2 adjustment**: 20-30 memories (shared + per-package architecture)
 - **Phase 3.5 adjustment**: 5-15 memories (cross-package interactions)
 - **Use tags**: Add package-specific tags for filtering (e.g., `@payments`, `@auth`)
@@ -729,7 +707,6 @@ query_memory({
 
 **Microservices:**
 - **Phase 3.5 importance**: Service integration patterns
-- **Create entities**: External services, dependencies
 - **Phase 6 emphasis**: Configuration, service discovery
 - **Target**: 40-70 memories per service
 - **Example**: REST API service, event-driven service, background worker
@@ -790,12 +767,12 @@ query_memory({
 For monorepos, consider bootstrapping in layers:
 
 1. **Shared Infrastructure First** (Phase 1-3):
-   - Create project entity for the monorepo as a whole
+   - Create a project for the monorepo as a whole
    - Document shared utilities, build system, CI/CD
    - Document cross-package patterns and conventions
    
 2. **Per-Package/Project Second** (Phase 1-4 per package):
-   - Create project entity for each significant package
+   - Create a project for each significant package
    - Document package-specific architecture and features
    - Link to shared infrastructure memories
    - Use package-specific tags for filtering
@@ -828,7 +805,7 @@ Then proceed with phases addressing identified gaps.
 
 Goal: Create rich, interconnected knowledge graph where:
 - Memories capture atomic concepts with automatic semantic linking
-- Project entity ties everything together with operational notes
+- The project ties everything together with operational notes
 - Everything links creating navigable knowledge graph for natural language queries
 ```
 

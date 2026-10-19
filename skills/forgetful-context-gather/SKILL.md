@@ -54,9 +54,8 @@ Done when: every angle has run and its outcome is recorded.
 
 ## Step 3 — Explore around the strongest hits
 
-Where hits reference entities or cluster into a topic, walk the graph (per
-`forgetful-explore`, medium depth): expand the memories, discover the entities, harvest
-what is attached to them.
+Where hits cluster into a topic, walk the graph (per `forgetful-explore`, medium depth):
+expand the memories and follow their links outward.
 
 Done when: the strongest hits have their neighbourhood mapped, not just their own text.
 

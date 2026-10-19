@@ -59,7 +59,7 @@ In this sense **Axmem** becomes a little like Obsidian for AI agents, where the 
 
 We find, [as do others (A-MEM: Agentic Memory for LLM Agents)](https://arxiv.org/abs/2502.12110), all this helps in ensuring that when the agent requires relevant information from the memory system later, the correct information is returned.
 
-In addition to memories, **Axmem** also has the concept of entities (think organisation, people, products) and projects, both of which can be associated with one or more memories.
+In addition to memories, **Axmem** also has projects, which can be associated with one or more memories.
 
 
 ![Architecture](docs/images/Forgetful%20Architecture.drawio_transparent.png)
@@ -265,83 +265,9 @@ results = execute_forgetful_tool(
 # Returns: Stripe decision + auto-linked related memories
 ```
 
-### Example 2: Knowledge Graph with Entities
-
-Track people, organizations, and relationships - perfect for team and infrastructure management.
-
-```python
-# New engineer joins your company
-new_hire = execute_forgetful_tool(
-    "create_entity",
-    {
-        "name": "Jordan Taylor",
-        "entity_type": "Individual",
-        "description": "Backend Engineer - Payments Team",
-        "tags": ["engineering", "backend", "payments"]
-    }
-)
-
-# Get company entity (create if needed)
-company = execute_forgetful_tool(
-    "create_entity",
-    {
-        "name": "TechFlow Systems",
-        "entity_type": "Organization",
-        "description": "SaaS platform company"
-    }
-)
-
-# Create employment relationship
-execute_forgetful_tool(
-    "create_entity_relationship",
-    {
-        "from_entity_id": new_hire["id"],
-        "to_entity_id": company["id"],
-        "relationship_type": "works_for",
-        "metadata": {
-            "role": "Backend Engineer II",
-            "department": "Payments",
-            "start_date": "2025-01-20"
-        }
-    }
-)
-
-# Create memory about hiring
-hire_memory = execute_forgetful_tool(
-    "create_memory",
-    {
-        "title": "Jordan Taylor hired - payments focus",
-        "content": "Jordan joins to build the Stripe integration and handle PCI compliance.",
-        "context": "Recording ownership and experience for the payments work",
-        "keywords": ["jordan", "stripe", "payments", "pci"],
-        "tags": ["team", "hiring", "payments"],
-        "importance": 7
-    }
-)
-
-# Link person to memory
-execute_forgetful_tool(
-    "link_entity_to_memory",
-    {
-        "entity_id": new_hire["id"],
-        "memory_id": hire_memory["id"]
-    }
-)
-
-# Query Jordan's related knowledge
-results = execute_forgetful_tool(
-    "query_memory",
-    {
-        "query": "Jordan payment implementation",
-        "query_context": "Finding ownership and experience for payments work"
-    }
-)
-# Returns: Hiring memory + linked entity + relationship context
-```
-
 ### Tool Categories
 
-The catalog covers users, memories, projects, and entities.
+The catalog covers users, memories and projects.
 
 For complete documentation with extensive examples, see [Complete Tool Reference](docs/tool_reference.md).
 
@@ -365,16 +291,6 @@ When you create a memory:
 2. **Similarity search** – Finds related memories (similarity ≥0.7 by default)
 3. **Auto-linking** – Creates bidirectional links to top 3-5 matches (configurable)
 4. **Graph traversal** – Queries return primary results + 1-hop linked memories
-
-### Entities and Knowledge Graphs
-
-Entities represent concrete, real-world things (people, organizations, teams, devices) that can be linked to memories:
-  - **Typed entities** – Organizations, Individuals, Teams, Devices, Systems, or custom types
-  - **Relationships** – Directional connections (e.g., "Person works_at Organization") with strength and metadata
-  - **Memory linking** – Associate entities with relevant memories for context
-  - **Knowledge graph** – Build networks showing how entities relate to each other and your knowledge base
-
-Use entities for concrete things (Sarah Chen, TechFlow Systems, Cache Server 01) and memories for abstract concepts (architectural patterns, decisions, learnings).
 
 ### Token Budget Management
 
@@ -412,7 +328,7 @@ For all environment variables with detailed explanations, see [Configuration Gui
 
 ### Guides
 
-- [Core Concepts](docs/concepts.md) – Memories vs Entities explained
+- [Core Concepts](docs/concepts.md) – Memories and projects explained
 - [Complete Tool Reference](docs/tool_reference.md) – Runtime tools and examples
 - [REST API Reference](docs/api_reference.md) – HTTP endpoints for web UI integration
 - [Configuration Guide](docs/configuration.md) – All environment variables explained

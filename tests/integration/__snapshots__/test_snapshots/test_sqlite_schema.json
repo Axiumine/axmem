@@ -10,23 +10,6 @@
     "CREATE INDEX ix_activity_log_user_entity ON activity_log (user_id, entity_type, entity_id)",
     "CREATE INDEX ix_activity_log_user_id ON activity_log (user_id)"
   ],
-  "entities": [
-    "CREATE TABLE entities (\n\tid INTEGER NOT NULL, \n\tuser_id VARCHAR(36) NOT NULL, \n\tname VARCHAR(200) NOT NULL, \n\tentity_type VARCHAR(100) NOT NULL, \n\tcustom_type VARCHAR(100), \n\tnotes TEXT, \n\ttags JSON NOT NULL, \n\taka JSON NOT NULL, \n\tsource_repo TEXT, \n\tsource_files JSON, \n\tsource_url TEXT, \n\tconfidence FLOAT, \n\tencoding_agent TEXT, \n\tencoding_version TEXT, \n\tagent_id TEXT, \n\tagent_version TEXT, \n\tagent_model TEXT, \n\tcreated_at DATETIME NOT NULL, \n\tupdated_at DATETIME NOT NULL, \n\tPRIMARY KEY (id), \n\tFOREIGN KEY(user_id) REFERENCES users (id) ON DELETE CASCADE\n)",
-    "CREATE INDEX ix_entities_entity_type ON entities (entity_type)",
-    "CREATE INDEX ix_entities_name ON entities (name)",
-    "CREATE INDEX ix_entities_user_id ON entities (user_id)"
-  ],
-  "entity_project_association": [
-    "CREATE TABLE entity_project_association (\n\tentity_id INTEGER NOT NULL, \n\tproject_id INTEGER NOT NULL, \n\tPRIMARY KEY (entity_id, project_id), \n\tFOREIGN KEY(entity_id) REFERENCES entities (id) ON DELETE CASCADE, \n\tFOREIGN KEY(project_id) REFERENCES projects (id) ON DELETE CASCADE\n)"
-  ],
-  "entity_relationships": [
-    "CREATE TABLE entity_relationships (\n\tid INTEGER NOT NULL, \n\tuser_id VARCHAR(36) NOT NULL, \n\tsource_entity_id INTEGER NOT NULL, \n\ttarget_entity_id INTEGER NOT NULL, \n\trelationship_type VARCHAR(100) NOT NULL, \n\tstrength FLOAT, \n\tconfidence FLOAT, \n\trelationship_metadata JSON, \n\tsource_repo TEXT, \n\tsource_files JSON, \n\tsource_url TEXT, \n\tencoding_agent TEXT, \n\tencoding_version TEXT, \n\tagent_id TEXT, \n\tagent_version TEXT, \n\tagent_model TEXT, \n\tcreated_at DATETIME NOT NULL, \n\tupdated_at DATETIME NOT NULL, \n\tPRIMARY KEY (id), \n\tFOREIGN KEY(user_id) REFERENCES users (id) ON DELETE CASCADE, \n\tFOREIGN KEY(source_entity_id) REFERENCES entities (id) ON DELETE CASCADE, \n\tFOREIGN KEY(target_entity_id) REFERENCES entities (id) ON DELETE CASCADE\n)",
-    "CREATE INDEX ix_entity_relationships_relationship_type ON entity_relationships (relationship_type)",
-    "CREATE INDEX ix_entity_relationships_source_entity_id ON entity_relationships (source_entity_id)",
-    "CREATE INDEX ix_entity_relationships_target_entity_id ON entity_relationships (target_entity_id)",
-    "CREATE UNIQUE INDEX ix_entity_relationships_unique ON entity_relationships (source_entity_id, target_entity_id, relationship_type)",
-    "CREATE INDEX ix_entity_relationships_user_id ON entity_relationships (user_id)"
-  ],
   "memories": [
     "CREATE TABLE memories (\n\tid INTEGER NOT NULL, \n\tuser_id VARCHAR(36) NOT NULL, \n\ttitle TEXT NOT NULL, \n\tcontent TEXT NOT NULL, \n\tcontext TEXT NOT NULL, \n\tkeywords JSON NOT NULL, \n\ttags JSON NOT NULL, \n\timportance INTEGER NOT NULL, \n\tsource_repo TEXT, \n\tsource_files JSON, \n\tsource_url TEXT, \n\tconfidence FLOAT, \n\tencoding_agent TEXT, \n\tencoding_version TEXT, \n\tagent_id TEXT, \n\tagent_version TEXT, \n\tagent_model TEXT, \n\tis_obsolete BOOLEAN NOT NULL, \n\tobsolete_reason TEXT, \n\tsuperseded_by INTEGER, \n\tobsoleted_at DATETIME, \n\taccess_count INTEGER NOT NULL, \n\tlast_accessed_at DATETIME, \n\tcreated_at DATETIME NOT NULL, \n\tupdated_at DATETIME NOT NULL, \n\tPRIMARY KEY (id), \n\tFOREIGN KEY(user_id) REFERENCES users (id) ON DELETE CASCADE, \n\tFOREIGN KEY(superseded_by) REFERENCES memories (id) ON DELETE SET NULL\n)",
     "CREATE INDEX ix_memories_confidence ON memories (confidence)",
@@ -35,9 +18,6 @@
     "CREATE INDEX ix_memories_last_accessed_at ON memories (last_accessed_at)",
     "CREATE INDEX ix_memories_superseded_by ON memories (superseded_by)",
     "CREATE INDEX ix_memories_user_id ON memories (user_id)"
-  ],
-  "memory_entity_association": [
-    "CREATE TABLE memory_entity_association (\n\tmemory_id INTEGER NOT NULL, \n\tentity_id INTEGER NOT NULL, \n\tPRIMARY KEY (memory_id, entity_id), \n\tFOREIGN KEY(memory_id) REFERENCES memories (id) ON DELETE CASCADE, \n\tFOREIGN KEY(entity_id) REFERENCES entities (id) ON DELETE CASCADE\n)"
   ],
   "memory_links": [
     "CREATE TABLE memory_links (\n\tid INTEGER NOT NULL, \n\tuser_id VARCHAR(36) NOT NULL, \n\tsource_id INTEGER NOT NULL, \n\ttarget_id INTEGER NOT NULL, \n\tcreated_at DATETIME NOT NULL, \n\tPRIMARY KEY (id), \n\tFOREIGN KEY(user_id) REFERENCES users (id) ON DELETE CASCADE, \n\tFOREIGN KEY(source_id) REFERENCES memories (id) ON DELETE CASCADE, \n\tFOREIGN KEY(target_id) REFERENCES memories (id) ON DELETE CASCADE\n)",

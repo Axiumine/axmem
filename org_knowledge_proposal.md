@@ -13,7 +13,7 @@ my organisations knowledge in domains relevant to myself. The source of this kno
 On the back of this i was able to have my agents perform complex tasks that required domain knowledge that would
 be difficult to pull together using a straight forward RAG or Agentic Search approach, this helped me in a myriad of ways from simple bug hunting, to answering questions about products, updating documentation, to even some really complex gap analaysis and requirement building on an architecture that spanned over 100 repositories and mountains of product documentation. 
 
-In order to encode that knowledge from these sources, and perhaps more importantly, to ensure that the knowledge base is kept up to date when those sources are updated. I built a bootstrapping process, that would loop through the source material and encode any deltas since the last run (or all of it if it is a first time run). The encoding involved spinning up headless cli agent instances using my [agent-shell](https://github.com/ScottRBK/agent-shell) libary with specialised encoding prompts. The agent would record memories of the sources, and also recorded entities and projects based on them. 
+In order to encode that knowledge from these sources, and perhaps more importantly, to ensure that the knowledge base is kept up to date when those sources are updated. I built a bootstrapping process, that would loop through the source material and encode any deltas since the last run (or all of it if it is a first time run). The encoding involved spinning up headless cli agent instances using my [agent-shell](https://github.com/ScottRBK/agent-shell) libary with specialised encoding prompts. The agent would record memories of the sources, and also recorded projects based on them. 
 
 Those encoding prompts included information such as C4 Diagrams, component squad ownership to help ground the agent when it came to encode a source as to where that source sat in the overall context of the organisation. This is not a straight forward undertaking and I think the role of Knowledge Architecture for organisations will, if it is not already, going to become a key one in the future, due to the old computer adage, garbage in, garbage out. 
 
@@ -78,7 +78,7 @@ Forgetful does support multitenancy, so another option might be to host a single
 ```
 _Figure 1.3 Forgetfuls User Memory Isolation_
 
-Memories, and indeed all entities, have role based security applied for user isolation. This means that Alice cannot see Bob's memories and vice-versa. Given this constraint, we'd have to either still have to boostrap for each user, or perhaps a more cost effective, albeit cumbersome, approach would be to have an additional process that enriched users memories from a master user of some kind.
+Memories, and indeed all stored objects, have role based security applied for user isolation. This means that Alice cannot see Bob's memories and vice-versa. Given this constraint, we'd have to either still have to boostrap for each user, or perhaps a more cost effective, albeit cumbersome, approach would be to have an additional process that enriched users memories from a master user of some kind.
 
 ```mermaid
     flowchart LR

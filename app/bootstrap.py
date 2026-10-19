@@ -23,7 +23,6 @@ from app.routes.mcp.tool_registry import ToolRegistry
 if TYPE_CHECKING:
     from app.events import EventBus
     from app.services.activity_service import ActivityService
-    from app.services.entity_service import EntityService
     from app.services.memory_service import MemoryService
     from app.services.project_service import ProjectService
     from app.services.re_embedding_service import ReEmbeddingService
@@ -112,7 +111,6 @@ def create_repositories(db_adapter, embeddings_adapter, reranker_adapter):
         from app.repositories.postgres.activity_repository import (
             PostgresActivityRepository,
         )
-        from app.repositories.postgres.entity_repository import PostgresEntityRepository
         from app.repositories.postgres.memory_repository import PostgresMemoryRepository
         from app.repositories.postgres.project_repository import (
             PostgresProjectRepository,
@@ -127,14 +125,12 @@ def create_repositories(db_adapter, embeddings_adapter, reranker_adapter):
                 rerank_adapter=reranker_adapter,
             ),
             "project": PostgresProjectRepository(db_adapter=db_adapter),
-            "entity": PostgresEntityRepository(db_adapter=db_adapter),
             "activity": PostgresActivityRepository(db_adapter=db_adapter),
         }
 
         return repos
     if settings.DATABASE == "SQLite":
         from app.repositories.sqlite.activity_repository import SqliteActivityRepository
-        from app.repositories.sqlite.entity_repository import SqliteEntityRepository
         from app.repositories.sqlite.memory_repository import SqliteMemoryRepository
         from app.repositories.sqlite.project_repository import SqliteProjectRepository
         from app.repositories.sqlite.user_repository import SqliteUserRepository
@@ -147,7 +143,6 @@ def create_repositories(db_adapter, embeddings_adapter, reranker_adapter):
                 rerank_adapter=reranker_adapter,
             ),
             "project": SqliteProjectRepository(db_adapter=db_adapter),
-            "entity": SqliteEntityRepository(db_adapter=db_adapter),
             "activity": SqliteActivityRepository(db_adapter=db_adapter),
         }
 
@@ -162,7 +157,6 @@ class Services:
     user: UserService
     memory: MemoryService
     project: ProjectService
-    entity: EntityService
     activity: ActivityService
     re_embedding: ReEmbeddingService
 
@@ -202,7 +196,6 @@ async def build_runtime() -> Runtime:
 
     from app.events import EventBus
     from app.services.activity_service import ActivityService
-    from app.services.entity_service import EntityService
     from app.services.memory_service import MemoryService
     from app.services.project_service import ProjectService
     from app.services.re_embedding_service import ReEmbeddingService
@@ -226,7 +219,6 @@ async def build_runtime() -> Runtime:
     if event_bus is not None:
         memory_service.register_access_tracking_handlers(event_bus)
     project_service = ProjectService(repos["project"], event_bus=event_bus)
-    entity_service = EntityService(repos["entity"], event_bus=event_bus)
 
     registry = ToolRegistry()
     register_all_tools_metadata(
@@ -235,7 +227,6 @@ async def build_runtime() -> Runtime:
         memory_service=memory_service,
         re_embedding_service=re_embedding_service,
         project_service=project_service,
-        entity_service=entity_service,
     )
 
     categories = registry.list_categories()
@@ -253,7 +244,6 @@ async def build_runtime() -> Runtime:
         user=user_service,
         memory=memory_service,
         project=project_service,
-        entity=entity_service,
         activity=activity_service,
         re_embedding=re_embedding_service,
     )

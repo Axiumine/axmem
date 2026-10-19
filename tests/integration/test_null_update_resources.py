@@ -17,12 +17,6 @@ from typing import Any
 import pytest
 
 from app.models.activity_models import ActionType, EntityType
-from app.models.entity_models import (
-    EntityCreate,
-    EntityRelationshipUpdate,
-    EntityUpdate,
-)
-from app.models.entity_models import EntityType as EntityKind
 from app.models.project_models import ProjectCreate, ProjectType, ProjectUpdate
 from app.models.user_models import User
 
@@ -56,34 +50,6 @@ class Case:
 
 
 CASES = [
-    Case(
-        name="entity",
-        fixture="test_entity_service_with_event_bus",
-        model=EntityUpdate,
-        create=lambda s, u: s.create_entity(
-            u,
-            EntityCreate(
-                name="Acme",
-                entity_type=EntityKind.ORGANIZATION,
-                notes="keep me",
-                tags=["keep"],
-                aka=["Acme Inc"],
-            ),
-        ),
-        update=lambda s, u, i, d: s.update_entity(u, i, d),
-        get=lambda s, u, i: s.get_entity(u, i),
-        null_fields={
-            "name": None,
-            "entity_type": None,
-            "notes": None,
-            "tags": None,
-            "aka": None,
-            "project_ids": None,
-        },
-        change={"name": "Acme Corp"},
-        same={"name": "Acme", "tags": ["keep"]},
-        entity_type=EntityType.ENTITY,
-    ),
     Case(
         name="project",
         fixture="test_project_service_with_event_bus",
@@ -139,19 +105,12 @@ def test_update_model_keeps_real_values_next_to_nulls(case):
     assert update.model_dump(exclude_unset=True) == case.change
 
 
-def test_relationship_update_ignores_explicit_null():
-    update = EntityRelationshipUpdate(relationship_type=None, strength=None, confidence=None)
-
-    assert update.model_fields_set == set()
-
-
 @pytest.mark.parametrize(
     ("model", "field"),
     [
         (ProjectUpdate, "notes"),
         (ProjectUpdate, "repo_name"),
         (ProjectUpdate, "last_encoding_point"),
-        (EntityUpdate, "notes"),
     ],
 )
 def test_empty_string_still_clears_optional_fields(model, field):

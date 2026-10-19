@@ -10,7 +10,6 @@ from fastmcp import FastMCP
 from fastmcp.server.auth.providers.jwt import StaticTokenVerifier
 from httpx import ASGITransport, AsyncClient
 
-from app.repositories.sqlite.entity_repository import SqliteEntityRepository
 from app.repositories.sqlite.memory_repository import SqliteMemoryRepository
 from app.repositories.sqlite.project_repository import SqliteProjectRepository
 
@@ -21,7 +20,6 @@ from app.routes.api import auth, health, memories
 from app.routes.mcp import meta_tools
 from app.routes.mcp.tool_metadata_registry import register_all_tools_metadata
 from app.routes.mcp.tool_registry import ToolRegistry
-from app.services.entity_service import EntityService
 from app.services.memory_service import MemoryService
 from app.services.project_service import ProjectService
 from app.services.re_embedding_service import ReEmbeddingService
@@ -74,7 +72,6 @@ async def sqlite_app_with_auth(embedding_adapter):
             rerank_adapter=None,
         )
         project_repository = SqliteProjectRepository(db_adapter=db_adapter)
-        entity_repository = SqliteEntityRepository(db_adapter=db_adapter)
 
         @asynccontextmanager
         async def lifespan(app):
@@ -83,13 +80,11 @@ async def sqlite_app_with_auth(embedding_adapter):
             user_service = UserService(user_repository)
             memory_service = MemoryService(memory_repository)
             project_service = ProjectService(project_repository)
-            entity_service = EntityService(entity_repository)
 
             # Store services on FastMCP instance
             mcp.user_service = user_service
             mcp.memory_service = memory_service
             mcp.project_service = project_service
-            mcp.entity_service = entity_service
 
             # Create and attach registry
             registry = ToolRegistry()
@@ -102,7 +97,6 @@ async def sqlite_app_with_auth(embedding_adapter):
                 memory_service=memory_service,
                 re_embedding_service=ReEmbeddingService(memory_repository, embedding_adapter),
                 project_service=project_service,
-                entity_service=entity_service,
             )
 
             yield

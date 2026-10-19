@@ -2,11 +2,11 @@
 name: forgetful-explore
 description: >-
   Explore the Forgetful knowledge graph when flat search isn't enough — cross-project
-  investigations, "what do we know about X", entity-centred questions, tracing how decisions
-  connect. Use when recall returns fragments that reference entities or trail across
-  domains. Walks memories, entities, and relationships into one synthesized picture.
+  investigations, "what do we know about X", tracing how decisions connect. Use when recall
+  returns fragments that trail across domains. Walks memories, their links, and project
+  scopes into one synthesized picture.
 license: MIT
-tags: [knowledge-graph, traversal, entities, investigation]
+tags: [knowledge-graph, traversal, links, investigation]
 allowed-tools:
   - mcp__forgetful__discover_forgetful_tools
   - mcp__forgetful__how_to_use_forgetful_tool
@@ -21,11 +21,11 @@ synthesized picture that states the path taken — never a raw dump of hops.
 
 ## Invoking operations
 
-Operations are named by registry name (`search_entities`, `get_entity_memories`, ...).
+Operations are named by registry name (`query_memory`, `get_memory`, ...).
 Invoke via whichever surface this agent has:
 
-- **MCP**: `execute_forgetful_tool(tool_name="search_entities", arguments={...})`
-- **CLI**: `forgetful call search_entities --args '{"query": "..."}' --json`
+- **MCP**: `execute_forgetful_tool(tool_name="query_memory", arguments={...})`
+- **CLI**: `forgetful call query_memory --args '{"query": "...", "query_context": "..."}' --json`
 
 Get any operation's schema at runtime: `how_to_use_forgetful_tool` (MCP) or
 `forgetful tools info <operation>` (CLI) — schemas are deliberately not repeated here.
@@ -33,10 +33,10 @@ Get any operation's schema at runtime: `how_to_use_forgetful_tool` (MCP) or
 ## Choose a depth first
 
 - **Shallow** (phases 1–2): confirm or refresh something specific.
-- **Medium** (phases 1–4): understand a topic and its immediate neighbourhood.
+- **Medium** (phases 1–3): understand a topic and its immediate neighbourhood.
 - **Deep** (all phases): cross-project investigation or "everything we know about X".
 
-Track visited memory and entity IDs throughout — a revisited ID means that branch is done.
+Track visited memory IDs throughout — a revisited ID means that branch is done.
 
 ## Phase 1 — Semantic entry
 
@@ -53,34 +53,27 @@ that bear on the question.
 
 Done when: each entry point's local cluster is understood.
 
-## Phase 3 — Discover the entities
+## Phase 3 — Walk the links
 
-Collect entities referenced by the expanded memories, and `search_entities` for the topic's
-obvious actors (systems, people, components) that memories may not name directly.
+Follow the linked memory IDs of each expanded memory one hop outward with `get_memory`,
+keeping only the links that answer the question. Skip any ID already in the visited set, so
+cycles end themselves.
 
-Done when: the cast of relevant entities is listed.
+Done when: the connections between the memories are mapped and every branch is either
+followed or ruled out.
 
-## Phase 4 — Walk the relationships
+## Phase 4 — Widen across projects
 
-`get_entity_relationships` on each relevant entity; follow the relationship types that
-answer the question (depends_on for impact, part_of for structure, owns for responsibility).
+`list_projects`, then `query_memory` with `project_ids` for each project that could hold
+related knowledge — this surfaces memories the unscoped entry query ranked too low. Expand
+new hits the same way as in phases 2–3.
 
-Done when: the connections between entities are mapped, cycles skipped via the visited set.
-
-## Phase 5 — Harvest entity-linked memories
-
-`get_entity_memories` on the entities that emerged as central — this surfaces knowledge
-attached to the *thing* that topic-based queries miss. It returns linked memory IDs paired
-with titles, not full content: scan the titles for relevance, then `get_memory` per chosen
-ID for the text itself.
-
-Done when: central entities have had their attached knowledge collected.
+Done when: every relevant project has been queried or ruled out.
 
 ## Synthesize
 
 Report the picture, not the walk: what is known, how it connects, where knowledge is thin.
-Cite memory and entity IDs so the user can jump in, and state the traversal path in one
-line (e.g. "query → 3 memories → AuthService entity → 2 dependent components → 5 linked
-memories").
+Cite memory IDs so the user can jump in, and state the traversal path in one line
+(e.g. "query → 3 memories → 2 linked decisions → 1 memory from the billing project").
 
 Done when: the user gets a connected answer with cited IDs and visible gaps.

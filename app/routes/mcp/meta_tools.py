@@ -57,25 +57,7 @@ _DISCOVER_CORE_SECTIONS = """\
     - get_project: Retrieve project details
     - list_projects: List all projects with optional status/repo filter
     - update_project: Modify project metadata
-    - delete_project: Remove project (memories preserved)
-
-    **Entity Tools** - Real-world entities (people, orgs, devices)
-    - create_entity: Create entity with type, aka (aliases), notes
-    - get_entity: Retrieve entity by ID
-    - list_entities: List entities with project/type/tags filter
-    - search_entities: Text search by name or aka (aliases)
-    - update_entity: Modify entity fields
-    - delete_entity: Remove entity (cascades links)
-    - link_entity_to_memory: Connect entity to memory
-    - unlink_entity_from_memory: Remove entity-memory link
-    - link_entity_to_project: Connect entity to project (organizational grouping)
-    - unlink_entity_from_project: Remove entity-project link
-    - get_entity_memories: Get all memories linked to entity
-    - get_memory_entities: Get all entities linked to memory
-    - create_entity_relationship: Create relationship (part_of, depends_on, works_for, etc.)
-    - get_entity_relationships: Get relationships for entity
-    - update_entity_relationship: Modify relationship
-    - delete_entity_relationship: Remove relationship"""
+    - delete_project: Remove project (memories preserved)"""
 
 
 # ============================================================================
@@ -100,15 +82,7 @@ _EXECUTE_CORE_EXAMPLES = """\
     - List: execute_forgetful_tool("list_projects", {})
     - Create: execute_forgetful_tool("create_project", {"name": "Project Name", "description": "What this project is about", "project_type": "development"})
     - Get: execute_forgetful_tool("get_project", {"project_id": 1})
-    - Query: execute_forgetful_tool("query_memory", {"query": "search terms", "query_context": "why searching", "project_ids": [1]})
-
-    **Entities (people, orgs, devices):**
-    - Create: execute_forgetful_tool("create_entity", {"name": "Sarah Chen", "entity_type": "Individual", "notes": "Backend developer", "aka": ["Sarah", "S.C."]})
-    - Search: execute_forgetful_tool("search_entities", {"query": "Sarah"})  # Searches name AND aka
-    - Link to memory: execute_forgetful_tool("link_entity_to_memory", {"entity_id": 1, "memory_id": 1})
-    - Unlink from memory: execute_forgetful_tool("unlink_entity_from_memory", {"entity_id": 1, "memory_id": 1})
-    - Link to project: execute_forgetful_tool("link_entity_to_project", {"entity_id": 1, "project_id": 1})
-    - Unlink from project: execute_forgetful_tool("unlink_entity_from_project", {"entity_id": 1, "project_id": 1})"""
+    - Query: execute_forgetful_tool("query_memory", {"query": "search terms", "query_context": "why searching", "project_ids": [1]})"""
 
 
 # ============================================================================
@@ -118,13 +92,13 @@ _EXECUTE_CORE_EXAMPLES = """\
 
 def _build_category_list() -> str:
     """Build the valid category filter list."""
-    categories = ["user", "memory", "project", "entity", "linking"]
+    categories = ["user", "memory", "project", "linking"]
     return ", ".join(categories)
 
 
 def _build_tool_categories_line() -> str:
     """Build the tool categories pipe-separated line for execute_forgetful_tool."""
-    categories = ["memory", "project", "entity", "linking", "user"]
+    categories = ["memory", "project", "linking", "user"]
     return " | ".join(categories)
 
 
@@ -230,8 +204,6 @@ Execute any registered tool dynamically. Forgetful is a semantic memory system f
     ## Linking Best Practices
     **Always link related items for discoverability:**
     - Link memories to each other: `link_memories(memory_id=1, related_ids=[2, 3])`
-    - Link entities to memories: `link_entity_to_memory(entity_id=1, memory_id=1)`
-    - Link entities to projects: `link_entity_to_project(entity_id=1, project_id=1)`
 
     ## Tool Categories
     {tool_categories}

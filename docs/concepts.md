@@ -1,6 +1,6 @@
 # Core Concepts
 
-Forgetful organizes knowledge into three building blocks. Understanding when to use each one makes the difference between a cluttered knowledge dump and a useful, searchable knowledge graph.
+Forgetful organizes knowledge into two building blocks. Understanding when to use each one makes the difference between a cluttered knowledge dump and a useful, searchable knowledge graph.
 
 ---
 
@@ -12,7 +12,7 @@ Forgetful organizes knowledge into three building blocks. Understanding when to 
 
 Memories are the core of Forgetful. Each memory captures a single fact, decision, preference, or insight. Think of them as the nodes in your knowledge graph.
 
-**Important:** Memories are the only directly queryable type. Entities and Projects are reached through the memories they are linked to.
+**Important:** Memories are the only directly queryable type. Projects are reached through the memories they are linked to.
 
 Good memories are:
 - **Easily titled** - if you can't summarize it in ~10 words, it's probably not atomic
@@ -36,22 +36,6 @@ Good memories are:
 - `agent_id` - Logical identity of the agent (e.g., 'CodeAgentUltra')
 - `agent_version` - Version of the agent
 - `agent_model` - LLM model used (e.g., 'claude-sonnet-4-6')
-
-### Entities
-
-**Real-world things** - people, organizations, devices, products.
-
-Entities represent concrete nouns that exist in the world. They can have relationships with each other and link to memories. Use entities when you want to track WHO or WHAT is involved, not just the knowledge itself.
-
-**Types:** Organization, Individual, Team, Device, System, Other (with `custom_type`)
-
-**Examples:**
-- Sarah Chen (Individual) - "Backend lead, payments team"
-- TechFlow Systems (Organization) - "SaaS platform company"
-- Production Server 01 (Device) - "Primary API server, us-east-1"
-- GPT-4 (Product) - "OpenAI's flagship model"
-
-**Relationships:** Entities connect to each other (e.g., "Sarah works_at TechFlow") and to memories (e.g., "Sarah" linked to "Hired Sarah for Stripe integration").
 
 ### Projects
 
@@ -86,9 +70,8 @@ Forgetful supports optional provenance fields on all object types so you can tra
 
 ### Coverage by Object Type
 
-- **All 9 fields**: Memories, Projects, Entities
-- **8 fields (no `confidence`)**: Entity relationships — these already carry their own relationship-level confidence
-- Memories previously had 6 fields; `agent_id`, `agent_version`, and `agent_model` were added to bring them in line with all other types
+- **All 9 fields**: Memories, Projects
+- Memories previously had 6 fields; `agent_id`, `agent_version`, and `agent_model` were added to bring them in line with projects
 
 ### Environment-Level Defaults
 
@@ -112,7 +95,6 @@ When `false` (the default), agent-provided values take precedence and env values
 
 | Question | Answer |
 |----------|--------|
-| Is it a person, org, device, or product? | **Entity** |
 | Is it detailed analysis or a guide (>300 words)? | Several linked **Memories** |
 | Is it a single fact, decision, or preference? | **Memory** |
 | Does it help scope/filter other knowledge? | **Project** |
@@ -120,16 +102,6 @@ When `false` (the default), agent-provided values take precedence and env values
 ---
 
 ## The Litmus Test
-
-### Memory vs Entity
-
-**Entity** = a thing that EXISTS (noun you could point at)
-**Memory** = knowledge ABOUT things (facts, decisions, preferences)
-
-Ask: "Can I point at it?" If yes, probably an entity. If it's abstract knowledge, it's a memory.
-
-- "Sarah Chen" - Entity (she exists)
-- "Sarah is great at debugging async issues" - Memory (knowledge about Sarah)
 
 ### Long-form material
 
@@ -153,12 +125,6 @@ Create a project when you have:
 
 You're building a payment system. Here's how to decompose the knowledge:
 
-**Entities:**
-- Stripe (Product) - "Payment processor API"
-- PayPal (Product) - "Alternative payment processor"
-- Jordan Taylor (Individual) - "Backend engineer, payments team"
-- TechFlow Systems (Organization) - "The company"
-
 **Project:**
 - "E-Commerce Platform v2" (active)
 
@@ -169,7 +135,6 @@ You're building a payment system. Here's how to decompose the knowledge:
 - "Jordan Taylor owns payment integration - hired specifically for Stripe experience"
 
 **Links:**
-- Memories link to → Stripe entity, PayPal entity, Jordan entity
 - Memories link to → each other
 - Everything scoped to → E-Commerce Platform v2 project
 
@@ -178,12 +143,6 @@ You're building a payment system. Here's how to decompose the knowledge:
 ## Worked Example 2: AI Agent Project
 
 You're developing a coding assistant agent. Here's the breakdown:
-
-**Entities:**
-- Claude Sonnet (Product) - "Anthropic's fast model"
-- Claude Opus (Product) - "Anthropic's reasoning model"
-- OpenAI (Organization) - "GPT provider"
-- Production Agent Server (Device) - "Hosts the deployed agent"
 
 **Project:**
 - "AI Coding Assistant" (active)
@@ -196,8 +155,7 @@ You're developing a coding assistant agent. Here's the breakdown:
 - "Tool calls: prefer specific tools over generic bash when available"
 
 **Links:**
-- Model-related memories link to → Claude Sonnet, Claude Opus entities
-- Infrastructure memories link to → Production Agent Server entity
+- Related memories link to → each other
 - Everything scoped to → AI Coding Assistant project
 
 ---
@@ -205,9 +163,8 @@ You're developing a coding assistant agent. Here's the breakdown:
 ## Quick Reference
 
 | Type | Size | Contains | Links To |
-|------|------|----------|----------|
-| Memory | <400 words | One concept | Memories, Entities, Projects |
-| Entity | N/A | Real-world thing | Other Entities, Memories, Projects |
-| Project | N/A | Scope/context | Memories, Entities |
+|---|---|---|---|
+| Memory | <400 words | One concept | Memories, Projects |
+| Project | N/A | Scope/context | Memories |
 
-The knowledge graph emerges from these connections. Memories are the atoms; entities and projects provide structure and context.
+The knowledge graph emerges from these connections. Memories are the atoms; projects provide structure and context.

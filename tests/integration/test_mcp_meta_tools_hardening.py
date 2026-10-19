@@ -2,7 +2,7 @@
 
 Covers, with stubbed services and no database:
 - ``client_error_detail`` keeps authored messages and hides driver details.
-- ``execute_forgetful_tool`` never puts SQL, bound parameters or driver text from an entity
+- ``execute_forgetful_tool`` never puts SQL, bound parameters or driver text from a project
   operation in a ToolError.
 - ``discover_forgetful_tools`` honours the advertised ``linking`` category.
 - ``execute_forgetful_tool`` rejects argument names that cannot be keyword arguments.
@@ -31,17 +31,17 @@ from app.routes.mcp.meta_tools import (
     ensure_tool_executable,
     reject_invalid_argument_names,
 )
-from app.routes.mcp.tool_adapters import create_entity_adapters
+from app.routes.mcp.tool_adapters import create_project_adapters
 from app.routes.mcp.tool_errors import (
     CONSTRAINT_FAILURE,
     GENERIC_FAILURE,
     client_error_detail,
 )
-from app.routes.mcp.tool_metadata_registry import register_entity_tools_metadata
+from app.routes.mcp.tool_metadata_registry import register_project_tools_metadata
 from app.routes.mcp.tool_registry import ToolRegistry
 
 SECRET_USER_ID = "7f1c2b9e-0000-4000-8000-00000000abcd"
-SQL_TEXT = "INSERT INTO entity_relationships (user_id, source_entity_id) VALUES (?, ?)"
+SQL_TEXT = "INSERT INTO projects (user_id, name) VALUES (?, ?)"
 LEAK_MARKERS = (
     "INSERT INTO",
     "[SQL:",
@@ -57,7 +57,7 @@ def _integrity_error() -> IntegrityError:
     return IntegrityError(
         SQL_TEXT,
         (SECRET_USER_ID, 1),
-        Exception("UNIQUE constraint failed: entity_relationships.source_entity_id"),
+        Exception("UNIQUE constraint failed: projects.user_id, projects.name"),
     )
 
 
@@ -72,7 +72,7 @@ class TestClientErrorDetail:
             InvalidStateTransitionError("memory is already obsolete"),
             ValueError("project_id must be an integer"),
             TypeError("create_project() got an unexpected keyword argument 'name'"),
-            ToolError("Entity 4 not found"),
+            ToolError("Project 4 not found"),
         ],
     )
     def test_authored_messages_are_kept(self, error):
@@ -104,7 +104,7 @@ class _StubUserService:
         return SimpleNamespace(id=uuid4())
 
 
-class _FailingEntityService:
+class _FailingProjectService:
     """Every service method raises the configured error."""
 
     def __init__(self, error: Exception):
@@ -117,14 +117,14 @@ class _FailingEntityService:
         return _raise
 
 
-def _entity_tools_server(error: Exception) -> FastMCP:
-    """The mounted surface (the three meta-tools) over entity adapters whose service fails."""
+def _project_tools_server(error: Exception) -> FastMCP:
+    """The mounted surface (the three meta-tools) over project adapters whose service fails."""
     user_service = _StubUserService()
     registry = ToolRegistry()
-    register_entity_tools_metadata(
-        registry, create_entity_adapters(_FailingEntityService(error), user_service),
+    register_project_tools_metadata(
+        registry, create_project_adapters(_FailingProjectService(error), user_service),
     )
-    server = FastMCP("entity-tools-error-test")
+    server = FastMCP("project-tools-error-test")
     server.user_service = user_service
     server.registry = registry
     meta_tools.register(server)
@@ -137,38 +137,25 @@ async def _execute(client: Client, tool_name: str, arguments: dict):
     )
 
 
-ENTITY_TOOL_CALLS = [
-    ("create_entity", {"name": "Sarah", "entity_type": "Individual"}),
-    ("get_entity", {"entity_id": 1}),
-    ("list_entities", {}),
-    ("search_entities", {"query": "sar"}),
-    ("update_entity", {"entity_id": 1, "name": "S"}),
-    ("delete_entity", {"entity_id": 1}),
-    ("link_entity_to_memory", {"entity_id": 1, "memory_id": 2}),
-    ("unlink_entity_from_memory", {"entity_id": 1, "memory_id": 2}),
-    ("link_entity_to_project", {"entity_id": 1, "project_id": 2}),
-    ("unlink_entity_from_project", {"entity_id": 1, "project_id": 2}),
-    (
-        "create_entity_relationship",
-        {"source_entity_id": 1, "target_entity_id": 2, "relationship_type": "works_with"},
-    ),
-    ("get_entity_relationships", {"entity_id": 1}),
-    ("update_entity_relationship", {"relationship_id": 1, "strength": 0.5}),
-    ("delete_entity_relationship", {"relationship_id": 1}),
-    ("get_entity_memories", {"entity_id": 1}),
+PROJECT_TOOL_CALLS = [
+    ("create_project", {"name": "Atlas", "description": "d", "project_type": "development"}),
+    ("get_project", {"project_id": 1}),
+    ("list_projects", {}),
+    ("update_project", {"project_id": 1, "name": "S"}),
+    ("delete_project", {"project_id": 1}),
 ]
 
 
-class TestEntityToolErrors:
-    """Entity operations return a short message for database errors and keep authored ones."""
+class TestProjectToolErrors:
+    """Project operations return a short message for database errors and keep authored ones."""
 
     @pytest.mark.parametrize(
         ("tool_name", "arguments"),
-        ENTITY_TOOL_CALLS,
-        ids=[call[0] for call in ENTITY_TOOL_CALLS],
+        PROJECT_TOOL_CALLS,
+        ids=[call[0] for call in PROJECT_TOOL_CALLS],
     )
     async def test_database_error_text_is_not_returned(self, tool_name, arguments):
-        async with Client(_entity_tools_server(_integrity_error())) as client:
+        async with Client(_project_tools_server(_integrity_error())) as client:
             with pytest.raises(ToolError) as caught:
                 await _execute(client, tool_name, arguments)
 
@@ -178,31 +165,31 @@ class TestEntityToolErrors:
         assert not [marker for marker in LEAK_MARKERS if marker in message], message
 
     async def test_unexpected_error_text_is_not_returned(self):
-        server = _entity_tools_server(RuntimeError(f"pool exhausted for {SECRET_USER_ID}"))
+        server = _project_tools_server(RuntimeError(f"pool exhausted for {SECRET_USER_ID}"))
 
         async with Client(server) as client:
             with pytest.raises(ToolError) as caught:
-                await _execute(client, "get_entity_memories", {"entity_id": 1})
+                await _execute(client, "get_project", {"project_id": 1})
 
         assert SECRET_USER_ID not in str(caught.value)
         assert GENERIC_FAILURE in str(caught.value)
 
     async def test_domain_message_is_kept(self):
-        server = _entity_tools_server(NotFoundError("Entity 1 not found"))
+        server = _project_tools_server(NotFoundError("Project 1 not found"))
 
         async with Client(server) as client:
-            with pytest.raises(ToolError, match="Entity 1 not found"):
-                await _execute(client, "get_entity", {"entity_id": 1})
+            with pytest.raises(ToolError, match="Project 1 not found"):
+                await _execute(client, "get_project", {"project_id": 1})
 
     async def test_conflict_message_is_kept(self):
-        server = _entity_tools_server(ConflictError("Relationship already exists"))
+        server = _project_tools_server(ConflictError("A project with this name already exists."))
 
         async with Client(server) as client:
-            with pytest.raises(ToolError, match="Relationship already exists"):
+            with pytest.raises(ToolError, match="A project with this name already exists."):
                 await _execute(
                     client,
-                    "create_entity_relationship",
-                    {"source_entity_id": 1, "target_entity_id": 2, "relationship_type": "owns"},
+                    "create_project",
+                    {"name": "Atlas", "description": "d", "project_type": "development"},
                 )
 
 
@@ -215,9 +202,10 @@ def _registry_with_link_tools() -> ToolRegistry:
     param = [ToolParameter(name="x", type="int", description="x", required=True)]
     for name, category, tags in [
         ("link_memories", ToolCategory.MEMORY, ["memory", "linking"]),
-        ("link_entity_to_memory", ToolCategory.ENTITY, ["entity", "memory", "linking"]),
+        # a stand-in from another category, to show the filter follows the tag, not the category
+        ("tag_project_links", ToolCategory.PROJECT, ["project", "linking"]),
         ("get_memory", ToolCategory.MEMORY, ["memory", "query"]),
-        ("create_entity", ToolCategory.ENTITY, ["entity", "create"]),
+        ("create_project", ToolCategory.PROJECT, ["project", "create"]),
     ]:
         registry.register(
             name=name,
@@ -241,7 +229,7 @@ class TestLinkingCategory:
         payload = build_discovery_payload(registry, permitted, "linking")
 
         names = {tool["name"] for tools in payload["tools_by_category"].values() for tool in tools}
-        assert names == {"link_memories", "link_entity_to_memory"}
+        assert names == {"link_memories", "tag_project_links"}
         assert payload["total_count"] == 2
         assert payload["filtered_by"] == "linking"
 

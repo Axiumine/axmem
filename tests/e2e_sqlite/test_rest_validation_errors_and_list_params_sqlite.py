@@ -31,12 +31,6 @@ async def _create(api, url, payload):
     return response.json()["id"]
 
 
-async def _create_entity(api, name="Entity"):
-    return await _create(
-        api, "/api/v1/entities", {"name": name, "entity_type": "Individual"},
-    )
-
-
 def _assert_validation_error(response, label):
     """A 400 whose body is a JSON list of pydantic-style field errors."""
     assert response.status_code == 400, f"{label}: {response.status_code} {response.text[:200]}"
@@ -57,39 +51,34 @@ class TestCustomValidatorErrors:
     """Errors raised by custom validators carry an exception object and must still be 400."""
 
     @pytest.mark.asyncio
-    async def test_entities_invalid_fields_return_400(self, api):
-        entity_id = await _create_entity(api, "Alice")
-        other_id = await _create_entity(api, "Bob")
-
-        other_without_custom = await api.post(
-            "/api/v1/entities", json={"name": "x", "entity_type": "Other"},
+    async def test_projects_invalid_fields_return_400(self, api):
+        project_id = await _create(
+            api,
+            "/api/v1/projects",
+            {"name": "Alice", "description": "d", "project_type": "development"},
         )
-        _assert_validation_error(other_without_custom, "POST /entities Other w/o custom_type")
 
         blank_name = await api.post(
-            "/api/v1/entities", json={"name": "   ", "entity_type": "Team"},
+            "/api/v1/projects",
+            json={"name": "   ", "description": "d", "project_type": "development"},
         )
-        _assert_validation_error(blank_name, "POST /entities blank name")
+        _assert_validation_error(blank_name, "POST /projects blank name")
 
-        update = await api.put(f"/api/v1/entities/{entity_id}", json={"name": "  "})
-        _assert_validation_error(update, "PUT /entities blank name")
+        update = await api.put(f"/api/v1/projects/{project_id}", json={"name": "  "})
+        _assert_validation_error(update, "PUT /projects blank name")
 
-        self_relationship = await api.post(
-            f"/api/v1/entities/{entity_id}/relationships",
-            json={"target_entity_id": entity_id, "relationship_type": "works_with"},
-        )
-        _assert_validation_error(self_relationship, "POST relationship to self")
+    @pytest.mark.asyncio
+    async def test_memory_links_to_self_return_400(self, api):
+        memory_id = await _create(api, "/api/v1/memories", {
+            "title": "m", "content": "c", "context": "x", "keywords": ["a"],
+            "tags": ["t"], "importance": 5,
+        })
 
-        relationship_id = await _create(
-            api,
-            f"/api/v1/entities/{entity_id}/relationships",
-            {"target_entity_id": other_id, "relationship_type": "works_with"},
+        response = await api.post(
+            f"/api/v1/memories/{memory_id}/links", json={"related_ids": [memory_id]},
         )
-        blank_type = await api.put(
-            f"/api/v1/entities/relationships/{relationship_id}",
-            json={"relationship_type": "  "},
-        )
-        _assert_validation_error(blank_type, "PUT relationship blank type")
+
+        _assert_validation_error(response, "POST /memories/{id}/links to itself")
 
     @pytest.mark.asyncio
     async def test_built_in_constraint_errors_keep_documented_shape(self, api):
@@ -158,7 +147,6 @@ class TestIntegerQueryParams:
     @pytest.mark.asyncio
     async def test_other_out_of_range_query_ints_return_400(self, api):
         urls = [
-            f"/api/v1/entities?offset={2**63}",
             f"/api/v1/memories?offset={2**63}",
             f"/api/v1/memories?project_id=-{BIG}",
             # row ids are INTEGER columns on PostgreSQL: one past int32 is out of range
@@ -173,63 +161,8 @@ class TestIntegerQueryParams:
     async def test_boundary_values_still_accepted(self, api):
         urls = [
             f"/api/v1/memories?project_id={INT32_MAX}",
-            f"/api/v1/entities?offset={INT64_MAX}",
+            f"/api/v1/memories?offset={INT64_MAX}",
         ]
         for url in urls:
             response = await api.get(url)
             assert response.status_code == 200, f"{url}: {response.status_code}"
-
-
-class TestLinkBodyIds:
-    """Ids in link request bodies must be integers within range; unknown ids stay 404."""
-
-    @pytest.mark.asyncio
-    @pytest.mark.parametrize("value", [BIG, -BIG, [1], {"a": 1}, "1", 1.5, True])
-    async def test_entity_memory_link_rejects_invalid_memory_id(self, api, value):
-        entity_id = await _create_entity(api)
-        response = await api.post(
-            f"/api/v1/entities/{entity_id}/memories", json={"memory_id": value},
-        )
-        assert response.status_code == 400, f"memory_id={value!r}: {response.status_code}"
-        assert "memory_id" in response.json()["error"]
-
-    @pytest.mark.asyncio
-    async def test_entity_memory_link_unknown_integer_id_is_still_404(self, api):
-        entity_id = await _create_entity(api)
-        response = await api.post(
-            f"/api/v1/entities/{entity_id}/memories", json={"memory_id": 987654},
-        )
-        assert response.status_code == 404
-
-class TestSearchLimits:
-    """limit/k below 1 must not turn into LIMIT -1 (unbounded) or LIMIT 0."""
-
-    @pytest.mark.asyncio
-    async def test_entity_search_limit_below_one_returns_400(self, api):
-        for index in range(3):
-            await _create_entity(api, f"Bulk{index}")
-
-        for limit in (-1, 0, -1000):
-            response = await api.post(
-                "/api/v1/entities/search", json={"query": "Bulk", "limit": limit},
-            )
-            assert response.status_code == 400, f"limit={limit}: {response.status_code}"
-            assert "limit must be between 1 and 100" in response.json()["error"]
-
-    @pytest.mark.asyncio
-    async def test_entity_search_valid_limits_still_work(self, api):
-        for index in range(3):
-            await _create_entity(api, f"Bulk{index}")
-
-        one = await api.post("/api/v1/entities/search", json={"query": "Bulk", "limit": 1})
-        assert one.status_code == 200
-        assert len(one.json()["entities"]) == 1
-
-        capped = await api.post(
-            "/api/v1/entities/search", json={"query": "Bulk", "limit": 1000},
-        )
-        assert capped.status_code == 200
-        assert len(capped.json()["entities"]) == 3
-
-        default = await api.post("/api/v1/entities/search", json={"query": "Bulk"})
-        assert default.status_code == 200

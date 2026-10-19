@@ -43,7 +43,7 @@ ignored; an empty value is an error, never "all skills"). `--timeout` /
 
 The walkthrough order
 is fixed by data dependencies — write-skills populate the store the read-skills then
-query: `cli-setup → remember → entities → recall → explore →
+query: `cli-setup → remember → recall → explore →
 context-gather → encode-repo`. `forgetful-mcp-setup` is not walked: the MCP
 surface pass is a reserved axis (`--surface` accepts only `cli` in v1). `--agent` accepts
 only `opencode` in v1 — other agents need provisioning ported in `container.py`.

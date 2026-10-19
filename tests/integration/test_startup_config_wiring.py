@@ -8,7 +8,6 @@ silently ignored or fail later with an opaque error:
 - ACTIVITY_RETENTION_DAYS accepts the documented empty / null spellings for "keep forever".
 - SSE_MAX_QUEUE_SIZE reaches the EventBus built by the composition root.
 - ENCODING_* / AGENT_* provenance defaults are length-checked against the model caps.
-- On PostgreSQL, *_MAX_LENGTH settings are bounded by the fixed VARCHAR column widths.
 - The root service-info document only advertises endpoints that exist.
 
 Settings are built from environment variables with Settings(_env_file=None), which is what
@@ -18,11 +17,7 @@ import asyncio
 import importlib
 import inspect
 import logging
-import os
 import pkgutil
-import subprocess
-import sys
-from pathlib import Path
 
 import httpx
 import pytest
@@ -34,7 +29,6 @@ from app import bootstrap
 from app.bootstrap import build_runtime, dispose_runtime
 from app.config import logging_config
 from app.config.settings import (
-    POSTGRES_COLUMN_WIDTHS,
     PROVENANCE_MAX_LENGTHS,
     Settings,
     settings,
@@ -43,10 +37,6 @@ from app.models.activity_models import ActionType, ActivityEvent, EntityType
 from app.models.user_models import UserCreate
 from app.repositories.embeddings import embedding_adapter as embedding_module
 from app.repositories.embeddings import reranker_adapter as reranker_module
-from app.repositories.postgres.postgres_tables import (
-    EntitiesTable,
-    EntityRelationshipsTable,
-)
 from app.utils.provenance import PROVENANCE_ENV_MAP
 
 
@@ -322,74 +312,6 @@ def test_provenance_default_at_the_cap_is_accepted(monkeypatch, setting):
     limit = PROVENANCE_MAX_LENGTHS[setting]
 
     assert getattr(_settings(monkeypatch, **{setting: "x" * limit}), setting) == "x" * limit
-
-
-# ============================================================================
-# *_MAX_LENGTH settings are bounded by the fixed PostgreSQL VARCHAR widths
-# ============================================================================
-
-POSTGRES_COLUMNS = {
-    "ENTITY_NAME_MAX_LENGTH": (EntitiesTable, "name"),
-    "ENTITY_TYPE_MAX_LENGTH": (EntitiesTable, "custom_type"),
-    "ENTITY_RELATIONSHIP_TYPE_MAX_LENGTH": (EntityRelationshipsTable, "relationship_type"),
-}
-
-
-def test_width_table_matches_the_real_postgres_columns():
-    assert set(POSTGRES_COLUMN_WIDTHS) == set(POSTGRES_COLUMNS)
-    for setting_name, (table, column) in POSTGRES_COLUMNS.items():
-        assert POSTGRES_COLUMN_WIDTHS[setting_name] == table.__table__.c[column].type.length
-
-
-def test_default_max_lengths_fit_the_postgres_columns(monkeypatch, caplog):
-    with caplog.at_level(logging.WARNING):
-        loaded = _settings(monkeypatch, DATABASE="Postgres")
-
-    assert not caplog.records
-    for setting_name, width in POSTGRES_COLUMN_WIDTHS.items():
-        assert getattr(loaded, setting_name) <= width
-
-
-def test_postgres_clamps_oversized_max_lengths_to_the_column_width(monkeypatch, caplog):
-    overrides = {name: str(width * 2) for name, width in POSTGRES_COLUMN_WIDTHS.items()}
-    with caplog.at_level(logging.WARNING):
-        loaded = _settings(monkeypatch, DATABASE="Postgres", **overrides)
-
-    for setting_name, width in POSTGRES_COLUMN_WIDTHS.items():
-        assert getattr(loaded, setting_name) == width
-        assert setting_name in caplog.text
-
-
-def test_clamp_warning_reaches_stderr_at_real_startup(tmp_path):
-    """Settings() runs at import, before logging is configured; the warning must still be visible."""
-    env = {
-        **os.environ,
-        "PYTHONPATH": str(Path(__file__).resolve().parents[2]),
-        "XDG_CONFIG_HOME": str(tmp_path / "config"),
-        "DATABASE": "Postgres",
-        "ENTITY_NAME_MAX_LENGTH": "1000",
-    }
-
-    result = subprocess.run(
-        [sys.executable, "-c", "from app.config.settings import settings; print(settings.ENTITY_NAME_MAX_LENGTH)"],
-        cwd=tmp_path, env=env, capture_output=True, text=True, check=True,
-    )
-
-    assert result.stdout.strip() == "200"
-    assert "ENTITY_NAME_MAX_LENGTH" in result.stderr
-
-
-def test_postgres_keeps_max_lengths_within_the_column_width(monkeypatch):
-    loaded = _settings(monkeypatch, DATABASE="Postgres", ENTITY_NAME_MAX_LENGTH="120")
-
-    assert loaded.ENTITY_NAME_MAX_LENGTH == 120
-
-
-def test_sqlite_does_not_clamp_max_lengths(monkeypatch):
-    """SQLite does not enforce VARCHAR length, so the tunable value stays authoritative."""
-    loaded = _settings(monkeypatch, DATABASE="SQLite", ENTITY_NAME_MAX_LENGTH="1000")
-
-    assert loaded.ENTITY_NAME_MAX_LENGTH == 1000
 
 
 # ============================================================================

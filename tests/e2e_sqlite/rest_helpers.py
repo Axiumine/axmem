@@ -45,12 +45,6 @@ async def create_memory(
     return await create_resource(http, "/api/v1/memories", payload)
 
 
-async def create_entity(http, name, entity_type, **extra):
-    """Create an entity and return its id."""
-    payload = {"name": name, "entity_type": entity_type, **extra}
-    return await create_resource(http, "/api/v1/entities", payload)
-
-
 # --- Builders: link existing resources ---------------------------------------
 
 

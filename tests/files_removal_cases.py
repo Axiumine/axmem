@@ -6,7 +6,6 @@ from sqlalchemy import text
 
 from app.bootstrap import create_repositories
 from app.config.settings import settings
-from app.models.entity_models import EntityCreate, EntityType
 from app.models.memory_models import MemoryCreate
 from app.models.project_models import ProjectCreate, ProjectType
 from app.models.user_models import UserCreate
@@ -61,9 +60,6 @@ async def store_file_rows_and_events(db: Any) -> dict[str, Any]:
         owner,
         MemoryCreate(title="Kept memory", content="c", context="x", keywords=["k"], tags=["t"], importance=7),
     )
-    entity = await repos["entity"].create_entity(
-        owner, EntityCreate(name="Kept entity", entity_type=EntityType.ORGANIZATION),
-    )
 
     # The files table is not part of the application any more: the revision's downgrade
     # brought it back, so the rows go in with SQL. PostgreSQL has array tags.
@@ -74,12 +70,22 @@ async def store_file_rows_and_events(db: Any) -> dict[str, Any]:
         "INSERT INTO files (id, user_id, project_id, filename, description, data, mime_type, size_bytes, tags) "
         "VALUES (1, :owner, :project, 'a.txt', 'd', 'hello', 'text/plain', 5, '[]')"
     )
+    # Entities are not part of the application any more either: the same downgrade brought
+    # the entities table back, and the file link needs a row to point at.
+    insert_entity = (
+        "INSERT INTO entities (id, user_id, name, entity_type, tags, aka, created_at, updated_at) "
+        "VALUES (1, :owner, 'Linked', 'Organization', '{}', '{}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+        if is_postgres(db) else
+        "INSERT INTO entities (id, user_id, name, entity_type, tags, aka, created_at, updated_at) "
+        "VALUES (1, :owner, 'Linked', 'Organization', '[]', '[]', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+    )
     statements = [
+        insert_entity,
         insert_file,
         "INSERT INTO memory_file_association (memory_id, file_id) VALUES (:memory, 1)",
-        "INSERT INTO entity_file_association (entity_id, file_id) VALUES (:entity, 1)",
+        "INSERT INTO entity_file_association (entity_id, file_id) VALUES (1, 1)",
     ]
-    parameters = {"owner": str(owner), "project": project.id, "memory": memory.id, "entity": entity.id}
+    parameters = {"owner": str(owner), "project": project.id, "memory": memory.id}
     event = text(
         "INSERT INTO activity_log (user_id, entity_type, entity_id, action, snapshot, actor, created_at) "
         "VALUES (:owner, :entity_type, 1, 'created', '{}', 'user', CURRENT_TIMESTAMP)",
@@ -89,7 +95,7 @@ async def store_file_rows_and_events(db: Any) -> dict[str, Any]:
             await session.execute(text(statement), parameters)
         for entity_type in ("file", *KEPT_EVENT_TYPES):
             await session.execute(event, {"owner": str(owner), "entity_type": entity_type})
-    return {"owner": str(owner), "memory": memory.id, "entity": entity.id}
+    return {"owner": str(owner), "memory": memory.id}
 
 
 class TestFilesRemoval:
@@ -108,10 +114,8 @@ class TestFilesRemoval:
                 text("SELECT name FROM projects WHERE user_id = :owner"), {"owner": kept["owner"]},
             )
             memories = await session.execute(text("SELECT id FROM memories WHERE id = :id"), {"id": kept["memory"]})
-            entities = await session.execute(text("SELECT id FROM entities WHERE id = :id"), {"id": kept["entity"]})
             assert [row[0] for row in projects] == ["Kept"]
             assert [row[0] for row in memories] == [kept["memory"]]
-            assert [row[0] for row in entities] == [kept["entity"]]
 
     async def test_downgrade_recreates_the_schema_the_earlier_revisions_produce(self, files_db):
         config = alembic_config()

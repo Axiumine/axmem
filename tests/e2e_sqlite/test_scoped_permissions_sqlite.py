@@ -9,7 +9,7 @@ import pytest
 from app.routes.mcp.scope_resolver import parse_scopes, resolve_permitted_tools
 
 # Tools discoverable with the default wildcard scope: the floor a restricted scope must stay below.
-ALL_TOOLS_COUNT = 33
+ALL_TOOLS_COUNT = 17
 
 # ============================================================================
 # Default wildcard scope - regression (all tools accessible)

@@ -154,7 +154,7 @@ class TestEventBusPatternMatching:
             user_id="test-user",
         ))
         await bus.emit(ActivityEvent(
-            entity_type=EntityType.ENTITY,
+            entity_type=EntityType.LINK,
             entity_id=3,
             action=ActionType.DELETED,
             snapshot={},

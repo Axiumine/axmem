@@ -343,7 +343,7 @@ class ProjectService:
     async def delete_project(self, user_id: UUID, project_id: int) -> bool:
         """Delete project
 
-        Removes project metadata. Linked memories and entities are
+        Removes project metadata. Linked memories are
         preserved - only associations are removed.
 
         Args:

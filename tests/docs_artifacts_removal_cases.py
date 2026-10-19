@@ -9,7 +9,6 @@ from sqlalchemy.pool import NullPool
 from alembic import command
 from app.bootstrap import create_repositories
 from app.config.settings import settings
-from app.models.entity_models import EntityCreate, EntityType
 from app.models.memory_models import MemoryCreate
 from app.models.project_models import ProjectCreate, ProjectType
 from app.models.user_models import UserCreate
@@ -139,9 +138,6 @@ async def store_removed_rows_and_events(db: Any) -> dict[str, Any]:
         owner,
         MemoryCreate(title="Kept memory", content="c", context="x", keywords=["k"], tags=["t"], importance=7),
     )
-    entity = await repos["entity"].create_entity(
-        owner, EntityCreate(name="Kept entity", entity_type=EntityType.ORGANIZATION),
-    )
 
     dialect = "postgresql" if is_postgres(db) else "sqlite"
     statements = [
@@ -160,7 +156,7 @@ async def store_removed_rows_and_events(db: Any) -> dict[str, Any]:
             await session.execute(text(statement), parameters)
         for entity_type in ("document", "code_artifact", *KEPT_EVENT_TYPES):
             await session.execute(event, {"owner": str(owner), "entity_type": entity_type})
-    return {"owner": str(owner), "memory": memory.id, "entity": entity.id}
+    return {"owner": str(owner), "memory": memory.id}
 
 
 class TestDocumentsAndCodeArtifactsRemoval:
@@ -179,10 +175,8 @@ class TestDocumentsAndCodeArtifactsRemoval:
                 text("SELECT name FROM projects WHERE user_id = :owner"), {"owner": kept["owner"]},
             )
             memories = await session.execute(text("SELECT id FROM memories WHERE id = :id"), {"id": kept["memory"]})
-            entities = await session.execute(text("SELECT id FROM entities WHERE id = :id"), {"id": kept["entity"]})
             assert [row[0] for row in projects] == ["Kept"]
             assert [row[0] for row in memories] == [kept["memory"]]
-            assert [row[0] for row in entities] == [kept["entity"]]
 
     async def test_downgrade_recreates_the_schema_the_earlier_revisions_produce(self, docs_db):
         config = alembic_config()

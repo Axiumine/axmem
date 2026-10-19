@@ -12,11 +12,9 @@ from dataclasses import dataclass
 from uuid import UUID
 
 from app.config.settings import settings
-from app.models.entity_models import Entity, EntityCreate, EntityType
 from app.models.memory_models import Memory, MemoryCreate
 from app.models.project_models import ProjectCreate, ProjectType
 from app.models.user_models import UserCreate
-from app.repositories.postgres.entity_repository import PostgresEntityRepository
 from app.repositories.postgres.memory_repository import PostgresMemoryRepository
 from app.repositories.postgres.postgres_adapter import PostgresDatabaseAdapter
 from app.repositories.postgres.project_repository import PostgresProjectRepository
@@ -58,7 +56,6 @@ class RepositoryWorld:
     db_adapter: PostgresDatabaseAdapter
     owner: UUID
     stranger: UUID
-    entities: PostgresEntityRepository
     memories: PostgresMemoryRepository
     projects: PostgresProjectRepository
 
@@ -76,15 +73,8 @@ async def build_world(db_adapter: PostgresDatabaseAdapter) -> RepositoryWorld:
         db_adapter=db_adapter,
         owner=owner.id,
         stranger=stranger.id,
-        entities=PostgresEntityRepository(db_adapter),
         memories=PostgresMemoryRepository(db_adapter, embeddings),
         projects=PostgresProjectRepository(db_adapter),
-    )
-
-
-async def new_entity(world: RepositoryWorld, user_id: UUID, name: str = "Acme") -> Entity:
-    return await world.entities.create_entity(
-        user_id, EntityCreate(name=name, entity_type=EntityType.ORGANIZATION),
     )
 
 

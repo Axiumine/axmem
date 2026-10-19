@@ -32,22 +32,6 @@ memory_project_association = Table(
     Column("project_id", Integer, ForeignKey("projects.id", ondelete="CASCADE"), primary_key=True),
 )
 
-# Association table for many-to-many relationship between memories and entities
-memory_entity_association = Table(
-    "memory_entity_association",
-    Base.metadata,
-    Column("memory_id", Integer, ForeignKey("memories.id", ondelete="CASCADE"), primary_key=True),
-    Column("entity_id", Integer, ForeignKey("entities.id", ondelete="CASCADE"), primary_key=True),
-)
-
-# Association table for many-to-many relationship between entities and projects
-entity_project_association = Table(
-    "entity_project_association",
-    Base.metadata,
-    Column("entity_id", Integer, ForeignKey("entities.id", ondelete="CASCADE"), primary_key=True),
-    Column("project_id", Integer, ForeignKey("projects.id", ondelete="CASCADE"), primary_key=True),
-)
-
 class UsersTable(Base):
     """User Table Model
     """
@@ -80,11 +64,6 @@ class UsersTable(Base):
     )
     projects: Mapped[list[ProjectsTable]] = relationship(
         "ProjectsTable",
-        back_populates="user",
-        cascade="all, delete-orphan",
-    )
-    entities: Mapped[list[EntitiesTable]] = relationship(
-        "EntitiesTable",
         back_populates="user",
         cascade="all, delete-orphan",
     )
@@ -149,11 +128,6 @@ class MemoryTable(Base):
     projects: Mapped[list[ProjectsTable]] = relationship(
         "ProjectsTable",
         secondary=memory_project_association,
-        back_populates="memories",
-    )
-    entities: Mapped[list[EntitiesTable]] = relationship(
-        "EntitiesTable",
-        secondary=memory_entity_association,
         back_populates="memories",
     )
 
@@ -298,11 +272,6 @@ class ProjectsTable(Base):
         secondary=memory_project_association,
         back_populates="projects",
     )
-    entities: Mapped[list[EntitiesTable]] = relationship(
-        "EntitiesTable",
-        secondary=entity_project_association,
-        back_populates="projects",
-    )
 
     # Computed properties for Pydantic conversion
     @hybrid_property
@@ -313,169 +282,6 @@ class ProjectsTable(Base):
     __table_args__ = (
         Index("ix_projects_user_id", "user_id"),
         Index("ix_projects_status", "status"),
-    )
-
-class EntitiesTable(Base):
-    """Table for storing entities (organizations, individuals, teams, devices, etc.)
-    that can be referenced by memories and related to each other through relationships
-
-    Supports many-to-many relationships:
-    - Projects (entity_project_association) for project-specific entities
-    - Memory references (memory_entity_association) for cross-project reuse
-    """
-    __tablename__ = "entities"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-
-    # Entity information
-    name: Mapped[str] = mapped_column(String(200), nullable=False)
-    entity_type: Mapped[str] = mapped_column(String(100), nullable=False)  # Organization, Individual, Team, Device, System, Other
-    custom_type: Mapped[str] = mapped_column(String(100), nullable=True)  # Used when entity_type is "Other"
-    notes: Mapped[str] = mapped_column(Text, nullable=True)
-    tags: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=False)
-    aka: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=False, default=list)  # Alternative names/aliases
-
-    # Provenance tracking (optional)
-    source_repo: Mapped[str] = mapped_column(Text, nullable=True)
-    source_files: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=True)
-    source_url: Mapped[str] = mapped_column(Text, nullable=True)
-    confidence: Mapped[float] = mapped_column(nullable=True)
-    encoding_agent: Mapped[str] = mapped_column(Text, nullable=True)
-    encoding_version: Mapped[str] = mapped_column(Text, nullable=True)
-    agent_id: Mapped[str] = mapped_column(Text, nullable=True)
-    agent_version: Mapped[str] = mapped_column(Text, nullable=True)
-    agent_model: Mapped[str] = mapped_column(Text, nullable=True)
-
-    # Timestamps
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        default=lambda: datetime.now(UTC),
-        nullable=False,
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        default=lambda: datetime.now(UTC),
-        onupdate=lambda: datetime.now(UTC),
-        nullable=False,
-    )
-
-    # Relationships
-    user: Mapped[UsersTable] = relationship("UsersTable", back_populates="entities")
-    projects: Mapped[list[ProjectsTable]] = relationship(
-        "ProjectsTable",
-        secondary=entity_project_association,
-        back_populates="entities",
-    )
-    memories: Mapped[list[MemoryTable]] = relationship(
-        "MemoryTable",
-        secondary=memory_entity_association,
-        back_populates="entities",
-    )
-
-    # Entity relationships (as source)
-    outgoing_relationships: Mapped[list[EntityRelationshipsTable]] = relationship(
-        "EntityRelationshipsTable",
-        foreign_keys="EntityRelationshipsTable.source_entity_id",
-        back_populates="source_entity",
-        cascade="all, delete-orphan",
-    )
-
-    # Entity relationships (as target)
-    incoming_relationships: Mapped[list[EntityRelationshipsTable]] = relationship(
-        "EntityRelationshipsTable",
-        foreign_keys="EntityRelationshipsTable.target_entity_id",
-        back_populates="target_entity",
-        cascade="all, delete-orphan",
-    )
-
-    @property
-    def project_ids(self) -> list[int]:
-        """Compute project IDs from projects relationship.
-
-        Returns:
-            List of project IDs, or empty list if relationship not loaded
-        """
-        from sqlalchemy import inspect
-        from sqlalchemy.orm.attributes import NO_VALUE
-
-        insp = inspect(self)
-        if insp.attrs.projects.loaded_value is not NO_VALUE:
-            return [p.id for p in self.projects]
-        return []
-
-    __table_args__ = (
-        Index("ix_entities_user_id", "user_id"),
-        Index("ix_entities_entity_type", "entity_type"),
-        Index("ix_entities_tags", "tags", postgresql_using="gin"),
-        Index("ix_entities_aka", "aka", postgresql_using="gin"),
-        Index("ix_entities_name", "name"),
-    )
-
-
-class EntityRelationshipsTable(Base):
-    """Table for storing relationships between entities (knowledge graph edges)
-
-    Supports weighted, typed relationships with confidence scores and metadata
-    for building a rich knowledge graph of entity connections.
-    """
-    __tablename__ = "entity_relationships"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-
-    # Relationship endpoints
-    source_entity_id: Mapped[int] = mapped_column(Integer, ForeignKey("entities.id", ondelete="CASCADE"), nullable=False)
-    target_entity_id: Mapped[int] = mapped_column(Integer, ForeignKey("entities.id", ondelete="CASCADE"), nullable=False)
-
-    # Relationship information
-    relationship_type: Mapped[str] = mapped_column(String(100), nullable=False)  # e.g., "works_at", "owns", "manages"
-    strength: Mapped[float] = mapped_column(nullable=True)  # 0.0-1.0 relationship strength
-    confidence: Mapped[float] = mapped_column(nullable=True)  # 0.0-1.0 confidence score
-    relationship_metadata: Mapped[dict] = mapped_column(JSONB, nullable=True, default=dict)  # Flexible metadata (source, verification date, etc.)
-
-    # Provenance tracking (optional) — confidence skipped (entity relationships have their own)
-    source_repo: Mapped[str] = mapped_column(Text, nullable=True)
-    source_files: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=True)
-    source_url: Mapped[str] = mapped_column(Text, nullable=True)
-    encoding_agent: Mapped[str] = mapped_column(Text, nullable=True)
-    encoding_version: Mapped[str] = mapped_column(Text, nullable=True)
-    agent_id: Mapped[str] = mapped_column(Text, nullable=True)
-    agent_version: Mapped[str] = mapped_column(Text, nullable=True)
-    agent_model: Mapped[str] = mapped_column(Text, nullable=True)
-
-    # Timestamps
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        default=lambda: datetime.now(UTC),
-        nullable=False,
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        default=lambda: datetime.now(UTC),
-        onupdate=lambda: datetime.now(UTC),
-        nullable=False,
-    )
-
-    # Relationships
-    source_entity: Mapped[EntitiesTable] = relationship(
-        "EntitiesTable",
-        foreign_keys=[source_entity_id],
-        back_populates="outgoing_relationships",
-    )
-    target_entity: Mapped[EntitiesTable] = relationship(
-        "EntitiesTable",
-        foreign_keys=[target_entity_id],
-        back_populates="incoming_relationships",
-    )
-
-    __table_args__ = (
-        Index("ix_entity_relationships_user_id", "user_id"),
-        Index("ix_entity_relationships_source_entity_id", "source_entity_id"),
-        Index("ix_entity_relationships_target_entity_id", "target_entity_id"),
-        Index("ix_entity_relationships_relationship_type", "relationship_type"),
-        # Unique constraint to prevent duplicate relationships
-        Index("ix_entity_relationships_unique", "source_entity_id", "target_entity_id", "relationship_type", unique=True),
     )
 
 

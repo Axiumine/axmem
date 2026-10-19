@@ -22,7 +22,6 @@ from app.config.settings import settings
 from app.routes.api import (
     activity,
     auth,
-    entities,
     health,
     memories,
     projects,
@@ -59,7 +58,6 @@ async def lifespan(app):
     mcp.memory_service = services.memory
     mcp.re_embedding_service = services.re_embedding
     mcp.project_service = services.project
-    mcp.entity_service = services.entity
     mcp.activity_service = services.activity
     mcp.event_bus = runtime.event_bus
 
@@ -110,7 +108,6 @@ async def root(request: Request) -> JSONResponse:
 health.register(mcp)
 auth.register(mcp)
 memories.register(mcp)
-entities.register(mcp)
 projects.register(mcp)
 activity.register(mcp)
 

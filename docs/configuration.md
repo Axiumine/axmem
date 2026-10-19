@@ -493,8 +493,6 @@ These settings control the atomic memory system's behavior and constraints.
 The length and count limits below are checked when a memory is created or updated. Lowering
 one later does not make memories that were stored under the old limit unreadable.
 
-**PostgreSQL column widths**: on PostgreSQL several `*_MAX_LENGTH` settings map to fixed-width `VARCHAR` columns (entity name/type and relationship type). A value above the column width is lowered to it at startup with a warning, because PostgreSQL would reject longer values. SQLite does not enforce `VARCHAR` length, so the configured value is used as is.
-
 ### `MEMORY_TITLE_MAX_LENGTH`
 - **Default**: `200`
 - **Description**: Maximum characters for memory titles
@@ -606,40 +604,6 @@ one later does not make memories that were stored under the old limit unreadable
 
 ---
 
-## Entity Configuration
-
-### `ENTITY_NAME_MAX_LENGTH`
-- **Default**: `200`
-- **Description**: Maximum characters for entity names
-- **Note**: Database limit is String(200)
-- **Example**: `ENTITY_NAME_MAX_LENGTH=200`
-
-### `ENTITY_TYPE_MAX_LENGTH`
-- **Default**: `100`
-- **Description**: Maximum characters for custom entity types
-- **Examples**: "organization", "person", "device", "team"
-- **Example**: `ENTITY_TYPE_MAX_LENGTH=100`
-
-### `ENTITY_NOTES_MAX_LENGTH`
-- **Default**: `4000`
-- **Description**: Maximum characters for entity notes
-- **Purpose**: Reasonable cap for text field with entity annotations
-- **Example**: `ENTITY_NOTES_MAX_LENGTH=4000`
-
-### `ENTITY_TAGS_MAX_COUNT`
-- **Default**: `10`
-- **Description**: Maximum number of tags per entity
-- **Purpose**: Categorization and filtering
-- **Example**: `ENTITY_TAGS_MAX_COUNT=10`
-
-### `ENTITY_RELATIONSHIP_TYPE_MAX_LENGTH`
-- **Default**: `100`
-- **Description**: Maximum characters for relationship type labels
-- **Examples**: "works_at", "owns", "manages", "depends_on"
-- **Example**: `ENTITY_RELATIONSHIP_TYPE_MAX_LENGTH=100`
-
----
-
 ## Provenance Defaults
 
 These settings allow you to stamp every object created through a Forgetful server instance with identifying information about the agent and software doing the encoding. Useful when multiple agents or tools write to the same knowledge base.
@@ -699,7 +663,7 @@ ENFORCE_ENV_OVERWRITE=true
 
 ## Activity Tracking Configuration
 
-Activity tracking provides an audit log of all entity lifecycle events (created, updated, deleted). This is an **experimental feature**.
+Activity tracking provides an audit log of all memory, project and link lifecycle events (created, updated, deleted). This is an **experimental feature**.
 
 > **⚠️ Experimental Feature**
 >

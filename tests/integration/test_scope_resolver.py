@@ -77,18 +77,6 @@ def registry_with_tools():
         implementation=noop, mutates=True,
     )
 
-    # Entity tools
-    registry.register(
-        name="get_entity", category=ToolCategory.ENTITY,
-        description="Get entity", parameters=params, returns="Entity",
-        implementation=noop, mutates=False,
-    )
-    registry.register(
-        name="create_entity", category=ToolCategory.ENTITY,
-        description="Create entity", parameters=params, returns="Entity",
-        implementation=noop, mutates=True,
-    )
-
     return registry
 
 
@@ -152,8 +140,8 @@ class TestParseScopes:
             parse_scopes("read,foobar")
 
     def test_combined_scopes(self):
-        result = parse_scopes("read:memories,write:entities,read:projects")
-        assert result == frozenset({"read:memories", "write:entities", "read:projects"})
+        result = parse_scopes("read:memories,write:projects,read:users")
+        assert result == frozenset({"read:memories", "write:projects", "read:users"})
 
 
 # ============================================================================
@@ -211,11 +199,10 @@ class TestResolvePermittedTools:
         assert "create_project" not in permitted
         assert "update_user_notes" not in permitted
 
-    def test_read_entities(self, registry_with_tools):
-        scopes = frozenset({"read:entities"})
+    def test_read_projects(self, registry_with_tools):
+        scopes = frozenset({"read:projects"})
         permitted = resolve_permitted_tools(scopes, registry_with_tools)
-        assert "get_entity" in permitted
-        assert "create_entity" not in permitted
+        assert permitted == {"list_projects"}
 
     def test_empty_result_for_unused_category(self, registry_with_tools):
         # All tools are accounted for, but let's test a scope combination
@@ -333,6 +320,10 @@ class TestCategoryMapping:
         for cat in ToolCategory:
             assert cat.value in CATEGORY_TO_SCOPE, f"Category {cat.value} missing from CATEGORY_TO_SCOPE"
 
-    def test_linking_maps_to_entities(self):
-        """Linking category should map to entities scope."""
-        assert CATEGORY_TO_SCOPE["linking"] == "entities"
+    def test_linking_maps_to_memories(self):
+        """Linking category should map to memories scope."""
+        assert CATEGORY_TO_SCOPE["linking"] == "memories"
+
+    def test_entities_is_no_longer_a_scope_category(self):
+        with pytest.raises(ValueError, match="Invalid scope category 'entities'"):
+            parse_scopes("read:entities")

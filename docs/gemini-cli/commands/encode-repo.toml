@@ -86,14 +86,14 @@ Report gap analysis before proceeding.
 
 ## Memory Targets by Project Profile
 
-| Profile | Phase 1 | Phase 2 | Phase 2B | Phase 3 | Phase 4 | Phase 5 | Total Memories |
-|---------|---------|---------|----------|---------|---------|---------|----------------|
-| Small Simple | 3-5 | 3-5 | 3+ entities | 3-5 | 2-4 | 0-3 | 15-27 |
-| Small Complex | 5-7 | 5-8 | 5+ entities | 5-8 | 4-6 | 0-5 | 26-42 |
-| Medium Standard | 5-10 | 10-15 | 8+ entities | 8-12 | 5-10 | 0-8 | 35-60 |
-| Large | 8-12 | 15-20 | 12+ entities | 12-18 | 10-15 | 0-12 | 60-100 |
+| Profile | Phase 1 | Phase 2 | Phase 3 | Phase 4 | Phase 5 | Total Memories |
+|---|---|---|---|---|---|---|
+| Small Simple | 3-5 | 3-5 | 3-5 | 2-4 | 0-3 | 11-22 |
+| Small Complex | 5-7 | 5-8 | 5-8 | 4-6 | 0-5 | 19-34 |
+| Medium Standard | 5-10 | 10-15 | 8-12 | 5-10 | 0-8 | 28-55 |
+| Large | 8-12 | 15-20 | 12-18 | 10-15 | 0-12 | 45-77 |
 
-**Note**: Phase 5 shows "0-X" because decision memories are ONLY created when explicit documentation exists. Phase 2B is **MANDATORY** with a minimum count.
+**Note**: Phase 5 shows "0-X" because decision memories are ONLY created when explicit documentation exists.
 
 ---
 
@@ -104,7 +104,7 @@ Report gap analysis before proceeding.
 After each phase, report:
 ```
 Phase [N] Complete:
-- Created: [X] memories, [Y] entities
+- Created: [X] memories
 - Minimum required: [targets from table above]
 - Status: ✅ Met / ❌ Not met (explain gaps)
 ```
@@ -114,9 +114,8 @@ Phase [N] Complete:
 | Phase | Minimum Output | Gate Requirement |
 |-------|---------------|------------------|
 | 0: Discovery | Gap analysis report | Report before proceeding |
-| 1: Foundation | 5 memories + project entity | All 5 core memories created |
+| 1: Foundation | 5 memories + project | All 5 core memories created |
 | 2: Architecture | Layer memories | 1 memory per identified layer |
-| **2B: Entities** | **3+ entities** | **Entity count met** |
 | 3: Patterns | 3+ pattern memories | Pattern count met |
 
 ### Conditional Phases (Skip if criteria not met)
@@ -130,7 +129,7 @@ Phase [N] Complete:
 
 ## Phase 1: Project Foundation (5-10 memories)
 
-### Create/Update Project Entity
+### Create/Update the Project
 
 If project doesn't exist:
 ```
@@ -168,7 +167,7 @@ One memory per major architectural layer:
 - Routes/Controllers
 - Service/Business Logic
 - Repository/Data Access
-- Models/Domain Entities
+- Models/Domain Objects
 - Middleware
 - Authentication
 - Configuration
@@ -187,109 +186,6 @@ Template:
 ```
 
 **Checkpoint**: Report layer memories created before proceeding.
-
----
-
-## Phase 2B: Entity Graph (MANDATORY, minimum 3 entities)
-
-**Purpose**: Create a knowledge graph of project components, people, services, and their relationships.
-
-**THIS PHASE IS MANDATORY** - Minimum 3 entities for any project.
-
-### Why Entities Matter
-
-Without entities, an agent cannot:
-- Understand relationships between components
-- Map team members to project areas
-- Track external services and integrations
-- Navigate the knowledge graph effectively
-
-### Minimum Entity Requirements
-
-| Project Size | Minimum Entities | Recommended |
-|--------------|------------------|-------------|
-| Small | 3 | 3-5 |
-| Medium | 5 | 8-12 |
-| Large | 8 | 12-20 |
-
-### Entity Categories to Create
-
-1. **Core Services/Components** (entity_type: "other", custom_type: "Service")
-   - Main application modules
-   - Background workers
-   - API services
-
-2. **External Dependencies** (entity_type: "other", custom_type: "ExternalService")
-   - Databases (PostgreSQL, Redis, etc.)
-   - Third-party APIs
-   - Cloud services
-
-3. **Key Abstractions** (entity_type: "other", custom_type: "Pattern")
-   - Base classes used throughout
-   - Core interfaces
-   - Shared utilities
-
-### Entity Creation
-
-```
-execute_forgetful_tool("create_entity", {
-  "name": "AuthService",
-  "entity_type": "other",
-  "custom_type": "Service",
-  "notes": "Handles JWT validation, user sessions, OAuth flows",
-  "aka": ["auth", "authentication"],
-  "tags": ["service", "security"],
-  "project_ids": [<project_id>]
-})
-```
-
-### Entity Relationships
-
-After creating entities, map their relationships:
-
-```
-execute_forgetful_tool("create_entity_relationship", {
-  "source_entity_id": <auth_service_id>,
-  "target_entity_id": <user_repo_id>,
-  "relationship_type": "depends_on",
-  "strength": 0.9,
-  "notes": "AuthService requires UserRepository for credential lookup"
-})
-```
-
-**Relationship Types**: `uses`, `depends_on`, `extends`, `implements`, `connects_to`, `contains`
-
-### Link Entities to Memories
-
-Connect entities to their related memories:
-
-```
-execute_forgetful_tool("link_entity_to_memory", {
-  "entity_id": <entity_id>,
-  "memory_id": <architecture_memory_id>
-})
-```
-
-### Link Entities to Projects
-
-Explicitly link entities to projects for organizational grouping (in addition to the `project_ids` field during creation):
-
-```
-execute_forgetful_tool("link_entity_to_project", {
-  "entity_id": <entity_id>,
-  "project_id": <project_id>
-})
-```
-
-**Checkpoint**:
-```
-Phase 2B Complete:
-- Entities created: [count]
-- Relationships mapped: [count]
-- Entity-memory links: [count]
-- Minimum required: 3 entities
-- Status: ✅ Met / ❌ Not met
-```
 
 ---
 
@@ -475,7 +371,6 @@ Phase 5 Complete:
 | 0: Discovery | Gap analysis report | Report before proceeding |
 | 1: Foundation | 5 memories + project | All 5 core memories created |
 | 2: Architecture | Layer memories | 1 per identified layer |
-| **2B: Entities** | **3+ entities** | **Entity count met** |
 | 3: Patterns | 3+ memories | Pattern count met |
 
 ### Conditional Phases (Skip if criteria not met)
@@ -487,11 +382,11 @@ Phase 5 Complete:
 
 ### Execution Rules
 
-1. **Execute phases in order**: 0 → 1 → 2 → 2B → 3 → 4 → 5
+1. **Execute phases in order**: 0 → 1 → 2 → 3 → 4 → 5
 2. **Check gates**: Each mandatory phase must meet minimums before proceeding
 3. **Report checkpoints**: Use checkpoint format after each phase
 4. **Skip conditionals**: Only if skip criteria explicitly met
-5. **Never skip mandatories**: Phases 0, 1, 2, 2B, 3 must always run
+5. **Never skip mandatories**: Phases 0, 1, 2, 3 must always run
 6. **Update outdated memories** as discovered
 7. **Mark obsolete** memories that reference removed code
 8. **Link new memories** to existing related memories
@@ -526,10 +421,8 @@ execute_forgetful_tool("query_memory", {
   "project_ids": [<project_id>]
 })
 
-# Test 3: Entity graph
-execute_forgetful_tool("list_entities", {
-  "project_ids": [<project_id>]
-})
+# Test 3: Linked knowledge
+execute_forgetful_tool("get_memory", {"memory_id": <architecture_memory_id>})
 ```
 
 If searches return poor results, create additional memories in those areas.
@@ -548,8 +441,7 @@ When encoding is complete, provide a summary in this format:
 | Type | Count | Minimum | Status |
 |------|-------|---------|--------|
 | Memories | [X] | [per profile] | ✅/❌ |
-| Entities | [Y] | 3+ | ✅/❌ |
-| Relationships | [Z] | - | - |
+| Memory links | [Y] | - | - |
 
 ## Phase Completion
 
@@ -558,21 +450,9 @@ When encoding is complete, provide a summary in this format:
 | 0: Discovery | ✅ | Gap analysis |
 | 1: Foundation | ✅ | [X] memories |
 | 2: Architecture | ✅ | [X] memories |
-| 2B: Entities | ✅/❌ | [X] entities |
 | 3: Patterns | ✅ | [X] memories |
 | 4: Features | ✅/⏭️ | [X] memories |
 | 5: Decisions | ✅/⏭️ | [X] memories |
-
-## Entity Graph Summary
-
-Created entities:
-- [Entity 1]: [type] - [description]
-- [Entity 2]: [type] - [description]
-- ...
-
-Relationships:
-- [Entity A] → [relationship] → [Entity B]
-- ...
 
 ## Validation Queries Tested
 
@@ -587,7 +467,7 @@ Relationships:
 
 After each phase, report:
 - Checkpoint status (using checkpoint format)
-- Memories and entities created
+- Memories created
 - Gaps remaining
 - Next phase to execute
 

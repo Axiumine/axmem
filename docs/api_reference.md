@@ -55,22 +55,20 @@ variable, and the [FastMCP Auth Documentation](https://fastmcp.wiki/en/servers/a
 | 400 | Bad Request (validation error, malformed or non-object JSON body, `NaN`/infinite numbers in a body, invalid query parameter) |
 | 401 | Unauthorized (missing/invalid token) |
 | 404 | Not Found (including a path id that is not an integer id, such as `/api/v1/memories/abc`, and a referenced `project_id` that does not exist or belongs to another user) |
-| 409 | Conflict (`ConflictError` -- for example a duplicate entity relationship) |
 | 422 | Unprocessable Entity (`InvalidStateTransitionError` -- for example marking an already obsolete memory obsolete) |
 | 500 | Internal Server Error |
 
 ## Update Requests (PUT)
 
-`PUT` endpoints for projects, entities and entity relationships
+`PUT` endpoints for projects
 use PATCH semantics: send only the fields you want to change.
 
-- A field that is omitted or sent as `null` is left unchanged. For projects and entities, a body that
-  changes nothing returns the current record and does not modify `updated_at`. Entity relationships have no change detection: a body that changes nothing still refreshes
-  `updated_at` and records an update event.
+- A field that is omitted or sent as `null` is left unchanged. A body that changes nothing returns
+  the current record and does not modify `updated_at`.
 - `null` never clears a field. Fields such as `project_id`, `source_url` and `confidence` therefore cannot
   be reset through a `PUT`.
 - Optional text fields that can be cleared, such as a project's `notes`, are cleared by sending an empty
-  string. Lists (`tags`, `aka`) are replaced by what you send, so `[]` clears them.
+  string. Lists (`tags`) are replaced by what you send, so `[]` clears them.
 
 ---
 
@@ -434,146 +432,6 @@ Delete a project (preserves associated memories).
 
 ---
 
-## Entities
-
-### GET /api/v1/entities
-
-List all entities.
-
-**Query Parameters:**
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `entity_type` | string | Filter by type: `Individual`, `Organization`, `Team`, `Device`, `System`, `Other` |
-
-**Response:**
-```json
-{
-  "entities": [
-    {
-      "id": 1,
-      "name": "Entity Name",
-      "entity_type": "Individual",
-      "custom_type": null,
-      "notes": "Some notes",
-      "created_at": "2024-12-05T10:00:00Z"
-    }
-  ],
-  "total": 10
-}
-```
-
-### GET /api/v1/entities/{id}
-
-Get a single entity by ID.
-
-### POST /api/v1/entities
-
-Create a new entity.
-
-**Request Body:**
-```json
-{
-  "name": "Entity Name",
-  "entity_type": "Individual",
-  "custom_type": "Custom Type (if entity_type is Other)",
-  "notes": "Optional notes"
-}
-```
-
-`custom_type` is only stored for `Other` entities. Every id in `project_ids` must be one of your projects.
-
-**Errors:** 400 for invalid data; 404 when a `project_ids` entry does not exist or belongs to another user (nothing is created).
-
-### PUT /api/v1/entities/{id}
-
-Update an existing entity.
-
-An update is validated against the stored entity before anything is written. Clearing the `custom_type` of an `Other` entity returns 400, and changing an entity away from `Other` clears its `custom_type`. `project_ids` replaces the existing links; an id that does not exist or belongs to another user returns 404 and leaves the existing links unchanged.
-
-**Errors:** 400 for invalid data; 404 when the entity or a `project_ids` entry is not found.
-
-### DELETE /api/v1/entities/{id}
-
-Delete an entity.
-
-### POST /api/v1/entities/search
-
-Search entities by name.
-
-**Request Body:**
-```json
-{
-  "query": "search term",
-  "entity_type": "Individual",
-  "limit": 10
-}
-```
-
-`limit` defaults to 10 and values above 100 are capped at 100. A `limit` below 1 returns HTTP 400.
-
-### POST /api/v1/entities/{id}/memories
-
-Link an entity to a memory.
-
-**Request Body:**
-```json
-{
-  "memory_id": 1
-}
-```
-
-### DELETE /api/v1/entities/{id}/memories/{memory_id}
-
-Remove link between entity and memory.
-
-### GET /api/v1/entities/{id}/relationships
-
-Get relationships for an entity.
-
-**Response:**
-```json
-{
-  "relationships": [
-    {
-      "id": 1,
-      "source_entity_id": 1,
-      "target_entity_id": 2,
-      "relationship_type": "manages",
-      "description": "Team lead"
-    }
-  ],
-  "total": 3
-}
-```
-
-### POST /api/v1/entities/{id}/relationships
-
-Create a relationship between entities.
-
-**Request Body:**
-```json
-{
-  "target_entity_id": 2,
-  "relationship_type": "manages",
-  "description": "Optional description"
-}
-```
-
-**Errors:** 404 when either entity is not found; 409 when a relationship of the same type already exists between the two entities.
-
-### PUT /api/v1/entities/relationships/{id}
-
-Update an entity relationship.
-
-**Errors:** 404 when the relationship is not found; 409 when the new `relationship_type` already exists between the same two entities.
-
-### DELETE /api/v1/entities/relationships/{id}
-
-Delete an entity relationship.
-
----
-
 ## Activity
 
 > **Experimental Feature**
@@ -586,7 +444,7 @@ Delete an entity relationship.
 > Known limitations:
 > - SQLite in-memory mode (testing): Events may conflict with concurrent database operations
 
-The Activity API provides read access to the activity log, which tracks all entity lifecycle events (created, updated, deleted) and optionally read/query operations.
+The Activity API provides read access to the activity log, which tracks all memory, project and link lifecycle events (created, updated, deleted) and optionally read/query operations.
 
 ### Configuration
 
@@ -605,7 +463,7 @@ List activity events with filtering and pagination.
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `entity_type` | string | - | Filter by type: `memory`, `project`, `entity`, `link` |
+| `entity_type` | string | - | Filter by type: `memory`, `project`, `link` |
 | `action` | string | - | Filter by action: `created`, `updated`, `deleted`, `read`, `queried` |
 | `entity_id` | int | - | Filter by specific entity ID |
 | `actor` | string | - | Filter by actor: `user`, `system`, `llm-maintenance` |
@@ -660,7 +518,7 @@ Get activity history for a specific entity.
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `entity_type` | string | Entity type: `memory`, `project`, `entity` |
+| `entity_type` | string | Entity type: `memory`, `project` |
 | `entity_id` | int | Entity ID |
 
 **Query Parameters:**
@@ -677,11 +535,7 @@ Get activity history for a specific entity.
 **Entity Types:**
 - `memory` - Knowledge memories
 - `project` - Project containers
-- `entity` - People, organizations, devices
 - `link` - Memory-to-memory connections
-- `entity_memory_link` - Entity-to-memory connections
-- `entity_project_link` - Entity-to-project connections
-- `entity_relationship` - Entity-to-entity relationships
 
 **Action Types:**
 - `created` - Entity was created

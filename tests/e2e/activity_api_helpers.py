@@ -29,24 +29,6 @@ async def create_project(http_client, name, description):
     })
 
 
-async def create_entity(http_client, name, entity_type="Individual", **extra):
-    """POST an entity (test tag included) and return the raw response."""
-    return await http_client.post("/api/v1/entities", json={
-        "name": name,
-        "entity_type": entity_type,
-        **extra,
-        "tags": ["test"],
-    })
-
-
-async def create_relationship(http_client, source_id, target_id):
-    """POST a works_for relationship from ``source_id`` to ``target_id``."""
-    return await http_client.post(
-        f"/api/v1/entities/{source_id}/relationships",
-        json={"target_entity_id": target_id, "relationship_type": "works_for"},
-    )
-
-
 async def collect_sse_events(http_client, url, received, timeout, stop_after=None):
     """Append decoded ``data:`` payloads from an SSE stream to ``received``.
 

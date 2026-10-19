@@ -2,13 +2,13 @@ description = "Deep exploration of the Forgetful knowledge graph"
 prompt = """
 # Memory Explore
 
-Perform deep knowledge graph traversal to find related memories and entities.
+Perform deep knowledge graph traversal to find related memories.
 
 **Query**: {{args}}
 
 ## Exploration Strategy
 
-- Explore DEEPLY - follow links aggressively, expand entities, traverse relationships
+- Explore DEEPLY - follow links aggressively and traverse the linked memories
 - Be thorough - comprehensive exploration is valuable
 - Track visited IDs to prevent cycles
 - Surface only results relevant to the user's query in your final response
@@ -40,36 +40,26 @@ execute_forgetful_tool("get_memory", {"memory_id": <id>})
 
 Extract: project_ids, linked_memory_ids
 
-## Phase 3: Entity Discovery
+## Phase 3: Follow the Links
 
-For discovered project_ids, find related entities:
-
-```
-execute_forgetful_tool("list_entities", {"project_ids": [<ids>]})
-```
-
-Note: Entities can be explicitly linked to projects for organizational grouping using:
-```
-execute_forgetful_tool("link_entity_to_project", {"entity_id": <id>, "project_id": <id>})
-```
-
-## Phase 4: Entity Relationships
-
-For each relevant entity, get relationships:
+For each expanded memory, get the memories it links to that are not yet visited:
 
 ```
-execute_forgetful_tool("get_entity_relationships", {
-  "entity_id": <id>,
-  "direction": "both"
+execute_forgetful_tool("get_memory", {"memory_id": <linked_id>})
+```
+
+Repeat for the new memories, skipping any ID already visited.
+
+## Phase 4: Project Scope
+
+For discovered project_ids, search again within each project for memories the first query ranked too low:
+
+```
+execute_forgetful_tool("query_memory", {
+  "query": "{{args}}",
+  "query_context": "Project-scoped exploration via /memory-explore command",
+  "project_ids": [<ids>]
 })
-```
-
-## Phase 5: Entity-Linked Memories
-
-For each entity, get linked memories:
-
-```
-execute_forgetful_tool("get_entity_memories", {"entity_id": <id>})
 ```
 
 Fetch any new memories not already visited.
@@ -88,16 +78,9 @@ After exploration, provide a structured summary:
 **Linked (N):**
 - [Title] (importance: X) - connection type...
 
-**Entity-linked (N):**
-- [Title] - discovered via [Entity Name]...
-
-### Entities Discovered
-
-- [Name] (type) - X relationships, Y linked memories
-
 ### Graph Summary
 
-- Total: X memories, Y entities
+- Total: X memories across Y projects
 - Key themes: [identified clusters]
 - Suggested follow-up: /memory-explore "[related query]"
 

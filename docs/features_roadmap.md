@@ -1,7 +1,6 @@
 ## Feature Roadmap (in order of priority)
 - [ ] Resources 
     - [x] Project 
-    - [x] Entities (Organisations, individuals, team, devices etc)
     - [ ] Audio
     - [ ] Images
     - [ ] Video 

@@ -6,13 +6,11 @@ module per domain); this module imports them and exposes the fixtures the tests 
 
 import pytest
 
-from app.services.entity_service import EntityService
 from app.services.memory_service import MemoryService
 from app.services.project_service import ProjectService
 from app.services.user_service import UserService
 from tests.integration.stubs import (
     CollectingEventBus,
-    InMemoryEntityRepository,
     InMemoryMemoryRepository,
     InMemoryProjectRepository,
     InMemoryUserRepository,
@@ -98,27 +96,6 @@ def test_project_service_with_event_bus(mock_project_repository):
     """Provides a ProjectService with event bus for testing event emission."""
     event_bus = CollectingEventBus()
     service = ProjectService(mock_project_repository, event_bus=event_bus)
-    return service, event_bus
-
-
-# ============ Entity Testing Fixtures ============
-
-
-@pytest.fixture
-def mock_entity_repository():
-    return InMemoryEntityRepository()
-
-
-@pytest.fixture
-def test_entity_service(mock_entity_repository):
-    return EntityService(mock_entity_repository)
-
-
-@pytest.fixture
-def test_entity_service_with_event_bus(mock_entity_repository):
-    """Provides an EntityService with event bus for testing event emission."""
-    event_bus = CollectingEventBus()
-    service = EntityService(mock_entity_repository, event_bus=event_bus)
     return service, event_bus
 
 

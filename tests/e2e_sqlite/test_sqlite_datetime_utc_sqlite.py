@@ -24,11 +24,6 @@ RESOURCES = {
         "description": "Timestamp check",
         "project_type": "development",
     },
-    "entities": {
-        "name": "UTC entity",
-        "entity_type": "Organization",
-        "notes": "Timestamp check",
-    },
     "memories": {
         "title": "UTC memory",
         "content": "Timestamp check content.",

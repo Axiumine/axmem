@@ -9,7 +9,6 @@ from uuid import uuid4
 
 import pytest
 
-from app.models.entity_models import EntityCreate, EntityRelationshipCreate, EntityType
 from app.models.memory_models import MemoryCreate
 from app.models.project_models import ProjectCreate, ProjectType, ProjectUpdate
 from app.utils.provenance import (
@@ -136,12 +135,6 @@ class TestApplyProvenanceDefaults:
             ProjectCreate(
                 name="test", description="test", project_type=ProjectType.DEVELOPMENT,
             ),
-            EntityCreate(
-                name="Test Entity", entity_type=EntityType.ORGANIZATION,
-            ),
-            EntityRelationshipCreate(
-                source_entity_id=1, target_entity_id=2, relationship_type="works_at",
-            ),
         ]
 
         with patch("app.utils.provenance.settings") as mock_settings:
@@ -222,32 +215,6 @@ async def test_memory_service_applies_provenance_defaults(test_memory_service):
 
     assert memory.encoding_agent == "TestAgent"
     assert memory.agent_id == "test-id"
-
-
-@pytest.mark.asyncio
-async def test_entity_service_applies_provenance_defaults(test_entity_service):
-    """Entity service should apply env provenance defaults on create."""
-    user_id = uuid4()
-
-    with patch("app.services.entity_service.apply_provenance_defaults", wraps=apply_provenance_defaults) as mock_apply:
-        with patch("app.utils.provenance.settings") as mock_settings:
-            mock_settings.ENCODING_AGENT = "EntityAgent"
-            mock_settings.ENCODING_VERSION = ""
-            mock_settings.AGENT_ID = ""
-            mock_settings.AGENT_VERSION = ""
-            mock_settings.AGENT_MODEL = ""
-            mock_settings.ENFORCE_ENV_OVERWRITE = False
-
-            entity = await test_entity_service.create_entity(
-                user_id=user_id,
-                entity_data=EntityCreate(
-                    name="Test Org", entity_type=EntityType.ORGANIZATION,
-                ),
-            )
-
-        mock_apply.assert_called_once()
-
-    assert entity.encoding_agent == "EntityAgent"
 
 
 # ============================================================================
