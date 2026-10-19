@@ -17,7 +17,7 @@ include:
   - name: VulnerableLibrariesLocal
   - name: CheckDependencyLicenses
 
-bootstrap: pip install uv && uv sync --locked --all-extras --dev
+bootstrap: export UV_CACHE_DIR=/tmp/uv-cache && pip install uv && uv sync --locked --all-extras --dev
 
 exclude:
   - name: All
