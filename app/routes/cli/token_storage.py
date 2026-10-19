@@ -32,8 +32,6 @@ def _repair_relocated_collection_info(root: Path) -> None:
     cached token files stay where they are. Unreadable metadata is left alone for the
     store to report.
     """
-    if not root.is_dir():
-        return
     for info_file in root.glob(f"*{_INFO_SUFFIX}"):
         collection_dir = root / info_file.name.removesuffix(_INFO_SUFFIX)
         with contextlib.suppress(OSError, ValueError):
