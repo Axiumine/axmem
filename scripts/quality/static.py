@@ -93,9 +93,11 @@ def gate_radon_mi(ctx: Ctx) -> tuple[bool, str]:
     if code != 0:
         return False, out
     offenders = [
-        f"{path} rank {info['rank']} (MI {info['mi']:.2f})"
+        f"{path}: radon could not analyse it ({info['error']})"
+        if "error" in info
+        else f"{path} rank {info['rank']} (MI {info['mi']:.2f})"
         for path, info in json.loads(out).items()
-        if info["rank"] != "A"
+        if "error" in info or info["rank"] != "A"
     ]
     if offenders:
         header = "files below maintainability grade A (score must be above 19):\n"

@@ -209,7 +209,7 @@ async def test_roundtrip_long_description_with_url(test_skill_service):
     assert imported.compatibility == compatibility
 
 
-@pytest.mark.parametrize("char", [" ", " "])
+@pytest.mark.parametrize("char", ["\u2028", "\u2029"])
 async def test_roundtrip_preserves_unicode_line_separators(test_skill_service, char):
     description = f"aa{char}bb"
 
@@ -228,11 +228,11 @@ async def test_roundtrip_preserves_unicode_line_separators(test_skill_service, c
 async def test_import_quoted_value_with_unicode_separator_is_untouched(
     test_skill_service,
 ):
-    skill_md = _md('name: sep-char\ndescription: "line one line two"')
+    skill_md = _md('name: sep-char\ndescription: "line one\u2028line two"')
 
     skill = await test_skill_service.import_skill(uuid4(), skill_md)
 
-    assert skill.description == "line one line two"
+    assert skill.description == "line one\u2028line two"
 
 
 async def test_fallback_quoting_keeps_unicode_separator_in_other_lines(
@@ -241,13 +241,13 @@ async def test_fallback_quoting_keeps_unicode_separator_in_other_lines(
     skill_md = _md(
         "name: fallback\n"
         "description: Use when X. Keywords: foo, bar.\n"
-        'license: "MIT or Apache"',
+        'license: "MIT\u2029or\u2028Apache"',
     )
 
     skill = await test_skill_service.import_skill(uuid4(), skill_md)
 
     assert skill.description == "Use when X. Keywords: foo, bar."
-    assert skill.license == "MIT or Apache"
+    assert skill.license == "MIT\u2029or\u2028Apache"
 
 
 @pytest.mark.parametrize(
@@ -300,7 +300,7 @@ def test_quoting_helper_leaves_comment_only_values_unchanged():
 
 
 def test_quoting_helper_does_not_split_on_unicode_line_separators():
-    raw = "name: x\ndescription: 'aa   bb'\nnote: 'c d\u0085e'"
+    raw = "name: x\ndescription: 'aa\u2028  bb'\nnote: 'c\u2029d\u0085e'"
 
     assert _quote_unquoted_frontmatter_scalars(raw) == raw
 
