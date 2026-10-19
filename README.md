@@ -1,7 +1,7 @@
-<h1 align="center">Forgetful</h1>
+<h1 align="center">Axmem</h1>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/python-3.12%20%7C%203.13%20%7C%203.14-blue" alt="Python 3.12 to 3.14">
+  <img src="https://img.shields.io/badge/python-3.14-blue" alt="Python 3.14">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
   <img src="https://img.shields.io/badge/MCP-server-purple" alt="MCP">
   <a href="https://github.com/jlowin/fastmcp">
@@ -10,17 +10,21 @@
   <a href="https://github.com/qdrant/fastembed">
     <img src="https://img.shields.io/badge/FastEmbed-powered-orange" alt="FastEmbed">
   </a>
-  <a href="https://discord.gg/ngaUjKWkFJ">
-    <img
-      src="https://img.shields.io/badge/Discord-Join%20Us-7289da?logo=discord&amp;logoColor=white"
-      alt="Discord">
-  </a>
 </p>
 
 
-**Forgetful** is a storage and retrieval tool for AI Agents. Designed as a Model Context Protocol (MCP) server built using the FastMCP framework. Once connected to this service, MCP clients such as Coding Agents, Chat Bots or your own custom built Agents can store and retrieve information from the same knowledge base. 
+**Axmem** is a storage and retrieval tool for AI agents, built as a Model Context Protocol (MCP) server on the FastMCP framework. Once connected, MCP clients such as coding agents, chatbots or your own custom agents can store and retrieve information from the same knowledge base.
 
-![Banner](/docs/images/layers.png)
+> **Axmem** is maintained by [Axiumine](https://github.com/Axiumine). It starts from the
+> [Forgetful](https://github.com/ScottRBK/forgetful) codebase by Scott Raisbeck (MIT) and goes
+> in directions an upstream-tracking fork cannot. Planned direction, not yet shipped:
+>
+> 1. **Qdrant as the mandatory vector store** (search, auto-linking, skills, re-embedding), with
+>    PostgreSQL as the relational source of truth and a transactional outbox between the two.
+> 2. **SQLite removed**: PostgreSQL is the only relational backend.
+>
+> Until the rename lands, the commands, package names and environment variables below still say
+> `forgetful`. See [License](#license) for attribution.
 
 ---
 
@@ -30,7 +34,7 @@
 - [Features](#features)
 - [Quick Start](#quick-start)
 - [CLI](#cli)
-- [Some Examples](#usage-examples)
+- [Usage Examples](#usage-examples)
 - [How It Works](#how-it-works)
 - [Configuration](#configuration)
 - [Documentation](#documentation)
@@ -40,35 +44,35 @@
 ---
 
 ## Overview
-A lot of us are using AI Agents now, especially in the realm of software development. The pace at which work and decisions are made can make it difficult for you to keep up from a notes and context persistence perspective. 
+Many of us now work with AI agents, especially in software development. Work and decisions move fast, which makes it hard to keep up with notes and context persistence.
 
-So if you are following something like the [BMAD Method](https://github.com/bmad-code-org/BMAD-METHOD) for example and you want to take your brain storming session you've just had with Claude on your desktop/mobile and use it for the basis of your next Claude Code session, then having a shared knowledge base across the two agents can help with this. 
+So if you are following something like the [BMAD Method](https://github.com/bmad-code-org/BMAD-METHOD) for example and you want to take the brainstorming session you've just had with Claude on your desktop or phone and use it as the basis of your next Claude Code session, then having a shared knowledge base across the two agents can help with this.
 
-This is just one example use case to illustrate the point, more and more agentic applications are going to surface and the use cases for sharing data across them is going to increase. 
+This is just one example. As more agentic applications appear, so will the use cases for sharing data across them.
 
-Knowledge bases are going to become a key infrastructure component for your interactions with AIs. There are many excellent knowledge base solutions available (many for free on github) and I would encourage you to check them out and find one that works for you (even if Forgetful doesn't) as I found from personal experience that interactions with my agents got easier and more rewarding once they knew more about me, my work and previous interactions that I had had with them or other AI systems. 
+Knowledge bases are becoming a key infrastructure component for interactions with AI. There are many excellent knowledge base solutions available (many of them free on GitHub), so check them out and find one that works for you, even if it isn't Axmem. Interactions with agents get easier and more rewarding once they know more about you, your work and your previous interactions with them or other AI systems.
 
-What makes **Forgetful** different from other Memory based MCP services is that it is a rather opinionated view on how AI Agents such store and retrieve data.
+What makes **Axmem** different from other memory-based MCP services is that it takes an opinionated view on how AI agents should store and retrieve data.
 
-**Forgetful** imposes the [Zettelkasten principle](https://en.wikipedia.org/wiki/Zettelkasten) when clients wish to record memories, that is each memory must be atomic (one concept per note). Along with the note (title and content), we also ask the client / agent to provide context around what it was doing when creating the note, along with keywords and tags. With this information we create semantic embeddings and store these to aid with later retrieval and in addition to this we also automatically link the memory to existing memories that have a particular similarity score, allowing for the automatic construction of a knowledge graph. 
+**Axmem** imposes the [Zettelkasten principle](https://en.wikipedia.org/wiki/Zettelkasten) when clients wish to record memories, that is, each memory must be atomic (one concept per note). Along with the note (title and content), we also ask the client / agent to provide context around what it was doing when creating the note, along with keywords and tags. With this information we create semantic embeddings and store these to aid with later retrieval and in addition to this we also automatically link the memory to existing memories that have a particular similarity score, allowing for the automatic construction of a knowledge graph.
 
-In this sense **Forgetful** becomes a little bit like Obsidian for AI Agents, where the auto linking nudges them in building up a graph of the knowledge.
+In this sense **Axmem** becomes a little like Obsidian for AI agents, where the auto linking nudges them in building up a graph of the knowledge.
 
-We find, [as do others (A-MEM: Agentic Memory or LLM Agents)](https://arxiv.org/abs/2502.12110), all this helps in ensuring that when the agent requires relevant information from the memory system later, the correct information is returned.
+We find, [as do others (A-MEM: Agentic Memory for LLM Agents)](https://arxiv.org/abs/2502.12110), all this helps in ensuring that when the agent requires relevant information from the memory system later, the correct information is returned.
 
-In addition to just memories, **Forgetful** also has the concept of entities (think organisation, people, products), projects, documents, code artifacts, skills (procedural knowledge following the [Agent Skills](https://agentskills.io) standard), and plans with tasks for multi-agent coordination, all of which can be associated with one or more memories.
+In addition to memories, **Axmem** also has the concept of entities (think organisation, people, products), projects, documents, code artifacts, skills (procedural knowledge following the [Agent Skills](https://agentskills.io) standard), and plans with tasks for multi-agent coordination, all of which can be associated with one or more memories.
 
 
 ![Architecture](docs/images/Forgetful%20Architecture.drawio_transparent.png)
 
 ## Features
 - Configure either **STDIO** or **HTTP** transport mechanism (or stand up two services to support both)
-- Multiple Authentication supported, flows see [FastMCP docs](https://github.com/jlowin/fastmcp/tree/main/docs/servers/auth) for full list
-- Meta Tool Discovery, only three tools exposed to client application to preserve context window.
-- Flexible Storage– SQLite (default, zero-config) or PostgreSQL (for scale and production deployments)
-- Stores memories as vectors and allowing memories to be retrieved from natural language queries from AI.
-- Cross Encoder reranking to improve recall and precision of memory retrieval. 
-- Flexible ranking (embedding and cross encoder) providers, run everything locally without calls to the cloud thanks to FastEmbed
+- Multiple authentication flows supported; see the [FastMCP docs](https://github.com/jlowin/fastmcp/tree/main/docs/servers/auth) for the full list
+- Meta-tool discovery: only three tools are exposed to the client application to preserve the context window.
+- Flexible storage – SQLite (default, zero-config; slated for removal, see the note above) or PostgreSQL (for scale and production deployments)
+- Stores memories as vectors so they can be retrieved with natural-language queries from AI agents.
+- Cross-encoder reranking to improve recall and precision of memory retrieval.
+- Flexible embedding and cross-encoder providers; run everything locally without calls to the cloud thanks to FastEmbed
 - Automatic linking of semantically similar memories, automating the creation of the knowledge graph.
 - Plans and Tasks for multi-agent coordination -- structure work into plans with tasks that have acceptance criteria, state management with optimistic locking, and dependency tracking with cycle detection.
 - Skills for procedural memory -- store step-by-step instructions and agent capabilities with semantic search, import/export in Agent Skills SKILL.md format, and cross-referencing with memories.
@@ -79,28 +83,11 @@ For the complete roadmap, see [Features Roadmap](docs/features_roadmap.md).
 
 ## Quick Start
 
-### Option 1: PyPI (Recommended)
+### Option 1: From Source
 
 ```bash
-# Run directly with uvx (no installation needed)
-uvx forgetful-ai
-
-# Or install globally
-uv tool install forgetful-ai
-forgetful
-```
-Data stored in platform-appropriate locations (`~/.local/share/forgetful` on Linux/Mac, `AppData` on Windows).
-
-By default, runs with stdio transport for MCP clients. For HTTP:
-```bash
-uvx forgetful-ai --transport http --port 8020
-```
-
-### Option 2: From Source
-
-```bash
-git clone https://github.com/ScottRBK/forgetful.git
-cd forgetful
+git clone https://github.com/Axiumine/axmem.git
+cd axmem
 
 # Install dependencies with uv
 uv sync
@@ -108,11 +95,17 @@ uv sync
 # Run the server (uses SQLite by default)
 uv run main.py
 ```
-The server starts with stdio transport. For HTTP: `uv run main.py --transport http`
+Data stored in platform-appropriate locations (`~/.local/share/forgetful` on Linux/Mac, `AppData` on Windows).
 
-### Option 3: Docker Deployment (Production/Scale)
+The server starts with stdio transport, which is what MCP clients expect. For HTTP: `uv run main.py --transport http --port 8020`
 
-Forgetful provides two Docker deployment options:
+> **Note**: Axmem is not published to PyPI. `uvx forgetful-ai` installs the upstream Forgetful package, not Axmem.
+
+### Option 2: Docker Deployment (Production/Scale)
+
+Axmem provides two Docker deployment options:
+
+> **Note**: The compose files still pull the upstream image `ghcr.io/scottrbk/forgetful`; Axmem images are not published yet. To run this code, build the image from [docker/Dockerfile](/docker/Dockerfile) and point `image:` at it.
 
 #### SQLite with Docker (Simpler, Single-Container)
 
@@ -141,7 +134,7 @@ docker compose -f docker-compose.postgres.yml up -d
 **Note**: If no `.env` file exists, the application uses defaults from `app/config/settings.py`.
 For all configuration options, see [Configuration Guide](docs/configuration.md).
 
-### Connecting to An Agent
+### Connecting to an Agent
 
 For detailed connection guides (Claude Code, Claude Desktop, other clients that support MCP), see [Connectivity Guide](docs/connectivity_guide.md).
 
@@ -153,16 +146,16 @@ For detailed connection guides (Claude Code, Claude Desktop, other clients that 
 - [Gemini CLI](docs/connectivity_guide.md#gemini-cli) (includes [custom commands](docs/gemini-cli/README.md))
 - [Opencode](docs/connectivity_guide.md#opencode) (includes [custom commands and skills](docs/opencode/README.md))
 
-Add Forgetful to your MCP client configuration:
+Add Axmem to your MCP client configuration (replace `/path/to/axmem` with your clone):
 
 **stdio transport (recommended for local use):**
 ```json
 {
   "mcpServers": {
-    "forgetful": {
+    "axmem": {
       "type": "stdio",
-      "command": "uvx",
-      "args": ["forgetful-ai"]
+      "command": "uv",
+      "args": ["run", "--directory", "/path/to/axmem", "main.py"]
     }
   }
 }
@@ -172,7 +165,7 @@ Add Forgetful to your MCP client configuration:
 ```json
 {
   "mcpServers": {
-    "forgetful": {
+    "axmem": {
       "type": "http",
       "url": "http://localhost:8020/mcp"
     }
@@ -190,7 +183,8 @@ MCP meta-tools use - against your local database by default, or a remote deploym
 after `auth login`.
 
 ```bash
-uv tool install forgetful-ai
+# From the repository root (the command is still named forgetful)
+uv tool install .
 
 # Curated verbs for daily use
 forgetful memory save "Set generateResolvConf false to fix WSL2 DNS" \
@@ -216,7 +210,7 @@ forgetful memory search "wsl dns" -c "wsl networking" --json | jq '.primary_memo
 ```
 
 `forgetful serve` is the canonical way to run the MCP server (`forgetful serve
---transport http --port 8020`); the bare `forgetful` / `uvx forgetful-ai` invocation and
+--transport http --port 8020`); the bare `forgetful` invocation and
 the legacy `--transport`/`--re-embed` flags keep working indefinitely, so existing MCP
 client configurations are unaffected. Headless environments can set `FORGETFUL_TOKEN`
 (bearer) instead of the OAuth flow. See the
@@ -229,7 +223,7 @@ auth, and verification steps end-to-end.
 
 ## Usage Examples
 
-Forgetful exposes only 3 meta-tools to MCP clients. The tools available through
+Axmem exposes only three meta-tools to MCP clients. The tools available through
 `execute_forgetful_tool` depend on the enabled feature flags. Use
 `discover_forgetful_tools` for the current runtime catalog.
 
@@ -404,7 +398,7 @@ For vector search and optional cross-encoder reranking, see
 
 ## Configuration
 
-**No configuration required** – Forgetful uses sensible defaults out of the box.
+**No configuration required** – Axmem uses sensible defaults out of the box.
 
 ### Key Settings (Optional)
 
@@ -415,7 +409,7 @@ For vector search and optional cross-encoder reranking, see
 - `SERVER_PORT` – HTTP server port (default: `8020`)
 - `MAX_GRAPH_LIMIT` – Upper bound for `/api/v1/graph` `?limit` and `/api/v1/graph/subgraph` `?max_nodes` (default: `2000`)
 
-For all 40+ environment variables with detailed explanations, see [Configuration Guide](docs/configuration.md).
+For all environment variables with detailed explanations, see [Configuration Guide](docs/configuration.md).
 
 ---
 
@@ -445,7 +439,7 @@ For all 40+ environment variables with detailed explanations, see [Configuration
 
 ## Contributing
 
-We welcome contributions! Forgetful uses integration + E2E testing with Docker Compose orchestration.
+We welcome contributions! Axmem uses integration + E2E testing with Docker Compose orchestration.
 
 See [Contributors Guide](docs/contributors.md) for:
 - Testing workflows (integration tests, E2E tests, GitHub Actions)
@@ -455,7 +449,7 @@ See [Contributors Guide](docs/contributors.md) for:
 
 ### Development
 
-Python 3.12 to 3.14 are supported; the gates run on 3.12 and 3.14. After `uv sync --locked --all-extras --dev`, enable the
+Python 3.14 is the supported version. After `uv sync --locked --all-extras --dev`, enable the
 Git hooks with `uv run python -m scripts.quality install`. Commits and pushes then run the lint, type,
 security, snapshot, coverage (100 %), memory-budget and optional mutation gates described in
 [docs/quality-gates.md](docs/quality-gates.md), which also explains how to run or bypass a single gate.
@@ -465,4 +459,8 @@ Before changing code, read the [architecture overview](architecture.md).
 
 ## License
 
-MIT License - see [LICENSE](LICENCE.md) for details.
+Axmem is released under the MIT License - see [LICENCE.md](LICENCE.md).
+
+It is derived from [Forgetful](https://github.com/ScottRBK/forgetful), Copyright (c) 2025 Scott Raisbeck,
+also released under the MIT License. The original copyright and permission notice is kept unchanged in
+[LICENCE.md](LICENCE.md), as the license requires.
