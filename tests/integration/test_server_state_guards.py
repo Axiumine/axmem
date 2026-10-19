@@ -71,7 +71,7 @@ def test_server_of_returns_the_server_the_context_belongs_to():
 async def test_mcp_identity_fails_when_the_user_cannot_be_provisioned():
     ctx = SimpleNamespace(fastmcp=SimpleNamespace(user_service=_UserService(None), auth=None))
 
-    with pytest.raises(ValueError, match="User could not be provisioned"):
+    with pytest.raises(RuntimeError, match="User could not be provisioned"):
         await get_user_from_auth(ctx)
 
 
@@ -79,7 +79,7 @@ async def test_mcp_identity_fails_when_the_user_cannot_be_provisioned():
 async def test_http_identity_fails_when_the_user_cannot_be_provisioned():
     mcp = SimpleNamespace(user_service=_UserService(None), auth=None)
 
-    with pytest.raises(ValueError, match="User could not be provisioned"):
+    with pytest.raises(RuntimeError, match="User could not be provisioned"):
         await get_user_from_request(SimpleNamespace(headers={}), mcp)
 
 

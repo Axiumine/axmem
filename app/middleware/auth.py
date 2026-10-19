@@ -161,12 +161,14 @@ async def _provision_user(user_service: UserService, user: UserCreate) -> User:
     """Fetch or create the user for a request's identity
 
     Raises:
-        ValueError: If the user could not be provisioned, because ``get_or_create_user``
-            returned no user (a concurrent request removed the row it had just found)
+        RuntimeError: If the user could not be provisioned, because ``get_or_create_user``
+            returned no user (a concurrent request removed the row it had just found).
+            Deliberately not a ``ValueError``: that is the authentication-failure type
+            and would turn a server-side race into a 401.
     """
     provisioned = await user_service.get_or_create_user(user=user)
     if provisioned is None:
-        raise ValueError("User could not be provisioned")
+        raise RuntimeError("User could not be provisioned")
     return provisioned
 
 

@@ -187,9 +187,14 @@ class GoogleEmbeddingsAdapter(EmbeddingsAdapter):
             })
             raise
 
-        values = response.embeddings[0].values if response.embeddings else None
+        # Keep the exceptions the unguarded expression raised: TypeError for a missing
+        # embeddings list or values, IndexError for an empty list.
+        embeddings = response.embeddings
+        if embeddings is None:
+            raise TypeError("'NoneType' object is not subscriptable")
+        values = embeddings[0].values
         if values is None:
-            raise RuntimeError("Google Generative AI response did not contain embedding vector")
+            raise TypeError("'NoneType' object is not iterable")
         return list(map(float, values))
 
 

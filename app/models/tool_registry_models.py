@@ -49,8 +49,8 @@ class ToolParameter(BaseModel):
     type: str = Field(..., description="The data type of the parameter")
     description: str = Field(..., description="Describes what the parameter does and how it impacts the behaviour of the method")
     required: bool = Field(default=False, description="Whether this parameter is required")
-    default: JsonValue = Field(default=None, description="Default value if parameter is not provided")
-    example: JsonValue = Field(default=None, description="Example value for this parameter")
+    default: object = Field(default=None, description="Default value if parameter is not provided")
+    example: object = Field(default=None, description="Example value for this parameter")
 
 class ToolMetadata(BaseModel):
     """Complete metadata for a tool"""
@@ -109,7 +109,7 @@ class ToolMetadata(BaseModel):
 
     def _generate_json_schema(self) -> dict[str, Any]:
         """Generate JSON schema for tool parameters"""
-        properties: dict[str, dict[str, JsonValue]] = {}
+        properties: dict[str, dict[str, object]] = {}
         required: list[str] = []
 
         for param in self.parameters:
@@ -128,7 +128,7 @@ class ToolMetadata(BaseModel):
             if param.required:
                 required.append(param.name)
 
-        schema: dict[str, Any] = {
+        schema = {
             "type": "object",
             "properties": properties,
         }
