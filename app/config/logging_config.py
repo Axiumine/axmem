@@ -110,12 +110,12 @@ class SensitiveDataFilter(logging.Filter):
         """Mask the %-style arguments of a record, whether passed as a dict or a tuple"""
         if not record.args:
             return
-        if isinstance(record.args, dict):
+        if isinstance(record.args, tuple):
+            record.args = tuple(self._mask_value(arg) for arg in record.args)
+        else:
             record.args = {
                 k: self._mask_value(v) for k, v in record.args.items()
             }
-        elif isinstance(record.args, tuple):
-            record.args = tuple(self._mask_value(arg) for arg in record.args)
 
     def _mask_exception_text(self, record: logging.LogRecord) -> None:
         """Render and mask a record's traceback
@@ -190,11 +190,8 @@ class JSONFormatter(logging.Formatter):
 def _current_context_ids() -> dict[str, str]:
     """Return the request_id / user_id of the current context, omitting unset ones."""
     # Import here to avoid circular dependency
-    try:
-        from app.middleware.logging_middleware import get_request_id, get_user_id
-    except ImportError:
-        # Middleware not yet created, skip contextvar injection
-        return {}
+    from app.middleware.logging_middleware import get_request_id, get_user_id
+
     ids = {"request_id": get_request_id(), "user_id": get_user_id()}
     return {key: value for key, value in ids.items() if value}
 
