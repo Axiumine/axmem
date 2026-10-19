@@ -25,7 +25,7 @@ test. The mypy and pylint targets are 3.12.
 
 `install` makes every file in `.githooks/` executable and sets `core.hooksPath` to `.githooks` in the
 repository's Git config (shared by all worktrees of the clone). The hooks call
-`uv run --frozen python -m scripts.quality stage <name>`, so `uv` must be on `PATH` and the environment
+`uv run --frozen python -m scripts.quality stage <name>` (`pre-commit` and `pre-push`), so `uv` must be on `PATH` and the environment
 synced as above.
 
 | Hook | Runs | Blocks |
@@ -45,7 +45,6 @@ relevant staged) reports `SKIP` with the reason and does not fail the stage.
 | `pre-commit` (staged files) | ruff, imports, bandit, semgrep, vulture, radon-cc, radon-mi → mypy, pylint → snapshots, tests-fast → gitnexus |
 | `pre-push` (whole project) | static group → mypy, pylint → tests → e2e-postgres → coverage → compat, memray → trivy → qodana → mutation (opt-in) → gitnexus |
 | `ci` | static group → mypy, pylint → tests → e2e-postgres → coverage → memray → trivy |
-| `post-commit` | refreshes the local GitNexus index in the background (never blocks) |
 
 `pre-commit` scopes ruff, bandit, semgrep, radon and pylint to the staged files. mypy, vulture,
 import-linter and the tests always run over the whole project (a changed signature breaks unchanged
@@ -86,7 +85,7 @@ across jobs:
 | `compat` | the SQLite suites on Python 3.14 (`uv run --python 3.14` into `.venv314`; skipped without `uv`) | |
 | `memray` | memory budgets (`@pytest.mark.limit_memory`) via pytest-memray, run as `pytest tests/e2e_sqlite -m memory --memray` (Linux/macOS only) | `tests/e2e_sqlite/test_memory_budget_sqlite.py` |
 | `trivy` | HIGH/CRITICAL vulnerabilities (fixed ones), secrets and misconfigurations (`fs` scan) | `trivy.yaml`, `.trivyignore` |
-| `qodana` | Qodana Ultimate Plus (`jetbrains/qodana-python`), token from `QODANA_TOKEN`; skipped when the `qodana` CLI is missing, failed when the token is missing | `qodana.yaml` |
+| `qodana` | Qodana Ultimate Plus (`jetbrains/qodana-python`), token from `QODANA_TOKEN`; analyses a `git archive` export of `HEAD` (uncommitted changes are not seen) with `--image`; skipped when the `qodana` CLI is missing, failed when the token is missing | `qodana.yaml` |
 | `mutation` | mutmut on changed `app/` modules; survivors above `MUTATION_MAX_SURVIVORS` fail. Opt-in (`MUTATION=1`), see below | `[tool.mutmut]` |
 | `gitnexus` | `detect-changes` on the staged diff (pre-commit) or against `origin/main` (pre-push); a partial or truncated answer is retried once, then fails. Skipped without a local index or `node` | `.gitnexus/` (local index) |
 
@@ -109,7 +108,7 @@ contract change: review the diff in Git, then refresh deliberately.
 
 | Surface | Test | Snapshot directory |
 |---|---|---|
-| CLI argument tree, settings defaults (built from code defaults, ignoring the environment and dotenv files; secrets are masked), SQLite and PostgreSQL DDL, Alembic revision chain | `tests/integration/test_snapshots.py` | `tests/integration/__snapshots__/test_snapshots/` |
+| CLI argument tree, settings defaults (built from code defaults, ignoring the environment and dotenv files; secrets and the build-derived `SERVICE_VERSION` are masked), SQLite and PostgreSQL DDL, Alembic revision chain | `tests/integration/test_snapshots.py` | `tests/integration/__snapshots__/test_snapshots/` |
 | MCP meta-tool signatures, discovered tool catalogue, HTTP route table | `tests/e2e_sqlite/test_snapshots_sqlite.py` | `tests/e2e_sqlite/__snapshots__/test_snapshots_sqlite/` |
 
 ```bash
@@ -134,7 +133,7 @@ new measurement in a comment next to it.
 `mutation` runs `mutmut` over the modules a change touched. A run over the whole of `app/` produces roughly
 33,000 mutants and is not practical, so the gate always needs a scope:
 
-* the `app/` files that differ from `origin/main` (the default for `pre-push`, `ci` and a plain
+* the `app/` files that differ from `origin/main` (the default for `pre-push` and a plain
   `gate mutation`), or the `app/` files named with `--staged` or `--files`, or
 * an explicit `MUTATION_TARGETS`, a space-separated list of mutmut name patterns such as
   `MUTATION_TARGETS='app.utils.*'`, which wins over both.
