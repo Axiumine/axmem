@@ -10,6 +10,7 @@ from datetime import datetime
 from uuid import UUID
 
 from app.config.settings import settings
+from app.models.memory_models import Memory
 from app.protocols.embedding_protocol import EmbeddingsAdapter
 from app.protocols.memory_protocol import MemoryRepository, ValidationResult
 from app.protocols.skill_protocol import SkillRepository
@@ -279,34 +280,7 @@ class ReEmbeddingService:
             if not memories:
                 break
 
-            updates: list[tuple[int, list[float]]] = []
-            expected_updated_at: dict[int, datetime] = {}
-            for memory in memories:
-                try:
-                    embedding_text = build_embedding_text(memory)
-                    embedding = await self.embedding_adapter.generate_embedding(embedding_text)
-                    updates.append((memory.id, embedding))
-                    expected_updated_at[memory.id] = memory.updated_at
-                except Exception:  # noqa: BLE001 - intentional broad capture
-                    logger.exception("rebuild_embeddings: embedding failed", extra={
-                        "memory_id": memory.id,
-                        "user_id": str(user_id),
-                    })
-                    result.failed.append({"memory_id": memory.id, "reason": "embedding_failed"})
-
-            if updates:
-                written_ids, failed_ids = await self._persist_batch(
-                    user_id=user_id,
-                    updates=updates,
-                    expected_updated_at=expected_updated_at,
-                    result=result,
-                )
-                written_set = set(written_ids)
-                result.rebuilt_ids.extend(written_ids)
-                for memory_id, _ in updates:
-                    if memory_id not in written_set and memory_id not in failed_ids:
-                        result.skipped_ids.append(memory_id)
-                await self._recompute_auto_links(user_id=user_id, memory_ids=written_ids, result=result)
+            await self._rebuild_batch(user_id=user_id, memories=memories, result=result)
 
             processed += len(memories)
             if progress_callback:
@@ -329,6 +303,61 @@ class ReEmbeddingService:
             },
         )
         return result
+
+    async def _rebuild_batch(
+        self,
+        user_id: UUID,
+        memories: list[Memory],
+        result: TargetedRebuildResult,
+    ) -> None:
+        """Embed one batch, persist it and refresh auto-links, recording outcomes in `result`."""
+        updates, expected_updated_at = await self._embed_batch(
+            user_id=user_id,
+            memories=memories,
+            result=result,
+        )
+        if not updates:
+            return
+
+        written_ids, failed_ids = await self._persist_batch(
+            user_id=user_id,
+            updates=updates,
+            expected_updated_at=expected_updated_at,
+            result=result,
+        )
+        written_set = set(written_ids)
+        result.rebuilt_ids.extend(written_ids)
+        for memory_id, _ in updates:
+            if memory_id not in written_set and memory_id not in failed_ids:
+                result.skipped_ids.append(memory_id)
+        await self._recompute_auto_links(user_id=user_id, memory_ids=written_ids, result=result)
+
+    async def _embed_batch(
+        self,
+        user_id: UUID,
+        memories: list[Memory],
+        result: TargetedRebuildResult,
+    ) -> tuple[list[tuple[int, list[float]]], dict[int, datetime]]:
+        """Generate embeddings for one batch; a memory that fails is recorded in `result.failed`.
+
+        Returns:
+            (updates to persist, `updated_at` each memory had when it was read)
+        """
+        updates: list[tuple[int, list[float]]] = []
+        expected_updated_at: dict[int, datetime] = {}
+        for memory in memories:
+            try:
+                embedding_text = build_embedding_text(memory)
+                embedding = await self.embedding_adapter.generate_embedding(embedding_text)
+                updates.append((memory.id, embedding))
+                expected_updated_at[memory.id] = memory.updated_at
+            except Exception:  # noqa: BLE001 - intentional broad capture
+                logger.exception("rebuild_embeddings: embedding failed", extra={
+                    "memory_id": memory.id,
+                    "user_id": str(user_id),
+                })
+                result.failed.append({"memory_id": memory.id, "reason": "embedding_failed"})
+        return updates, expected_updated_at
 
     async def _persist_batch(
         self,

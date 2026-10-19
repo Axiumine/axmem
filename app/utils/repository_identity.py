@@ -3,6 +3,61 @@
 import re
 from urllib.parse import urlsplit
 
+_SCP_ADDRESS = re.compile(r"([^/@:]+)@([^/:]+):(.+)")
+_UNINTERPRETABLE_CHARACTERS = "\\?#%"
+_SUPPORTED_SCHEMES = ("", "http", "https", "ssh")
+_DOT_SEGMENTS = ("", ".", "..")
+
+
+def _has_uninterpretable_character(value: str) -> bool:
+    """Whitespace and URL-escaping characters make an address ambiguous."""
+    return any(c.isspace() or c in _UNINTERPRETABLE_CHARACTERS for c in value)
+
+
+def _has_host_authority(value: str) -> bool:
+    """Whether a scheme-less address starts with something that looks like a host."""
+    authority = value.split("/", 1)[0]
+    return "." in authority or authority.split(":", 1)[0] == "localhost"
+
+
+def _relative_path_key(value: str) -> tuple[str, ...] | None:
+    """Key for a host-less, relative `owner/repo` style path, or None if it is not one."""
+    path = value.removesuffix("/").removesuffix(".git")
+    if "/" not in path or ":" in path:
+        return None
+    if any(part in _DOT_SEGMENTS for part in path.split("/")):
+        return None
+    return ("path", path)
+
+
+def _address_to_parse(value: str) -> str | None:
+    """Turn a scheme-less address into something `urlsplit` can read, or None if it has no host."""
+    scp = _SCP_ADDRESS.fullmatch(value)
+    if scp:
+        user, host, path = scp.groups()
+        return f"ssh://{user}@{host}/{path}"
+    if _has_host_authority(value):
+        return f"//{value}"
+    return None
+
+
+def _network_key(address: str) -> tuple[str, ...] | None:
+    """Key for a parseable http(s)/ssh address, or None when it cannot be interpreted."""
+    try:
+        parsed = urlsplit(address)
+        if parsed.scheme not in _SUPPORTED_SCHEMES or not parsed.hostname:
+            return None
+        if parsed.password is not None or (parsed.username and parsed.scheme != "ssh"):
+            return None
+        port = str(parsed.port) if parsed.port is not None else ""
+    except ValueError:
+        return None
+
+    path = parsed.path.removeprefix("/").removesuffix("/").removesuffix(".git")
+    if any(part in _DOT_SEGMENTS for part in path.split("/")):
+        return None
+    return ("address", parsed.hostname.lower(), port, path)
+
 
 def repository_identity(value: str) -> tuple[str, ...]:
     """Return a comparison key, or a literal key when interpretation is uncertain.
@@ -12,37 +67,13 @@ def repository_identity(value: str) -> tuple[str, ...]:
     """
     value = value.strip()
     literal = ("literal", value)
-    if any(c.isspace() or c in "\\?#%" for c in value):
+    if _has_uninterpretable_character(value):
         return literal
 
-    address = value
-    if "://" not in value:
-        scp = re.fullmatch(r"([^/@:]+)@([^/:]+):(.+)", value)
-        if scp:
-            user, host, path = scp.groups()
-            address = f"ssh://{user}@{host}/{path}"
-        else:
-            authority = value.split("/", 1)[0]
-            if "." not in authority and authority.split(":", 1)[0] != "localhost":
-                path = value.removesuffix("/").removesuffix(".git")
-                if "/" in path and ":" not in path and all(
-                    part not in ("", ".", "..") for part in path.split("/")
-                ):
-                    return ("path", path)
-                return literal
-            address = f"//{value}"
+    if "://" in value:
+        return _network_key(value) or literal
 
-    try:
-        parsed = urlsplit(address)
-        if parsed.scheme not in ("", "http", "https", "ssh") or not parsed.hostname:
-            return literal
-        if parsed.password is not None or (parsed.username and parsed.scheme != "ssh"):
-            return literal
-        port = str(parsed.port) if parsed.port is not None else ""
-    except ValueError:
-        return literal
-
-    path = parsed.path.removeprefix("/").removesuffix("/").removesuffix(".git")
-    if any(part in ("", ".", "..") for part in path.split("/")):
-        return literal
-    return ("address", parsed.hostname.lower(), port, path)
+    address = _address_to_parse(value)
+    if address is None:
+        return _relative_path_key(value) or literal
+    return _network_key(address) or literal

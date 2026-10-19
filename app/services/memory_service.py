@@ -52,6 +52,13 @@ def _normalise_sort_option(value: object, name: str, allowed: tuple[str, ...]) -
     raise ValueError(f"{name} must be one of: {', '.join(allowed)}")
 
 
+def _effective_token_budget(requested: int | None) -> int:
+    """A request can lower the token budget but never exceed the server-wide limit."""
+    if requested is None:
+        return settings.MEMORY_TOKEN_BUDGET
+    return min(requested, settings.MEMORY_TOKEN_BUDGET)
+
+
 class MemoryService:
     """Service layer for memory operations
 
@@ -105,26 +112,7 @@ class MemoryService:
         score_by_id = {m.id: s for m, s in scored}
         logger.info("primary memory query completed", extra={"number of messages found": len(primary_memories)})
 
-        linked_memories = []
-        if memory_query.include_links and memory_query.max_links_per_primary > 0:
-            logger.info("querying linked memories", extra={"number of primary memories": len(primary_memories)})
-
-            linked_memory_projects = None
-            if memory_query.strict_project_filter:
-                linked_memory_projects = memory_query.project_ids
-
-            linked_memories = await self._fetch_linked_memories(
-                user_id=user_id,
-                primary_memories=primary_memories,
-                max_links_per_primary=memory_query.max_links_per_primary,
-                project_ids=linked_memory_projects,
-            )
-            logger.info("linked memory query completed", extra={"number of linked memories": len(linked_memories)})
-
-        # A request can lower the token budget but never exceed the server-wide limit
-        max_tokens = settings.MEMORY_TOKEN_BUDGET
-        if memory_query.token_context_threshold is not None:
-            max_tokens = min(memory_query.token_context_threshold, max_tokens)
+        linked_memories = await self._query_linked_memories(user_id, memory_query, primary_memories)
 
         logger.info("applying token budget")
         (
@@ -135,33 +123,20 @@ class MemoryService:
         ) = await self._apply_token_budget(
             primary_memories=primary_memories,
             linked_memories=linked_memories,
-            max_tokens=max_tokens,
+            max_tokens=_effective_token_budget(memory_query.token_context_threshold),
             max_memories=settings.MEMORY_MAX_MEMORIES,
         )
         logger.info("token budget applied")
 
         # Emit queried event (opt-in via ACTIVITY_TRACK_READS)
         if settings.ACTIVITY_TRACK_READS and self._event_bus:
-            await self._emit_event(
+            await self._emit_queried_event(
                 user_id=user_id,
-                entity_type=EntityType.MEMORY,
-                entity_id=0,  # Query spans multiple memories
-                action=ActionType.QUERIED,
-                snapshot={
-                    "result_ids": [m.id for m in final_primaries],
-                    "linked_ids": [lm.memory.id for lm in final_linked],
-                    "total_count": len(final_primaries) + len(final_linked),
-                    "token_count": token_count,
-                    "truncated": truncated,
-                },
-                metadata={
-                    "query": memory_query.query,
-                    "query_context": memory_query.query_context,
-                    "k": memory_query.k,
-                    "project_ids": memory_query.project_ids,
-                    "importance_threshold": memory_query.importance_threshold,
-                    "include_links": memory_query.include_links,
-                },
+                memory_query=memory_query,
+                final_primaries=final_primaries,
+                final_linked=final_linked,
+                token_count=token_count,
+                truncated=truncated,
             )
 
         logger.info(
@@ -182,6 +157,63 @@ class MemoryService:
             total_count=len(final_primaries) + len(final_linked),
             token_count=token_count,
             truncated=truncated,
+        )
+
+    async def _query_linked_memories(
+            self,
+            user_id: UUID,
+            memory_query: MemoryQueryRequest,
+            primary_memories: list[Memory],
+    ) -> list[LinkedMemory]:
+        """Fetch the 1-hop neighbours of the primary results when the request asks for links."""
+        if not (memory_query.include_links and memory_query.max_links_per_primary > 0):
+            return []
+
+        logger.info("querying linked memories", extra={"number of primary memories": len(primary_memories)})
+
+        linked_memory_projects = None
+        if memory_query.strict_project_filter:
+            linked_memory_projects = memory_query.project_ids
+
+        linked_memories = await self._fetch_linked_memories(
+            user_id=user_id,
+            primary_memories=primary_memories,
+            max_links_per_primary=memory_query.max_links_per_primary,
+            project_ids=linked_memory_projects,
+        )
+        logger.info("linked memory query completed", extra={"number of linked memories": len(linked_memories)})
+        return linked_memories
+
+    async def _emit_queried_event(
+            self,
+            user_id: UUID,
+            memory_query: MemoryQueryRequest,
+            final_primaries: list[Memory],
+            final_linked: list[LinkedMemory],
+            token_count: int,
+            truncated: bool,
+    ) -> None:
+        """Announce a completed query, describing the request and the budgeted result."""
+        await self._emit_event(
+            user_id=user_id,
+            entity_type=EntityType.MEMORY,
+            entity_id=0,  # Query spans multiple memories
+            action=ActionType.QUERIED,
+            snapshot={
+                "result_ids": [m.id for m in final_primaries],
+                "linked_ids": [lm.memory.id for lm in final_linked],
+                "total_count": len(final_primaries) + len(final_linked),
+                "token_count": token_count,
+                "truncated": truncated,
+            },
+            metadata={
+                "query": memory_query.query,
+                "query_context": memory_query.query_context,
+                "k": memory_query.k,
+                "project_ids": memory_query.project_ids,
+                "importance_threshold": memory_query.importance_threshold,
+                "include_links": memory_query.include_links,
+            },
         )
 
     async def create_memory(

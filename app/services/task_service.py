@@ -49,6 +49,21 @@ logger = logging.getLogger(__name__)
 _AGENT_ID_ADAPTER = TypeAdapter(TaskAgentId)
 
 
+def _repeated_ids(ids: list[int]) -> list[int]:
+    """Return the ids that occur more than once, sorted.
+
+    Single pass: the list is caller supplied and unbounded, so a per-item count()
+    would turn a large request into quadratic CPU time on the event loop.
+    """
+    seen: set[int] = set()
+    repeated: set[int] = set()
+    for item in ids:
+        if item in seen:
+            repeated.add(item)
+        seen.add(item)
+    return sorted(repeated)
+
+
 class TaskService:
     """Service layer for task operations with state machine enforcement."""
 
@@ -114,49 +129,19 @@ class TaskService:
         """Create task with optional inline criteria and dependencies."""
         logger.info("creating task", extra={"user_id": str(user_id), "plan_id": task_data.plan_id, "title": task_data.title})
 
-        # Validate plan exists and is not COMPLETED/ARCHIVED
-        plan = await self.plan_service.get_plan(
-            user_id=user_id, plan_id=task_data.plan_id, track_read=False,
-        )
-
-        plan_status = PlanStatus(plan.status)
-        if plan_status in (PlanStatus.COMPLETED, PlanStatus.ARCHIVED):
-            raise InvalidStateTransitionError(
-                f"Cannot add tasks to plan in {plan_status.value} status",
-            )
+        await self._require_plan_accepts_new_tasks(user_id, task_data.plan_id)
 
         # Validate every dependency before anything is persisted so a bad id cannot
         # leave a half-built task behind. A brand new task cannot be part of a cycle.
         dependency_ids = task_data.dependency_ids or []
-        # Single pass: the list is caller supplied and unbounded, so a per-item count()
-        # would turn a large request into quadratic CPU time on the event loop.
-        seen: set[int] = set()
-        repeated: set[int] = set()
-        for dep_id in dependency_ids:
-            if dep_id in seen:
-                repeated.add(dep_id)
-            seen.add(dep_id)
-        duplicates = sorted(repeated)
-        if duplicates:
-            raise ValueError(f"dependency_ids lists the same task more than once: {duplicates}")
-        for dep_id in dependency_ids:
-            await self._validate_same_plan(user_id, dep_id, task_data.plan_id)
+        await self._validate_new_task_dependencies(user_id, task_data.plan_id, dependency_ids)
 
         # Create the task (without criteria/deps - repo handles basic creation)
         task_data = apply_provenance_defaults(task_data)
         task = await self.task_repo.create_task(user_id=user_id, task_data=task_data)
 
         try:
-            # Create inline criteria
-            for criterion_data in task_data.criteria or []:
-                await self.task_repo.create_criterion(
-                    user_id=user_id, task_id=task.id, criterion_data=criterion_data,
-                )
-
-            for dep_id in dependency_ids:
-                await self.task_repo.add_dependency(
-                    user_id=user_id, task_id=task.id, depends_on_task_id=dep_id,
-                )
+            await self._attach_inline_children(user_id, task.id, task_data, dependency_ids)
         except BaseException:
             # BaseException so a cancelled request (client disconnect) cannot orphan the task.
             await self._discard_partial_task(user_id, task.id)
@@ -174,6 +159,42 @@ class TaskService:
             snapshot=task.model_dump(mode="json"),
         )
         return task
+
+    async def _require_plan_accepts_new_tasks(self, user_id: UUID, plan_id: int) -> None:
+        """Refuse new tasks in a plan that is COMPLETED or ARCHIVED."""
+        plan = await self.plan_service.get_plan(
+            user_id=user_id, plan_id=plan_id, track_read=False,
+        )
+
+        plan_status = PlanStatus(plan.status)
+        if plan_status in (PlanStatus.COMPLETED, PlanStatus.ARCHIVED):
+            raise InvalidStateTransitionError(
+                f"Cannot add tasks to plan in {plan_status.value} status",
+            )
+
+    async def _validate_new_task_dependencies(
+        self, user_id: UUID, plan_id: int, dependency_ids: list[int],
+    ) -> None:
+        """Reject repeated dependency ids and dependencies outside the task's plan."""
+        duplicates = _repeated_ids(dependency_ids)
+        if duplicates:
+            raise ValueError(f"dependency_ids lists the same task more than once: {duplicates}")
+        for dep_id in dependency_ids:
+            await self._validate_same_plan(user_id, dep_id, plan_id)
+
+    async def _attach_inline_children(
+        self, user_id: UUID, task_id: int, task_data: TaskCreate, dependency_ids: list[int],
+    ) -> None:
+        """Persist the inline criteria and dependency edges of a just-created task."""
+        for criterion_data in task_data.criteria or []:
+            await self.task_repo.create_criterion(
+                user_id=user_id, task_id=task_id, criterion_data=criterion_data,
+            )
+
+        for dep_id in dependency_ids:
+            await self.task_repo.add_dependency(
+                user_id=user_id, task_id=task_id, depends_on_task_id=dep_id,
+            )
 
     async def get_task(self, user_id: UUID, task_id: int) -> Task:
         logger.info("getting task", extra={"user_id": str(user_id), "task_id": task_id})
