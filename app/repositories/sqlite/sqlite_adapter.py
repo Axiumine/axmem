@@ -97,25 +97,24 @@ class SqliteDatabaseAdapter:
         @event.listens_for(self._engine.sync_engine, "connect")
         def on_connect(dbapi_conn, _connection_record):
             """Load sqlite-vec extension on every connection"""
-            # For aiosqlite, dbapi_conn is AsyncAdapt_aiosqlite_connection
-            # Access the underlying aiosqlite Connection via _connection
-            if hasattr(dbapi_conn, "_connection"):
-                aio_conn = dbapi_conn._connection
-                # aiosqlite.Connection has a _conn attribute with the raw sqlite3.Connection
-                if hasattr(aio_conn, "_conn"):
-                    raw_conn = aio_conn._conn
-                    # Load extension on raw connection
-                    raw_conn.enable_load_extension(True)
-                    raw_conn.load_extension(sqlite_vec.loadable_path())
-                    raw_conn.enable_load_extension(False)
-                    # Set pragmas
-                    _enable_wal(raw_conn)
-                    raw_conn.execute("PRAGMA synchronous=NORMAL")
-                    raw_conn.execute("PRAGMA foreign_keys=ON")
-                    raw_conn.execute("PRAGMA busy_timeout=5000")
-                    # Unicode case folding for name searches (see text_matching)
-                    register_text_functions(raw_conn)
-                    logger.debug("sqlite-vec extension loaded on connection")
+            # The engine above is always sqlite+aiosqlite, so dbapi_conn is an
+            # AsyncAdapt_aiosqlite_connection: its _connection is the aiosqlite Connection,
+            # whose _conn is the raw sqlite3.Connection. If a driver upgrade moves them this
+            # fails loudly at connect time instead of silently skipping the extension and
+            # the foreign_keys pragma.
+            raw_conn = dbapi_conn._connection._conn
+            # Load extension on raw connection
+            raw_conn.enable_load_extension(True)
+            raw_conn.load_extension(sqlite_vec.loadable_path())
+            raw_conn.enable_load_extension(False)
+            # Set pragmas
+            _enable_wal(raw_conn)
+            raw_conn.execute("PRAGMA synchronous=NORMAL")
+            raw_conn.execute("PRAGMA foreign_keys=ON")
+            raw_conn.execute("PRAGMA busy_timeout=5000")
+            # Unicode case folding for name searches (see text_matching)
+            register_text_functions(raw_conn)
+            logger.debug("sqlite-vec extension loaded on connection")
 
         self._session_factory: async_sessionmaker[AsyncSession] = async_sessionmaker(
             bind=self._engine, expire_on_commit=False, autoflush=False,

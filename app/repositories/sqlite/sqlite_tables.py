@@ -410,21 +410,6 @@ class MemoryTable(Base):
             return [s.id for s in self.skills]
         return []
 
-    @property
-    def entity_ids(self) -> list[int]:
-        """Compute entity IDs from entities relationship.
-
-        Returns:
-            List of entity IDs, or empty list if relationship not loaded
-        """
-        from sqlalchemy import inspect
-        from sqlalchemy.orm.attributes import NO_VALUE
-
-        insp = inspect(self)
-        if insp.attrs.entities.loaded_value is not NO_VALUE:
-            return [e.id for e in self.entities]
-        return []
-
     __table_args__ = (
         Index("ix_memories_user_id", "user_id"),
         Index("ix_memories_importance", "importance"),

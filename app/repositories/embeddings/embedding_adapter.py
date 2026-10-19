@@ -87,9 +87,6 @@ class FastEmbeddingAdapter(EmbeddingsAdapter):
             })
             raise
 
-        if embeddings is None:
-            raise RuntimeError("FastEmbedding response did not contain embedding vector")
-
         return list(map(float, embeddings[0]))
 
 class AzureOpenAIAdapter(EmbeddingsAdapter):
