@@ -41,6 +41,9 @@ uv sync --locked --all-extras --dev
 uv run python -m scripts.quality install     # sets core.hooksPath to .githooks
 ```
 
+The `commit-msg` hook enforces the commit message format (`[🤖 ]<type>(<scope>): <subject>`); see the
+Hooks table in [docs/quality-gates.md](quality-gates.md#hooks).
+
 `pre-commit` checks staged files (lint, import boundaries, security, dead code, complexity, types,
 snapshots, fast tests, GitNexus impact); `pre-push` runs the full pipeline: the same static gates over
 the whole project, the architecture, integration and SQLite e2e suites with coverage, PostgreSQL e2e

@@ -31,7 +31,14 @@ synced as above.
 |---|---|---|
 | `pre-commit` | stage `pre-commit` on the staged files | yes |
 | `pre-push` | stage `pre-push` on the whole project; only when the pushed commit is the checked-out `HEAD` (the gates read the working tree), pushing any other ref is not gated | yes |
+| `commit-msg` | commit message format: `[🤖 ]<type>(<scope>): <subject>`, types feat/fix/chore/docs/refactor/test/perf/ci/build, subject <=150 chars, body <=10 lines, no AI attribution trailers; skip once with `SKIP=commit-msg` or `--no-verify` | yes |
 | `post-commit` | refreshes the local GitNexus index in the background (needs `.gitnexus/run.cjs` and `node`) | never |
+
+`commit-msg` is stage-less: it only validates the message text, so it is not run by `scripts.quality stage`
+and is not part of the pipeline below. Comment lines and the `git commit -v` scissors section are stripped
+before checking, and merge, revert and `fixup!`/`squash!`/`amend!` commits skip the format check. AI
+`Co-Authored-By` trailers and "Generated with" lines are rejected; mark AI-written commits with the `🤖`
+subject prefix instead (covered by `tests/integration/test_commit_msg_hook.py`).
 
 ## Pipeline
 

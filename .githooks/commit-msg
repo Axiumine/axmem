@@ -1,0 +1,100 @@
+#!/usr/bin/env bash
+# Commit message policy (see docs/quality-gates.md).
+#   Human: <type>(<scope>): <subject>
+#   AI:    🤖 <type>(<scope>): <subject>
+# Types: feat|fix|chore|docs|refactor|test|perf|ci|build ("!" before ":" marks a breaking change).
+# Merge, revert and fixup!/squash!/amend! commits skip the checks after the attribution rule.
+# AI attribution is rejected: an AI Co-Authored-By trailer or a "Generated with <tool>" line.
+# Naming Claude, Anthropic or another tool in a subject or body is fine, since this project
+# documents MCP clients such as Claude Code.
+# Skip once with SKIP=commit-msg git commit ... (same convention as the quality gates) or --no-verify.
+
+COMMIT_MSG_FILE="$1"
+
+case ",${SKIP:-}," in
+  *,commit-msg,*) exit 0 ;;
+esac
+
+TYPES="feat|fix|chore|docs|refactor|test|perf|ci|build"
+MAX_LEN=150
+MAX_BODY_LINES=10
+AI_TOOLS="claude|anthropic|opus|sonnet|haiku|copilot|openai|chatgpt|codex|gemini"
+
+fail() {
+  title="$1"
+  shift
+  {
+    echo ""
+    echo "  $title"
+    echo ""
+    for line in "$@"; do
+      echo "  $line"
+    done
+    echo ""
+  } >&2
+  exit 1
+}
+
+# The message as git records it: no CR from Windows editors, no comment lines, and nothing after
+# the scissors line that `git commit -v` appends.
+MESSAGE=$(tr -d '\r' < "$COMMIT_MSG_FILE" | sed -e '/^# -* >8 -*$/,$d' -e '/^#/d')
+SUBJECT=$(printf '%s\n' "$MESSAGE" | awk 'NF { print; exit }')
+BODY=$(printf '%s\n' "$MESSAGE" | awk 'seen { print; next } NF { seen = 1 }')
+
+ATTRIBUTION=$(printf '%s\n' "$MESSAGE" | grep -iE \
+  -e "^[[:space:]]*Co-Authored-By:.*($AI_TOOLS)" \
+  -e "(generated|created|written|authored) (with|by) .*($AI_TOOLS)" | head -3 || true)
+if [ -n "$ATTRIBUTION" ]; then
+  fail "AI ATTRIBUTION IN COMMIT MESSAGE" \
+    "Remove the AI Co-Authored-By trailer or \"Generated with\" line. Matched:" \
+    "$(printf '%s\n' "$ATTRIBUTION" | sed 's/^/  /')" \
+    "Mark AI-written commits with the prefix instead: 🤖 <type>(<scope>): <subject>"
+fi
+
+case "$SUBJECT" in
+  "Merge "* | "Revert "* | "fixup! "* | "squash! "* | "amend! "*) exit 0 ;;
+esac
+
+if ! printf '%s\n' "$SUBJECT" | grep -qE "^(🤖 )?($TYPES)(\([^)]+\))?!?: .+"; then
+  fail "INVALID COMMIT MESSAGE" \
+    "Got:      $SUBJECT" \
+    "" \
+    "Expected:" \
+    "  Human:  <type>(<scope>): <subject>" \
+    "  AI:     🤖 <type>(<scope>): <subject>" \
+    "" \
+    "Types: ${TYPES//|/ | }" \
+    "Scope: optional, e.g. fix(graph): ..." \
+    "" \
+    "Examples:" \
+    "  feat(memory): add the Qdrant search path" \
+    "  fix(graph): bound subgraph traversal cost" \
+    "  🤖 docs(readme): credit Forgetful (MIT)"
+fi
+
+if [ "${#SUBJECT}" -gt "$MAX_LEN" ]; then
+  fail "COMMIT SUBJECT TOO LONG" \
+    "Subject line is ${#SUBJECT} characters (max $MAX_LEN)." \
+    "Got: $SUBJECT"
+fi
+
+# Body limits count neither blank lines nor trailers (Key: value, e.g. Signed-off-by).
+BODY_LINES=$(printf '%s\n' "$BODY" | grep -vE '^[[:space:]]*$' | grep -vE '^[A-Za-z-]+: ' || true)
+if [ -n "$BODY_LINES" ]; then
+  BODY_COUNT=$(printf '%s\n' "$BODY_LINES" | awk 'END { print NR }')
+  if [ "$BODY_COUNT" -gt "$MAX_BODY_LINES" ]; then
+    fail "COMMIT BODY TOO LONG" \
+      "Body is $BODY_COUNT lines (max $MAX_BODY_LINES, excluding blanks and trailers)." \
+      "Keep it terse: what changed and why. Detail belongs in the PR description or the docs."
+  fi
+  # Lines without whitespace (URLs, long identifiers) cannot be wrapped and are not counted.
+  WIDE_LINE=$(printf '%s\n' "$BODY_LINES" \
+    | awk -v max="$MAX_LEN" '/[[:space:]]/ && length($0) > max { print; exit }')
+  if [ -n "$WIDE_LINE" ]; then
+    fail "COMMIT BODY LINE TOO WIDE" \
+      "Wrap body lines at $MAX_LEN characters." \
+      "Got: $WIDE_LINE"
+  fi
+fi
+
+exit 0
