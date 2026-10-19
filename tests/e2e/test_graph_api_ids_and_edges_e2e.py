@@ -54,27 +54,35 @@ async def test_link_memories_skips_ids_beyond_the_integer_column(http_client):
     assert sorted(stored.json()["linked_memory_ids"]) == sorted([first, last])
 
 
+async def _link_and_obsolete_a_neighbour(http_client, oldest, obsolete, newest):
+    """Link ``oldest`` to ``newest`` and ``obsolete``, then obsolete the latter."""
+    response = await http_client.post(
+        f"/api/v1/memories/{oldest}/links", json={"related_ids": [newest, obsolete]},
+    )
+    assert response.status_code == 200, response.text
+    deleted = await http_client.request(
+        "DELETE", f"/api/v1/memories/{obsolete}", json={"reason": "obsolete for graph test"},
+    )
+    assert deleted.status_code == 200, deleted.text
+
+
+async def _memory_graph_page(http_client, offset):
+    response = await http_client.get(
+        f"/api/v1/graph?node_types=memory&limit=2&offset={offset}",
+    )
+    return response.json()
+
+
 @pytest.mark.e2e
 async def test_graph_reports_links_between_pages(http_client):
     oldest, second, third, newest = [
         await _create_memory(http_client, f"Memory {n}") for n in range(1, 5)
     ]
-    response = await http_client.post(
-        f"/api/v1/memories/{oldest}/links", json={"related_ids": [newest, second]},
-    )
-    assert response.status_code == 200, response.text
-    deleted = await http_client.request(
-        "DELETE", f"/api/v1/memories/{second}", json={"reason": "obsolete for graph test"},
-    )
-    assert deleted.status_code == 200, deleted.text
+    await _link_and_obsolete_a_neighbour(http_client, oldest, second, newest)
 
     # Newest first: the first page holds [newest, third], the second page [oldest]
-    first_page = (await http_client.get(
-        "/api/v1/graph?node_types=memory&limit=2&offset=0",
-    )).json()
-    second_page = (await http_client.get(
-        "/api/v1/graph?node_types=memory&limit=2&offset=2",
-    )).json()
+    first_page = await _memory_graph_page(http_client, 0)
+    second_page = await _memory_graph_page(http_client, 2)
 
     edge_id = f"memory_{oldest}_memory_{newest}"
     assert {n["id"] for n in first_page["nodes"]} == {f"memory_{newest}", f"memory_{third}"}

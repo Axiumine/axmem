@@ -268,6 +268,21 @@ def _cross_page_edge(source, target):
     }
 
 
+async def _first_two_memory_pages(http_client):
+    first = await http_client.get("/api/v1/graph?node_types=memory&limit=2&offset=0")
+    second = await http_client.get("/api/v1/graph?node_types=memory&limit=2&offset=2")
+    assert first.status_code == 200 and second.status_code == 200
+    return first.json(), second.json()
+
+
+def _assert_pages_describe_only_their_nodes(first_data, second_data):
+    """Nodes and edges keep describing the page only."""
+    assert {n["id"] for n in first_data["nodes"]} == {"memory_4", "memory_3"}
+    assert {n["id"] for n in second_data["nodes"]} == {"memory_2", "memory_1"}
+    assert first_data["edges"] == []
+    assert second_data["edges"] == []
+
+
 @pytest.mark.usefixtures("no_auto_link")
 class TestCrossPageMemoryLinks:
     @pytest.mark.asyncio
@@ -276,16 +291,9 @@ class TestCrossPageMemoryLinks:
         assert ids == [1, 2, 3, 4]
         await _link(http_client, 1, [4])
 
-        first = await http_client.get("/api/v1/graph?node_types=memory&limit=2&offset=0")
-        second = await http_client.get("/api/v1/graph?node_types=memory&limit=2&offset=2")
+        first_data, second_data = await _first_two_memory_pages(http_client)
 
-        assert first.status_code == 200 and second.status_code == 200
-        first_data, second_data = first.json(), second.json()
-        # Nodes and edges keep describing the page only
-        assert {n["id"] for n in first_data["nodes"]} == {"memory_4", "memory_3"}
-        assert {n["id"] for n in second_data["nodes"]} == {"memory_2", "memory_1"}
-        assert first_data["edges"] == []
-        assert second_data["edges"] == []
+        _assert_pages_describe_only_their_nodes(first_data, second_data)
         # The link is reported by each page that holds one of its endpoints
         assert first_data["cross_page_edges"] == [_cross_page_edge(4, 1)]
         assert second_data["cross_page_edges"] == [_cross_page_edge(1, 4)]

@@ -50,9 +50,8 @@ async def _subgraph(http_client, center: str, node_types: str, depth: int = 1) -
     return response.json()
 
 
-@pytest.mark.e2e
-async def test_subgraph_excluded_center_type_still_reaches_requested_neighbours(http_client):
-    """node_types=project,memory around an entity returns both kinds of neighbour."""
+async def _create_project_with_entity(http_client) -> tuple[int, int]:
+    """Create a project and an entity that belongs to it; return both ids."""
     project_resp = await http_client.post("/api/v1/projects", json={
         "name": "Traversal Project",
         "description": "Project linked to the center entity",
@@ -67,7 +66,26 @@ async def test_subgraph_excluded_center_type_still_reaches_requested_neighbours(
         "project_ids": [project_id],
     })
     assert entity_resp.status_code in [200, 201], entity_resp.text
-    entity_id = entity_resp.json()["id"]
+    return project_id, entity_resp.json()["id"]
+
+
+async def _assert_project_side_reaches_neighbours(
+    http_client, project_id: int, entity_id: int, memory_id: int,
+) -> None:
+    """Same rule from the project side: memory and entity requested, project excluded."""
+    memory_resp = await http_client.put(
+        f"/api/v1/memories/{memory_id}", json={"project_ids": [project_id]},
+    )
+    assert memory_resp.status_code == 200, memory_resp.text
+    data = await _subgraph(http_client, f"project_{project_id}", "memory,entity")
+    ids = {node["id"] for node in data["nodes"]}
+    assert ids == {f"project_{project_id}", f"memory_{memory_id}", f"entity_{entity_id}"}
+
+
+@pytest.mark.e2e
+async def test_subgraph_excluded_center_type_still_reaches_requested_neighbours(http_client):
+    """node_types=project,memory around an entity returns both kinds of neighbour."""
+    project_id, entity_id = await _create_project_with_entity(http_client)
 
     memory_id = await _create_memory(http_client, "Traversal Memory")
     link_resp = await http_client.post(
@@ -82,14 +100,7 @@ async def test_subgraph_excluded_center_type_still_reaches_requested_neighbours(
     assert data["meta"]["entity_project_count"] == 1
     assert data["meta"]["entity_memory_count"] == 1
 
-    # Same rule from the project side: memory and entity requested, project excluded.
-    memory_resp = await http_client.put(
-        f"/api/v1/memories/{memory_id}", json={"project_ids": [project_id]},
-    )
-    assert memory_resp.status_code == 200, memory_resp.text
-    data = await _subgraph(http_client, f"project_{project_id}", "memory,entity")
-    ids = {node["id"] for node in data["nodes"]}
-    assert ids == {f"project_{project_id}", f"memory_{memory_id}", f"entity_{entity_id}"}
+    await _assert_project_side_reaches_neighbours(http_client, project_id, entity_id, memory_id)
 
 
 @pytest.mark.e2e

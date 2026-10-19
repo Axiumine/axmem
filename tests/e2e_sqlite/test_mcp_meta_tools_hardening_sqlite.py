@@ -9,6 +9,8 @@ import io
 import logging
 import re
 import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
 
 import pytest
 from fastmcp.exceptions import ToolError
@@ -221,29 +223,35 @@ def console_log(monkeypatch):
         root.setLevel(saved_level)
 
 
-@pytest.fixture
-def every_logger_log(console_log):
-    """``console_log`` with every logger enabled and FastMCP's own console output captured.
-
-    FastMCP logs each failed tool call (message and traceback) through ``fastmcp.server.server``
-    to its own Rich handlers, not the application's. Alembic's fileConfig (run by the app
-    fixture) disables every logger that exists at that point, so the capture is only complete
-    when all of them are switched back on. The Rich consoles look up ``sys.stderr`` at write
-    time and pytest swaps it back at the start of each phase, so they are pointed at a buffer
-    explicitly (wide, so that a long name is not folded across lines).
-    """
-    rich_buffer = io.StringIO()
-    loggers = [
+def _existing_loggers() -> list[logging.Logger]:
+    return [
         logger for logger in logging.root.manager.loggerDict.values()
         if isinstance(logger, logging.Logger)
     ]
-    saved_disabled = [(logger, logger.disabled) for logger in loggers]
-    consoles = [
+
+
+def _rich_consoles(loggers: list[logging.Logger]) -> list:
+    return [
         handler.console
         for logger in loggers
         for handler in logger.handlers
         if isinstance(handler, RichHandler)
     ]
+
+
+@contextmanager
+def _all_loggers_on_and_rich_output_captured(rich_buffer: io.StringIO) -> Iterator[None]:
+    """Switch every logger on and point the Rich consoles at ``rich_buffer``, then undo it.
+
+    Alembic's fileConfig (run by the app fixture) disables every logger that exists at that
+    point, so the capture is only complete when all of them are switched back on. The Rich
+    consoles look up ``sys.stderr`` at write time and pytest swaps it back at the start of
+    each phase, so they are pointed at a buffer explicitly (wide, so that a long name is not
+    folded across lines).
+    """
+    loggers = _existing_loggers()
+    saved_disabled = [(logger, logger.disabled) for logger in loggers]
+    consoles = _rich_consoles(loggers)
     saved_consoles = [(console, console._file, console._width) for console in consoles]
     for logger in loggers:
         logger.disabled = False
@@ -251,13 +259,25 @@ def every_logger_log(console_log):
         console.file = rich_buffer
         console.width = 400
     try:
-        yield lambda: console_log() + rich_buffer.getvalue()
+        yield
     finally:
         for console, file, width in saved_consoles:
             console.file = file
             console.width = width
         for logger, disabled in saved_disabled:
             logger.disabled = disabled
+
+
+@pytest.fixture
+def every_logger_log(console_log):
+    """``console_log`` with every logger enabled and FastMCP's own console output captured.
+
+    FastMCP logs each failed tool call (message and traceback) through ``fastmcp.server.server``
+    to its own Rich handlers, not the application's.
+    """
+    rich_buffer = io.StringIO()
+    with _all_loggers_on_and_rich_output_captured(rich_buffer):
+        yield lambda: console_log() + rich_buffer.getvalue()
 
 
 def _drain(buffer: io.StringIO) -> str:
