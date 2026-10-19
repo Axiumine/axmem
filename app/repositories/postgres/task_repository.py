@@ -1,10 +1,22 @@
 """Task repository for Postgres data access operations"""
 
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import case, delete, literal, or_, select, text, update
+from sqlalchemy import (
+    ColumnElement,
+    Select,
+    case,
+    delete,
+    literal,
+    or_,
+    select,
+    text,
+    update,
+)
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased, selectinload
 
 from app.config.logging_config import logging
@@ -35,6 +47,75 @@ from app.repositories.postgres.postgres_tables import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _tasks_select(*conditions: ColumnElement[bool]) -> Select[tuple[TasksTable]]:
+    """Select tasks matching all conditions, with criteria and dependencies loaded."""
+    return (
+        select(TasksTable)
+        .options(
+            selectinload(TasksTable.criteria),
+            selectinload(TasksTable.depends_on),
+        )
+        .where(*conditions)
+    )
+
+
+def _task_filters(
+    state: TaskState | None,
+    priority: TaskPriority | None,
+    assigned_agent: str | None,
+) -> list[ColumnElement[bool]]:
+    """Conditions for the optional state, priority and assigned agent filters."""
+    filters: list[ColumnElement[bool]] = []
+    if state:
+        filters.append(TasksTable.state == state.value)
+    if priority:
+        filters.append(TasksTable.priority == priority.value)
+    if assigned_agent:
+        filters.append(TasksTable.assigned_agent == assigned_agent)
+    return filters
+
+
+async def _has_unmet_dependency(
+    session: AsyncSession, user_id: UUID, dep_ids: list[int],
+) -> bool:
+    """True when any of the dependency tasks is not done."""
+    for dep_id in dep_ids:
+        dep_stmt = select(TasksTable.state).where(
+            TasksTable.user_id == user_id,
+            TasksTable.id == dep_id,
+        )
+        dep_result = await session.execute(dep_stmt)
+        if dep_result.scalar_one_or_none() != TaskState.DONE.value:
+            return True
+    return False
+
+
+async def _summarise_tasks(
+    session: AsyncSession, user_id: UUID, tasks_orm: Sequence[TasksTable],
+) -> list[TaskSummary]:
+    """Build a summary per task; blocked means any dependency is not done."""
+    summaries = []
+    for t in tasks_orm:
+        blocked = await _has_unmet_dependency(
+            session, user_id, [d.depends_on_task_id for d in t.depends_on],
+        )
+        summaries.append(TaskSummary(
+            id=t.id,
+            title=t.title,
+            plan_id=t.plan_id,
+            state=TaskState(t.state),
+            priority=TaskPriority(t.priority),
+            assigned_agent=t.assigned_agent,
+            version=t.version,
+            criteria_met=sum(1 for c in t.criteria if c.met),
+            criteria_total=len(t.criteria),
+            blocked=blocked,
+            created_at=t.created_at,
+            updated_at=t.updated_at,
+        ))
+    return summaries
 
 
 class PostgresTaskRepository:
@@ -81,59 +162,15 @@ class PostgresTaskRepository:
         priority: TaskPriority | None = None,
         assigned_agent: str | None = None,
     ) -> list[TaskSummary]:
+        stmt = _tasks_select(
+            TasksTable.user_id == user_id,
+            TasksTable.plan_id == plan_id,
+            *_task_filters(state, priority, assigned_agent),
+        ).order_by(TasksTable.created_at.asc())
+
         async with self.db_adapter.session(user_id) as session:
-            stmt = (
-                select(TasksTable)
-                .options(
-                    selectinload(TasksTable.criteria),
-                    selectinload(TasksTable.depends_on),
-                )
-                .where(TasksTable.user_id == user_id, TasksTable.plan_id == plan_id)
-            )
-            if state:
-                stmt = stmt.where(TasksTable.state == state.value)
-            if priority:
-                stmt = stmt.where(TasksTable.priority == priority.value)
-            if assigned_agent:
-                stmt = stmt.where(TasksTable.assigned_agent == assigned_agent)
-            stmt = stmt.order_by(TasksTable.created_at.asc())
-
             result = await session.execute(stmt)
-            tasks_orm = result.scalars().all()
-
-            summaries = []
-            for t in tasks_orm:
-                criteria_met = sum(1 for c in t.criteria if c.met)
-                criteria_total = len(t.criteria)
-                dep_ids = [d.depends_on_task_id for d in t.depends_on]
-                blocked = False
-                if dep_ids:
-                    for dep_id in dep_ids:
-                        dep_stmt = select(TasksTable.state).where(
-                            TasksTable.user_id == user_id,
-                            TasksTable.id == dep_id,
-                        )
-                        dep_result = await session.execute(dep_stmt)
-                        dep_state = dep_result.scalar_one_or_none()
-                        if dep_state != TaskState.DONE.value:
-                            blocked = True
-                            break
-
-                summaries.append(TaskSummary(
-                    id=t.id,
-                    title=t.title,
-                    plan_id=t.plan_id,
-                    state=TaskState(t.state),
-                    priority=TaskPriority(t.priority),
-                    assigned_agent=t.assigned_agent,
-                    version=t.version,
-                    criteria_met=criteria_met,
-                    criteria_total=criteria_total,
-                    blocked=blocked,
-                    created_at=t.created_at,
-                    updated_at=t.updated_at,
-                ))
-            return summaries
+            return await _summarise_tasks(session, user_id, result.scalars().all())
 
     async def list_tasks_for_user(
         self,
@@ -142,55 +179,15 @@ class PostgresTaskRepository:
     ) -> list[TaskSummary]:
         if plan_ids is not None and len(plan_ids) == 0:
             return []
+
+        stmt = _tasks_select(TasksTable.user_id == user_id)
+        if plan_ids is not None:
+            stmt = stmt.where(TasksTable.plan_id.in_(plan_ids))
+        stmt = stmt.order_by(TasksTable.created_at.asc())
+
         async with self.db_adapter.session(user_id) as session:
-            stmt = (
-                select(TasksTable)
-                .options(
-                    selectinload(TasksTable.criteria),
-                    selectinload(TasksTable.depends_on),
-                )
-                .where(TasksTable.user_id == user_id)
-            )
-            if plan_ids is not None:
-                stmt = stmt.where(TasksTable.plan_id.in_(plan_ids))
-            stmt = stmt.order_by(TasksTable.created_at.asc())
-
             result = await session.execute(stmt)
-            tasks_orm = result.scalars().all()
-
-            summaries = []
-            for t in tasks_orm:
-                criteria_met = sum(1 for c in t.criteria if c.met)
-                criteria_total = len(t.criteria)
-                dep_ids = [d.depends_on_task_id for d in t.depends_on]
-                blocked = False
-                if dep_ids:
-                    for dep_id in dep_ids:
-                        dep_stmt = select(TasksTable.state).where(
-                            TasksTable.user_id == user_id,
-                            TasksTable.id == dep_id,
-                        )
-                        dep_result = await session.execute(dep_stmt)
-                        dep_state = dep_result.scalar_one_or_none()
-                        if dep_state != TaskState.DONE.value:
-                            blocked = True
-                            break
-
-                summaries.append(TaskSummary(
-                    id=t.id,
-                    title=t.title,
-                    plan_id=t.plan_id,
-                    state=TaskState(t.state),
-                    priority=TaskPriority(t.priority),
-                    assigned_agent=t.assigned_agent,
-                    version=t.version,
-                    criteria_met=criteria_met,
-                    criteria_total=criteria_total,
-                    blocked=blocked,
-                    created_at=t.created_at,
-                    updated_at=t.updated_at,
-                ))
-            return summaries
+            return await _summarise_tasks(session, user_id, result.scalars().all())
 
     async def update_task(
         self, user_id: UUID, task_id: int, task_data: TaskUpdate,

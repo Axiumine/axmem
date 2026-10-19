@@ -408,38 +408,10 @@ class PostgresSkillRepository:
             # Fetch more candidates if reranking is enabled
             candidates_k = k * 3 if self.rerank_adapter is not None else k
 
-            async with self.db_adapter.session(user_id) as session:
-                stmt = select(SkillsTable).where(
-                    SkillsTable.user_id == user_id,
-                )
-
-                if project_id is not None:
-                    stmt = stmt.where(SkillsTable.project_id == project_id)
-
-                stmt = stmt.order_by(
-                    SkillsTable.embedding.cosine_distance(query_embedding),
-                )
-                stmt = stmt.limit(candidates_k)
-
-                result = await session.execute(stmt)
-                skills = result.scalars().all()
-
-                if not skills:
-                    return []
-
-                # Materialise the results inside the session so its connection is
-                # released before the (slow, external) reranker is awaited.
-                summaries = [SkillSummary.model_validate(s) for s in skills]
-
-            # Apply cross-encoder reranking if available
-            if self.rerank_adapter is not None and len(summaries) > k:
-                documents = [s.description for s in summaries]
-                ranked = await self.rerank_adapter.rerank(
-                    query=query, documents=documents,
-                )
-                summaries = [summaries[idx] for idx, _score in ranked[:k]]
-
-            return summaries
+            summaries = await self._nearest_summaries(
+                user_id, query_embedding, candidates_k, project_id,
+            )
+            return await self._rerank_summaries(query, summaries, k)
 
         except Exception as e:
             logger.error(
@@ -452,6 +424,50 @@ class PostgresSkillRepository:
                 },
             )
             raise
+
+    async def _nearest_summaries(
+        self,
+        user_id: UUID,
+        query_embedding: list[float],
+        limit: int,
+        project_id: int | None,
+    ) -> list[SkillSummary]:
+        """Return the user's skills closest to the embedding, nearest first."""
+        async with self.db_adapter.session(user_id) as session:
+            stmt = select(SkillsTable).where(
+                SkillsTable.user_id == user_id,
+            )
+
+            if project_id is not None:
+                stmt = stmt.where(SkillsTable.project_id == project_id)
+
+            stmt = stmt.order_by(
+                SkillsTable.embedding.cosine_distance(query_embedding),
+            )
+            stmt = stmt.limit(limit)
+
+            result = await session.execute(stmt)
+            skills = result.scalars().all()
+
+            # Materialise the results inside the session so its connection is
+            # released before the (slow, external) reranker is awaited.
+            return [SkillSummary.model_validate(s) for s in skills]
+
+    async def _rerank_summaries(
+        self,
+        query: str,
+        summaries: list[SkillSummary],
+        k: int,
+    ) -> list[SkillSummary]:
+        """Apply cross-encoder reranking when available and there is a surplus."""
+        if self.rerank_adapter is None or len(summaries) <= k:
+            return summaries
+
+        documents = [s.description for s in summaries]
+        ranked = await self.rerank_adapter.rerank(
+            query=query, documents=documents,
+        )
+        return [summaries[idx] for idx, _score in ranked[:k]]
 
     async def link_skill_to_memory(
         self,

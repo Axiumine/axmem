@@ -6,6 +6,7 @@ import sqlite_vec
 from sqlalchemy import select, text
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config.logging_config import logging
 from app.config.settings import settings
@@ -476,104 +477,26 @@ class SqliteSkillRepository:
                 embeddings,
             )
 
-            if (
-                settings.RERANKING_ENABLED
-                and self.rerank_adapter
-            ):
-                # Never fetch fewer candidates than the caller asked for.
-                candidates_to_return = max(
-                    k, settings.DENSE_SEARCH_CANDIDATES,
-                )
-            else:
-                candidates_to_return = k
-
             async with self.db_adapter.session(
                 user_id,
             ) as session:
-                sql_parts = [
-                    """
-                    SELECT s.id
-                    FROM skills s
-                    INNER JOIN vec_skills vs
-                        ON s.id = vs.skill_id
-                    WHERE s.user_id = :user_id
-                    """,
-                ]
-
-                params: dict = {
-                    "user_id": str(user_id),
-                    "query_embedding": embedding_bytes,
-                    "k": candidates_to_return,
-                }
-
-                if project_id is not None:
-                    sql_parts.append(
-                        " AND s.project_id = :project_id",
-                    )
-                    params["project_id"] = project_id
-
-                sql_parts.append(
-                    """
-                    ORDER BY vec_distance_cosine(
-                        vs.embedding, :query_embedding
-                    )
-                    LIMIT :k
-                    """,
+                skill_ids = await self._nearest_skill_ids(
+                    session,
+                    user_id,
+                    embedding_bytes,
+                    self._candidate_limit(k),
+                    project_id,
                 )
 
-                sql_query = "".join(sql_parts)
-                result = await session.execute(
-                    text(sql_query), params,
-                )
-                rows = result.fetchall()
-
-                if not rows:
+                if not skill_ids:
                     return []
 
-                skill_ids = [row[0] for row in rows]
-
-                stmt = select(SkillsTable).where(
-                    SkillsTable.id.in_(skill_ids),
+                summaries = await self._summaries_in_order(
+                    session, skill_ids,
                 )
-
-                result = await session.execute(stmt)
-                skills_orm = result.scalars().all()
-
-                skill_dict = {s.id: s for s in skills_orm}
-                ordered_skills = [
-                    skill_dict[sid]
-                    for sid in skill_ids
-                    if sid in skill_dict
-                ]
-
-                summaries = [
-                    SkillSummary.model_validate(s)
-                    for s in ordered_skills
-                ]
-
-                # Apply reranking if enabled
-                if (
-                    settings.RERANKING_ENABLED
-                    and self.rerank_adapter
-                    and len(summaries) > k
-                ):
-                    documents = [
-                        f"Name: {s.name}\n"
-                        f"Description: {s.description}"
-                        for s in summaries
-                    ]
-
-                    ranked = await self.rerank_adapter.rerank(
-                        query=query_text,
-                        documents=documents,
-                    )
-
-                    summaries = [
-                        summaries[idx]
-                        for idx, _score in ranked[:k]
-                    ]
-
-                return summaries
+                return await self._rerank_summaries(
+                    query_text, summaries, k,
+                )
 
         except Exception:
             logger.exception(
@@ -584,6 +507,104 @@ class SqliteSkillRepository:
                 },
             )
             raise
+
+    def _candidate_limit(self, k: int) -> int:
+        """Number of nearest neighbours to fetch for a request of k results."""
+        if settings.RERANKING_ENABLED and self.rerank_adapter:
+            # Never fetch fewer candidates than the caller asked for.
+            return max(k, settings.DENSE_SEARCH_CANDIDATES)
+        return k
+
+    @staticmethod
+    async def _nearest_skill_ids(
+        session: AsyncSession,
+        user_id: UUID,
+        embedding_bytes: bytes,
+        limit: int,
+        project_id: int | None,
+    ) -> list[int]:
+        """Return the ids of the user's skills nearest to the embedding."""
+        sql_parts = [
+            """
+            SELECT s.id
+            FROM skills s
+            INNER JOIN vec_skills vs
+                ON s.id = vs.skill_id
+            WHERE s.user_id = :user_id
+            """,
+        ]
+
+        params: dict = {
+            "user_id": str(user_id),
+            "query_embedding": embedding_bytes,
+            "k": limit,
+        }
+
+        if project_id is not None:
+            sql_parts.append(
+                " AND s.project_id = :project_id",
+            )
+            params["project_id"] = project_id
+
+        sql_parts.append(
+            """
+            ORDER BY vec_distance_cosine(
+                vs.embedding, :query_embedding
+            )
+            LIMIT :k
+            """,
+        )
+
+        result = await session.execute(
+            text("".join(sql_parts)), params,
+        )
+        return [row[0] for row in result.fetchall()]
+
+    @staticmethod
+    async def _summaries_in_order(
+        session: AsyncSession,
+        skill_ids: list[int],
+    ) -> list[SkillSummary]:
+        """Load skills by id, keeping the order of skill_ids."""
+        stmt = select(SkillsTable).where(
+            SkillsTable.id.in_(skill_ids),
+        )
+
+        result = await session.execute(stmt)
+        skill_dict = {s.id: s for s in result.scalars().all()}
+
+        return [
+            SkillSummary.model_validate(skill_dict[sid])
+            for sid in skill_ids
+            if sid in skill_dict
+        ]
+
+    async def _rerank_summaries(
+        self,
+        query_text: str,
+        summaries: list[SkillSummary],
+        k: int,
+    ) -> list[SkillSummary]:
+        """Apply reranking when enabled and there are more candidates than k."""
+        if (
+            not settings.RERANKING_ENABLED
+            or not self.rerank_adapter
+            or len(summaries) <= k
+        ):
+            return summaries
+
+        documents = [
+            f"Name: {s.name}\n"
+            f"Description: {s.description}"
+            for s in summaries
+        ]
+
+        ranked = await self.rerank_adapter.rerank(
+            query=query_text,
+            documents=documents,
+        )
+
+        return [summaries[idx] for idx, _score in ranked[:k]]
 
     async def link_skill_to_memory(
         self,
