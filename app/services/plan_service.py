@@ -183,21 +183,3 @@ class PlanService:
                 snapshot=existing.model_dump(mode="json"),
             )
         return success
-
-    async def check_plan_completion(self, user_id: UUID, plan_id: int) -> bool:
-        """Check if all tasks in a plan are done/cancelled and auto-complete the plan.
-
-        Called by TaskService after task transitions. If all tasks are done/cancelled
-        (with at least one done), auto-transitions plan to COMPLETED.
-
-        Returns True if plan was auto-completed.
-        """
-        plan = await self.plan_repo.get_plan_by_id(user_id=user_id, plan_id=plan_id)
-        if not plan or PlanStatus(plan.status) != PlanStatus.ACTIVE:
-            return False
-
-        # We need to check tasks - this requires access to task_repo
-        # but we don't have it. The TaskService will call us with task info.
-        # This method is called from TaskService which passes task info.
-        # For now, the TaskService handles the logic and calls update_plan.
-        return False

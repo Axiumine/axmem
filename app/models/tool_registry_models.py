@@ -165,12 +165,6 @@ class ToolMetadata(BaseModel):
 
         return type_map.get(python_type.lower(), "string")
 
-class ToolDataDetailed(ToolMetadata):
-    """Extended tool metadata with additional examples (for backwards compatibility)"""
-    json_schema: dict[str, Any]
-    further_examples: list[str] = Field(default_factory=list)
-
-
 @dataclass
 class ToolImplementation:
     """Stores tool metadata alongside its callable implementation"""

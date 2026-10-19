@@ -123,41 +123,6 @@ async def test_list_all_tools(empty_registry, sample_tool_impl):
 
 
 @pytest.mark.asyncio
-async def test_list_by_category(empty_registry, sample_tool_impl):
-    """Test filtering tools by category"""
-    params = [ToolParameter(name="test", type="str", description="test", required=True)]
-
-    # Register tools in different categories
-    for i in range(2):
-        empty_registry.register(
-            name=f"memory_tool_{i}",
-            category=ToolCategory.MEMORY,
-            description="Memory tool",
-            parameters=params,
-            returns="Result",
-            implementation=sample_tool_impl,
-        )
-
-    for i in range(3):
-        empty_registry.register(
-            name=f"user_tool_{i}",
-            category=ToolCategory.USER,
-            description="User tool",
-            parameters=params,
-            returns="Result",
-            implementation=sample_tool_impl,
-        )
-
-    memory_tools = empty_registry.list_by_category(ToolCategory.MEMORY)
-    user_tools = empty_registry.list_by_category(ToolCategory.USER)
-
-    assert len(memory_tools) == 2
-    assert len(user_tools) == 3
-    assert all(tool.category == ToolCategory.MEMORY for tool in memory_tools)
-    assert all(tool.category == ToolCategory.USER for tool in user_tools)
-
-
-@pytest.mark.asyncio
 async def test_list_categories(empty_registry, sample_tool_impl):
     """Test getting category counts"""
     params = [ToolParameter(name="test", type="str", description="test", required=True)]

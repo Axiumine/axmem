@@ -112,7 +112,7 @@ async def run_async_migrations() -> None:
         from sqlalchemy import event
 
         @event.listens_for(connectable.sync_engine, "connect")
-        def on_connect(dbapi_conn, connection_record):
+        def on_connect(dbapi_conn, _connection_record):
             """Load sqlite-vec extension on every connection"""
             if hasattr(dbapi_conn, "_connection"):
                 aio_conn = dbapi_conn._connection

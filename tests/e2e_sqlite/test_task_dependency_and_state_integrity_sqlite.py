@@ -248,7 +248,6 @@ async def test_failed_edge_write_removes_the_task_criteria_and_earlier_edges(sta
     assert await repo.get_task_by_id(stack.user_id, orphan_id) is None
     assert await repo.get_criteria_for_task(stack.user_id, orphan_id) == []
     assert await repo.get_dependencies(stack.user_id, orphan_id) == []
-    assert await repo.get_dependents(stack.user_id, prerequisite_a.id) == []
 
 
 # ---------------------------------------------------------------------------

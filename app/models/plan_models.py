@@ -157,19 +157,6 @@ class Criterion(BaseModel):
 # ============================================================================
 
 
-class TaskDependencyCreate(BaseModel):
-    """Input model for adding a dependency."""
-    task_id: int
-    depends_on_task_id: int
-
-    @field_validator("depends_on_task_id")
-    @classmethod
-    def cannot_depend_on_self(cls, v: int, info) -> int:
-        if info.data.get("task_id") == v:
-            raise ValueError("A task cannot depend on itself")
-        return v
-
-
 class TaskDependency(BaseModel):
     """Full dependency model returned from repository."""
     id: int

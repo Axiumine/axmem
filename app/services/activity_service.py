@@ -181,28 +181,6 @@ class ActivityService:
             offset=offset,
         )
 
-    async def count_activity(
-        self,
-        user_id: UUID,
-        entity_type: EntityType | None = None,
-        action: ActionType | None = None,
-    ) -> int:
-        """Count activity events matching filters.
-
-        Args:
-            user_id: User ID for ownership filtering
-            entity_type: Filter by entity type (optional)
-            action: Filter by action (optional)
-
-        Returns:
-            Total count of matching events
-        """
-        return await self.activity_repo.count_events(
-            user_id=user_id,
-            entity_type=entity_type,
-            action=action,
-        )
-
     async def _cleanup_if_configured(self, user_id: UUID) -> None:
         """Perform lazy retention cleanup if configured.
 

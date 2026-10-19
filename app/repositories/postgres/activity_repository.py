@@ -219,33 +219,3 @@ class PostgresActivityRepository:
                 )
 
             return count
-
-    async def count_events(
-        self,
-        user_id: UUID,
-        entity_type: EntityType | None = None,
-        action: ActionType | None = None,
-    ) -> int:
-        """Count activity events matching filters.
-
-        Args:
-            user_id: User ID for ownership filtering
-            entity_type: Filter by entity type (optional)
-            action: Filter by action (optional)
-
-        Returns:
-            Total count of matching events
-        """
-        async with self.db_adapter.session(user_id) as session:
-            query = select(func.count()).select_from(ActivityLogTable).where(
-                ActivityLogTable.user_id == user_id,
-            )
-
-            if entity_type is not None:
-                query = query.where(ActivityLogTable.entity_type == entity_type)
-
-            if action is not None:
-                query = query.where(ActivityLogTable.action == action)
-
-            result = await session.execute(query)
-            return result.scalar() or 0

@@ -122,12 +122,3 @@ class TaskSubresourceMixin:
             for dep in user_deps.values()
             if dep.task_id == task_id
         ]
-
-    async def get_dependents(self, user_id: UUID, task_id: int) -> list[int]:
-        """Get IDs of tasks that depend on this task."""
-        user_deps = self._dependencies.get(user_id, {})
-        return [
-            dep.task_id
-            for dep in user_deps.values()
-            if dep.depends_on_task_id == task_id
-        ]

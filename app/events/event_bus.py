@@ -97,25 +97,6 @@ class EventBus:
         self._subscribers[pattern].append(handler)
         logger.debug(f"Subscribed handler to pattern: {pattern}")
 
-    def unsubscribe(self, pattern: str, handler: EventHandler) -> bool:
-        """Unsubscribe a handler from a pattern.
-
-        Args:
-            pattern: The pattern to unsubscribe from
-            handler: The handler function to remove
-
-        Returns:
-            True if handler was found and removed, False otherwise
-        """
-        if pattern in self._subscribers:
-            try:
-                self._subscribers[pattern].remove(handler)
-                logger.debug(f"Unsubscribed handler from pattern: {pattern}")
-                return True
-            except ValueError:
-                pass
-        return False
-
     async def emit(self, event: ActivityEvent) -> None:
         """Emit an event to all matching subscribers.
 
@@ -198,20 +179,6 @@ class EventBus:
                 asyncio.gather(*self._pending_tasks, return_exceptions=True),
                 timeout=timeout,
             )
-
-    def subscriber_count(self, pattern: str | None = None) -> int:
-        """Get the number of subscribers.
-
-        Args:
-            pattern: If provided, count only subscribers for this pattern.
-                    If None, count all subscribers across all patterns.
-
-        Returns:
-            Number of subscribed handlers
-        """
-        if pattern is not None:
-            return len(self._subscribers.get(pattern, []))
-        return sum(len(handlers) for handlers in self._subscribers.values())
 
     def clear(self) -> None:
         """Remove all subscribers from the event bus."""

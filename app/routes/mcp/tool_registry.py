@@ -88,21 +88,6 @@ class ToolRegistry:
         """
         return [impl.metadata for impl in self._tools.values()]
 
-    def list_by_category(self, category: ToolCategory) -> list[ToolMetadata]:
-        """List tools filtered by category
-
-        Args:
-            category: Category to filter by
-
-        Returns:
-            List of tool metadata in the specified category
-        """
-        return [
-            impl.metadata
-            for impl in self._tools.values()
-            if impl.metadata.category == category
-        ]
-
     def list_categories(self) -> dict[str, int]:
         """List all categories with tool counts
 

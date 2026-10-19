@@ -49,32 +49,6 @@ def _enable_wal(raw_conn) -> None:
             time.sleep(0.05)
 
 
-def _sqlite_connection_creator():
-    """Create a SQLite connection with sqlite-vec extension loaded.
-    This is used as a creator function for SQLAlchemy's engine.
-    """
-    import sqlite3
-
-    # Construct connection string
-    if settings.SQLITE_MEMORY:
-        conn = sqlite3.connect(":memory:", check_same_thread=False)
-    else:
-        conn = sqlite3.connect(settings.SQLITE_PATH, check_same_thread=False)
-
-    # Load sqlite-vec extension
-    conn.enable_load_extension(True)
-    conn.load_extension(sqlite_vec.loadable_path())
-    conn.enable_load_extension(False)
-
-    # Set pragmas
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA synchronous=NORMAL")
-    conn.execute("PRAGMA foreign_keys=ON")
-    conn.execute("PRAGMA busy_timeout=5000")
-
-    return conn
-
-
 class SqliteDatabaseAdapter:
     """SQLite database adapter for async operations.
 
@@ -119,7 +93,7 @@ class SqliteDatabaseAdapter:
         # Register event to load extension on EVERY connection (not just first)
         # This is critical since poolclass=None means each session gets a new connection
         @event.listens_for(self._engine.sync_engine, "connect")
-        def on_connect(dbapi_conn, connection_record):
+        def on_connect(dbapi_conn, _connection_record):
             """Load sqlite-vec extension on every connection"""
             # For aiosqlite, dbapi_conn is AsyncAdapt_aiosqlite_connection
             # Access the underlying aiosqlite Connection via _connection

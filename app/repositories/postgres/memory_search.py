@@ -97,24 +97,6 @@ class MemorySearchMixin(MemoryRepositoryBase):
             for idx, score in ranked[:k]
         ]
 
-    async def semantic_search(
-            self,
-            user_id: UUID,
-            query: str,
-            k: int,
-            importance_threshold: int | None,
-            project_ids: list[int] | None,
-            exclude_ids: list[int] | None,
-    ) -> list[Memory]:
-        return [memory for memory, _ in await self.semantic_search_scored(
-            user_id=user_id,
-            query=query,
-            k=k,
-            importance_threshold=importance_threshold,
-            project_ids=project_ids,
-            exclude_ids=exclude_ids,
-        )]
-
     async def semantic_search_scored(
             self,
             user_id: UUID,

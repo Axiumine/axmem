@@ -296,49 +296,6 @@ class TestEventBusManagement:
     """Test subscription management."""
 
     @pytest.mark.asyncio
-    async def test_unsubscribe(self):
-        """Unsubscribed handler doesn't receive events."""
-        bus = EventBus()
-        received = []
-
-        async def handler(event):
-            received.append(event)
-
-        bus.subscribe("*.*", handler)
-        bus.unsubscribe("*.*", handler)
-
-        await bus.emit(ActivityEvent(
-            entity_type=EntityType.MEMORY,
-            entity_id=1,
-            action=ActionType.CREATED,
-            snapshot={},
-            user_id="test-user",
-        ))
-
-        await bus.wait_for_pending(timeout=1.0)
-
-        assert len(received) == 0
-
-    @pytest.mark.asyncio
-    async def test_subscriber_count(self):
-        """Subscriber count reflects registrations."""
-        bus = EventBus()
-
-        async def handler(event):
-            pass
-
-        assert bus.subscriber_count() == 0
-        assert bus.subscriber_count("*.*") == 0
-
-        bus.subscribe("*.*", handler)
-        assert bus.subscriber_count() == 1
-        assert bus.subscriber_count("*.*") == 1
-
-        bus.subscribe("memory.*", handler)
-        assert bus.subscriber_count() == 2
-        assert bus.subscriber_count("memory.*") == 1
-
-    @pytest.mark.asyncio
     async def test_clear(self):
         """Clear removes all subscribers."""
         bus = EventBus()
@@ -361,7 +318,6 @@ class TestEventBusManagement:
         await bus.wait_for_pending(timeout=1.0)
 
         assert len(received) == 0
-        assert bus.subscriber_count() == 0
 
 
 class TestEventBusStreaming:
