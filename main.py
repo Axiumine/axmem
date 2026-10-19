@@ -199,9 +199,12 @@ def _tolerate_unencodable_output():
     print(), in the middle of the recovery below.
     """
     for stream in (sys.stdout, sys.stderr):
-        reconfigure = getattr(stream, "reconfigure", None)
-        if reconfigure is not None:
-            reconfigure(errors="backslashreplace")
+        reconfigure = getattr(stream, "reconfigure", _no_reconfigure)
+        reconfigure(errors="backslashreplace")
+
+
+def _no_reconfigure(**_options):
+    """Stand-in for streams that cannot be reconfigured (nothing to do)."""
 
 
 def _install_stop_handlers(loop, on_stop, signals=(signal.SIGINT, signal.SIGTERM)):

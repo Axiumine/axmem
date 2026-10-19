@@ -25,6 +25,7 @@ import subprocess  # nosec B404 - runs uv/docker with fixed argv lists, never a 
 import sys
 import tempfile
 import threading
+from collections.abc import Callable
 from pathlib import Path
 
 from test_harness.config import HarnessConfig
@@ -207,7 +208,7 @@ def _docker_client():
         ) from exc
 
 
-def ensure_image(rebuild: bool = False, log=print) -> None:
+def ensure_image(rebuild: bool = False, log: Callable[[str], None] = print) -> None:
     """Build the harness image when it is absent or its baked dependency tree no
     longer matches the lock file - stale images have burned real runs before
     (eval-harness mem 1622), so the lock hash is checked, not assumed. A forced rebuild

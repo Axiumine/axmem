@@ -43,12 +43,12 @@ class UTCDateTime(TypeDecorator[datetime]):
     impl = DateTime(timezone=True)
     cache_ok = True
 
-    def process_bind_param(self, value: datetime | None, _dialect: Dialect) -> datetime | None:
+    def process_bind_param(self, value: datetime | None, dialect: Dialect) -> datetime | None:
         if value is not None and value.utcoffset() is not None:
             return value.astimezone(UTC)
         return value
 
-    def process_result_value(self, value: datetime | None, _dialect: Dialect) -> datetime | None:
+    def process_result_value(self, value: datetime | None, dialect: Dialect) -> datetime | None:
         if value is not None and value.tzinfo is None:
             return value.replace(tzinfo=UTC)
         return value

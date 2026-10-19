@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import os
 import shutil
+import tarfile
+import tempfile
 from pathlib import Path
 
 from .core import (
@@ -49,13 +51,23 @@ def gate_qodana(_ctx: Ctx) -> tuple[bool, str]:
     secrets = load_dotenv_values(("QODANA_TOKEN",))
     if "QODANA_TOKEN" not in secrets:
         return False, "QODANA_TOKEN is not set (put it in the git-ignored dotenv file or the environment)"
-    return check(
-        ["qodana", "scan", "--linter", QODANA_LINTER, "--project-dir", str(ROOT),
-         "--results-dir", str(ROOT / ".qodana-results"),
-         "--cache-dir", str(Path.home() / ".cache" / "qodana")],
-        env=secrets,
-        timeout=3600,
-    )
+    # Analyse a clean export of HEAD: host virtualenvs and caches mounted into the container
+    # leave the Python SDK unresolved and flood the report with false type-hint findings.
+    with tempfile.TemporaryDirectory(prefix="qodana-src-") as tmp:
+        archive = Path(tmp) / "head.tar"
+        code, out = run(["git", "archive", "--format=tar", "-o", str(archive), "HEAD"], timeout=300)
+        if code != 0:
+            return False, f"could not export HEAD: {out}"
+        with tarfile.open(archive) as tar:
+            tar.extractall(Path(tmp) / "src", filter="data")
+        archive.unlink()
+        return check(
+            ["qodana", "scan", "--image", QODANA_LINTER, "--project-dir", str(Path(tmp) / "src"),
+             "--results-dir", str(ROOT / ".qodana-results"),
+             "--cache-dir", str(Path.home() / ".cache" / "qodana")],
+            env=secrets,
+            timeout=3600,
+        )
 
 
 def gate_gitnexus(ctx: Ctx) -> tuple[bool, str]:

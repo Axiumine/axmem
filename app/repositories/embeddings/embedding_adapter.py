@@ -195,6 +195,20 @@ class GoogleEmbeddingsAdapter(EmbeddingsAdapter):
         return list(map(float, values))
 
 
+def _openai_api_key(base_url: str | None) -> str:
+    """API key for the OpenAI client.
+
+    Endpoints that need no key (local OpenAI-compatible servers) still require a non-empty
+    value, so a placeholder is used when a custom base URL is configured.
+    """
+    api_key = settings.OPENAI_API_KEY
+    if api_key:
+        return api_key
+    if base_url:
+        return "no-key-required"
+    raise ValueError("OPENAI_API_KEY must be configured for OpenAIEmbeddingsAdapter")
+
+
 class OpenAIEmbeddingsAdapter(EmbeddingsAdapter):
     """Generate embeddings using OpenAI's embedding models.
 
@@ -204,7 +218,7 @@ class OpenAIEmbeddingsAdapter(EmbeddingsAdapter):
     """
 
     def __init__(self):
-        base_url = settings.OPENAI_BASE_URL or None
+        base_url: str | None = settings.OPENAI_BASE_URL or None
         self.supports_dimensions = settings.OPENAI_SUPPORTS_DIMENSIONS
 
         logger.info("Initialising OpenAI embeddings adapter", extra={
@@ -213,12 +227,7 @@ class OpenAIEmbeddingsAdapter(EmbeddingsAdapter):
             "supports_dimensions": self.supports_dimensions,
         })
 
-        api_key = settings.OPENAI_API_KEY
-        if not api_key:
-            if base_url:
-                api_key = "no-key-required"
-            else:
-                raise ValueError("OPENAI_API_KEY must be configured for OpenAIEmbeddingsAdapter")
+        api_key = _openai_api_key(base_url)
 
         client_kwargs: _OpenAIClientKwargs = {
             "api_key": api_key,

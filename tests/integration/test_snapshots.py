@@ -22,6 +22,7 @@ from app.routes.cli.parser import build_parser
 pytestmark = pytest.mark.snapshot
 
 SECRET_FIELD = re.compile(r"KEY|SECRET|TOKEN|PASSWORD|CLIENT_ID", re.IGNORECASE)
+VOLATILE_FIELDS = {"SERVICE_VERSION"}  # derived from the git revision, changes with every commit
 ALEMBIC_VERSIONS = Path(__file__).resolve().parents[2] / "alembic" / "versions"
 
 
@@ -77,7 +78,9 @@ def test_cli_argument_tree(pristine_settings, json_snapshot):
 def test_settings_defaults(pristine_settings, json_snapshot):
     dumped = {}
     for name, value in sorted(pristine_settings.model_dump().items()):
-        if SECRET_FIELD.search(name):
+        if name in VOLATILE_FIELDS:
+            dumped[name] = "<varies per build>"
+        elif SECRET_FIELD.search(name):
             dumped[name] = "<set>" if value else "<unset>"
         elif isinstance(value, str) and PurePath(value).is_absolute():
             dumped[name] = "<absolute path>"  # platform- and user-specific default
