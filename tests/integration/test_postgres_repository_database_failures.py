@@ -3,32 +3,26 @@
 Code artifacts, documents and files share one failure contract. Whatever operation fails
 because the database cannot be used, the repository writes an error record naming the
 operation (and the user and record involved) and then lets the original exception reach the
-caller, so the service and route layers can turn it into a server error. Plan updates
-translate only the external_ref unique violation into a conflict and pass every other
-integrity violation through. No database is needed: the repositories run against an adapter
-whose sessions fail on entry.
+caller, so the service and route layers can turn it into a server error. No database is
+needed: the repositories run against an adapter whose sessions fail on entry.
 """
 import logging
 from uuid import UUID
 
 import pytest
-from sqlalchemy.exc import IntegrityError, OperationalError
+from sqlalchemy.exc import OperationalError
 
-from app.exceptions import ConflictError
 from app.models.code_artifact_models import CodeArtifactCreate, CodeArtifactUpdate
 from app.models.document_models import DocumentCreate, DocumentUpdate
 from app.models.file_models import FileCreate, FileUpdate
-from app.models.plan_models import PlanUpdate
 from app.repositories.postgres.code_artifact_repository import (
     PostgresCodeArtifactRepository,
 )
 from app.repositories.postgres.document_repository import PostgresDocumentRepository
 from app.repositories.postgres.file_repository import PostgresFileRepository
-from app.repositories.postgres.plan_repository import PostgresPlanRepository
 from tests.integration.postgres_failure_injection import (
     UnreachableDatabaseAdapter,
     connection_lost_error,
-    constraint_violation_error,
 )
 
 USER_ID = UUID("00000000-0000-4000-8000-0000000000aa")
@@ -147,21 +141,3 @@ async def test_unreachable_database_is_logged_with_the_operation_and_reraised(
     assert record.getMessage() == message
     assert record.user_id == str(USER_ID)
 
-
-async def test_plan_update_reraises_an_integrity_violation_that_is_not_the_external_ref_conflict():
-    injected = constraint_violation_error("plans_project_id_fkey")
-    repository = PostgresPlanRepository(UnreachableDatabaseAdapter(injected))
-
-    with pytest.raises(IntegrityError) as raised:
-        await repository.update_plan(USER_ID, RECORD_ID, PlanUpdate(title="renamed"))
-
-    assert raised.value is injected
-
-
-async def test_plan_update_reports_the_external_ref_unique_violation_as_a_conflict():
-    repository = PostgresPlanRepository(
-        UnreachableDatabaseAdapter(constraint_violation_error("ix_plans_user_external_ref")),
-    )
-
-    with pytest.raises(ConflictError, match="A plan with this external_ref already exists"):
-        await repository.update_plan(USER_ID, RECORD_ID, PlanUpdate(external_ref="JIRA-1"))

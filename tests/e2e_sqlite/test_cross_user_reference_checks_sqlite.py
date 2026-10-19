@@ -1,6 +1,6 @@
 """SQLite E2E tests: referenced projects and embeddings must belong to the caller.
 
-Documents, code artifacts, files, plans and skills accepted any ``project_id``.
+Documents, code artifacts, files and skills accepted any ``project_id``.
 The foreign key only checks that the id exists, so a user could attach rows to
 another user's project (and the project owner's later delete then rewrote or
 cascade-deleted those rows), and an unused id surfaced as a raw
@@ -62,11 +62,6 @@ CREATE_CASES = {
             "mime_type": "text/plain",
             "project_id": pid,
         },
-    ),
-    "plans": (
-        "/api/v1/plans",
-        "plans",
-        lambda pid: {"title": "Linked plan", "project_id": pid},
     ),
     "skills": (
         "/api/v1/skills",
@@ -219,26 +214,26 @@ async def test_import_skill_rejects_other_users_project(http_client, monkeypatch
 
 @pytest.mark.asyncio
 async def test_owner_project_delete_leaves_other_users_rows_alone(http_client, monkeypatch):
-    """Deleting a project must not delete or rewrite another user's plans and documents."""
+    """Deleting a project must not delete or rewrite another user's code artifacts and documents."""
     alice_project = await _create_project(http_client, "Alice private")
 
     with acting_as(monkeypatch, "bob"):
         bob_project = await _create_project(http_client, "Bob own")
         # Rejected attempts to hang Bob's rows on Alice's project
-        assert (await _create(http_client, "plans", alice_project)).status_code == 404
+        assert (await _create(http_client, "code-artifacts", alice_project)).status_code == 404
         assert (await _create(http_client, "documents", alice_project)).status_code == 404
         # Bob's legitimate rows, linked to his own project
-        plan = await _create(http_client, "plans", bob_project)
+        artifact = await _create(http_client, "code-artifacts", bob_project)
         document = await _create(http_client, "documents", bob_project)
 
     deleted = await http_client.delete(f"/api/v1/projects/{alice_project}")
     assert deleted.status_code == 200
 
     with acting_as(monkeypatch, "bob"):
-        assert await _count(http_client, "plans") == 1
+        assert await _count(http_client, "code-artifacts") == 1
         fetched = await http_client.get(f"/api/v1/documents/{document.json()['id']}")
         assert fetched.json()["project_id"] == bob_project
-        assert plan.json()["project_id"] == bob_project
+        assert artifact.json()["project_id"] == bob_project
 
 
 # ============================================================================

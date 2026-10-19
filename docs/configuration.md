@@ -493,7 +493,7 @@ These settings control the atomic memory system's behavior and constraints.
 The length and count limits below are checked when a memory is created or updated. Lowering
 one later does not make memories that were stored under the old limit unreadable.
 
-**PostgreSQL column widths**: on PostgreSQL several `*_MAX_LENGTH` settings map to fixed-width `VARCHAR` columns (the plan/task title and assigned agent, skill name/description/license/compatibility, code artifact and document title, file name, entity name/type and relationship type). A value above the column width is lowered to it at startup with a warning, because PostgreSQL would reject longer values. SQLite does not enforce `VARCHAR` length, so the configured value is used as is.
+**PostgreSQL column widths**: on PostgreSQL several `*_MAX_LENGTH` settings map to fixed-width `VARCHAR` columns (skill name/description/license/compatibility, code artifact and document title, file name, entity name/type and relationship type). A value above the column width is lowered to it at startup with a warning, because PostgreSQL would reject longer values. SQLite does not enforce `VARCHAR` length, so the configured value is used as is.
 
 ### `MEMORY_TITLE_MAX_LENGTH`
 - **Default**: `200`
@@ -749,54 +749,6 @@ These settings control the procedural memory (skills) feature.
 
 ---
 
-## Planning Configuration
-
-These settings control the planning and task management feature.
-
-### `PLANNING_ENABLED`
-- **Default**: `false`
-- **Description**: Master feature flag for the planning system
-- **Values**: `true`, `false`
-- **Behavior**: When disabled, no plan/task tools or API routes are registered
-- **Example**: `PLANNING_ENABLED=true`
-
-### `PLAN_TITLE_MAX_LENGTH`
-- **Default**: `500`
-- **Description**: Maximum characters for plan titles
-- **Example**: `PLAN_TITLE_MAX_LENGTH=500`
-
-### `PLAN_GOAL_MAX_LENGTH`
-- **Default**: `2000`
-- **Description**: Maximum characters for plan goals
-- **Example**: `PLAN_GOAL_MAX_LENGTH=2000`
-
-### `PLAN_CONTEXT_MAX_LENGTH`
-- **Default**: `2000`
-- **Description**: Maximum characters for plan context
-- **Example**: `PLAN_CONTEXT_MAX_LENGTH=2000`
-
-### `TASK_TITLE_MAX_LENGTH`
-- **Default**: `500`
-- **Description**: Maximum characters for task titles
-- **Example**: `TASK_TITLE_MAX_LENGTH=500`
-
-### `TASK_DESCRIPTION_MAX_LENGTH`
-- **Default**: `5000`
-- **Description**: Maximum characters for task descriptions
-- **Example**: `TASK_DESCRIPTION_MAX_LENGTH=5000`
-
-### `TASK_AGENT_MAX_LENGTH`
-- **Default**: `200`
-- **Description**: Maximum characters for agent identifiers
-- **Example**: `TASK_AGENT_MAX_LENGTH=200`
-
-### `CRITERION_DESCRIPTION_MAX_LENGTH`
-- **Default**: `1000`
-- **Description**: Maximum characters for criterion descriptions
-- **Example**: `CRITERION_DESCRIPTION_MAX_LENGTH=1000`
-
----
-
 ## Provenance Defaults
 
 These settings allow you to stamp every object created through a Forgetful server instance with identifying information about the agent and software doing the encoding. Useful when multiple agents or tools write to the same knowledge base.
@@ -903,7 +855,6 @@ Some internal lookups check that an object exists or hydrate a response, and do 
 reads. These emit no `read`/`queried` events and do not touch `access_count`:
 
 - linking and unlinking memories, and linking and unlinking skills
-- `create_task` and plan auto-completion after a task transition or deletion
 
 This does not cover `GET /api/v1/memories/{memory_id}/links`. It still reads through the public
 service methods, so with `ACTIVITY_TRACK_READS=true` it can emit `memory.read` events with an

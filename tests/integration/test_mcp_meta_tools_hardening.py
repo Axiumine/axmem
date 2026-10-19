@@ -21,8 +21,6 @@ from sqlalchemy.exc import IntegrityError
 
 from app.exceptions import (
     ConflictError,
-    CyclicDependencyError,
-    DependencyNotMetError,
     InvalidStateTransitionError,
     NotFoundError,
 )
@@ -72,10 +70,8 @@ class TestClientErrorDetail:
         "error",
         [
             NotFoundError("Memory 7 not found"),
-            ConflictError("A plan with this external_ref already exists."),
-            InvalidStateTransitionError("todo -> done is not allowed"),
-            DependencyNotMetError("task 3 is blocked"),
-            CyclicDependencyError("cycle detected"),
+            ConflictError("A skill with this name already exists."),
+            InvalidStateTransitionError("memory is already obsolete"),
             ValueError("project_id must be an integer"),
             TypeError("create_project() got an unexpected keyword argument 'name'"),
             ToolError("Entity 4 not found"),

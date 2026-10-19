@@ -1,6 +1,6 @@
 # Core Concepts
 
-Forgetful organizes knowledge into nine building blocks. Understanding when to use each one makes the difference between a cluttered knowledge dump and a useful, searchable knowledge graph.
+Forgetful organizes knowledge into six building blocks. Understanding when to use each one makes the difference between a cluttered knowledge dump and a useful, searchable knowledge graph.
 
 ---
 
@@ -52,58 +52,6 @@ Entities represent concrete nouns that exist in the world. They can have relatio
 - GPT-4 (Product) - "OpenAI's flagship model"
 
 **Relationships:** Entities connect to each other (e.g., "Sarah works_at TechFlow") and to memories (e.g., "Sarah" linked to "Hired Sarah for Stripe integration").
-
-### Plans
-
-**Containers for structured work** - goals, context, and ordered tasks.
-
-Plans represent *intent and procedure*, not knowledge. While memories capture what you know, plans capture what you intend to do. Each plan lives within a project and decomposes a goal into concrete tasks.
-
-Plans follow a lifecycle: **draft** → **active** → **completed** → **archived**. A draft plan is being shaped; an active plan is in progress; a completed plan has all its tasks done; an archived plan is retained for reference but no longer actionable. Reopening a finished task (done or cancelled back to todo) returns a completed plan to active, and tasks in a completed or archived plan cannot otherwise be claimed or moved.
-
-**Good plans have:**
-- **A clear goal** - what does "done" look like?
-- **Context** - background information an implementer needs to get started
-- **Ordered tasks** - a breakdown of the work, not a vague wish list
-
-**Examples:**
-- "Migrate payment provider from PayPal to Stripe" (active)
-- "Set up CI/CD pipeline for staging environment" (draft)
-- "Evaluate and select embedding model" (completed)
-
-### Tasks
-
-**Work units within plans** - assignable, trackable, state-machined.
-
-Tasks are the actionable steps inside a plan. Each task has a service-enforced state machine: **todo** → **doing** → **done**, with two additional terminal/pause states: **waiting** (blocked on an external dependency) and **cancelled** (no longer needed).
-
-Tasks support **atomic claiming via optimistic locking** - when an agent picks up a task, the transition is conflict-safe even with concurrent workers. Each task carries a **priority level** (P0 = critical, P1 = high, P2 = normal, P3 = low) and an optional **agent assignment** so multiple agents can coordinate without stepping on each other.
-
-**Task dependencies:** Tasks can declare dependencies on other tasks within the same plan. A task cannot transition to *doing* or *done* until all of its dependencies are *done*; the check is repeated on *done* because a dependency can be added, or a prerequisite reopened, while the task is in progress. The system enforces **cycle detection** when a dependency is added, atomically with the insert - if adding a dependency would create a circular chain (A → B → C → A), the request is rejected. Adding the same dependency twice is a conflict, and a *done* task cannot gain new dependencies.
-
-**Examples:**
-- "Create Stripe webhook endpoint" (P1, todo, assigned: backend-agent)
-- "Write migration script for subscription records" (P0, doing)
-- "Update API documentation for new payment flow" (P2, waiting)
-
-### Acceptance Criteria
-
-**Boolean conditions on tasks** - the definition of done.
-
-Acceptance criteria are first-class children of tasks. Each criterion is a clear, verifiable condition that must be satisfied before a task can transition to *done*. All criteria on a task must be met for completion. The criteria of a *done* task are frozen: they cannot be added, changed, un-met or deleted until the task is reopened.
-
-This enables a clean separation of concerns: a **planner** defines criteria up front, an **implementer** does the work and marks criteria as met, and a **reviewer** validates the results. The workflow becomes planner-sets-criteria → implementer-does-work → reviewer-validates.
-
-**Good criteria are:**
-- **Binary** - unambiguously true or false, no subjective judgment
-- **Verifiable** - an agent or person can check it without guessing
-- **Scoped** - tied to one observable outcome, not a compound condition
-
-**Examples (for a "Create Stripe webhook endpoint" task):**
-- "Endpoint returns 200 for valid Stripe signature"
-- "Invalid signatures return 400 with error detail"
-- "Events are persisted to the webhook_events table"
-- "Integration test covers payment_intent.succeeded event"
 
 ### Documents
 
@@ -177,7 +125,7 @@ Forgetful supports optional provenance fields on all object types so you can tra
 
 ### Coverage by Object Type
 
-- **All 9 fields**: Memories, Projects, Documents, Code Artifacts, Skills, Files, Entities, Plans, Tasks
+- **All 9 fields**: Memories, Projects, Documents, Code Artifacts, Skills, Files, Entities
 - **8 fields (no `confidence`)**: Entity relationships — these already carry their own relationship-level confidence
 - Memories previously had 6 fields; `agent_id`, `agent_version`, and `agent_model` were added to bring them in line with all other types
 
@@ -204,9 +152,6 @@ When `false` (the default), agent-provided values take precedence and env values
 | Question | Answer |
 |----------|--------|
 | Is it a person, org, device, or product? | **Entity** |
-| Is it a goal that decomposes into steps? | **Plan** |
-| Is it a concrete piece of work to be done? | **Task** |
-| Is it a verifiable condition for "done"? | **Acceptance Criterion** |
 | Is it step-by-step procedural knowledge? | **Skill** |
 | Is it detailed analysis or a guide (>300 words)? | **Document** |
 | Is it a single fact, decision, or preference? | **Memory** |
@@ -237,16 +182,6 @@ Ask: "Is this ONE idea or MANY?" One idea = memory. Many related ideas = documen
 - "Chose XTTS-v2 for voice cloning" - Memory
 - "TTS Engine Evaluation comparing 5 engines with benchmarks" - Document
 
-### Memory vs Plan
-
-**Memory** = knowledge about something (retrospective)
-**Plan** = intent to do something (prospective)
-
-Ask: "Am I recording what happened, or describing what should happen?" Past/present knowledge = memory. Future work with steps = plan.
-
-- "Chose Stripe for lower fees" - Memory (a decision already made)
-- "Migrate payment provider from PayPal to Stripe" - Plan (work to be done)
-
 ### Skill vs Memory
 
 **Skill** = how to do something (procedural, reusable steps)
@@ -256,16 +191,6 @@ Ask: "Is this a procedure someone would follow, or a fact someone would recall?"
 
 - "How to review pull requests in this project" - Skill
 - "We use conventional commits for all PRs" - Memory
-
-### Task vs Memory
-
-**Task** = something to be done, with a state and an owner
-**Memory** = something to be known, permanently
-
-Ask: "Will this be 'done' at some point?" If yes, it's a task. Memories don't get completed - they stay true.
-
-- "Write migration script for subscriptions" - Task (it will be done or cancelled)
-- "Subscription data lives in the billing schema" - Memory (a fact that persists)
 
 ### When to Use Projects
 
@@ -348,12 +273,9 @@ You're developing a coding assistant agent. Here's the breakdown:
 |------|------|----------|----------|
 | Memory | <400 words | One concept | Memories, Entities, Documents, Code Artifacts |
 | Entity | N/A | Real-world thing | Other Entities, Memories |
-| Plan | N/A | Goal + context | Tasks, Project |
-| Task | N/A | Work unit + state | Acceptance Criteria, Plan, Agent |
-| Acceptance Criterion | N/A | Boolean condition | Task |
 | Document | >300 words | Multiple concepts | Memories |
 | Code Artifact | Variable | Working code | Memories |
 | Skill | Variable | Procedural instructions | Memories, Projects |
-| Project | N/A | Scope/context | Memories, Plans |
+| Project | N/A | Scope/context | Memories |
 
-The knowledge graph emerges from these connections. Memories are the atoms; entities, documents, skills, and projects provide structure and context. Plans, tasks, and acceptance criteria layer *intent* on top of *knowledge*, letting agents coordinate structured work.
+The knowledge graph emerges from these connections. Memories are the atoms; entities, documents, skills, and projects provide structure and context.

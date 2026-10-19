@@ -19,15 +19,6 @@ from app.models.entity_models import (
     EntityRelationshipCreate,
     EntityRelationshipUpdate,
 )
-from app.models.plan_models import (
-    CriterionCreate,
-    CriterionUpdate,
-    Plan,
-    PlanCreate,
-    PlanUpdate,
-    TaskCreate,
-    TaskUpdate,
-)
 from app.models.skill_models import Skill, SkillCreate, SkillUpdate
 
 NUL = "\x00"
@@ -191,45 +182,6 @@ class TestSkillTagLength:
         too_many = [f"t{i}" for i in range(settings.SKILL_TAGS_MAX_COUNT + 1)]
         with pytest.raises(ValidationError):
             SkillCreate(**SKILL, tags=too_many)
-
-
-class TestPlanningText:
-    """Task, plan and criterion text columns are PostgreSQL text/varchar."""
-
-    @pytest.mark.parametrize("model,payload,loc", [
-        (PlanCreate, {"title": f"a{NUL}b", "project_id": 1}, ("title",)),
-        (PlanCreate, {"title": "t", "project_id": 1, "goal": f"a{NUL}b"}, ("goal",)),
-        (PlanCreate, {"title": "t", "project_id": 1, "context": f"a{NUL}b"}, ("context",)),
-        (PlanCreate, {"title": "t", "project_id": 1, "source_files": [f"a{NUL}"]}, ("source_files", 0)),
-        (PlanUpdate, {"title": f"a{NUL}b"}, ("title",)),
-        (PlanUpdate, {"goal": f"a{NUL}b"}, ("goal",)),
-        (PlanUpdate, {"context": f"a{NUL}b"}, ("context",)),
-        (TaskCreate, {"title": f"a{NUL}b", "plan_id": 1}, ("title",)),
-        (TaskCreate, {"title": "t", "plan_id": 1, "description": f"a{NUL}b"}, ("description",)),
-        (TaskCreate, {"title": "t", "plan_id": 1, "assigned_agent": f"a{NUL}b"}, ("assigned_agent",)),
-        (TaskCreate, {"title": "t", "plan_id": 1, "source_url": f"a{NUL}b"}, ("source_url",)),
-        (TaskCreate, {"title": "t", "plan_id": 1, "criteria": [{"description": "ok"}, {"description": f"a{NUL}"}]},
-         ("criteria", 1, "description")),
-        (TaskUpdate, {"title": f"a{NUL}b"}, ("title",)),
-        (TaskUpdate, {"description": f"a{NUL}b"}, ("description",)),
-        (CriterionCreate, {"description": f"a{NUL}b"}, ("description",)),
-        (CriterionUpdate, {"description": f"a{NUL}b"}, ("description",)),
-    ])
-    def test_nul_is_rejected(self, model, payload, loc):
-        errors = _rejected(model, payload)
-        assert errors[0]["loc"] == loc
-        assert errors[0]["type"] == "nul_character"
-
-    def test_storable_text_is_unchanged(self):
-        text = "line one\nline two\ttab \U0001f600 éè \x01 control"
-        assert PlanCreate(title="t", project_id=1, goal=text).goal == text
-        assert TaskCreate(title="t", plan_id=1, description=text).description == text
-        assert CriterionCreate(description=text).description == text
-
-    def test_response_model_still_reads_rows_stored_earlier(self):
-        plan = Plan(id=1, title="t", goal=f"a{NUL}b", project_id=1, status="draft",
-                    user_id="00000000-0000-0000-0000-000000000001", created_at=NOW, updated_at=NOW)
-        assert plan.goal == f"a{NUL}b"
 
 
 class TestDocumentSizeBytes:

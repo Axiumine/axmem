@@ -28,11 +28,9 @@ if TYPE_CHECKING:
     from app.services.entity_service import EntityService
     from app.services.file_service import FileService
     from app.services.memory_service import MemoryService
-    from app.services.plan_service import PlanService
     from app.services.project_service import ProjectService
     from app.services.re_embedding_service import ReEmbeddingService
     from app.services.skill_service import SkillService
-    from app.services.task_service import TaskService
     from app.services.user_service import UserService
 
 logger = logging.getLogger(__name__)
@@ -159,12 +157,6 @@ def create_repositories(db_adapter, embeddings_adapter, reranker_adapter):
                 rerank_adapter=reranker_adapter,
             )
 
-        if settings.PLANNING_ENABLED:
-            from app.repositories.postgres.plan_repository import PostgresPlanRepository
-            from app.repositories.postgres.task_repository import PostgresTaskRepository
-            repos["plan"] = PostgresPlanRepository(db_adapter=db_adapter)
-            repos["task"] = PostgresTaskRepository(db_adapter=db_adapter)
-
         return repos
     if settings.DATABASE == "SQLite":
         from app.repositories.sqlite.activity_repository import SqliteActivityRepository
@@ -202,12 +194,6 @@ def create_repositories(db_adapter, embeddings_adapter, reranker_adapter):
                 embedding_adapter=embeddings_adapter,
                 rerank_adapter=reranker_adapter,
             )
-
-        if settings.PLANNING_ENABLED:
-            from app.repositories.sqlite.plan_repository import SqlitePlanRepository
-            from app.repositories.sqlite.task_repository import SqliteTaskRepository
-            repos["plan"] = SqlitePlanRepository(db_adapter=db_adapter)
-            repos["task"] = SqliteTaskRepository(db_adapter=db_adapter)
 
         return repos
     raise ValueError(f"Unsupported DATABASE setting: {settings.DATABASE}. Must be 'Postgres' or 'SQLite'")
@@ -250,8 +236,6 @@ class Services:
     re_embedding: ReEmbeddingService
     file: FileService | None = None
     skill: SkillService | None = None
-    plan: PlanService | None = None
-    task: TaskService | None = None
 
 
 @dataclass
@@ -338,20 +322,6 @@ async def build_runtime() -> Runtime:
     else:
         logger.info("Skills feature disabled (SKILLS_ENABLED=false)")
 
-    # Conditionally create plan/task services behind PLANNING_ENABLED
-    plan_service = None
-    task_service = None
-
-    if settings.PLANNING_ENABLED:
-        from app.services.plan_service import PlanService
-        from app.services.task_service import TaskService
-
-        plan_service = PlanService(repos["plan"], event_bus=event_bus)
-        task_service = TaskService(repos["task"], plan_service=plan_service, event_bus=event_bus)
-        logger.info("Planning feature enabled")
-    else:
-        logger.info("Planning feature disabled (PLANNING_ENABLED=false)")
-
     registry = ToolRegistry()
     register_all_tools_metadata(
         registry=registry,
@@ -362,8 +332,6 @@ async def build_runtime() -> Runtime:
         code_artifact_service=code_artifact_service,
         document_service=document_service,
         entity_service=entity_service,
-        plan_service=plan_service,
-        task_service=task_service,
         file_service=file_service,
         skill_service=skill_service,
     )
@@ -390,8 +358,6 @@ async def build_runtime() -> Runtime:
         re_embedding=re_embedding_service,
         file=file_service,
         skill=skill_service,
-        plan=plan_service,
-        task=task_service,
     )
 
     return Runtime(

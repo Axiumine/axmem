@@ -21,27 +21,22 @@ from app.models.entity_models import (
 )
 from app.models.file_models import FileUpdate
 from app.models.memory_models import MemoryUpdate
-from app.models.plan_models import CriterionUpdate, PlanUpdate, TaskUpdate
 from app.models.project_models import ProjectUpdate
 from app.models.skill_models import Skill, SkillCreate, SkillUpdate
 
-SOURCE_FILE_UPDATE_MODELS = [
+UPDATE_MODELS = [
     CodeArtifactUpdate,
     DocumentUpdate,
     EntityUpdate,
     EntityRelationshipUpdate,
     FileUpdate,
     MemoryUpdate,
-    PlanUpdate,
     ProjectUpdate,
     SkillUpdate,
-    TaskUpdate,
 ]
 
-UPDATE_MODELS = [*SOURCE_FILE_UPDATE_MODELS, CriterionUpdate]
 
-
-@pytest.mark.parametrize("model", SOURCE_FILE_UPDATE_MODELS, ids=lambda m: m.__name__)
+@pytest.mark.parametrize("model", UPDATE_MODELS, ids=lambda m: m.__name__)
 class TestSourceFilesOnUpdate:
     def test_paths_are_trimmed_and_blank_entries_dropped(self, model):
         update = model(source_files=["  src/app.py ", "", "   ", "docs/readme.md"])

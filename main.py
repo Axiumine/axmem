@@ -28,10 +28,8 @@ from app.routes.api import (
     files,
     health,
     memories,
-    plans,
     projects,
     skills,
-    tasks,
 )
 from app.routes.mcp import meta_tools
 from app.routes.server_state import ForgetfulMCP
@@ -76,11 +74,6 @@ async def lifespan(app):
 
     if services.skill:
         mcp.skill_service = services.skill
-
-    if services.plan:
-        mcp.plan_service = services.plan
-    if services.task:
-        mcp.task_service = services.task
 
     logger.info("Services initialized and attached to FastMCP instance")
 
@@ -140,10 +133,6 @@ if settings.FILES_ENABLED:
 
 if settings.SKILLS_ENABLED:
     skills.register(mcp)
-
-if settings.PLANNING_ENABLED:
-    plans.register(mcp)
-    tasks.register(mcp)
 
 meta_tools.register(mcp)
 

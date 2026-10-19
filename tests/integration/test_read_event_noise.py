@@ -2,8 +2,7 @@
 
 With ACTIVITY_TRACK_READS enabled only an explicit read (get_*) is a read.
 Write paths that merely check that something exists (unlinking memories,
-linking skills, creating tasks, plan auto-completion) must not write
-``read`` activity events or bump a memory's ``access_count``.
+linking skills) must not write ``read`` activity events or bump a memory's ``access_count``.
 """
 from unittest.mock import patch
 from uuid import uuid4
@@ -14,18 +13,9 @@ from app.config.settings import settings
 from app.exceptions import NotFoundError
 from app.models.activity_models import ActionType, EntityType
 from app.models.memory_models import MemoryCreate
-from app.models.plan_models import (
-    PlanCreate,
-    PlanStatus,
-    PlanUpdate,
-    TaskCreate,
-    TaskState,
-)
 from app.models.skill_models import SkillCreate
 from app.services.memory_service import MemoryService
-from app.services.plan_service import PlanService
 from app.services.skill_service import SkillService
-from app.services.task_service import TaskService
 from tests.integration.conftest import CollectingEventBus
 
 
@@ -151,73 +141,3 @@ async def test_get_skill_and_export_skill_still_emit_read_events(skill_service, 
     await skill_service.export_skill(user_id=user_id, skill_id=skill.id)
     assert len(_reads(event_bus, EntityType.SKILL)) == 2
 
-
-# ============================================================================
-# TaskService.create_task / plan auto-completion
-# ============================================================================
-
-
-@pytest.fixture
-def plan_and_task_services(mock_plan_repository, mock_task_repository, event_bus):
-    plan_service = PlanService(mock_plan_repository, event_bus=event_bus)
-    task_service = TaskService(mock_task_repository, plan_service=plan_service, event_bus=event_bus)
-    return plan_service, task_service
-
-
-async def _active_plan(plan_service, user_id):
-    plan = await plan_service.create_plan(
-        user_id=user_id, plan_data=PlanCreate(title="noise plan", project_id=1),
-    )
-    return await plan_service.update_plan(
-        user_id=user_id, plan_id=plan.id, plan_data=PlanUpdate(status=PlanStatus.ACTIVE),
-    )
-
-
-@pytest.mark.asyncio
-async def test_create_task_emits_no_plan_read_event(plan_and_task_services, event_bus):
-    plan_service, task_service = plan_and_task_services
-    user_id = uuid4()
-    plan = await _active_plan(plan_service, user_id)
-    event_bus.collected_events.clear()
-
-    await task_service.create_task(user_id, TaskCreate(title="t", plan_id=plan.id))
-
-    assert _reads(event_bus, EntityType.PLAN) == []
-
-
-@pytest.mark.asyncio
-async def test_task_completion_and_delete_emit_no_plan_read_event(
-    plan_and_task_services, event_bus,
-):
-    plan_service, task_service = plan_and_task_services
-    user_id = uuid4()
-    plan = await _active_plan(plan_service, user_id)
-    done_task = await task_service.create_task(user_id, TaskCreate(title="a", plan_id=plan.id))
-    other_task = await task_service.create_task(user_id, TaskCreate(title="b", plan_id=plan.id))
-    event_bus.collected_events.clear()
-
-    # DOING -> DONE runs _check_plan_auto_completion (plan stays ACTIVE: task b is open)
-    await task_service.transition_task(user_id, done_task.id, TaskState.DOING, expected_version=1)
-    await task_service.transition_task(user_id, done_task.id, TaskState.DONE, expected_version=2)
-    # Deleting the last open task completes the plan through the same check
-    await task_service.delete_task(user_id, other_task.id)
-
-    assert _reads(event_bus, EntityType.PLAN) == []
-    # The auto-completion itself still happened and was reported as an update
-    updated = [
-        e for e in event_bus.collected_events
-        if e.entity_type == EntityType.PLAN and e.action == ActionType.UPDATED
-    ]
-    assert updated, "plan auto-completion should still emit its update event"
-
-
-@pytest.mark.asyncio
-async def test_get_plan_still_emits_read_event(plan_and_task_services, event_bus):
-    plan_service, _task_service = plan_and_task_services
-    user_id = uuid4()
-    plan = await _active_plan(plan_service, user_id)
-    event_bus.collected_events.clear()
-
-    await plan_service.get_plan(user_id=user_id, plan_id=plan.id)
-
-    assert len(_reads(event_bus, EntityType.PLAN)) == 1

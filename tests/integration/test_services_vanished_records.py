@@ -17,10 +17,8 @@ from app.models.document_models import DocumentCreate
 from app.models.entity_models import EntityCreate
 from app.models.entity_models import EntityType as EntityKind
 from app.models.file_models import FileCreate
-from app.models.plan_models import PlanCreate
 from app.models.project_models import ProjectCreate, ProjectType
 from app.models.skill_models import SkillCreate
-from app.services.plan_service import PlanService
 from app.services.skill_service import SkillService
 from tests.integration.stubs import CollectingEventBus
 
@@ -132,29 +130,6 @@ async def test_project_delete_that_loses_a_race_returns_false_without_a_deleted_
     assert await service.delete_project(USER_ID, project.id) is False
     assert bus.collected_events == []
     assert "project deletion failed" in [r.getMessage() for r in caplog.records]
-
-
-async def test_deleting_an_unknown_plan_returns_false(mock_plan_repository):
-    service = PlanService(mock_plan_repository, event_bus=CollectingEventBus())
-
-    assert await service.delete_plan(USER_ID, 404) is False
-
-
-async def test_plan_delete_that_loses_a_race_returns_false_without_a_deleted_event(
-    mock_plan_repository, monkeypatch,
-):
-    bus = CollectingEventBus()
-    service = PlanService(mock_plan_repository, event_bus=bus)
-    plan = await service.create_plan(USER_ID, PlanCreate(title="Plan", project_id=1, goal="g"))
-    bus.collected_events.clear()
-
-    async def already_deleted(**_):
-        return False
-
-    monkeypatch.setattr(mock_plan_repository, "delete_plan", already_deleted)
-
-    assert await service.delete_plan(USER_ID, plan.id) is False
-    assert bus.collected_events == []
 
 
 @pytest.mark.parametrize(

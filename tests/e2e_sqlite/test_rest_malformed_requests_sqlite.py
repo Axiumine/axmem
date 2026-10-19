@@ -1,7 +1,7 @@
 """E2E tests (SQLite): malformed REST requests are client errors, never 500.
 
 Covers non-numeric / out-of-range path ids, invalid or non-object JSON bodies,
-bad task and plan query parameters, and invalid claim payloads.
+and the shared request helpers every route module uses.
 
 The sweeps enumerate every route registered by the covered API modules, so a
 new route that forgets the shared request helpers fails here.
@@ -10,7 +10,6 @@ import re
 
 import pytest
 from fastmcp import Client, FastMCP
-from fastmcp.exceptions import ToolError
 from httpx import ASGITransport, AsyncClient
 
 from app.routes.api import (
@@ -19,14 +18,12 @@ from app.routes.api import (
     entities,
     files,
     memories,
-    plans,
     projects,
     skills,
-    tasks,
 )
 
 API_MODULES = (
-    code_artifacts, documents, entities, files, memories, plans, projects, skills, tasks,
+    code_artifacts, documents, entities, files, memories, projects, skills,
 )
 IGNORED_METHODS = {"HEAD", "OPTIONS"}
 BAD_IDS = [
@@ -55,18 +52,6 @@ NON_FINITE_BODIES = [
     b'{"a": {"b": -Infinity}}',
     b'{"title": 1e999}',
     b'{"title": -1e999}',
-]
-# Raw JSON literals that are not a usable integer (or do not fit the database column)
-BAD_INT_JSON = [
-    b"null",
-    b'"abc"',
-    b"[1]",
-    b'{"a": 1}',
-    b"Infinity",
-    b"NaN",
-    b"100000000000000000000",
-    b"2147483648",
-    b"1" + b"0" * 5000,
 ]
 JSON_HEADERS = {"content-type": "application/json"}
 
@@ -108,27 +93,10 @@ async def client(sqlite_app):
             yield http
 
 
-@pytest.fixture
-async def todo_task(client):
-    """A todo task in an active plan."""
-    project = (await client.post(
-        "/api/v1/projects",
-        json={"name": "malformed-requests", "description": "p", "project_type": "development"},
-    )).json()
-    plan = (await client.post(
-        "/api/v1/plans", json={"title": "plan", "project_id": project["id"]},
-    )).json()
-    activated = await client.put(f"/api/v1/plans/{plan['id']}", json={"status": "active"})
-    assert activated.status_code == 200
-    created = await client.post("/api/v1/tasks", json={"title": "task", "plan_id": plan["id"]})
-    assert created.status_code == 201
-    return created.json()
-
-
 def test_inventory_covers_the_rest_api():
     """Guard the sweeps below: they must actually see the routes."""
-    assert len(ROUTES_WITH_IDS) > 50
-    assert len(ROUTES_WITH_BODY) > 25
+    assert len(ROUTES_WITH_IDS) > 35
+    assert len(ROUTES_WITH_BODY) > 20
 
 
 class TestPathIds:
@@ -210,172 +178,3 @@ class TestJsonBodies:
             json={"name": "ok", "description": "p", "project_type": "development"},
         )
         assert response.status_code == 201
-
-
-class TestTaskAndPlanQueryParameters:
-    async def test_task_list_rejects_bad_parameters(self, client):
-        for plan_id in ("abc", "1.5", "99999999999999999999"):
-            response = await client.get("/api/v1/tasks", params={"plan_id": plan_id})
-            assert response.status_code == 400, plan_id
-            assert "plan_id" in response.json()["error"]
-
-    async def test_task_list_rejects_bad_state_and_lists_valid_values(self, client):
-        response = await client.get("/api/v1/tasks", params={"plan_id": 1, "state": "bogus"})
-        assert response.status_code == 400
-        error = response.json()["error"]
-        assert "state" in error
-        assert "todo" in error
-        assert "cancelled" in error
-
-    async def test_task_list_rejects_bad_priority_and_lists_valid_values(self, client):
-        response = await client.get("/api/v1/tasks", params={"plan_id": 1, "priority": "bogus"})
-        assert response.status_code == 400
-        error = response.json()["error"]
-        assert "priority" in error
-        assert "P0" in error
-
-    async def test_task_list_still_filters(self, client, todo_task):
-        response = await client.get(
-            "/api/v1/tasks",
-            params={"plan_id": todo_task["plan_id"], "state": "todo", "priority": "P2"},
-        )
-        assert response.status_code == 200
-        assert response.json()["total"] == 1
-
-    async def test_plan_list_rejects_bad_project_id(self, client):
-        for project_id in ("abc", "99999999999999999999"):
-            response = await client.get("/api/v1/plans", params={"project_id": project_id})
-            assert response.status_code == 400, project_id
-            assert "project_id" in response.json()["error"]
-
-
-class TestTaskBodies:
-    async def test_transition_rejects_bad_version(self, client, todo_task):
-        for version in BAD_INT_JSON:
-            response = await client.post(
-                f"/api/v1/tasks/{todo_task['id']}/transition",
-                content=b'{"state": "doing", "version": ' + version + b"}",
-            )
-            assert response.status_code == 400, (version[:20], response.text[:200])
-
-    async def test_claim_rejects_bad_version(self, client, todo_task):
-        for version in BAD_INT_JSON:
-            response = await client.post(
-                f"/api/v1/tasks/{todo_task['id']}/claim",
-                content=b'{"agent_id": "agent-1", "version": ' + version + b"}",
-            )
-            assert response.status_code == 400, (version[:20], response.text[:200])
-
-    async def test_add_dependency_rejects_bad_task_id(self, client, todo_task):
-        for dependency in BAD_INT_JSON:
-            response = await client.post(
-                f"/api/v1/tasks/{todo_task['id']}/dependencies",
-                content=b'{"depends_on_task_id": ' + dependency + b"}",
-            )
-            assert response.status_code == 400, (dependency[:20], response.text[:200])
-
-    async def test_transition_rejects_non_string_state(self, client, todo_task):
-        response = await client.post(
-            f"/api/v1/tasks/{todo_task['id']}/transition",
-            json={"state": ["doing"], "version": todo_task["version"]},
-        )
-        assert response.status_code == 400
-
-    async def test_claim_and_transition_still_work(self, client, todo_task):
-        claimed = await client.post(
-            f"/api/v1/tasks/{todo_task['id']}/claim",
-            json={"agent_id": "agent-1", "version": todo_task["version"]},
-        )
-        assert claimed.status_code == 200
-        done = await client.post(
-            f"/api/v1/tasks/{todo_task['id']}/transition",
-            json={"state": "done", "version": str(claimed.json()["version"])},
-        )
-        assert done.status_code == 200
-
-
-class TestClaimAgentId:
-    """agent_id must be a real string of 1..TASK_AGENT_MAX_LENGTH characters."""
-
-    async def test_invalid_agent_id_is_rejected_and_task_untouched(self, client, todo_task):
-        url = f"/api/v1/tasks/{todo_task['id']}"
-        for agent_id in (None, "", "   ", 123, ["a"], {"x": 1}, True, "a" * 201):
-            response = await client.post(
-                f"{url}/claim", json={"agent_id": agent_id, "version": todo_task["version"]},
-            )
-            assert response.status_code == 400, (agent_id, response.text[:200])
-            assert "error" in response.json()
-
-            task = (await client.get(url)).json()
-            assert task["state"] == "todo", agent_id
-            assert task["assigned_agent"] is None, agent_id
-            assert task["version"] == todo_task["version"], agent_id
-
-    async def test_non_finite_agent_id_is_rejected_and_task_untouched(self, client, todo_task):
-        url = f"/api/v1/tasks/{todo_task['id']}"
-        # Raw bytes: httpx refuses to serialise NaN through json=
-        for agent_id in (b"NaN", b"Infinity", b"[NaN]", b'{"a": -Infinity}', b"1e999"):
-            response = await client.post(
-                f"{url}/claim",
-                content=b'{"agent_id": ' + agent_id + b', "version": %d}' % todo_task["version"],
-            )
-            assert response.status_code == 400, (agent_id, response.text[:200])
-            assert "error" in response.json()
-
-        task = (await client.get(url)).json()
-        assert task["state"] == "todo"
-        assert task["assigned_agent"] is None
-
-    async def test_validation_error_does_not_echo_the_rejected_value(self, client, todo_task):
-        response = await client.post(
-            f"/api/v1/tasks/{todo_task['id']}/claim",
-            json={"agent_id": "a" * 1_000_000, "version": todo_task["version"]},
-        )
-        assert response.status_code == 400
-        assert len(response.content) < 2_000
-        assert "input" not in response.json()["error"][0]
-
-    async def test_missing_agent_id_is_rejected(self, client, todo_task):
-        response = await client.post(
-            f"/api/v1/tasks/{todo_task['id']}/claim", json={"version": todo_task["version"]},
-        )
-        assert response.status_code == 400
-
-    async def test_max_length_agent_id_is_accepted(self, client, todo_task):
-        response = await client.post(
-            f"/api/v1/tasks/{todo_task['id']}/claim",
-            json={"agent_id": "a" * 200, "version": todo_task["version"]},
-        )
-        assert response.status_code == 200
-        assert response.json()["assigned_agent"] == "a" * 200
-
-    async def test_valid_agent_id_is_trimmed(self, client, todo_task):
-        response = await client.post(
-            f"/api/v1/tasks/{todo_task['id']}/claim",
-            json={"agent_id": " agent-1 ", "version": todo_task["version"]},
-        )
-        assert response.status_code == 200
-        assert response.json()["assigned_agent"] == "agent-1"
-
-    async def test_mcp_claim_task_shares_the_validation(self, mcp_client):
-        async def call(tool, args):
-            return await mcp_client.call_tool(
-                "execute_forgetful_tool", {"tool_name": tool, "arguments": args},
-            )
-
-        project = (await call("create_project", {
-            "name": "mcp-claim", "description": "p", "project_type": "development",
-        })).data["id"]
-        plan = (await call("create_plan", {"project_id": project, "title": "p"})).data["id"]
-        await call("update_plan", {"plan_id": plan, "status": "active"})
-        task = (await call("create_task", {"plan_id": plan, "title": "t"})).data
-
-        for agent_id in ("", "   ", "a" * 201):
-            with pytest.raises(ToolError):
-                await call("claim_task", {
-                    "task_id": task["id"], "agent_id": agent_id, "version": task["version"],
-                })
-
-        stored = (await call("get_task", {"task_id": task["id"]})).data
-        assert stored["state"] == "todo"
-        assert stored["assigned_agent"] is None

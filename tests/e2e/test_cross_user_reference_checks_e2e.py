@@ -1,7 +1,7 @@
 """PostgreSQL E2E tests: referenced projects must belong to the caller.
 
 PostgreSQL has no row-level security policies in this repository and foreign keys
-only prove that the project id exists, so documents, code artifacts, files, plans
+only prove that the project id exists, so documents, code artifacts, files
 and skills could be attached to another user's project. The repositories now filter
 on the project owner. Mirrors the SQLite two-user tests.
 """
@@ -50,11 +50,6 @@ CREATE_CASES = {
             "mime_type": "text/plain",
             "project_id": pid,
         },
-    ),
-    "plans": (
-        "/api/v1/plans",
-        "plans",
-        lambda pid: {"title": "Linked plan", "project_id": pid},
     ),
     "skills": (
         "/api/v1/skills",
@@ -183,19 +178,19 @@ async def test_update_with_own_project_still_works_e2e(http_client, kind):
 
 @pytest.mark.e2e
 async def test_owner_project_delete_leaves_other_users_rows_alone_e2e(http_client, monkeypatch):
-    """Deleting a project must not delete or rewrite another user's plans and documents."""
+    """Deleting a project must not delete or rewrite another user's code artifacts and documents."""
     alice_project = await _create_project(http_client, "Alice private")
 
     with acting_as(monkeypatch, "bob"):
         bob_project = await _create_project(http_client, "Bob own")
-        assert (await _create(http_client, "plans", alice_project)).status_code == 404
+        assert (await _create(http_client, "code-artifacts", alice_project)).status_code == 404
         assert (await _create(http_client, "documents", alice_project)).status_code == 404
-        await _create(http_client, "plans", bob_project)
+        await _create(http_client, "code-artifacts", bob_project)
         document = await _create(http_client, "documents", bob_project)
 
     assert (await http_client.delete(f"/api/v1/projects/{alice_project}")).status_code == 200
 
     with acting_as(monkeypatch, "bob"):
-        assert await _count(http_client, "plans") == 1
+        assert await _count(http_client, "code-artifacts") == 1
         fetched = await http_client.get(f"/api/v1/documents/{document.json()['id']}")
         assert fetched.json()["project_id"] == bob_project

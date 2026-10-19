@@ -51,10 +51,8 @@ from app.routes.api import (
     files,
     health,
     memories,
-    plans,
     projects,
     skills,
-    tasks,
 )
 from app.routes.mcp import meta_tools
 from app.routes.mcp.tool_metadata_registry import register_all_tools_metadata
@@ -65,11 +63,9 @@ from app.services.document_service import DocumentService
 from app.services.entity_service import EntityService
 from app.services.file_service import FileService
 from app.services.memory_service import MemoryService
-from app.services.plan_service import PlanService
 from app.services.project_service import ProjectService
 from app.services.re_embedding_service import ReEmbeddingService
 from app.services.skill_service import SkillService
-from app.services.task_service import TaskService
 from app.services.user_service import UserService
 
 # Force all async tests in this directory onto the session event loop.
@@ -197,10 +193,6 @@ class StreamingASGITransport(ASGITransport):
 # Clear child/association tables before their parents, leaving migration history intact.
 ALL_TABLES = [
     "activity_log",
-    "task_dependencies",
-    "criteria",
-    "tasks",
-    "plans",
     "memory_links",
     "memory_project_association",
     "memory_code_artifact_association",
@@ -363,7 +355,7 @@ def reranker_adapter():
 @pytest_asyncio.fixture(loop_scope="session", autouse=True)
 async def clean_database(db_adapter):
     """Clean all application tables before each test, including repeated runs."""
-    # Small test datasets are much cheaper to DELETE than to TRUNCATE 26 tables and
+    # Small test datasets are much cheaper to DELETE than to TRUNCATE 22 tables and
     # restart their sequences. Tests must use returned IDs, not assume they start at 1.
     async with db_adapter.system_session() as session:
         for table in ALL_TABLES:
@@ -377,7 +369,6 @@ def app_settings(request, monkeypatch):
         **getattr(request.module, "SETTINGS_OVERRIDE", {}),
         "DATABASE": "Postgres",
         "POSTGRES_HOST": "127.0.0.1",
-        "PLANNING_ENABLED": True,
         "FILES_ENABLED": True,
     }
     for key, value in overrides.items():
@@ -422,13 +413,6 @@ async def postgres_app(
 
         skill_service = SkillService(skill_repository, event_bus=event_bus)
 
-        # Plan/Task services (always enabled in E2E tests)
-        plan_service = None
-        task_service = None
-        if "plan" in repos and "task" in repos:
-            plan_service = PlanService(repos["plan"], event_bus=event_bus)
-            task_service = TaskService(repos["task"], plan_service=plan_service, event_bus=event_bus)
-
         mcp.user_service = user_service
         mcp.memory_service = memory_service
         mcp.project_service = project_service
@@ -443,11 +427,6 @@ async def postgres_app(
         if skill_service:
             mcp.skill_service = skill_service
 
-        if plan_service:
-            mcp.plan_service = plan_service
-        if task_service:
-            mcp.task_service = task_service
-
         registry = ToolRegistry()
         mcp.registry = registry
 
@@ -460,8 +439,6 @@ async def postgres_app(
             code_artifact_service=code_artifact_service,
             document_service=document_service,
             entity_service=entity_service,
-            plan_service=plan_service,
-            task_service=task_service,
             file_service=file_service,
             skill_service=skill_service,
         )
@@ -483,8 +460,6 @@ async def postgres_app(
     documents.register(mcp)
     code_artifacts.register(mcp)
     activity.register(mcp)
-    plans.register(mcp)
-    tasks.register(mcp)
     if settings.FILES_ENABLED:
         files.register(mcp)
     skills.register(mcp)

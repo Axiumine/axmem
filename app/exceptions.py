@@ -14,11 +14,3 @@ class ConflictError(Exception):
 
 class InvalidStateTransitionError(Exception):
     """Raised when a state machine transition is not allowed"""
-
-
-class DependencyNotMetError(Exception):
-    """Raised when task dependencies are not satisfied for a transition"""
-
-
-class CyclicDependencyError(Exception):
-    """Raised when adding a dependency would create a cycle"""

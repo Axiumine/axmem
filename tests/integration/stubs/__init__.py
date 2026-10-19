@@ -10,10 +10,8 @@ from tests.integration.stubs.doubles import CollectingEventBus, MockEmbeddingsAd
 from tests.integration.stubs.entities import InMemoryEntityRepository
 from tests.integration.stubs.files import InMemoryFileRepository
 from tests.integration.stubs.memories import InMemoryMemoryRepository
-from tests.integration.stubs.plans import InMemoryPlanRepository
 from tests.integration.stubs.projects import InMemoryProjectRepository
 from tests.integration.stubs.skills import InMemorySkillRepository
-from tests.integration.stubs.tasks import InMemoryTaskRepository
 from tests.integration.stubs.users import InMemoryUserRepository
 
 __all__ = [
@@ -23,10 +21,8 @@ __all__ = [
     "InMemoryEntityRepository",
     "InMemoryFileRepository",
     "InMemoryMemoryRepository",
-    "InMemoryPlanRepository",
     "InMemoryProjectRepository",
     "InMemorySkillRepository",
-    "InMemoryTaskRepository",
     "InMemoryUserRepository",
     "MockEmbeddingsAdapter",
 ]

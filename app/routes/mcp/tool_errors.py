@@ -12,8 +12,6 @@ from sqlalchemy.exc import IntegrityError
 
 from app.exceptions import (
     ConflictError,
-    CyclicDependencyError,
-    DependencyNotMetError,
     InvalidStateTransitionError,
     NotFoundError,
 )
@@ -32,8 +30,6 @@ _CLIENT_SAFE_ERRORS = (
     NotFoundError,
     ConflictError,
     InvalidStateTransitionError,
-    DependencyNotMetError,
-    CyclicDependencyError,
     ValueError,
     TypeError,
 )

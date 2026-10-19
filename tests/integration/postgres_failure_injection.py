@@ -3,7 +3,7 @@
 The stand-in replaces the real ``PostgresDatabaseAdapter`` handed to a repository so that
 every unit of work fails the way a dropped connection does, before any statement runs.
 """
-from sqlalchemy.exc import IntegrityError, OperationalError
+from sqlalchemy.exc import OperationalError
 
 
 def connection_lost_error() -> OperationalError:
@@ -36,17 +36,3 @@ class UnreachableDatabaseAdapter:
     def system_session(self):
         return _SessionThatFailsOnEntry(self.error)
 
-
-class _DriverConstraintError(Exception):
-    """Stands in for the asyncpg exception that carries the violated constraint's name."""
-
-    def __init__(self, constraint_name: str) -> None:
-        super().__init__(f"violates constraint {constraint_name}")
-        self.constraint_name = constraint_name
-
-
-def constraint_violation_error(constraint_name: str) -> IntegrityError:
-    """An IntegrityError wrapping a driver error that names ``constraint_name``."""
-    adapter_error = Exception("integrity violation")
-    adapter_error.__cause__ = _DriverConstraintError(constraint_name)
-    return IntegrityError("UPDATE plans", None, adapter_error)

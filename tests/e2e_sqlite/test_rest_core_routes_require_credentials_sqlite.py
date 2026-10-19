@@ -1,4 +1,4 @@
-"""SQLite end-to-end test: the memory, entity, skill and task REST routes need credentials.
+"""SQLite end-to-end test: the memory, entity and skill REST routes need credentials.
 
 With an auth provider configured, every endpoint must answer 401 with a JSON error before
 it touches any data, and a valid bearer token must still be accepted.
@@ -8,7 +8,7 @@ from fastmcp.server.auth.providers.jwt import StaticTokenVerifier
 
 VALID_TOKEN = "valid-core-routes-token"
 
-# (method, path) of every route served by the memories, entities, skills and tasks modules
+# (method, path) of every route served by the memories, entities and skills modules
 PROTECTED_ROUTES = [
     ("GET", "/api/v1/memories"),
     ("GET", "/api/v1/memories/1"),
@@ -47,18 +47,6 @@ PROTECTED_ROUTES = [
     ("POST", "/api/v1/skills/1/documents"),
     ("DELETE", "/api/v1/skills/1/documents/2"),
     ("GET", "/api/v1/skills/1/links"),
-    ("GET", "/api/v1/tasks?plan_id=1"),
-    ("GET", "/api/v1/tasks/1"),
-    ("POST", "/api/v1/tasks"),
-    ("PUT", "/api/v1/tasks/1"),
-    ("DELETE", "/api/v1/tasks/1"),
-    ("POST", "/api/v1/tasks/1/transition"),
-    ("POST", "/api/v1/tasks/1/claim"),
-    ("POST", "/api/v1/tasks/1/criteria"),
-    ("PUT", "/api/v1/criteria/1"),
-    ("DELETE", "/api/v1/criteria/1"),
-    ("POST", "/api/v1/tasks/1/dependencies"),
-    ("DELETE", "/api/v1/tasks/1/dependencies/2"),
 ]
 
 

@@ -17,8 +17,6 @@ class ToolCategory(StrEnum):
     DOCUMENT = "document"
     ENTITY = "entity"
     LINKING = "linking"
-    PLAN = "plan"
-    TASK = "task"
     FILE = "file"
     SKILL = "skill"
 

@@ -207,16 +207,6 @@ class TestNonFiniteNumbers:
         ))
         _assert_rejected_by_body_parser(project, "POST /projects name=NaN")
 
-        plan = await self._post_raw(
-            api, "/api/v1/plans", '{"title":"t","goal":"g","confidence":NaN}',
-        )
-        _assert_rejected_by_body_parser(plan, "POST /plans confidence=NaN")
-
-        task = await self._post_raw(
-            api, "/api/v1/tasks", '{"plan_id":1,"title":"t","confidence":Infinity}',
-        )
-        _assert_rejected_by_body_parser(task, "POST /tasks confidence=Infinity")
-
         document = await self._post_raw(api, "/api/v1/documents", (
             '{"title":"t","description":"d","content":"c","confidence":NaN}'
         ))

@@ -7,7 +7,7 @@ so ``mypy`` can check both sides instead of seeing a plain ``FastMCP`` with no s
 attributes.
 
 The attributes are declared, not defaulted: they exist only once the lifespan has run,
-exactly as before. The four feature-flagged services (files, skills, plans, tasks) are
+exactly as before. The two feature-flagged services (files, skills) are
 declared as present because the routes that read them are registered only while the same
 feature flag is on, which is also when the lifespan attaches them.
 """
@@ -29,11 +29,9 @@ if TYPE_CHECKING:
     from app.services.entity_service import EntityService
     from app.services.file_service import FileService
     from app.services.memory_service import MemoryService
-    from app.services.plan_service import PlanService
     from app.services.project_service import ProjectService
     from app.services.re_embedding_service import ReEmbeddingService
     from app.services.skill_service import SkillService
-    from app.services.task_service import TaskService
     from app.services.user_service import UserService
 
 
@@ -53,8 +51,6 @@ class ForgetfulMCP(FastMCP[Any]):
     # Feature-flagged: attached, and their routes registered, only while the flag is on
     file_service: FileService
     skill_service: SkillService
-    plan_service: PlanService
-    task_service: TaskService
 
     token_cache: TokenCache | None
     registry: ToolRegistry

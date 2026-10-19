@@ -1,4 +1,4 @@
-"""Plan, project, user and activity repositories on a real SQLite database.
+"""Project, user and activity repositories on a real SQLite database.
 
 Services look a row up before they update or delete it, so these tests call the repositories
 directly to pin their own answers for unknown ids, empty patches and retention clean-up.
@@ -7,8 +7,6 @@ from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import text
-from sqlalchemy.exc import IntegrityError
 
 from app.exceptions import NotFoundError
 from app.models.activity_models import (
@@ -17,11 +15,9 @@ from app.models.activity_models import (
     ActorType,
     EntityType,
 )
-from app.models.plan_models import PlanCreate, PlanUpdate
 from app.models.project_models import ProjectCreate, ProjectType, ProjectUpdate
 from app.models.user_models import UserUpdate
 from app.repositories.sqlite.activity_repository import SqliteActivityRepository
-from app.repositories.sqlite.plan_repository import SqlitePlanRepository
 from app.repositories.sqlite.project_repository import SqliteProjectRepository
 from app.repositories.sqlite.user_repository import SqliteUserRepository
 from tests.e2e_sqlite.sqlite_repository_helpers import (
@@ -45,54 +41,8 @@ async def user_id(adapter):
 async def _project(adapter, user_id, name="Atlas"):
     return await SqliteProjectRepository(adapter).create_project(
         user_id,
-        ProjectCreate(name=name, description="Planning target", project_type=ProjectType.WORK),
+        ProjectCreate(name=name, description="Repository target", project_type=ProjectType.WORK),
     )
-
-
-# --- plans ---------------------------------------------------------------------------------
-
-
-async def test_empty_plan_update_returns_the_stored_plan_unchanged(adapter, user_id):
-    project = await _project(adapter, user_id)
-    plans = SqlitePlanRepository(adapter)
-    created = await plans.create_plan(
-        user_id, PlanCreate(title="Ship v2", project_id=project.id, goal="Release"),
-    )
-
-    result = await plans.update_plan(user_id, created.id, PlanUpdate())
-
-    assert result == created
-    assert await plans.get_plan_by_id(user_id, created.id) == created
-
-
-async def test_empty_plan_update_of_an_unknown_plan_raises_not_found(adapter, user_id):
-    with pytest.raises(NotFoundError, match=f"^Plan with id {UNKNOWN_ID} not found$"):
-        await SqlitePlanRepository(adapter).update_plan(user_id, UNKNOWN_ID, PlanUpdate())
-
-
-async def test_plan_update_of_an_unknown_plan_raises_not_found(adapter, user_id):
-    with pytest.raises(NotFoundError, match=f"^Plan with id {UNKNOWN_ID} not found$"):
-        await SqlitePlanRepository(adapter).update_plan(
-            user_id, UNKNOWN_ID, PlanUpdate(title="Renamed"),
-        )
-
-
-async def test_other_constraint_failures_on_plan_update_are_not_reported_as_external_ref_conflicts(
-    adapter, user_id,
-):
-    project = await _project(adapter, user_id)
-    plans = SqlitePlanRepository(adapter)
-    created = await plans.create_plan(user_id, PlanCreate(title="Frozen", project_id=project.id))
-    async with adapter.system_session() as session:
-        await session.execute(text(
-            "CREATE TRIGGER plans_are_frozen BEFORE UPDATE ON plans "
-            "BEGIN SELECT RAISE(ABORT, 'plans are frozen'); END",
-        ))
-
-    with pytest.raises(IntegrityError, match="plans are frozen"):
-        await plans.update_plan(user_id, created.id, PlanUpdate(title="Thawed"))
-
-    assert (await plans.get_plan_by_id(user_id, created.id)).title == "Frozen"
 
 
 # --- projects ------------------------------------------------------------------------------

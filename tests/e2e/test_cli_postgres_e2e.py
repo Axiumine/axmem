@@ -20,7 +20,6 @@ _PATCHED_FIELDS = [
     "FORGETFUL_SCOPES",
     "SKILLS_ENABLED",
     "FILES_ENABLED",
-    "PLANNING_ENABLED",
     "ACTIVITY_ENABLED",
 ]
 
@@ -35,7 +34,6 @@ async def test_cli_local_executor_create_and_query_against_postgres(postgres_con
     settings.FORGETFUL_SCOPES = "*"
     settings.SKILLS_ENABLED = False
     settings.FILES_ENABLED = False
-    settings.PLANNING_ENABLED = False
     settings.ACTIVITY_ENABLED = False
 
     try:

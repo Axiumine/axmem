@@ -1,7 +1,7 @@
 """Shared request parsing for REST handlers.
 
 Malformed client input (non-numeric or out-of-range ids, invalid or non-object
-JSON bodies, ints that cannot be stored) must produce a 4xx JSON error rather
+JSON bodies) must produce a 4xx JSON error rather
 than an unhandled exception, which Starlette reports as a 500.
 
 Handlers raise ``RequestError`` through these helpers and are wrapped with
@@ -12,17 +12,14 @@ import json
 import math
 import re
 from collections.abc import Awaitable, Callable
-from enum import Enum
 from typing import Any
 
-from starlette.datastructures import QueryParams
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
 # Primary keys are 32-bit on PostgreSQL (SQLite integers are wider), so no stored
 # row can have a larger id; values beyond this overflow the database driver.
 MAX_ID = 2**31 - 1
-MIN_INT = -(2**31)
 
 _ID_PATTERN = re.compile(r"[0-9]+")
 _MAX_ID_DIGITS = len(str(MAX_ID))
@@ -89,40 +86,3 @@ async def read_json_object(request: Request) -> dict[str, Any]:
     if not isinstance(body, dict):
         raise RequestError("Request body must be a JSON object")
     return body
-
-
-def body_int(value: Any, name: str) -> int:
-    """Coerce a body value to a database-safe int, or raise a 400."""
-    try:
-        number = int(value)
-    except (TypeError, ValueError, OverflowError):
-        raise RequestError(f"Invalid {name}: must be an integer") from None
-    if not MIN_INT <= number <= MAX_ID:
-        raise RequestError(f"Invalid {name}: out of range")
-    return number
-
-
-def query_int(params: QueryParams, name: str) -> int | None:
-    """Return an optional integer query parameter, or raise a 400."""
-    raw = params.get(name)
-    if not raw:
-        return None
-    try:
-        number = int(raw)
-    except ValueError:
-        raise RequestError(f"Invalid {name}: {raw[:50]}. Must be an integer.") from None
-    if not MIN_INT <= number <= MAX_ID:
-        raise RequestError(f"Invalid {name}: {raw[:50]}. Out of range.")
-    return number
-
-
-def query_enum[E: Enum](params: QueryParams, name: str, enum_type: type[E]) -> E | None:
-    """Return an optional enum query parameter, or raise a 400 listing the valid values."""
-    raw = params.get(name)
-    if not raw:
-        return None
-    try:
-        return enum_type(raw)
-    except ValueError:
-        valid = ", ".join(str(member.value) for member in enum_type)
-        raise RequestError(f"Invalid {name}: {raw[:50]}. Valid values: {valid}") from None

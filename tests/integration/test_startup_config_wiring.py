@@ -49,9 +49,7 @@ from app.repositories.postgres.postgres_tables import (
     EntitiesTable,
     EntityRelationshipsTable,
     FilesTable,
-    PlansTable,
     SkillsTable,
-    TasksTable,
 )
 from app.utils.provenance import PROVENANCE_ENV_MAP
 
@@ -335,9 +333,6 @@ def test_provenance_default_at_the_cap_is_accepted(monkeypatch, setting):
 # ============================================================================
 
 POSTGRES_COLUMNS = {
-    "PLAN_TITLE_MAX_LENGTH": (PlansTable, "title"),
-    "TASK_TITLE_MAX_LENGTH": (TasksTable, "title"),
-    "TASK_AGENT_MAX_LENGTH": (TasksTable, "assigned_agent"),
     "SKILL_NAME_MAX_LENGTH": (SkillsTable, "name"),
     "SKILL_DESCRIPTION_MAX_LENGTH": (SkillsTable, "description"),
     "SKILL_LICENSE_MAX_LENGTH": (SkillsTable, "license"),
@@ -383,29 +378,29 @@ def test_clamp_warning_reaches_stderr_at_real_startup(tmp_path):
         "PYTHONPATH": str(Path(__file__).resolve().parents[2]),
         "XDG_CONFIG_HOME": str(tmp_path / "config"),
         "DATABASE": "Postgres",
-        "PLAN_TITLE_MAX_LENGTH": "1000",
+        "DOCUMENT_TITLE_MAX_LENGTH": "1000",
     }
 
     result = subprocess.run(
-        [sys.executable, "-c", "from app.config.settings import settings; print(settings.PLAN_TITLE_MAX_LENGTH)"],
+        [sys.executable, "-c", "from app.config.settings import settings; print(settings.DOCUMENT_TITLE_MAX_LENGTH)"],
         cwd=tmp_path, env=env, capture_output=True, text=True, check=True,
     )
 
     assert result.stdout.strip() == "500"
-    assert "PLAN_TITLE_MAX_LENGTH" in result.stderr
+    assert "DOCUMENT_TITLE_MAX_LENGTH" in result.stderr
 
 
 def test_postgres_keeps_max_lengths_within_the_column_width(monkeypatch):
-    loaded = _settings(monkeypatch, DATABASE="Postgres", PLAN_TITLE_MAX_LENGTH="120")
+    loaded = _settings(monkeypatch, DATABASE="Postgres", DOCUMENT_TITLE_MAX_LENGTH="120")
 
-    assert loaded.PLAN_TITLE_MAX_LENGTH == 120
+    assert loaded.DOCUMENT_TITLE_MAX_LENGTH == 120
 
 
 def test_sqlite_does_not_clamp_max_lengths(monkeypatch):
     """SQLite does not enforce VARCHAR length, so the tunable value stays authoritative."""
-    loaded = _settings(monkeypatch, DATABASE="SQLite", PLAN_TITLE_MAX_LENGTH="1000")
+    loaded = _settings(monkeypatch, DATABASE="SQLite", DOCUMENT_TITLE_MAX_LENGTH="1000")
 
-    assert loaded.PLAN_TITLE_MAX_LENGTH == 1000
+    assert loaded.DOCUMENT_TITLE_MAX_LENGTH == 1000
 
 
 # ============================================================================

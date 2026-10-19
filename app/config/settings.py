@@ -48,9 +48,6 @@ PROVENANCE_MAX_LENGTHS = {
 # Tunable *_MAX_LENGTH settings that feed fixed-width PostgreSQL VARCHAR columns
 # (postgres_tables.py). PostgreSQL rejects longer values; SQLite does not enforce VARCHAR length.
 POSTGRES_COLUMN_WIDTHS = {
-    "PLAN_TITLE_MAX_LENGTH": 500,
-    "TASK_TITLE_MAX_LENGTH": 500,
-    "TASK_AGENT_MAX_LENGTH": 200,
     "SKILL_NAME_MAX_LENGTH": 64,
     "SKILL_DESCRIPTION_MAX_LENGTH": 1024,
     "SKILL_LICENSE_MAX_LENGTH": 100,
@@ -233,19 +230,6 @@ class Settings(BaseSettings):
     ENTITY_TAGS_MAX_COUNT: int = 10              # For categorization
     ENTITY_AKA_MAX_COUNT: int = 10               # Maximum alternative names per entity
     ENTITY_RELATIONSHIP_TYPE_MAX_LENGTH: int = 100  # e.g., "works_at", "owns", "manages"
-
-    # Planning Feature Flag
-    PLANNING_ENABLED: bool = False               # Enable plans, tasks, criteria, dependencies
-
-    # Plan/Task Configuration (only relevant when PLANNING_ENABLED=True)
-    PLAN_TITLE_MAX_LENGTH: int = 500
-    PLAN_GOAL_MAX_LENGTH: int = 2000
-    PLAN_CONTEXT_MAX_LENGTH: int = 2000
-    TASK_TITLE_MAX_LENGTH: int = 500
-    TASK_DESCRIPTION_MAX_LENGTH: int = 5000
-    TASK_AGENT_MAX_LENGTH: int = 200
-    CRITERION_DESCRIPTION_MAX_LENGTH: int = 1000
-
 
     # Skills Feature Flag
     SKILLS_ENABLED: bool = False

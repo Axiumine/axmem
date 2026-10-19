@@ -19,9 +19,7 @@ import main
 from app.config.settings import settings
 from app.middleware.auth import TokenCache
 from app.services.file_service import FileService
-from app.services.plan_service import PlanService
 from app.services.skill_service import SkillService
-from app.services.task_service import TaskService
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -33,8 +31,6 @@ _LIST_ROUTES = (
 FEATURE_ROUTES = {
     "/api/v1/files",
     "/api/v1/skills",
-    "/api/v1/plans",
-    "/api/v1/criteria/{criterion_id}",
 }
 
 
@@ -63,13 +59,10 @@ async def test_lifespan_attaches_every_enabled_optional_service(
 ):
     monkeypatch.setattr(settings, "FILES_ENABLED", True)
     monkeypatch.setattr(settings, "SKILLS_ENABLED", True)
-    monkeypatch.setattr(settings, "PLANNING_ENABLED", True)
 
     async with main.lifespan(main.mcp):
         assert isinstance(pristine_server.file_service, FileService)
         assert isinstance(pristine_server.skill_service, SkillService)
-        assert isinstance(pristine_server.plan_service, PlanService)
-        assert isinstance(pristine_server.task_service, TaskService)
 
 
 async def test_lifespan_leaves_the_token_cache_unset_when_it_is_disabled(
@@ -100,7 +93,6 @@ def _routes_with_flags(tmp_path, enabled: bool) -> set[str]:
         "FASTMCP_SERVER_AUTH": "",
         "FILES_ENABLED": str(enabled).lower(),
         "SKILLS_ENABLED": str(enabled).lower(),
-        "PLANNING_ENABLED": str(enabled).lower(),
     }
     completed = subprocess.run(  # noqa: S603 - fixed argv, no shell
         [sys.executable, "-c", _LIST_ROUTES],

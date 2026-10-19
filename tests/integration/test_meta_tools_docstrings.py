@@ -13,31 +13,7 @@ from app.routes.mcp.meta_tools import (
     _build_execute_docstring,
     _build_tool_categories_line,
     _get_mcp_descriptor_mode,
-    build_tool_documentation,
 )
-from app.routes.mcp.tool_adapters import create_plan_adapters
-from app.routes.mcp.tool_metadata_registry import register_plan_tools_metadata
-from app.routes.mcp.tool_registry import ToolRegistry
-
-
-def test_plan_status_documentation_uses_archived():
-    """Generated plan usage help must advertise the supported lifecycle states."""
-    registry = ToolRegistry()
-    # Documentation generation does not invoke adapters or require services.
-    register_plan_tools_metadata(registry, create_plan_adapters(None, None))
-    permitted = {"create_plan", "update_plan", "list_plans"}
-
-    docs = {
-        name: build_tool_documentation(registry, permitted, name)
-        for name in sorted(permitted)
-    }
-
-    for name, doc in docs.items():
-        status = next(param for param in doc["parameters"] if param["name"] == "status")
-        schema_status = doc["json_schema"]["properties"]["status"]
-        for description in (status["description"], schema_status["description"]):
-            assert "(draft, active, completed, archived)" in description, name
-        assert "abandoned" not in str(doc), name
 
 
 class TestBuildCategoryList:
@@ -48,7 +24,6 @@ class TestBuildCategoryList:
         with patch("app.routes.mcp.meta_tools.settings") as mock_settings:
             mock_settings.SKILLS_ENABLED = False
             mock_settings.FILES_ENABLED = False
-            mock_settings.PLANNING_ENABLED = False
 
             result = _build_category_list()
 
@@ -60,7 +35,6 @@ class TestBuildCategoryList:
         with patch("app.routes.mcp.meta_tools.settings") as mock_settings:
             mock_settings.SKILLS_ENABLED = True
             mock_settings.FILES_ENABLED = False
-            mock_settings.PLANNING_ENABLED = False
 
             result = _build_category_list()
 
@@ -71,42 +45,16 @@ class TestBuildCategoryList:
         with patch("app.routes.mcp.meta_tools.settings") as mock_settings:
             mock_settings.SKILLS_ENABLED = False
             mock_settings.FILES_ENABLED = False
-            mock_settings.PLANNING_ENABLED = False
 
             result = _build_category_list()
 
         assert "skill" not in result
-
-    def test_plan_task_categories_when_enabled(self):
-        """Plan and task categories appear when PLANNING_ENABLED=True."""
-        with patch("app.routes.mcp.meta_tools.settings") as mock_settings:
-            mock_settings.SKILLS_ENABLED = False
-            mock_settings.FILES_ENABLED = False
-            mock_settings.PLANNING_ENABLED = True
-
-            result = _build_category_list()
-
-        assert "plan" in result
-        assert "task" in result
-
-    def test_plan_task_categories_absent_when_disabled(self):
-        """Plan and task categories absent when PLANNING_ENABLED=False."""
-        with patch("app.routes.mcp.meta_tools.settings") as mock_settings:
-            mock_settings.SKILLS_ENABLED = False
-            mock_settings.FILES_ENABLED = False
-            mock_settings.PLANNING_ENABLED = False
-
-            result = _build_category_list()
-
-        assert "plan" not in result
-        assert "task" not in result
 
     def test_file_category_when_enabled(self):
         """File category appears when FILES_ENABLED=True."""
         with patch("app.routes.mcp.meta_tools.settings") as mock_settings:
             mock_settings.SKILLS_ENABLED = False
             mock_settings.FILES_ENABLED = True
-            mock_settings.PLANNING_ENABLED = False
 
             result = _build_category_list()
 
@@ -117,12 +65,11 @@ class TestBuildCategoryList:
         with patch("app.routes.mcp.meta_tools.settings") as mock_settings:
             mock_settings.SKILLS_ENABLED = True
             mock_settings.FILES_ENABLED = True
-            mock_settings.PLANNING_ENABLED = True
 
             result = _build_category_list()
 
         for cat in ["user", "memory", "project", "code_artifact", "document",
-                     "entity", "linking", "skill", "file", "plan", "task"]:
+                     "entity", "linking", "skill", "file"]:
             assert cat in result
 
 
@@ -134,13 +81,10 @@ class TestBuildToolCategoriesLine:
         with patch("app.routes.mcp.meta_tools.settings") as mock_settings:
             mock_settings.SKILLS_ENABLED = False
             mock_settings.FILES_ENABLED = False
-            mock_settings.PLANNING_ENABLED = False
 
             result = _build_tool_categories_line()
 
         assert "skill" not in result
-        assert "plan" not in result
-        assert "task" not in result
         assert "file" not in result
         assert "memory" in result
 
@@ -149,14 +93,11 @@ class TestBuildToolCategoriesLine:
         with patch("app.routes.mcp.meta_tools.settings") as mock_settings:
             mock_settings.SKILLS_ENABLED = True
             mock_settings.FILES_ENABLED = True
-            mock_settings.PLANNING_ENABLED = True
 
             result = _build_tool_categories_line()
 
         assert "skill" in result
         assert "file" in result
-        assert "plan" in result
-        assert "task" in result
 
 
 class TestMcpDescriptorMode:
@@ -198,7 +139,6 @@ class TestDiscoverDocstring:
         with patch("app.routes.mcp.meta_tools.settings") as mock_settings:
             mock_settings.SKILLS_ENABLED = False
             mock_settings.FILES_ENABLED = False
-            mock_settings.PLANNING_ENABLED = False
 
             doc = _build_discover_docstring()
 
@@ -210,15 +150,12 @@ class TestDiscoverDocstring:
         # Feature-flagged sections absent
         assert "**Skill Tools**" not in doc
         assert "**File Tools**" not in doc
-        assert "**Plan Tools**" not in doc
-        assert "**Task Tools**" not in doc
 
     def test_skill_section_when_enabled(self):
         """Skill tools section included when SKILLS_ENABLED=True."""
         with patch("app.routes.mcp.meta_tools.settings") as mock_settings:
             mock_settings.SKILLS_ENABLED = True
             mock_settings.FILES_ENABLED = False
-            mock_settings.PLANNING_ENABLED = False
 
             doc = _build_discover_docstring()
 
@@ -227,32 +164,13 @@ class TestDiscoverDocstring:
         assert "search_skills" in doc
 
         # Others still absent
-        assert "**Plan Tools**" not in doc
-        assert "**Task Tools**" not in doc
-
-    def test_planning_sections_when_enabled(self):
-        """Plan and Task tools sections included when PLANNING_ENABLED=True."""
-        with patch("app.routes.mcp.meta_tools.settings") as mock_settings:
-            mock_settings.SKILLS_ENABLED = False
-            mock_settings.FILES_ENABLED = False
-            mock_settings.PLANNING_ENABLED = True
-
-            doc = _build_discover_docstring()
-
-        assert "**Plan Tools**" in doc
-        assert "create_plan" in doc
-        assert "list_plans" in doc
-        assert "**Task Tools**" in doc
-        assert "create_task" in doc
-        assert "claim_task" in doc
-        assert "transition_task" in doc
+        assert "**File Tools**" not in doc
 
     def test_file_section_when_enabled(self):
         """File tools section included when FILES_ENABLED=True."""
         with patch("app.routes.mcp.meta_tools.settings") as mock_settings:
             mock_settings.SKILLS_ENABLED = False
             mock_settings.FILES_ENABLED = True
-            mock_settings.PLANNING_ENABLED = False
 
             doc = _build_discover_docstring()
 
@@ -264,21 +182,17 @@ class TestDiscoverDocstring:
         with patch("app.routes.mcp.meta_tools.settings") as mock_settings:
             mock_settings.SKILLS_ENABLED = True
             mock_settings.FILES_ENABLED = False
-            mock_settings.PLANNING_ENABLED = True
 
             doc = _build_discover_docstring()
 
         # Should appear in the category filter arg description
         assert "skill" in doc
-        assert "plan" in doc
-        assert "task" in doc
 
     def test_workflow_section_always_present(self):
         """The workflow section is always appended."""
         with patch("app.routes.mcp.meta_tools.settings") as mock_settings:
             mock_settings.SKILLS_ENABLED = False
             mock_settings.FILES_ENABLED = False
-            mock_settings.PLANNING_ENABLED = False
 
             doc = _build_discover_docstring()
 
@@ -290,7 +204,6 @@ class TestDiscoverDocstring:
             mock_settings.MCP_DESCRIPTOR_MODE = "compact"
             mock_settings.SKILLS_ENABLED = True
             mock_settings.FILES_ENABLED = True
-            mock_settings.PLANNING_ENABLED = True
 
             doc = _build_discover_docstring()
 
@@ -298,7 +211,6 @@ class TestDiscoverDocstring:
         assert "how_to_use_forgetful_tool(tool_name)" in doc
         assert "## All Available Tools" not in doc
         assert "**Memory Tools**" not in doc
-        assert "**Task Tools**" not in doc
         assert len(doc) < 900
 
 
@@ -310,7 +222,6 @@ class TestExecuteDocstring:
         with patch("app.routes.mcp.meta_tools.settings") as mock_settings:
             mock_settings.SKILLS_ENABLED = False
             mock_settings.FILES_ENABLED = False
-            mock_settings.PLANNING_ENABLED = False
 
             doc = _build_execute_docstring()
 
@@ -321,42 +232,23 @@ class TestExecuteDocstring:
         # Feature-flagged examples absent
         assert "**Skills (procedural knowledge):**" not in doc
         assert "**Files (binary content):**" not in doc
-        assert "**Plans (goal tracking):**" not in doc
-        assert "**Tasks (work items within plans):**" not in doc
 
     def test_skill_examples_when_enabled(self):
         """Skill examples included when SKILLS_ENABLED=True."""
         with patch("app.routes.mcp.meta_tools.settings") as mock_settings:
             mock_settings.SKILLS_ENABLED = True
             mock_settings.FILES_ENABLED = False
-            mock_settings.PLANNING_ENABLED = False
 
             doc = _build_execute_docstring()
 
         assert "**Skills (procedural knowledge):**" in doc
         assert 'execute_forgetful_tool("create_skill"' in doc
 
-    def test_planning_examples_when_enabled(self):
-        """Plan and Task examples included when PLANNING_ENABLED=True."""
-        with patch("app.routes.mcp.meta_tools.settings") as mock_settings:
-            mock_settings.SKILLS_ENABLED = False
-            mock_settings.FILES_ENABLED = False
-            mock_settings.PLANNING_ENABLED = True
-
-            doc = _build_execute_docstring()
-
-        assert "**Plans (goal tracking):**" in doc
-        assert 'execute_forgetful_tool("create_plan"' in doc
-        assert "**Tasks (work items within plans):**" in doc
-        assert 'execute_forgetful_tool("create_task"' in doc
-        assert 'execute_forgetful_tool("transition_task"' in doc
-
     def test_tool_categories_line_reflects_flags(self):
         """The Tool Categories line includes enabled feature categories."""
         with patch("app.routes.mcp.meta_tools.settings") as mock_settings:
             mock_settings.SKILLS_ENABLED = True
             mock_settings.FILES_ENABLED = True
-            mock_settings.PLANNING_ENABLED = True
 
             doc = _build_execute_docstring()
 
@@ -364,15 +256,12 @@ class TestExecuteDocstring:
         assert "## Tool Categories" in doc
         assert "skill" in doc
         assert "file" in doc
-        assert "plan" in doc
-        assert "task" in doc
 
     def test_linking_section_always_present(self):
         """The linking best practices section is always appended."""
         with patch("app.routes.mcp.meta_tools.settings") as mock_settings:
             mock_settings.SKILLS_ENABLED = False
             mock_settings.FILES_ENABLED = False
-            mock_settings.PLANNING_ENABLED = False
 
             doc = _build_execute_docstring()
 
@@ -384,7 +273,6 @@ class TestExecuteDocstring:
             mock_settings.MCP_DESCRIPTOR_MODE = "compact"
             mock_settings.SKILLS_ENABLED = True
             mock_settings.FILES_ENABLED = True
-            mock_settings.PLANNING_ENABLED = True
 
             doc = _build_execute_docstring()
 

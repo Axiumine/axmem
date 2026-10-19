@@ -33,6 +33,3 @@ files rather than maintaining their own copies.
 | `forgetful-encode-repo` | user | Bootstrap or refresh a repository in the knowledge base |
 | `forgetful-cli-setup` | user | Connect a terminal/headless agent; operate a local server |
 | `forgetful-mcp-setup` | user | Wire an MCP client and verify the connection |
-
-Plans and tasks are feature-flagged and roadmap-in-motion; they get skills when the flags
-graduate.

@@ -78,18 +78,6 @@ def _assert_skill_rejected(response, location, error_type):
     return message
 
 
-async def _plan(http_client, **extra):
-    project = await http_client.post("/api/v1/projects", json={
-        "name": "boundary-project", "description": "d", "project_type": "development",
-    })
-    assert project.status_code == 201, project.text
-    response = await http_client.post("/api/v1/plans", json={
-        "title": "plan", "project_id": project.json()["id"], "status": "active", **extra,
-    })
-    assert response.status_code == 201, response.text
-    return response.json()["id"]
-
-
 class TestRelationshipMetadata:
     @pytest.mark.parametrize("token", ["NaN", "Infinity", "-Infinity", "1e999"])
     async def test_create_with_non_finite_number_is_refused_and_listing_stays_healthy(
@@ -220,77 +208,6 @@ class TestSkill:
             f"/api/v1/skills/{accepted.json()['id']}", json={"tags": ["y" * (limit + 1)]},
         )
         _assert_skill_rejected(updated, "tags", "tag_too_long")
-
-
-class TestPlanning:
-    async def test_task_text_with_nul_is_refused(self, http_client):
-        plan_id = await _plan(http_client)
-
-        created = await http_client.post("/api/v1/tasks", json={
-            "title": "t", "plan_id": plan_id, "description": f"a{NUL}b",
-        })
-        _assert_rejected(created, "description")
-
-        task = await http_client.post("/api/v1/tasks", json={"title": "t", "plan_id": plan_id})
-        assert task.status_code == 201
-        updated = await http_client.put(
-            f"/api/v1/tasks/{task.json()['id']}", json={"title": f"a{NUL}"},
-        )
-        _assert_rejected(updated, "title")
-
-    async def test_inline_criterion_with_nul_is_refused(self, http_client):
-        plan_id = await _plan(http_client)
-
-        response = await http_client.post("/api/v1/tasks", json={
-            "title": "t", "plan_id": plan_id, "criteria": [{"description": f"a{NUL}"}],
-        })
-
-        _assert_rejected(response, "criteria", 0, "description")
-
-    async def test_criterion_with_nul_is_refused(self, http_client):
-        plan_id = await _plan(http_client)
-        task = await http_client.post("/api/v1/tasks", json={"title": "t", "plan_id": plan_id})
-        task_id = task.json()["id"]
-
-        created = await http_client.post(
-            f"/api/v1/tasks/{task_id}/criteria", json={"description": f"a{NUL}b"},
-        )
-        _assert_rejected(created, "description")
-
-        ok = await http_client.post(f"/api/v1/tasks/{task_id}/criteria", json={"description": "ab"})
-        assert ok.status_code == 201
-        updated = await http_client.put(
-            f"/api/v1/criteria/{ok.json()['id']}", json={"description": f"a{NUL}"},
-        )
-        _assert_rejected(updated, "description")
-
-    async def test_plan_text_with_nul_is_refused(self, http_client):
-        project = await http_client.post("/api/v1/projects", json={
-            "name": "p", "description": "d", "project_type": "development",
-        })
-        project_id = project.json()["id"]
-
-        created = await http_client.post("/api/v1/plans", json={
-            "title": "p", "project_id": project_id, "goal": f"a{NUL}b",
-        })
-        _assert_rejected(created, "goal")
-
-        plan = await http_client.post("/api/v1/plans", json={"title": "p", "project_id": project_id})
-        updated = await http_client.put(
-            f"/api/v1/plans/{plan.json()['id']}", json={"context": f"a{NUL}b"},
-        )
-        _assert_rejected(updated, "context")
-
-    async def test_unusual_but_storable_text_is_kept(self, http_client):
-        plan_id = await _plan(http_client)
-        text = "line\nbreak\ttab é \U0001f600"
-
-        response = await http_client.post("/api/v1/tasks", json={
-            "title": "t", "plan_id": plan_id, "description": text,
-        })
-
-        assert response.status_code == 201
-        assert response.json()["description"] == text
 
 
 class TestDocumentSizeBytes:

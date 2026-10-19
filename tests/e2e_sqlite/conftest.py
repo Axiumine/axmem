@@ -34,13 +34,11 @@ from app.repositories.sqlite.document_repository import SqliteDocumentRepository
 from app.repositories.sqlite.entity_repository import SqliteEntityRepository
 from app.repositories.sqlite.file_repository import SqliteFileRepository
 from app.repositories.sqlite.memory_repository import SqliteMemoryRepository
-from app.repositories.sqlite.plan_repository import SqlitePlanRepository
 from app.repositories.sqlite.project_repository import SqliteProjectRepository
 from app.repositories.sqlite.skill_repository import SqliteSkillRepository
 
 # SQLite repository imports
 from app.repositories.sqlite.sqlite_adapter import SqliteDatabaseAdapter
-from app.repositories.sqlite.task_repository import SqliteTaskRepository
 from app.repositories.sqlite.user_repository import SqliteUserRepository
 from app.routes.api import (
     activity,
@@ -51,10 +49,8 @@ from app.routes.api import (
     files,
     health,
     memories,
-    plans,
     projects,
     skills,
-    tasks,
 )
 from app.routes.mcp import meta_tools
 from app.routes.mcp.scope_resolver import parse_scopes, resolve_permitted_tools
@@ -66,11 +62,9 @@ from app.services.document_service import DocumentService
 from app.services.entity_service import EntityService
 from app.services.file_service import FileService
 from app.services.memory_service import MemoryService
-from app.services.plan_service import PlanService
 from app.services.project_service import ProjectService
 from app.services.re_embedding_service import ReEmbeddingService
 from app.services.skill_service import SkillService
-from app.services.task_service import TaskService
 from app.services.user_service import UserService
 
 # ============================================================================
@@ -96,11 +90,6 @@ class FeatureFlagDef:
 
 
 FEATURE_FLAGS: dict[str, FeatureFlagDef] = {
-    "planning": FeatureFlagDef(
-        categories=["plan", "task"],
-        sample_tools=["create_plan", "create_task", "claim_task", "transition_task"],
-        route_prefixes=["/api/v1/plans", "/api/v1/tasks"],
-    ),
     "files": FeatureFlagDef(
         categories=["file"],
         sample_tools=["create_file", "get_file", "list_files"],
@@ -196,8 +185,6 @@ async def build_sqlite_app(embedding_adapter, reranker_adapter, enabled_features
         activity_repository = SqliteActivityRepository(db_adapter=db_adapter)
 
         # Feature-flagged repositories
-        plan_repository = SqlitePlanRepository(db_adapter=db_adapter) if "planning" in enabled_features else None
-        task_repository = SqliteTaskRepository(db_adapter=db_adapter) if "planning" in enabled_features else None
         file_repository = SqliteFileRepository(db_adapter=db_adapter) if "files" in enabled_features else None
         skill_repository = SqliteSkillRepository(
             db_adapter=db_adapter,
@@ -221,12 +208,7 @@ async def build_sqlite_app(embedding_adapter, reranker_adapter, enabled_features
             entity_service = EntityService(entity_repository, event_bus=None)
 
             # Feature-flagged services
-            plan_service = None
-            task_service = None
             file_service = None
-            if "planning" in enabled_features:
-                plan_service = PlanService(plan_repository, event_bus=None)
-                task_service = TaskService(task_repository, plan_service=plan_service, event_bus=None)
             if "files" in enabled_features:
                 file_service = FileService(file_repository, event_bus=None)
             skill_service = None
@@ -244,10 +226,6 @@ async def build_sqlite_app(embedding_adapter, reranker_adapter, enabled_features
             mcp.event_bus = event_bus
 
             # Store feature-flagged services
-            if plan_service:
-                mcp.plan_service = plan_service
-            if task_service:
-                mcp.task_service = task_service
             if file_service:
                 mcp.file_service = file_service
             if skill_service:
@@ -267,8 +245,6 @@ async def build_sqlite_app(embedding_adapter, reranker_adapter, enabled_features
                 code_artifact_service=code_artifact_service,
                 document_service=document_service,
                 entity_service=entity_service,
-                plan_service=plan_service,
-                task_service=task_service,
                 file_service=file_service,
                 skill_service=skill_service,
             )
@@ -296,9 +272,6 @@ async def build_sqlite_app(embedding_adapter, reranker_adapter, enabled_features
         # Feature-flagged routes
         if "files" in enabled_features:
             files.register(mcp)
-        if "planning" in enabled_features:
-            plans.register(mcp)
-            tasks.register(mcp)
         if "skills" in enabled_features:
             skills.register(mcp)
 

@@ -1,7 +1,7 @@
 """Input model validators shared by the REST routes and the MCP tools.
 
 Covers strict base64 payloads for files, verbatim code in code artifacts, blank
-text in plans/tasks/criteria/skills and the skill allowed-tools length cap. Also
+text in skills and the skill allowed-tools length cap. Also
 checks the response models stay readable for rows stored before these rules.
 """
 import base64
@@ -14,15 +14,6 @@ from pydantic import ValidationError
 from app.config.settings import settings
 from app.models.code_artifact_models import CodeArtifactCreate, CodeArtifactUpdate
 from app.models.file_models import File, FileCreate, FileUpdate
-from app.models.plan_models import (
-    CriterionCreate,
-    CriterionUpdate,
-    Plan,
-    PlanCreate,
-    PlanUpdate,
-    TaskCreate,
-    TaskUpdate,
-)
 from app.models.skill_models import Skill, SkillCreate, SkillUpdate
 
 BLANKS = ["", "   ", " \t\n "]
@@ -137,69 +128,6 @@ class TestCodeArtifactVerbatimCode:
 
     def test_update_without_code_is_still_allowed(self):
         assert CodeArtifactUpdate(title="t").code is None
-
-
-# ============================================================================
-# Plans, tasks and criteria: blank titles / descriptions
-# ============================================================================
-
-
-def _plan_create(title):
-    return PlanCreate(title=title, project_id=1)
-
-
-def _task_create(title):
-    return TaskCreate(title=title, plan_id=1)
-
-
-BLANK_REJECTING_BUILDERS = {
-    "plan-create-title": _plan_create,
-    "plan-update-title": lambda value: PlanUpdate(title=value),
-    "task-create-title": _task_create,
-    "task-update-title": lambda value: TaskUpdate(title=value),
-    "criterion-create-description": lambda value: CriterionCreate(description=value),
-    "criterion-update-description": lambda value: CriterionUpdate(description=value),
-}
-
-
-class TestBlankPlanningText:
-    @pytest.mark.parametrize("blank", BLANKS)
-    @pytest.mark.parametrize("builder", BLANK_REJECTING_BUILDERS.values(), ids=BLANK_REJECTING_BUILDERS)
-    def test_blank_values_are_rejected(self, builder, blank):
-        with pytest.raises(ValidationError) as exc_info:
-            builder(blank)
-
-        # The REST routes dump ValidationError.errors() straight into a JSON response
-        json.dumps(exc_info.value.errors())
-        assert "cannot be empty or whitespace only" in str(exc_info.value)
-
-    @pytest.mark.parametrize("builder", BLANK_REJECTING_BUILDERS.values(), ids=BLANK_REJECTING_BUILDERS)
-    def test_padded_values_are_trimmed(self, builder):
-        model = builder("  real text  ")
-
-        assert "real text" in model.model_dump().values()
-
-    def test_blank_criterion_inside_task_create_is_rejected(self):
-        with pytest.raises(ValidationError):
-            TaskCreate(title="t", plan_id=1, criteria=[{"description": "   "}])
-
-    def test_omitted_update_fields_still_mean_unchanged(self):
-        assert PlanUpdate().title is None
-        assert PlanUpdate(title=None).title is None
-        assert TaskUpdate().title is None
-        assert CriterionUpdate(met=True).description is None
-
-    def test_optional_text_fields_may_still_be_blank(self):
-        """Only required text is checked; optional goal/context/description stay optional."""
-        assert PlanCreate(title="t", project_id=1, goal="  ").goal == ""
-        assert TaskCreate(title="t", plan_id=1, description="").description == ""
-
-    def test_plan_response_model_still_reads_blank_titles_stored_earlier(self):
-        now = datetime.now(tz=UTC)
-
-        plan = Plan(id=1, title="", project_id=1, created_at=now, updated_at=now)
-
-        assert plan.title == ""
 
 
 # ============================================================================

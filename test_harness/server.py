@@ -141,7 +141,6 @@ class ThrowawayForgetful:
             "SQLITE_PATH": str(self.run_dir / "forgetful.db"),
             "SKILLS_ENABLED": "true",
             "FILES_ENABLED": "true",
-            "PLANNING_ENABLED": "true",
             "EMBEDDING_PROVIDER": "FastEmbed",
             "EMBEDDING_MODEL": "BAAI/bge-small-en-v1.5",
             "EMBEDDING_DIMENSIONS": "384",

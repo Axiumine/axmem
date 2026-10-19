@@ -22,10 +22,6 @@ class EntityType(StrEnum):
     ENTITY_MEMORY_LINK = "entity_memory_link"  # Entity-to-memory links
     ENTITY_RELATIONSHIP = "entity_relationship"  # Entity-to-entity relationships
     ENTITY_PROJECT_LINK = "entity_project_link"  # Entity-to-project links
-    PLAN = "plan"
-    TASK = "task"
-    CRITERION = "criterion"
-    TASK_DEPENDENCY = "task_dependency"
     FILE = "file"
     SKILL = "skill"
 

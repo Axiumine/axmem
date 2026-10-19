@@ -18,10 +18,8 @@ from app.routes.mcp.adapters.document import (
 from app.routes.mcp.adapters.entity import EntityToolAdapters, create_entity_adapters
 from app.routes.mcp.adapters.file import FileToolAdapters, create_file_adapters
 from app.routes.mcp.adapters.memory import MemoryToolAdapters, create_memory_adapters
-from app.routes.mcp.adapters.plan import PlanToolAdapters, create_plan_adapters
 from app.routes.mcp.adapters.project import ProjectToolAdapters, create_project_adapters
 from app.routes.mcp.adapters.skill import SkillToolAdapters, create_skill_adapters
-from app.routes.mcp.adapters.task import TaskToolAdapters, create_task_adapters
 from app.routes.mcp.adapters.user import UserToolAdapters, create_user_adapters
 
 # The argument helpers keep their historical private names for existing importers.
@@ -39,10 +37,8 @@ __all__ = [
     "EntityToolAdapters",
     "FileToolAdapters",
     "MemoryToolAdapters",
-    "PlanToolAdapters",
     "ProjectToolAdapters",
     "SkillToolAdapters",
-    "TaskToolAdapters",
     "UserToolAdapters",
     "_coerce_bool",
     "_coerce_int",
@@ -56,9 +52,7 @@ __all__ = [
     "create_entity_adapters",
     "create_file_adapters",
     "create_memory_adapters",
-    "create_plan_adapters",
     "create_project_adapters",
     "create_skill_adapters",
-    "create_task_adapters",
     "create_user_adapters",
 ]

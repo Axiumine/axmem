@@ -27,7 +27,6 @@ _PATCHED_FIELDS = [
     "FORGETFUL_SERVER",
     "SKILLS_ENABLED",
     "FILES_ENABLED",
-    "PLANNING_ENABLED",
     "ACTIVITY_ENABLED",
 ]
 
@@ -45,7 +44,6 @@ def cli_remote_env(tmp_path, monkeypatch):
     settings.FORGETFUL_SERVER = ""
     settings.SKILLS_ENABLED = False
     settings.FILES_ENABLED = False
-    settings.PLANNING_ENABLED = False
     settings.ACTIVITY_ENABLED = False
     # Keep the OAuth token cache away from the real ~/.config/forgetful
     monkeypatch.setattr(paths, "config_dir", lambda: tmp_path / "config")

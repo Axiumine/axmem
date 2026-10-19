@@ -139,33 +139,6 @@ class TestSkill:
         assert response.json()["tags"] == [tag, "other"]
 
 
-class TestPlanning:
-    async def test_nul_character_is_refused(self, http_client):
-        project = await http_client.post("/api/v1/projects", json={
-            "name": "boundary-project", "description": "d", "project_type": "development",
-        })
-        project_id = project.json()["id"]
-
-        plan = await http_client.post("/api/v1/plans", json={
-            "title": "plan", "project_id": project_id, "goal": f"a{NUL}b",
-        })
-        assert plan.status_code == 400, plan.text
-
-        plan = await http_client.post("/api/v1/plans", json={
-            "title": "plan", "project_id": project_id, "status": "active",
-        })
-        plan_id = plan.json()["id"]
-        task = await http_client.post("/api/v1/tasks", json={
-            "title": "t", "plan_id": plan_id, "description": f"a{NUL}b",
-        })
-        assert task.status_code == 400, task.text
-        task = await http_client.post("/api/v1/tasks", json={"title": "t", "plan_id": plan_id})
-        criterion = await http_client.post(
-            f"/api/v1/tasks/{task.json()['id']}/criteria", json={"description": f"a{NUL}"},
-        )
-        assert criterion.status_code == 400, criterion.text
-
-
 class TestDocumentSizeBytes:
     DOC = {"title": "t", "description": "d", "content": "c"}
 

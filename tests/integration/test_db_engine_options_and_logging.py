@@ -28,8 +28,6 @@ from app.config.logging_config import SensitiveDataFilter
 from app.config.settings import settings
 from app.exceptions import (
     ConflictError,
-    CyclicDependencyError,
-    DependencyNotMetError,
     InvalidStateTransitionError,
     NotFoundError,
 )
@@ -43,8 +41,6 @@ DOMAIN_ERRORS = [
     NotFoundError,
     ConflictError,
     InvalidStateTransitionError,
-    DependencyNotMetError,
-    CyclicDependencyError,
 ]
 
 

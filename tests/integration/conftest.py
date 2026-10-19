@@ -11,10 +11,8 @@ from app.services.document_service import DocumentService
 from app.services.entity_service import EntityService
 from app.services.file_service import FileService
 from app.services.memory_service import MemoryService
-from app.services.plan_service import PlanService
 from app.services.project_service import ProjectService
 from app.services.skill_service import SkillService
-from app.services.task_service import TaskService
 from app.services.user_service import UserService
 from tests.integration.stubs import (
     CollectingEventBus,
@@ -23,10 +21,8 @@ from tests.integration.stubs import (
     InMemoryEntityRepository,
     InMemoryFileRepository,
     InMemoryMemoryRepository,
-    InMemoryPlanRepository,
     InMemoryProjectRepository,
     InMemorySkillRepository,
-    InMemoryTaskRepository,
     InMemoryUserRepository,
     MockEmbeddingsAdapter,
 )
@@ -197,40 +193,6 @@ def test_entity_service_with_event_bus(mock_entity_repository):
     return service, event_bus
 
 
-# ============ Plan Testing Fixtures ============
-
-
-@pytest.fixture
-def mock_plan_repository():
-    """Provides an in-memory plan repository"""
-    return InMemoryPlanRepository()
-
-
-@pytest.fixture
-def test_plan_service(mock_plan_repository):
-    """Provides a PlanService with in-memory repository"""
-    repo = mock_plan_repository
-    service = PlanService(repo, event_bus=None)
-    return service
-
-
-# ============ Task Testing Fixtures ============
-
-
-@pytest.fixture
-def mock_task_repository():
-    """Provides an in-memory task repository"""
-    return InMemoryTaskRepository()
-
-
-@pytest.fixture
-def test_task_service(test_plan_service, mock_task_repository):
-    """Provides a TaskService with in-memory repository and linked PlanService."""
-    repo = mock_task_repository
-    service = TaskService(repo, plan_service=test_plan_service, event_bus=None)
-    return service, test_plan_service
-
-
 # ============ Skill Testing Fixtures ============
 
 
@@ -256,7 +218,6 @@ _SQLITE_RUNTIME_FIELDS = [
     "FORGETFUL_SCOPES",
     "SKILLS_ENABLED",
     "FILES_ENABLED",
-    "PLANNING_ENABLED",
     "ACTIVITY_ENABLED",
 ]
 
@@ -278,7 +239,6 @@ def sqlite_runtime_settings():
     settings.FORGETFUL_SCOPES = "*"
     settings.SKILLS_ENABLED = False
     settings.FILES_ENABLED = False
-    settings.PLANNING_ENABLED = False
     settings.ACTIVITY_ENABLED = False
     yield settings
     for name, value in original.items():

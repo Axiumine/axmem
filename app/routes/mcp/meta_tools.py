@@ -8,7 +8,7 @@ The three meta-tools:
 3. execute_forgetful_tool: Dynamically invoke any tool with arguments
 
 Docstrings for discover and execute are built dynamically at registration time based on
-which feature flags (SKILLS_ENABLED, FILES_ENABLED, PLANNING_ENABLED) are active, so LLMs
+which feature flags (SKILLS_ENABLED, FILES_ENABLED) are active, so LLMs
 only see tools they can actually use.
 """
 
@@ -121,29 +121,6 @@ _DISCOVER_FILE_SECTION = """
     - update_file: Modify file metadata or content
     - delete_file: Remove file"""
 
-_DISCOVER_PLAN_SECTION = """
-
-    **Plan Tools** - Organize tasks and track goals within projects
-    - create_plan: Create plan with title, project_id, goal, context
-    - update_plan: Modify plan metadata (PATCH semantics)
-    - get_plan: Retrieve plan details by ID
-    - list_plans: List plans with project/status/exact external_ref filters"""
-
-_DISCOVER_TASK_SECTION = """
-
-    **Task Tools** - Task management with state machine and dependencies
-    - create_task: Create task within a plan with criteria and dependencies
-    - update_task: Modify task metadata (PATCH semantics)
-    - get_task: Retrieve task with criteria and dependencies
-    - query_tasks: Query tasks with state/priority/agent filters
-    - claim_task: Assign task to agent (optimistic concurrency)
-    - transition_task: Change task state (todo/doing/waiting/done/cancelled)
-    - add_criterion: Add acceptance criterion to task
-    - verify_criterion: Mark criterion as met/unmet
-    - delete_criterion: Remove acceptance criterion
-    - add_dependency: Add dependency between tasks
-    - remove_dependency: Remove task dependency"""
-
 
 # ============================================================================
 # Dynamic Docstring Sections — execute_forgetful_tool
@@ -198,24 +175,6 @@ _EXECUTE_FILE_SECTION = """
     - List: execute_forgetful_tool("list_files", {})
     - Get: execute_forgetful_tool("get_file", {"file_id": 1})"""
 
-_EXECUTE_PLAN_SECTION = """
-
-    **Plans (goal tracking):**
-    - Create: execute_forgetful_tool("create_plan", {"title": "Auth implementation", "project_id": 1, "goal": "Add JWT auth"})
-    - List: execute_forgetful_tool("list_plans", {"project_id": 1})
-    - Update: execute_forgetful_tool("update_plan", {"plan_id": 1, "status": "active"})
-    - Get: execute_forgetful_tool("get_plan", {"plan_id": 1})"""
-
-_EXECUTE_TASK_SECTION = """
-
-    **Tasks (work items within plans):**
-    - Create: execute_forgetful_tool("create_task", {"title": "Add login endpoint", "plan_id": 1, "priority": "P1"})
-    - Query: execute_forgetful_tool("query_tasks", {"plan_id": 1, "state": "todo"})
-    - Transition: execute_forgetful_tool("transition_task", {"task_id": 1, "state": "done", "version": 2})
-    - Claim: execute_forgetful_tool("claim_task", {"task_id": 1, "agent_id": "agent-123", "version": 1})
-    - Add criterion: execute_forgetful_tool("add_criterion", {"task_id": 1, "description": "Returns JWT token"})
-    - Add dependency: execute_forgetful_tool("add_dependency", {"task_id": 2, "depends_on_task_id": 1})"""
-
 
 # ============================================================================
 # Docstring Builders
@@ -229,8 +188,6 @@ def _build_category_list() -> str:
         categories.append("skill")
     if settings.FILES_ENABLED:
         categories.append("file")
-    if settings.PLANNING_ENABLED:
-        categories.extend(["plan", "task"])
     return ", ".join(categories)
 
 
@@ -241,8 +198,6 @@ def _build_tool_categories_line() -> str:
         categories.append("skill")
     if settings.FILES_ENABLED:
         categories.append("file")
-    if settings.PLANNING_ENABLED:
-        categories.extend(["plan", "task"])
     return " | ".join(categories)
 
 
@@ -324,9 +279,6 @@ Discover available tools, optionally filtered by category
         parts.append(_DISCOVER_SKILL_SECTION)
     if settings.FILES_ENABLED:
         parts.append(_DISCOVER_FILE_SECTION)
-    if settings.PLANNING_ENABLED:
-        parts.append(_DISCOVER_PLAN_SECTION)
-        parts.append(_DISCOVER_TASK_SECTION)
 
     parts.append("""
 
@@ -355,9 +307,6 @@ Execute any registered tool dynamically. Forgetful is a semantic memory system f
         parts.append(_EXECUTE_SKILL_SECTION)
     if settings.FILES_ENABLED:
         parts.append(_EXECUTE_FILE_SECTION)
-    if settings.PLANNING_ENABLED:
-        parts.append(_EXECUTE_PLAN_SECTION)
-        parts.append(_EXECUTE_TASK_SECTION)
 
     parts.append(f"""
 

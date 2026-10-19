@@ -13,7 +13,6 @@ from app.models.code_artifact_models import CodeArtifactCreate
 from app.models.document_models import DocumentCreate
 from app.models.entity_models import EntityCreate, EntityRelationshipCreate, EntityType
 from app.models.memory_models import MemoryCreate
-from app.models.plan_models import PlanCreate, TaskCreate
 from app.models.project_models import ProjectCreate, ProjectType, ProjectUpdate
 from app.models.skill_models import SkillCreate
 from app.utils.provenance import (
@@ -155,8 +154,6 @@ class TestApplyProvenanceDefaults:
             EntityRelationshipCreate(
                 source_entity_id=1, target_entity_id=2, relationship_type="works_at",
             ),
-            PlanCreate(title="test plan", project_id=1),
-            TaskCreate(title="test task", plan_id=1),
         ]
 
         with patch("app.utils.provenance.settings") as mock_settings:
