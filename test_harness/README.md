@@ -55,7 +55,7 @@ or invalid usage/configuration (a one-line `usage error: ...` on stderr, nothing
 ## The image
 
 `forgetful-test-harness:latest`, built from `test_harness/docker/Dockerfile`: opencode,
-uv-managed Python 3.12, agent-shell, and Forgetful's **locked dependency tree** baked as
+uv-managed Python 3.14, agent-shell, and Forgetful's **locked dependency tree** baked as
 cached layers. The working tree itself is built as a wheel on the host and installed
 `--no-deps` at container start, so every run walks the current checkout without an
 image rebuild. `ensure_image()` hashes `uv export --frozen` into an image label and

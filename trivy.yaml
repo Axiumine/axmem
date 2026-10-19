@@ -11,7 +11,6 @@ scan:
     - misconfig
   skip-dirs:
     - .venv
-    - .venv314
     - .git
     - .gitnexus
     - .idea

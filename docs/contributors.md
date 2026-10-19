@@ -44,11 +44,10 @@ uv run python -m scripts.quality install     # sets core.hooksPath to .githooks
 `pre-commit` checks staged files (lint, import boundaries, security, dead code, complexity, types,
 snapshots, fast tests, GitNexus impact); `pre-push` runs the full pipeline: the same static gates over
 the whole project, the architecture, integration and SQLite e2e suites with coverage, PostgreSQL e2e
-(needs Docker), **100 % combined coverage**, the SQLite suites on Python 3.14, memory budgets (memray),
-trivy, Qodana and, only when asked for, mutation testing. CI runs the same gates on Python 3.12 and 3.14.
+(needs Docker), **100 % combined coverage**, memory budgets (memray),
+trivy, Qodana and, only when asked for, mutation testing. CI runs the same gates on Python 3.14.
 The Qodana token (`QODANA_TOKEN`) lives in your git-ignored dotenv file (see `.env.example` for the key
-name), never in a tracked file. Python 3.12 is the development default (`.python-version`); 3.14 is
-checked locally by the `compat` gate and in CI.
+name), never in a tracked file. Python 3.14 is the only supported version (`.python-version`).
 
 Everyday commands:
 
@@ -196,7 +195,7 @@ uv tool run ruff check .
 
 **Purpose**: Fast feedback for contributors
 
-**Matrix**: Python 3.12 and 3.14 on Ubuntu and Windows.
+**Matrix**: Python 3.14 on Ubuntu and Windows.
 
 **Steps**:
 1. Check architecture boundaries and rule proofs (no database or provider calls).
@@ -218,7 +217,7 @@ The workflow alone does not make it mandatory for merging.
 
 **Purpose**: Validate with real PostgreSQL database
 
-**Matrix**: Python 3.12 and 3.14.
+**Matrix**: Python 3.14.
 
 **Steps**:
 1. Install PostgreSQL backup client tools.
@@ -237,7 +236,7 @@ The workflow alone does not make a check mandatory for merging.
 **Purpose**: Run the same gates as the local Git hooks (`scripts/quality`) so a bypassed hook is caught
 
 **Jobs**: `static` (lint, import boundaries, security, dead code, complexity, types, pylint and the
-snapshot tests, on Python 3.12 and 3.14), `coverage` (SQLite and PostgreSQL suites combined, 100 % required),
+snapshot tests, on Python 3.14), `coverage` (SQLite and PostgreSQL suites combined, 100 % required),
 `memory` (memray budgets), `trivy`, `qodana` (uses the `QODANA_TOKEN` repository secret; skipped for pull
 requests from forks) and `mutation` (weekly and manual only). See [quality-gates.md](quality-gates.md).
 

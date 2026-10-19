@@ -88,7 +88,7 @@ success.
 ## Checker dependency audit
 
 Import Linter 2.15 and Grimp 3.17 are development-only additions, pinned by `uv.lock`.
-Both support Python 3.10+, including this project's Python 3.12+ requirement, and use BSD-2-Clause.
+Both support Python 3.10+, including this project's Python 3.14 requirement, and use BSD-2-Clause.
 Sources: [Import Linter release metadata](https://pypi.org/pypi/import-linter/2.15/json),
 [Grimp release metadata](https://pypi.org/pypi/grimp/3.17/json).
 

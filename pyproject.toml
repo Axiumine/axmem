@@ -3,12 +3,10 @@ name = "forgetful-ai"
 dynamic = ["version"]
 description = "MCP Server for AI Agent Memory - persistent, semantically-searchable memory for AI agents"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.14"
 license = {text = "MIT"}
 authors = [{name = "Scott", email = "scott@example.com"}]
 classifiers = [
-    "Programming Language :: Python :: 3.12",
-    "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
@@ -203,7 +201,7 @@ exclude_also = [
 source = ["app", "*/app"]
 
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.14"
 files = ["app", "main.py", "scripts"]
 check_untyped_defs = true
 warn_unused_ignores = true
@@ -226,7 +224,7 @@ ignore_missing_imports = true
 
 [tool.pylint.main]
 jobs = 0
-py-version = "3.12"
+py-version = "3.14"
 fail-under = 8.0
 load-plugins = ["pylint.extensions.mccabe"]
 ignore-paths = ["^app/_version\\.py$", "^alembic/"]  # migrations: generated style, and the directory shadows the alembic package
@@ -256,7 +254,7 @@ disable = [
 ]
 
 [tool.bandit]
-exclude_dirs = ["tests", "test_harness/runs", ".venv", ".venv314", ".gitnexus", "node_modules"]
+exclude_dirs = ["tests", "test_harness/runs", ".venv", ".gitnexus", "node_modules"]
 
 [tool.vulture]
 paths = ["app", "main.py", "alembic", "test_harness", "scripts", "vulture_whitelist.py"]

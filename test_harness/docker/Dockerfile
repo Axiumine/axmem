@@ -17,7 +17,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         curl \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# uv manages Python 3.12 since Debian bookworm only ships 3.11 (forgetful needs 3.12+).
+# uv manages Python 3.14 since Debian bookworm only ships 3.11 (forgetful needs 3.14+).
 # Download-then-run (not curl|sh) so a failed download fails the build.
 RUN curl -LsSf https://astral.sh/uv/install.sh -o /tmp/uv-install.sh && \
     env UV_INSTALL_DIR=/usr/local/bin sh /tmp/uv-install.sh && \
@@ -31,8 +31,8 @@ RUN curl -LsSf https://astral.sh/uv/install.sh -o /tmp/uv-install.sh && \
 # trailing `chmod -R` layer would copy every file up and add ~0.9 GB to the image.
 ENV UV_PYTHON_INSTALL_DIR=/opt/uv-python
 COPY requirements.lock /tmp/requirements.lock
-RUN uv python install 3.12 && \
-    uv venv /opt/venv --python 3.12 && \
+RUN uv python install 3.14 && \
+    uv venv /opt/venv --python 3.14 && \
     uv pip install --python /opt/venv/bin/python -r /tmp/requirements.lock && \
     uv pip install --python /opt/venv/bin/python "agent-shell-py>=0.1.16" && \
     chown -R node:node /opt/venv && \

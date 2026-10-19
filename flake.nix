@@ -49,7 +49,7 @@
         { config, pkgs, ... }:
         let
           inherit (pkgs) lib;
-          python = pkgs.python312;
+          python = pkgs.python314;
 
           # 1. Load workspace (pyproject.toml + uv.lock at eval time)
           workspace = inputs.uv2nix.lib.workspace.loadWorkspace {
@@ -133,8 +133,8 @@
               forgetfulEnv
               pkgs.uv
               pkgs.ruff
-              pkgs.python312Packages.pytest
-              pkgs.python312Packages.pytest-asyncio
+              pkgs.python314Packages.pytest
+              pkgs.python314Packages.pytest-asyncio
             ]
             ++ config.pre-commit.settings.enabledPackages;
             shellHook = ''

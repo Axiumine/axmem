@@ -28,7 +28,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python: ["3.12", "3.14"]
+        python: ["3.14"]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -76,7 +76,7 @@ jobs:
           enable-cache: true
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.14"
       - run: uv sync --locked --all-extras --dev
       - name: Install PostgreSQL backup tools
         run: |
@@ -104,7 +104,7 @@ jobs:
           enable-cache: true
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.14"
       - run: uv sync --locked --all-extras --dev
       - run: uv run --frozen python -m scripts.quality gate memray
 
@@ -117,7 +117,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.14"
       - run: python -m scripts.quality gate trivy
 
   qodana:
@@ -147,7 +147,7 @@ jobs:
           enable-cache: true
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.14"
       - run: uv sync --locked --all-extras --dev
       # Informational ratchet: mutmut needs a scope (a full run is ~33k mutants). Lower the tolerance
       # as surviving mutants get killed, then drop continue-on-error.

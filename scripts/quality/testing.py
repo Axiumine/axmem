@@ -1,9 +1,8 @@
-"""Test-driven gates: fast tests, snapshots, coverage, Postgres e2e, py3.14, memory, mutation."""
+"""Test-driven gates: fast tests, snapshots, coverage, Postgres e2e, memory, mutation."""
 
 from __future__ import annotations
 
 import os
-import shutil
 
 from .core import (
     SUITES_SQLITE,
@@ -16,7 +15,6 @@ from .core import (
     venv_tool,
 )
 
-COMPAT_PYTHON = "3.14"
 CODE_PREFIXES = ("app/", "tests/", "main.py", "alembic/", "scripts/", "test_harness/")
 PYTEST = ["-q", "-p", "no:cacheprovider"]
 
@@ -61,16 +59,6 @@ def gate_e2e_postgres(_ctx: Ctx) -> tuple[bool, str]:
 
 def gate_coverage(_ctx: Ctx) -> tuple[bool, str]:
     return check([*venv_tool("coverage"), "report", "--fail-under=100"])
-
-
-def gate_compat(_ctx: Ctx) -> tuple[bool, str]:
-    if not shutil.which("uv"):
-        raise Skip("uv unavailable")
-    return check_tests(
-        ["uv", "run", "--frozen", "--python", COMPAT_PYTHON, "--all-extras",
-         "pytest", *SUITES_SQLITE, *PYTEST],
-        env={"UV_PROJECT_ENVIRONMENT": ".venv314"},
-    )
 
 
 def gate_memray(_ctx: Ctx) -> tuple[bool, str]:

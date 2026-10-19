@@ -85,8 +85,7 @@ def test_server_comes_from_the_running_interpreter_not_a_path_shadow(
     tmp_path, monkeypatch, launched,
 ):
     # Arrange: the harness runs in one environment while another environment's
-    # forgetful (a uv tool install, another venv, the other Python of the 3.12/3.14
-    # matrix) comes first on PATH
+    # forgetful (a uv tool install, another venv) comes first on PATH
     own_bin = _fake_env(tmp_path, "own", with_script=True)
     foreign_bin = _fake_env(tmp_path, "foreign", with_script=True)
     monkeypatch.setattr(sys, "executable", str(own_bin / "python"))

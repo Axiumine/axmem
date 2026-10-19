@@ -16,10 +16,9 @@ uv run python -m scripts.quality stage pre-commit   # what the pre-commit hook r
 uv run python -m scripts.quality uninstall   # unset core.hooksPath
 ```
 
-Python 3.12 to 3.14 is the supported range (`requires-python = ">=3.12"`, classifiers 3.12, 3.13 and 3.14,
-`.python-version` 3.12). The gates test the two ends of it, **3.12 and 3.14**: locally the `compat` gate runs
-the SQLite suites on 3.14, and CI runs the matrices described below; 3.13 is only exercised by the wheel smoke
-test. The mypy and pylint targets are 3.12.
+Python 3.14 is the only supported version (`requires-python = ">=3.14"`, classifier 3.14,
+`.python-version` 3.14). The gates and the CI workflows described below all run on 3.14, and the
+mypy, pylint and ruff targets are 3.14.
 
 ## Hooks
 
@@ -43,7 +42,7 @@ relevant staged) reports `SKIP` with the reason and does not fail the stage.
 | Stage | Pipeline |
 |---|---|
 | `pre-commit` (staged files) | ruff, imports, bandit, semgrep, vulture, radon-cc, radon-mi → mypy, pylint → snapshots, tests-fast → gitnexus |
-| `pre-push` (whole project) | static group → mypy, pylint → tests → e2e-postgres → coverage → compat, memray → trivy → qodana → mutation (opt-in) → gitnexus |
+| `pre-push` (whole project) | static group → mypy, pylint → tests → e2e-postgres → coverage → memray → trivy → qodana → mutation (opt-in) → gitnexus |
 | `ci` | static group → mypy, pylint → tests → e2e-postgres → coverage → memray → trivy |
 
 `pre-commit` scopes ruff, bandit, semgrep, radon and pylint to the staged files. mypy, vulture,
@@ -56,13 +55,13 @@ across jobs:
 
 | Workflow | What runs | Python |
 |---|---|---|
-| `quality.yml` job `static` | ruff, imports, bandit, semgrep (with `p/python p/security-audit` added), vulture, radon-cc, radon-mi, mypy, pylint, snapshots | 3.12 and 3.14 |
-| `quality.yml` job `coverage` | `tests`, `e2e-postgres` (uses the runner's Docker), `coverage` | 3.12 |
-| `quality.yml` jobs `memory`, `trivy` | `memray`, `trivy` | 3.12 |
+| `quality.yml` job `static` | ruff, imports, bandit, semgrep (with `p/python p/security-audit` added), vulture, radon-cc, radon-mi, mypy, pylint, snapshots | 3.14 |
+| `quality.yml` job `coverage` | `tests`, `e2e-postgres` (uses the runner's Docker), `coverage` | 3.14 |
+| `quality.yml` jobs `memory`, `trivy` | `memray`, `trivy` | 3.14 |
 | `quality.yml` job `qodana` | Qodana action with the `QODANA_TOKEN` repository secret; not run for pull requests from forks | n/a |
-| `quality.yml` job `mutation` | `mutation` with `MUTATION=1`, weekly (Mondays 03:17 UTC) and on manual dispatch | 3.12 |
-| `ci.yml` | architecture, integration and SQLite e2e suites plus `ruff` on Ubuntu and Windows; wheel build smoke test; offline Docker image test | 3.12 and 3.14 (Ubuntu and Windows), 3.13 for the wheel smoke test |
-| `e2e.yml` | `tests/e2e` against PostgreSQL | 3.12 and 3.14 |
+| `quality.yml` job `mutation` | `mutation` with `MUTATION=1`, weekly (Mondays 03:17 UTC) and on manual dispatch | 3.14 |
+| `ci.yml` | architecture, integration and SQLite e2e suites plus `ruff` on Ubuntu and Windows; wheel build smoke test; offline Docker image test | 3.14 (Ubuntu and Windows) |
+| `e2e.yml` | `tests/e2e` against PostgreSQL | 3.14 |
 
 ## Gates
 
@@ -82,7 +81,6 @@ across jobs:
 | `tests` | architecture + integration + SQLite e2e with branch coverage (erases previous coverage data first) | `[tool.coverage.*]` |
 | `e2e-postgres` | `tests/e2e` (`-m e2e`) against a real PostgreSQL container, appending to the coverage data (needs Docker) | `tests/e2e/conftest.py` |
 | `coverage` | combined **100 %** line and branch coverage of `app` and `main.py`, from the SQLite and PostgreSQL runs together | `[tool.coverage.report]` |
-| `compat` | the SQLite suites on Python 3.14 (`uv run --python 3.14` into `.venv314`; skipped without `uv`) | |
 | `memray` | memory budgets (`@pytest.mark.limit_memory`) via pytest-memray, run as `pytest tests/e2e_sqlite -m memory --memray` (Linux/macOS only) | `tests/e2e_sqlite/test_memory_budget_sqlite.py` |
 | `trivy` | HIGH/CRITICAL vulnerabilities (fixed ones), secrets and misconfigurations (`fs` scan) | `trivy.yaml`, `.trivyignore` |
 | `qodana` | Qodana Ultimate Plus (`jetbrains/qodana-python`), token from `QODANA_TOKEN`; analyses a `git archive` export of `HEAD` (uncommitted changes are not seen) with `--image`; skipped when the `qodana` CLI is missing, failed when the token is missing | `qodana.yaml` |
@@ -195,5 +193,6 @@ missing (for example no Docker for `e2e-postgres`) reports `SKIP` with the reaso
   `# type: ignore[<code>]` with a reason for mypy (`warn_unused_ignores` flags stale ones). The code base
   uses no inline pylint disables; a noisy check is disabled once, with a comment, in
   `[tool.pylint."messages control"]`.
-* Raise the Python matrix (`quality.yml`, `ci.yml`, `e2e.yml`, `pyproject.toml` classifiers, the
-  `compat` gate's `COMPAT_PYTHON`) together.
+* Raise the Python version (`quality.yml`, `ci.yml`, `e2e.yml`, `build.yml`, `pyproject.toml`
+  `requires-python`, classifiers and the mypy, pylint and ruff targets, `.python-version`, the Dockerfiles)
+  together.

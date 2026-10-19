@@ -1,5 +1,5 @@
 line-length = 88
-target-version = "py312"
+target-version = "py314"
 
 [lint]
 # Incremental approach: start with rules we pass, add more as we fix.
@@ -20,7 +20,7 @@ select = [
     "FA",      # flake8-future-annotations — future annotations
     "LOG",     # flake8-logging — logging module misuse
     "T10",     # flake8-debugger — debugger breakpoints
-    "UP",      # pyupgrade — Python 3.12+ syntax (built-in generics, etc.)
+    "UP",      # pyupgrade — Python 3.14+ syntax (built-in generics, etc.)
 
     # --- Next targets (low error count, fix and enable) ---
     # "A",     # flake8-builtins — 4 errors (shadowing builtins)
