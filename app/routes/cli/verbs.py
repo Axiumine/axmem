@@ -7,6 +7,7 @@ execution returns plain dicts.
 """
 from typing import Any
 
+from app.protocols.executor import ToolExecutor
 from app.routes.cli.render import (
     render_memory_detail,
     render_memory_lines,
@@ -57,7 +58,7 @@ def _resolve_by_name(value: str, projects: list[dict]) -> int | None:
     return None
 
 
-async def resolve_project(executor, value: str) -> int:
+async def resolve_project(executor: ToolExecutor, value: str) -> int:
     """Resolve a -p/--project value to a project id.
 
     A value of ASCII digits is an id when a project has that id; if none does it is
@@ -83,7 +84,7 @@ async def resolve_project(executor, value: str) -> int:
     raise CliError(f"Unknown project '{sanitize_line(value)}'. Available projects: {names}")
 
 
-async def run(executor, args) -> tuple[Any, str]:
+async def run(executor: ToolExecutor, args) -> tuple[Any, str]:
     """Execute a curated verb; returns (json payload, human rendering)."""
     if args.command == "project":
         return await _project_list(executor)
@@ -97,7 +98,7 @@ async def run(executor, args) -> tuple[Any, str]:
     return await handler(executor, args)
 
 
-async def _memory_search(executor, args) -> tuple[Any, str]:
+async def _memory_search(executor: ToolExecutor, args) -> tuple[Any, str]:
     arguments: dict[str, Any] = {
         "query": args.query,
         "query_context": args.context,
@@ -111,7 +112,7 @@ async def _memory_search(executor, args) -> tuple[Any, str]:
     return payload, render_memory_lines(payload.get("primary_memories", []))
 
 
-async def _memory_save(executor, args) -> tuple[Any, str]:
+async def _memory_save(executor: ToolExecutor, args) -> tuple[Any, str]:
     arguments: dict[str, Any] = {
         "title": args.title,
         "content": args.content,
@@ -127,12 +128,12 @@ async def _memory_save(executor, args) -> tuple[Any, str]:
     return payload, f"Created memory {payload['id']}: {sanitize_line(payload['title'])}"
 
 
-async def _memory_get(executor, args) -> tuple[Any, str]:
+async def _memory_get(executor: ToolExecutor, args) -> tuple[Any, str]:
     payload = to_jsonable(await executor.execute("get_memory", {"memory_id": args.memory_id}))
     return payload, render_memory_detail(payload)
 
 
-async def _memory_recent(executor, args) -> tuple[Any, str]:
+async def _memory_recent(executor: ToolExecutor, args) -> tuple[Any, str]:
     arguments: dict[str, Any] = {"limit": args.limit}
     if args.project is not None:
         arguments["project_ids"] = [await resolve_project(executor, args.project)]
@@ -141,6 +142,6 @@ async def _memory_recent(executor, args) -> tuple[Any, str]:
     return payload, render_memory_lines(payload.get("memories", []))
 
 
-async def _project_list(executor) -> tuple[Any, str]:
+async def _project_list(executor: ToolExecutor) -> tuple[Any, str]:
     payload = to_jsonable(await executor.execute("list_projects", {}))
     return payload, render_project_lines(payload.get("projects", []))

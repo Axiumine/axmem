@@ -262,6 +262,29 @@ exclude_dirs = ["tests", "test_harness/runs", ".venv", ".venv314", ".gitnexus", 
 paths = ["app", "main.py", "alembic", "test_harness", "scripts", "vulture_whitelist.py"]
 min_confidence = 60
 exclude = ["app/_version.py", "test_harness/runs/", "alembic/versions/"]
+# Decorators that register the decorated function with a framework: pydantic validators,
+# FastMCP routes/tools and SQLAlchemy event listeners are called by the framework only.
+ignore_decorators = [
+    "@field_validator",
+    "@model_validator",
+    "@mcp.custom_route",
+    "@mcp.tool",
+    "@event.listens_for",
+    "@_register",  # app.config.auth: registers the provider factory under its class path
+]
+# Names a framework or the migration loader reads by reflection.
+ignore_names = [
+    "model_config",  # pydantic / pydantic-settings class configuration
+    "upgrade_postgres",  # called by alembic/versions/0c7b964dd1e7 (excluded above)
+    "downgrade_postgres",
+    "upgrade_sqlite",
+    "downgrade_sqlite",
+    "_missing_",  # enum.Enum hook, called by Enum lookup of unknown values
+    "prepare",  # logging.handlers.QueueHandler hook, called by QueueHandler.emit
+    "cache_ok",  # SQLAlchemy TypeDecorator class attribute, read by the statement cache
+    "process_bind_param",  # SQLAlchemy TypeDecorator hooks, called when binding/reading
+    "process_result_value",
+]
 
 [tool.mutmut]
 source_paths = ["app/"]

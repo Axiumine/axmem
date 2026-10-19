@@ -534,15 +534,3 @@ class PostgresTaskRepository:
             )
             result = await session.execute(stmt)
             return [row[0] for row in result.all()]
-
-    async def get_dependents(self, user_id: UUID, task_id: int) -> list[int]:
-        async with self.db_adapter.session(user_id) as session:
-            stmt = (
-                select(TaskDependenciesTable.task_id)
-                .where(
-                    TaskDependenciesTable.user_id == user_id,
-                    TaskDependenciesTable.depends_on_task_id == task_id,
-                )
-            )
-            result = await session.execute(stmt)
-            return [row[0] for row in result.all()]

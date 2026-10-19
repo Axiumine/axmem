@@ -99,18 +99,6 @@ class TestPostgresActivityUserScope:
         assert events == []
         assert total == 0
 
-    async def test_count_events_counts_only_callers_events(self, activity_repo, two_users):
-        user_a, user_b = two_users
-        await activity_repo.save_event(user_a, _event(1, "ALICE-SECRET"))
-        await activity_repo.save_event(user_b, _event(2, "BOB-SECRET"))
-        await activity_repo.save_event(user_b, _event(3, "BOB-SECRET-2"))
-
-        assert await activity_repo.count_events(user_a) == 1
-        assert await activity_repo.count_events(
-            user_a, entity_type=EntityType.MEMORY, action=ActionType.CREATED,
-        ) == 1
-        assert await activity_repo.count_events(user_b) == 2
-
     async def test_cleanup_expired_only_deletes_callers_events(self, activity_repo, two_users):
         user_a, user_b = two_users
         old = datetime.now(UTC) - timedelta(days=60)
@@ -155,9 +143,7 @@ class TestPostgresActivityUserScope:
 
         assert response.total == 2
         assert {e.user_id for e in response.events} == {str(user_a)}
-        assert await service.count_activity(user_a) == 2
         # Bob's expired event must survive Alice's request (and only be his to count).
         bob_events, bob_total = await activity_repo.query_events(user_b, entity_id=3)
         assert bob_total == 1
         assert [e.snapshot["title"] for e in bob_events] == ["BOB-OLD"]
-        assert await service.count_activity(user_b) == 1

@@ -164,24 +164,6 @@ async def test_token_cache_stats():
 
 
 @pytest.mark.asyncio
-async def test_token_cache_invalidate():
-    """Test manual cache invalidation"""
-    cache = TokenCache(ttl_seconds=300, max_size=100)
-
-    user = User(external_id="invalidate-user", name="Invalidate", email="inv@example.com")
-    await cache.set("inv-token", user)
-
-    # Should be cached
-    assert await cache.get("inv-token") is not None
-
-    # Invalidate
-    await cache.invalidate("inv-token")
-
-    # Should be gone
-    assert await cache.get("inv-token") is None
-
-
-@pytest.mark.asyncio
 async def test_token_cache_clear():
     """Test clearing all cache entries"""
     cache = TokenCache(ttl_seconds=300, max_size=100)

@@ -82,21 +82,3 @@ class ActivityRepository(Protocol):
             Number of events deleted
         """
         ...
-
-    async def count_events(
-        self,
-        user_id: UUID,
-        entity_type: EntityType | None = None,
-        action: ActionType | None = None,
-    ) -> int:
-        """Count activity events matching filters.
-
-        Args:
-            user_id: User ID for ownership filtering
-            entity_type: Filter by entity type (optional)
-            action: Filter by action (optional)
-
-        Returns:
-            Total count of matching events
-        """
-        ...

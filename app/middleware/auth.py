@@ -103,12 +103,6 @@ class TokenCache:
             self._cache[key] = CacheEntry(user=user, expires_at=expires_at)
             self._cache.move_to_end(key)
 
-    async def invalidate(self, token: str) -> None:
-        """Remove token from cache (for logout/revocation)."""
-        key = self._hash_token(token)
-        async with self._lock:
-            self._cache.pop(key, None)
-
     async def clear(self) -> None:
         """Clear all cached entries."""
         async with self._lock:
