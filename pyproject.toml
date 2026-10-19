@@ -184,7 +184,7 @@ parallel = true
 # SQLAlchemy's async layer runs sync code in greenlets; aiosqlite uses threads.
 concurrency = ["greenlet", "thread"]
 patch = ["subprocess"]
-omit = ["app/_version.py"]
+omit = ["*/_version.py"]
 
 [tool.coverage.report]
 fail_under = 100

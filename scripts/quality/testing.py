@@ -37,7 +37,7 @@ def gate_tests(_ctx: Ctx) -> tuple[bool, str]:
     """Architecture + integration + SQLite end-to-end, collecting branch coverage."""
     run([*venv_tool("coverage"), "erase"])
     return check(
-        [*venv_tool("pytest"), *SUITES_SQLITE, *PYTEST, "--cov", "--cov-branch", "--cov-report="],
+        [*venv_tool("pytest"), *SUITES_SQLITE, *PYTEST, "--cov", "--cov-branch", "--cov-report=", "--cov-fail-under=0"],
     )
 
 
@@ -46,7 +46,7 @@ def gate_e2e_postgres(_ctx: Ctx) -> tuple[bool, str]:
         raise Skip("docker daemon unavailable (PostgreSQL e2e needs it)")
     return check(
         [*venv_tool("pytest"), "tests/e2e", "-m", "e2e", *PYTEST,
-         "--cov", "--cov-branch", "--cov-append", "--cov-report="],
+         "--cov", "--cov-branch", "--cov-append", "--cov-report=", "--cov-fail-under=0"],
     )
 
 
