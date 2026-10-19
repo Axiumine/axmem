@@ -6,7 +6,12 @@ including detailed parameter metadata for discovery and documentation.
 from typing import Any
 
 from app.config.logging_config import logging
-from app.models.tool_registry_models import ToolCategory, ToolParameter
+from app.models.tool_registry_models import (
+    ToolCategory,
+    ToolDef,
+    ToolParameter,
+    ToolParameterDef,
+)
 from app.routes.mcp.tool_adapters import (
     create_file_adapters,
     create_memory_adapters,
@@ -27,13 +32,13 @@ def register_simplified_tool(
     name: str,
     category: ToolCategory,
     description: str,
-    parameters: list[dict],
+    parameters: list[ToolParameterDef],
     returns: str,
     implementation: Any,
-    examples: list[str] = None,
-    tags: list[str] = None,
+    examples: list[str] | None = None,
+    tags: list[str] | None = None,
     mutates: bool = False,
-):
+) -> None:
     """Helper to register tools with simplified parameter definitions
 
     Args:
@@ -82,7 +87,7 @@ def register_user_tools_metadata(
     adapters: dict[str, Any],
 ):
     """Register user tool metadata and implementations"""
-    tools = [
+    tools: list[ToolDef] = [
         {
             "name": "get_current_user",
             "description": "Returns information about the current authenticated user",
@@ -153,7 +158,7 @@ def register_memory_tools_metadata(
     adapters: dict[str, Any],
 ):
     """Register memory tool metadata and implementations"""
-    tools = [
+    tools: list[ToolDef] = [
         {
             "name": "create_memory",
             "mutates": True,
@@ -997,7 +1002,7 @@ def register_project_tools_metadata(
     adapters: dict[str, Any],
 ):
     """Register project tool metadata and implementations"""
-    tools = [
+    tools: list[ToolDef] = [
         {
             "name": "create_project",
             "mutates": True,
@@ -1168,7 +1173,7 @@ def register_code_artifact_tools_metadata(
     adapters: dict[str, Any],
 ):
     """Register code artifact tool metadata and implementations"""
-    tools = [
+    tools: list[ToolDef] = [
         {
             "name": "create_code_artifact",
             "mutates": True,
@@ -1297,7 +1302,7 @@ def register_document_tools_metadata(
     adapters: dict[str, Any],
 ):
     """Register document tool metadata and implementations"""
-    tools = [
+    tools: list[ToolDef] = [
         {
             "name": "create_document",
             "mutates": True,
@@ -1428,7 +1433,7 @@ def register_entity_tools_metadata(
     adapters: dict[str, Any],
 ):
     """Register entity tool metadata and implementations"""
-    tools = [
+    tools: list[ToolDef] = [
         {
             "name": "create_entity",
             "mutates": True,
@@ -1758,7 +1763,7 @@ def register_plan_tools_metadata(
     adapters: dict[str, Any],
 ):
     """Register plan tool metadata and implementations"""
-    tools = [
+    tools: list[ToolDef] = [
         {
             "name": "create_plan",
             "mutates": True,
@@ -1910,7 +1915,7 @@ def register_task_tools_metadata(
     adapters: dict[str, Any],
 ):
     """Register task tool metadata and implementations"""
-    tools = [
+    tools: list[ToolDef] = [
         {
             "name": "create_task",
             "mutates": True,
@@ -2130,7 +2135,7 @@ def register_file_tools_metadata(
     adapters: dict[str, Any],
 ):
     """Register file tool metadata and implementations"""
-    tools = [
+    tools: list[ToolDef] = [
         {
             "name": "create_file",
             "mutates": True,
@@ -2259,7 +2264,7 @@ def register_skill_tools_metadata(
     adapters: dict[str, Any],
 ):
     """Register skill tool metadata and implementations"""
-    tools = [
+    tools: list[ToolDef] = [
         {
             "name": "create_skill",
             "mutates": True,

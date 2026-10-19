@@ -3,9 +3,9 @@
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any
+from typing import Any, NotRequired, TypedDict
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, JsonValue
 
 
 class ToolCategory(StrEnum):
@@ -22,14 +22,35 @@ class ToolCategory(StrEnum):
     FILE = "file"
     SKILL = "skill"
 
+class ToolParameterDef(TypedDict):
+    """Simplified parameter definition used by the metadata registry tables"""
+    name: str
+    type: str
+    description: NotRequired[str]
+    required: NotRequired[bool]
+    default: NotRequired[JsonValue]
+    example: NotRequired[JsonValue]
+
+
+class ToolDef(TypedDict):
+    """Simplified tool definition used by the metadata registry tables"""
+    name: str
+    description: str
+    parameters: list[ToolParameterDef]
+    returns: str
+    examples: NotRequired[list[str]]
+    tags: NotRequired[list[str]]
+    mutates: NotRequired[bool]
+
+
 class ToolParameter(BaseModel):
     """Parameters metadata for a tool"""
     name: str = Field(..., description="Name of the tool parameter to be passed in executing the tool")
     type: str = Field(..., description="The data type of the parameter")
     description: str = Field(..., description="Describes what the parameter does and how it impacts the behaviour of the method")
     required: bool = Field(default=False, description="Whether this parameter is required")
-    default: Any | None = Field(default=None, description="Default value if parameter is not provided")
-    example: Any | None = Field(default=None, description="Example value for this parameter")
+    default: JsonValue = Field(default=None, description="Default value if parameter is not provided")
+    example: JsonValue = Field(default=None, description="Example value for this parameter")
 
 class ToolMetadata(BaseModel):
     """Complete metadata for a tool"""
@@ -88,8 +109,8 @@ class ToolMetadata(BaseModel):
 
     def _generate_json_schema(self) -> dict[str, Any]:
         """Generate JSON schema for tool parameters"""
-        properties = {}
-        required = []
+        properties: dict[str, dict[str, JsonValue]] = {}
+        required: list[str] = []
 
         for param in self.parameters:
             # Skip ctx parameter in schema (internal use)
@@ -107,7 +128,7 @@ class ToolMetadata(BaseModel):
             if param.required:
                 required.append(param.name)
 
-        schema = {
+        schema: dict[str, Any] = {
             "type": "object",
             "properties": properties,
         }
