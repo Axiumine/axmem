@@ -32,6 +32,11 @@ exclude:
       - docs/assets
       - app/_version.py
 
+  # A vulture whitelist is a list of bare names on purpose.
+  - name: PyStatementEffectInspection
+    paths:
+      - vulture_whitelist.py
+
 failureConditions:
   severityThresholds:
     critical: 0
