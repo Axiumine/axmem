@@ -21,7 +21,7 @@ import hashlib
 import math
 import os
 import shutil
-import subprocess
+import subprocess  # nosec B404 - runs uv/docker with fixed argv lists, never a shell
 import sys
 import tempfile
 import threading
@@ -46,7 +46,7 @@ IMAGE = "forgetful-test-harness:latest"
 CONTAINER_HOME = "/home/node"
 SKILLS_MOUNT = "/skills"
 HARNESS_MOUNT = "/harness"
-DECOY_DB = "/tmp/local-decoy.db"  # noqa: S108 - container-side path, dies with the container
+DECOY_DB = "/tmp/local-decoy.db"  # nosec B108 - container-side path, dies with the container  # noqa: S108
 HOST_ALIAS = "host.docker.internal"
 
 # GET <argv[1]> from inside the container; stdlib only, so the probe needs nothing
@@ -107,8 +107,7 @@ def staged_mount(
     as the invoking user (`_host_user`), so it needs no wider access and no other local
     account can read the credentials. Caller cleans up everything appended to `staged`.
     """
-    staging = Path(tempfile.mkdtemp(prefix="uat-mount-"))
-    os.chmod(staging, 0o700)
+    staging = Path(tempfile.mkdtemp(prefix="uat-mount-"))  # mkdtemp itself creates it 0o700
     for source in files:
         shutil.copy2(source, staging / source.name)
         os.chmod(staging / source.name, 0o600)
@@ -154,7 +153,7 @@ def _run_tool(cmd: list[str], **kwargs) -> subprocess.CompletedProcess:
     a traceback with exit code 1, which the CLI reserves for "partial UAT".
     """
     try:
-        return subprocess.run(cmd, **kwargs)
+        return subprocess.run(cmd, **kwargs)  # nosec B603 - callers pass constant uv/docker argv lists, no shell
     except subprocess.CalledProcessError as exc:
         detail = (exc.stderr or "").strip()
         raise HarnessInfraError(

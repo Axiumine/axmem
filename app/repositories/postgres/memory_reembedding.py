@@ -14,6 +14,7 @@ from app.repositories.postgres.memory_base import (
     memory_load_options,
 )
 from app.repositories.postgres.postgres_tables import MemoryTable, ProjectsTable
+from app.repositories.vector_ddl import resize_pgvector_column_sql
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +53,8 @@ class MemoryReembeddingMixin(MemoryRepositoryBase):
         must be cleared before resizing the column.
         """
         dims = settings.EMBEDDING_DIMENSIONS
+        # Built (and validated) first, so a bad width fails before anything is cleared
+        resize_column = resize_pgvector_column_sql("memories", dims)
         async with self.db_adapter.system_session() as session:
             # Drop NOT NULL so we can clear embeddings
             await session.execute(text(
@@ -62,9 +65,7 @@ class MemoryReembeddingMixin(MemoryRepositoryBase):
                 "UPDATE memories SET embedding = NULL",
             ))
             # Resize the column
-            await session.execute(text(
-                f"ALTER TABLE memories ALTER COLUMN embedding TYPE vector({dims})",
-            ))
+            await session.execute(text(resize_column))
             logger.info("Altered embedding column", extra={
                 "dimensions": dims,
             })

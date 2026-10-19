@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 import shutil
-import subprocess
+import subprocess  # nosec B404 - runs the quality tools with fixed argv lists, never a shell
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -71,7 +71,7 @@ def run(
 ) -> tuple[int, str]:
     merged = {**os.environ, **(env or {})}
     try:
-        proc = subprocess.run(
+        proc = subprocess.run(  # nosec B603 - argv list built by the gate definitions, no shell, bounded by timeout
             argv,
             cwd=cwd or ROOT,
             env=merged,

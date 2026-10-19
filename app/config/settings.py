@@ -104,7 +104,7 @@ class Settings(BaseSettings):
     SERVICE_DESCRIPTION: str = "Forgetful Memory Service"
 
     # Server Configuration
-    SERVER_HOST: str = "0.0.0.0"
+    SERVER_HOST: str = "0.0.0.0"  # nosec B104 - documented container default; set SERVER_HOST to narrow it
     SERVER_PORT: int = 8020
     LOG_LEVEL: str = "INFO"
     LOG_FORMAT: str = "console"

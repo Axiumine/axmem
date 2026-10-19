@@ -83,4 +83,9 @@ missing (for example no Docker for `e2e-postgres`) reports `SKIP` with the reaso
   (framework hook, pydantic field, route registration).
 * New semgrep rules live in `.semgrep/forgetful.yml`; add a case to the rule's test when it is
   precise enough to need one.
+* Fix a bandit or semgrep finding when the code can be made safe (SQL fragments that cannot be
+  bound parameters go through `app/repositories/vector_ddl.py`). Suppress only code that is safe
+  by construction, inline and with the reason on the same line: `# nosec B603 - argv list from
+  constants, no shell` or `# nosemgrep: <rule-id> - reason`. Keep the matching `ruff.toml`
+  per-file `S` ignore in step, and never add file-level skips to `[tool.bandit]`.
 * Raise the Python matrix (`quality.yml`, `ci.yml`, `e2e.yml`, `pyproject.toml` classifiers) together.
