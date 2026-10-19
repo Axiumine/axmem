@@ -64,7 +64,7 @@ Forgetful provides three Docker Compose configurations:
 - **Example**: `SERVICE_NAME=MyMemoryService`
 
 ### `SERVICE_VERSION`
-- **Default**: `v0.0.1`
+- **Default**: The installed package version
 - **Description**: Version identifier for the service
 - **Example**: `SERVICE_VERSION=v1.2.3`
 
@@ -147,7 +147,7 @@ Forgetful provides three Docker Compose configurations:
 ### SQLite Settings
 
 #### `SQLITE_PATH`
-- **Default**: `forgetful.db`
+- **Default**: `forgetful.db` in the platform-specific user data directory (e.g., `~/.local/share/forgetful/forgetful.db`)
 - **Description**: File path for SQLite database
 - **Notes**:
   - Relative paths are relative to the project root (or `/app` in Docker containers)
@@ -981,7 +981,7 @@ ACTIVITY_TRACK_READS=false
 - **Example**: `EMBEDDING_REQUEST_TIMEOUT_SECONDS=120`
 
 ### `DENSE_SEARCH_CANDIDATES`
-- **Default**: `50`
+- **Default**: `20`
 - **Description**: Number of candidates to retrieve from dense (embedding) search before re-ranking
 - **Performance**: Higher values = better recall, slower queries
 - **Note**: A search for `k` results always fetches at least `k` candidates, so values below `k` never reduce the number of results. Reranking only reorders candidates when there are more of them than `k`
