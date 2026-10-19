@@ -1,7 +1,7 @@
 <h1 align="center">Forgetful</h1>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/python-3.12%2B-blue" alt="Python">
+  <img src="https://img.shields.io/badge/python-3.12%20%7C%203.13%20%7C%203.14-blue" alt="Python 3.12 to 3.14">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
   <img src="https://img.shields.io/badge/MCP-server-purple" alt="MCP">
   <a href="https://github.com/jlowin/fastmcp">
@@ -30,7 +30,7 @@
 - [Features](#features)
 - [Quick Start](#quick-start)
 - [CLI](#cli)
-- [Some Examples](#usage-example)
+- [Some Examples](#usage-examples)
 - [How It Works](#how-it-works)
 - [Configuration](#configuration)
 - [Documentation](#documentation)
@@ -452,6 +452,14 @@ See [Contributors Guide](docs/contributors.md) for:
 - Development setup (local vs Docker)
 - CI/CD pipeline details
 - Release process
+
+### Development
+
+Python 3.12 to 3.14 are supported; the gates run on 3.12 and 3.14. After `uv sync --locked --all-extras --dev`, enable the
+Git hooks with `uv run python -m scripts.quality install`. Commits and pushes then run the lint, type,
+security, snapshot, coverage (100 %), memory-budget and optional mutation gates described in
+[docs/quality-gates.md](docs/quality-gates.md), which also explains how to run or bypass a single gate.
+Before changing code, read the [architecture overview](architecture.md).
 
 ---
 

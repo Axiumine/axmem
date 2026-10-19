@@ -5,8 +5,10 @@ This guide covers testing and deployment workflows for contributors.
 ## Architecture
 
 Before changing code, read the [architecture overview](../architecture.md).
-The [detailed class map](assets/mycelium_class_diagram.md) is supporting material;
-use the overview's advisories to read relevant sections rather than the whole file.
+The [detailed class map](assets/mycelium_class_diagram.md) is supporting material and a historical
+snapshot of an older revision (last exported 2026-10-08, before the graph, repository and tool-adapter
+restructuring); use the overview's advisories to read relevant sections rather than the whole file,
+and trust the overview and the source where they differ.
 
 Run `uv run pytest tests/architecture/` before submitting code changes; CI runs the same check.
 It checks imports, verifies that every `app` module is scanned, and proves each rule rejects
@@ -36,12 +38,38 @@ Install the toolchain and hooks once:
 
 ```bash
 uv sync --locked --all-extras --dev
-uv run python -m scripts.quality install
+uv run python -m scripts.quality install     # sets core.hooksPath to .githooks
 ```
 
-`pre-commit` checks staged files (lint, security, complexity, types, snapshots, fast tests);
-`pre-push` runs the full pipeline including 100% coverage, PostgreSQL e2e, Python 3.14, trivy and
-Qodana (`QODANA_TOKEN` in your git-ignored dotenv file). See [quality-gates.md](quality-gates.md).
+`pre-commit` checks staged files (lint, import boundaries, security, dead code, complexity, types,
+snapshots, fast tests, GitNexus impact); `pre-push` runs the full pipeline: the same static gates over
+the whole project, the architecture, integration and SQLite e2e suites with coverage, PostgreSQL e2e
+(needs Docker), **100 % combined coverage**, the SQLite suites on Python 3.14, memory budgets (memray),
+trivy, Qodana and, only when asked for, mutation testing. CI runs the same gates on Python 3.12 and 3.14.
+The Qodana token (`QODANA_TOKEN`) lives in your git-ignored dotenv file (see `.env.example` for the key
+name), never in a tracked file. Python 3.12 is the development default (`.python-version`); 3.14 is
+checked locally by the `compat` gate and in CI.
+
+Everyday commands:
+
+```bash
+uv run python -m scripts.quality stage pre-commit            # what the commit hook runs
+uv run python -m scripts.quality gate mypy                   # one gate, whole project
+SKIP=qodana,trivy git push                                   # skip named gates once; say so in the PR
+ONLY=mypy uv run python -m scripts.quality stage pre-commit  # only these gates
+QUALITY_FULL=1 git commit                                    # pre-commit over the whole project
+MUTATION=1 git push                                          # add mutation testing (changed app/ modules)
+```
+
+When a change alters a public surface (CLI flags, settings defaults, routes, MCP tools, tables, migrations)
+the syrupy snapshots fail on purpose: review the diff, then refresh them with
+`uv run pytest -m snapshot --snapshot-update` and commit the snapshot files with the change. A new
+vulture false positive goes into `vulture_whitelist.py` with a comment naming its consumer. Suppress a
+bandit or semgrep finding inline with the reason on the same line (`# nosec B603 - argv list, no shell`,
+`# nosemgrep: <rule-id> - reason`) and only for code that is safe by construction. The memory budgets
+live in `tests/e2e_sqlite/test_memory_budget_sqlite.py` and are enforced under `--memray` (Linux/macOS).
+All of this, including the gate list, scoping rules and the cost of the mutation gate, is in
+[quality-gates.md](quality-gates.md).
 
 ## Running with Docker with source 
 This will approach will fall back to using the build and as such allow you to check any changes you have made inside of a container. 
@@ -78,7 +106,7 @@ We focus on **integration and E2E tests** over unit tests. Tests should cover cr
 
 **Run locally**:
 ```bash
-pytest tests/integration/
+uv run pytest tests/integration/
 ```
 
 These tests use in-memory stubs and run fast (~seconds). They form the bulk of our test suite and catch 90% of issues.
@@ -95,12 +123,12 @@ These tests use in-memory stubs and run fast (~seconds). They form the bulk of o
 
 **Run locally**:
 ```bash
-pytest tests/e2e_sqlite/
+uv run pytest tests/e2e_sqlite/
 ```
 
 **CI Status**: ✅ Runs automatically in CI workflow on every push/PR
 
-These tests use an in-memory SQLite database for test isolation. Fast execution (~30 seconds for 94 tests) with automatic cleanup. They provide full-stack coverage without Docker dependencies, making them ideal for CI.
+These tests use an in-memory SQLite database for test isolation, with automatic cleanup. The suite is large (several thousand tests across the integration and SQLite e2e directories), so run a single file or `-k` selection while iterating and the whole directory before pushing. They provide full-stack coverage without Docker dependencies, making them ideal for CI.
 
 #### PostgreSQL E2E Tests
 
@@ -112,17 +140,16 @@ These tests use an in-memory SQLite database for test isolation. Fast execution 
 
 **Run locally**:
 ```bash
-# Start PostgreSQL
-docker compose -f docker/docker-compose.yml up -d forgetful-db
-
-# Run E2E tests
-pytest -m e2e
+# The fixtures start (or reuse) the forgetful-db container from docker/docker-compose.yml
+uv run pytest -m e2e
 ```
 
 **CI Status**: Runs on every branch push, pull request, and manual workflow dispatch.
 
 These tests are marked with `@pytest.mark.e2e` and validate the full application stack with
-PostgreSQL. Use a disposable database: the E2E fixtures clear its application tables.
+PostgreSQL; the default `pytest` options exclude them (`-m "not e2e"`). Use a disposable database: the
+E2E fixtures clear its application tables. They also provide the PostgreSQL half of the 100 % coverage
+gate, so the `coverage` gate cannot pass on a machine without Docker.
 
 #### User creation tests
 
@@ -156,7 +183,7 @@ run and a PR run; newer runs cancel older runs for the same workflow and ref.
 
 ---
 ## Linting
-linting with ruff and uv
+linting with ruff and uv (the `ruff` gate runs the same check)
 ```bash
 uv tool run ruff check .
 ```
@@ -169,11 +196,16 @@ uv tool run ruff check .
 
 **Purpose**: Fast feedback for contributors
 
+**Matrix**: Python 3.12 and 3.14 on Ubuntu and Windows.
+
 **Steps**:
 1. Check architecture boundaries and rule proofs (no database or provider calls).
 2. Run integration tests (stubbed, no Docker).
 3. Run SQLite E2E tests (real SQLite, full stack).
 4. Run linting.
+
+Two further jobs follow: a wheel smoke test (build the wheel, check the Alembic files are included and
+`forgetful --help` works) and an offline Docker image test (`tests/docker/`).
 
 **Merge requirements**: Configure branch rules to require this workflow's `test` check.
 The workflow alone does not make it mandatory for merging.
@@ -186,6 +218,8 @@ The workflow alone does not make it mandatory for merging.
 
 **Purpose**: Validate with real PostgreSQL database
 
+**Matrix**: Python 3.12 and 3.14.
+
 **Steps**:
 1. Install PostgreSQL backup client tools.
 2. Run PostgreSQL E2E tests (`tests/e2e/` with `-m e2e` marker), including backup recovery.
@@ -195,6 +229,17 @@ The workflow alone does not make a check mandatory for merging.
 
 **Test Coverage**: Validates the full application stack with PostgreSQL, including real
 `pg_dump`/`psql` backup and restore.
+
+### `quality.yml` - Quality Gates
+
+**Triggers**: Every push and pull request, a weekly schedule (mutation testing) and manual dispatch
+
+**Purpose**: Run the same gates as the local Git hooks (`scripts/quality`) so a bypassed hook is caught
+
+**Jobs**: `static` (lint, import boundaries, security, dead code, complexity, types, pylint and the
+snapshot tests, on Python 3.12 and 3.14), `coverage` (SQLite and PostgreSQL suites combined, 100 % required),
+`memory` (memray budgets), `trivy`, `qodana` (uses the `QODANA_TOKEN` repository secret; skipped for pull
+requests from forks) and `mutation` (weekly and manual only). See [quality-gates.md](quality-gates.md).
 
 ### `build.yml` - Docker Image Build
 

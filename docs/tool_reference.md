@@ -33,7 +33,7 @@ feature flags.
 List available tools, optionally filtered by category.
 
 **Parameters:**
-- `category` (optional): Filter by category (`user`, `memory`, `project`, `code_artifact`, `document`, `entity`, `plan`, `task`, `skill`)
+- `category` (optional): Filter by category (`user`, `memory`, `project`, `code_artifact`, `document`, `entity`, `plan`, `task`, `file`, `skill`) or by `linking`, which is not a category of its own but selects the link and unlink tools of the memory, entity and skill categories. An unknown value is rejected with the list of valid categories
 
 **Returns:**
 - `tools_by_category`: Tools grouped by category
@@ -73,6 +73,14 @@ Execute any registered tool dynamically.
 
 **Returns:**
 - Tool execution result (format depends on specific tool)
+
+**Errors:**
+- Argument names must be identifiers (letters, digits and underscores, not starting with a digit); any other
+  name is rejected before the tool runs.
+- Domain and validation errors (not found, conflict, invalid state, bad arguments) are returned with their message.
+- A database constraint violation is reported as "the request violates a data constraint", invalid YAML as
+  "invalid YAML in the supplied content", and any other unexpected error as "an internal error occurred; see the
+  server logs for details". SQL, bound parameters and driver text never reach the client; they stay in the server log.
 
 **Example:**
 ```python

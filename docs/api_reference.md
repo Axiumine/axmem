@@ -31,17 +31,20 @@ If `FASTMCP_SERVER_AUTH` is not set, all requests use a default user. No Authori
 Authentication is configured via FastMCP environment variables:
 
 ```bash
-# Example: GitHub OAuth
-FASTMCP_SERVER_AUTH=github
-GITHUB_CLIENT_ID=your_client_id
-GITHUB_CLIENT_SECRET=your_client_secret
+# Example: GitHub OAuth (the provider is selected by its class path)
+FASTMCP_SERVER_AUTH=fastmcp.server.auth.providers.github.GitHubProvider
+FASTMCP_SERVER_AUTH_GITHUB_CLIENT_ID=your_client_id
+FASTMCP_SERVER_AUTH_GITHUB_CLIENT_SECRET=your_client_secret
+FASTMCP_SERVER_AUTH_GITHUB_BASE_URL=https://forgetful.example.com
 
-# Example: Bearer token (simple API key)
-FASTMCP_SERVER_AUTH=bearer
-FASTMCP_SERVER_AUTH_SECRET=your-secret-key
+# Example: JWT bearer tokens
+FASTMCP_SERVER_AUTH=fastmcp.server.auth.providers.jwt.JWTVerifier
+FASTMCP_SERVER_AUTH_JWT_JWKS_URI=https://auth.example.com/.well-known/jwks.json
 ```
 
-See [FastMCP Auth Documentation](https://fastmcp.wiki/en/servers/auth/authentication) for all supported providers and configuration options.
+The supported providers are the GitHub, Google, JWT and token-introspection classes; any other value
+stops startup with an error listing them. See the [Configuration Reference](./configuration.md) for every
+variable, and the [FastMCP Auth Documentation](https://fastmcp.wiki/en/servers/auth/authentication) for provider details.
 
 ## Common Response Codes
 
@@ -821,7 +824,7 @@ Get full knowledge graph for visualization. Returns all nodes and edges for the 
 | `node_types` | string | `memory,entity,project,document,code_artifact` | Comma-separated list of node types to include |
 | `project_id` | int | - | Filter to specific project (32-bit id; outside -2147483648 to 2147483647 returns 400) |
 | `include_entities` | bool | true | Include entity nodes (deprecated, use `node_types`) |
-| `limit` | int | 100 | Max memories to include (max 500, at least 1; below 1 returns 400) |
+| `limit` | int | 100 | Max memories to include (values above `MAX_GRAPH_LIMIT`, default 2000, are clamped to it; below 1 returns 400) |
 | `offset` | int | 0 | Number of memories to skip for pagination |
 | `sort_by` | string | `created_at` | Sort field: `created_at`, `updated_at`, or `importance` |
 | `sort_order` | string | `desc` | Sort direction: `asc` or `desc` |
@@ -962,7 +965,7 @@ This is the recommended endpoint for graph visualization with depth-limited trav
 | `node_id` | string | *required* | Center node (e.g., `memory_1`, `entity_5`, `project_3`, `document_2`, `code_artifact_4`) |
 | `depth` | int | 2 | Traversal depth (1-3, clamped) |
 | `node_types` | string | `memory,entity,project,document,code_artifact` | Comma-separated list of types to traverse. The center node is always returned, whatever its type; only nodes of the listed types are traversed into, so neighbours of a requested type are returned even when the center's own type is not listed |
-| `max_nodes` | int | 200 | Maximum nodes to return (max 500) |
+| `max_nodes` | int | 200 | Maximum nodes to return (values above `MAX_GRAPH_LIMIT`, default 2000, are clamped to it; below 1 becomes 1; a non-integer returns 400) |
 
 `node_id` must be `<type>_<id>` with an ASCII decimal id of at most 2147483647; leading zeros
 are accepted and `meta.center_node_id` always reports the canonical form (`memory_001` becomes
