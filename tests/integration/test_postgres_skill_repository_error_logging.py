@@ -188,6 +188,15 @@ def live_repository_logger(caplog):
     repository_logger.disabled = was_disabled
 
 
+def _records_of_repository(caplog) -> list[logging.LogRecord]:
+    return [r for r in caplog.records if r.name == LOGGER_NAME]
+
+
+def _assert_record_has_fields(record: logging.LogRecord, fields: dict[str, object]) -> None:
+    for field, value in fields.items():
+        assert getattr(record, field) == value
+
+
 @pytest.mark.parametrize(
     ("call", "message", "fields"),
     [pytest.param(call, message, fields, id=name) for name, call, message, fields in FAILING_CALLS],
@@ -199,12 +208,10 @@ async def test_database_failure_is_logged_with_context_and_reraised(
         await call(skill_repository)
 
     assert raised.value is connection_error
-    records = [r for r in live_repository_logger.records if r.name == LOGGER_NAME]
-    assert [r.getMessage() for r in records] == [message]
-    record = records[0]
+    (record,) = _records_of_repository(live_repository_logger)
+    assert record.getMessage() == message
     assert record.levelno == logging.ERROR
     assert record.exc_info is not None
     assert record.exc_info[1] is connection_error
     assert record.user_id == str(USER_ID)
-    for field, value in fields.items():
-        assert getattr(record, field) == value
+    _assert_record_has_fields(record, fields)

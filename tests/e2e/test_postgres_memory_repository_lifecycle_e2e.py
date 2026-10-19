@@ -57,6 +57,15 @@ class RenamingEmbeddings:
         return [0.01] * settings.EMBEDDING_DIMENSIONS
 
 
+def _split_by_level(
+    records: list[logging.LogRecord],
+) -> tuple[list[logging.LogRecord], list[logging.LogRecord]]:
+    """The INFO and the WARNING records, in emission order."""
+    infos = [r for r in records if r.levelno == logging.INFO]
+    warnings = [r for r in records if r.levelno == logging.WARNING]
+    return infos, warnings
+
+
 async def test_update_of_another_users_memory_is_not_found_and_changes_nothing(world):
     strangers = await new_memory(world, world.stranger, "Original", importance=7)
 
@@ -93,9 +102,9 @@ async def test_update_keeps_a_memory_that_changes_during_embedding_and_warns_on_
     assert embeddings.calls == MAX_EMBEDDING_ATTEMPTS
     assert updated.content == "Rewritten content"
     assert updated.title == f"concurrent edit {MAX_EMBEDDING_ATTEMPTS}"
-    retries = [r for r in records if r.levelno == logging.INFO]
+    retries, warnings = _split_by_level(records)
     assert [r.attempt for r in retries] == list(range(1, MAX_EMBEDDING_ATTEMPTS))
-    (warning,) = [r for r in records if r.levelno == logging.WARNING]
+    (warning,) = warnings
     assert warning.getMessage() == (
         "memory kept changing while its embedding was generated, writing without verification"
     )
