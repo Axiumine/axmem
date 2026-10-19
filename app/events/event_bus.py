@@ -135,7 +135,7 @@ class EventBus:
 
         # Also push to SSE stream subscribers for this user
         if event.user_id:
-            await self._emit_to_streams(event)
+            await self._emit_to_streams(event, event.user_id)
 
     async def _safe_dispatch(
         self, handler: EventHandler, event: ActivityEvent,
@@ -251,7 +251,7 @@ class EventBus:
                 extra={"user_id": user_id_str},
             )
 
-    async def _emit_to_streams(self, event: ActivityEvent) -> None:
+    async def _emit_to_streams(self, event: ActivityEvent, user_id_str: str) -> None:
         """Push event to all stream subscribers for this user.
 
         Adds a sequence number for client gap detection. A stream with
@@ -260,11 +260,8 @@ class EventBus:
 
         Args:
             event: The activity event to push
+            user_id_str: The owner of the event (events without an owner are never streamed)
         """
-        if not event.user_id:
-            return
-
-        user_id_str = event.user_id
         seq = self._next_seq(user_id_str)
 
         async with self._stream_lock:
