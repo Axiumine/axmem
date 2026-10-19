@@ -11,8 +11,8 @@ import signal
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any, cast
 
-from fastmcp import FastMCP
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
@@ -35,6 +35,7 @@ from app.routes.api import (
     tasks,
 )
 from app.routes.mcp import meta_tools
+from app.routes.server_state import ForgetfulMCP
 from app.version import get_version
 
 # Global references - initialized in lifespan()
@@ -110,7 +111,7 @@ async def lifespan(app):
     logger.info("Session shutdown complete")
 
 
-mcp = FastMCP(settings.SERVICE_NAME, lifespan=lifespan, auth=build_auth_provider())
+mcp = ForgetfulMCP(settings.SERVICE_NAME, lifespan=lifespan, auth=build_auth_provider())
 
 
 @mcp.custom_route("/", methods=["GET"])
@@ -322,7 +323,8 @@ class _ReembedRun:
     def __init__(self):
         # A signal cancels this task and the restore runs from the coroutine below: a signal
         # handler cannot run the restore on the event loop that is currently running.
-        self.task = asyncio.current_task()
+        # Created inside the running re-embed coroutine, so there is always a current task.
+        self.task = cast(asyncio.Task[Any], asyncio.current_task())
         self.interrupted = False
         self.restoring = False  # once a restore has begun, later signals must not cut it short
 

@@ -273,6 +273,7 @@ def configure_logging(
     log_queue: Queue = Queue(-1)  # Unlimited size
 
     # Create the appropriate formatter
+    formatter: logging.Formatter
     if log_format == "json":
         formatter = JSONFormatter()
     else:

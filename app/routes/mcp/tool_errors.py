@@ -6,7 +6,7 @@ for the caller; everything else is reduced to a short generic sentence and its f
 stays in the server logs.
 """
 
-import yaml
+import yaml  # type: ignore[import-untyped]  # PyYAML ships no inline types and types-PyYAML is not a dependency
 from fastmcp.exceptions import ToolError
 from sqlalchemy.exc import IntegrityError
 

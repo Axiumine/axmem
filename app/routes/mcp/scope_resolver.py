@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Any
 
 from app.config.logging_config import logging
 from app.models.tool_registry_models import ToolCategory, ToolMetadata
+from app.routes.server_state import server_of
 
 if TYPE_CHECKING:
     from fastmcp import Context
@@ -179,12 +180,13 @@ def get_effective_scopes(ctx: Context) -> tuple[set[str], frozenset[str]]:
     Returns:
         Tuple of (permitted_tool_names, effective_scope_tokens)
     """
-    instance_permitted: set[str] = getattr(ctx.fastmcp, "_instance_permitted_tools", None) or set()
-    instance_scopes: frozenset[str] = getattr(ctx.fastmcp, "_instance_scopes", frozenset({"*"}))
+    server = server_of(ctx)
+    instance_permitted: set[str] = getattr(server, "_instance_permitted_tools", None) or set()
+    instance_scopes: frozenset[str] = getattr(server, "_instance_scopes", frozenset({"*"}))
 
     if not instance_permitted:
         # Fallback: if not initialized, allow all (backwards compatible)
-        all_tools = {m.name for m in ctx.fastmcp.registry.list_all_tools()}
+        all_tools = {m.name for m in server.registry.list_all_tools()}
         return all_tools, frozenset({"*"})
 
     # Check for OAuth token scopes
@@ -195,7 +197,7 @@ def get_effective_scopes(ctx: Context) -> tuple[set[str], frozenset[str]]:
         return set(instance_permitted), instance_scopes
 
     # Resolve token scopes to tool names and intersect with instance ceiling
-    registry: ToolRegistry = ctx.fastmcp.registry
+    registry: ToolRegistry = server.registry
     token_permitted = resolve_permitted_tools(token_scopes, registry)
     effective_permitted = instance_permitted & token_permitted
     effective_scopes = instance_scopes | token_scopes  # Union for display

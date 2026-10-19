@@ -31,8 +31,8 @@ class ToolRegistry:
         parameters: list[ToolParameter],
         returns: str,
         implementation: Any,  # Callable[..., Awaitable[Any]]
-        examples: list[str] = None,
-        tags: list[str] = None,
+        examples: list[str] | None = None,
+        tags: list[str] | None = None,
         mutates: bool = False,
     ) -> None:
         """Register a tool with its metadata and implementation

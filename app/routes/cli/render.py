@@ -1,4 +1,5 @@
 """Output rendering for the CLI."""
+import io
 import json
 import re
 import sys
@@ -60,11 +61,12 @@ def ensure_safe_stdout() -> None:
     handler is changed; an explicit PYTHONIOENCODING error handler is respected.
     """
     stream = sys.stdout
-    if getattr(stream, "errors", None) != "strict":
+    # Only a text wrapper can be reconfigured; other streams (StringIO, custom shims) are left alone
+    if not isinstance(stream, io.TextIOWrapper) or stream.errors != "strict":
         return
     try:
         stream.reconfigure(errors="replace")
-    except (AttributeError, OSError, ValueError):
+    except (OSError, ValueError):
         pass
 
 

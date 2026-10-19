@@ -5,7 +5,6 @@ Provides CRUD operations for memories with pagination, filtering, and semantic s
 """
 import logging
 
-from fastmcp import FastMCP
 from pydantic import ValidationError
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -32,6 +31,7 @@ from app.routes.api.request_utils import (
     read_json_object,
 )
 from app.routes.api.validation import validation_error_response
+from app.routes.server_state import ForgetfulMCP
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +40,7 @@ VALID_SORT_BY = {"created_at", "updated_at", "importance"}
 VALID_SORT_ORDER = {"asc", "desc"}
 
 
-def register(mcp: FastMCP):
+def register(mcp: ForgetfulMCP):
     """Register memory REST routes with FastMCP"""
 
     @mcp.custom_route("/api/v1/memories", methods=["GET"])

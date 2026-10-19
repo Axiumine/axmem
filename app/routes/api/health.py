@@ -4,16 +4,16 @@
 import logging
 from datetime import UTC, datetime
 
-from fastmcp import FastMCP
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from app.config.settings import settings
 from app.models.models import HealthStatus
+from app.routes.server_state import ForgetfulMCP
 
 logger = logging.getLogger(__name__)
 
-def register(mcp: FastMCP):
+def register(mcp: ForgetfulMCP):
     """Register health check routes with FastMCP"""
 
     @mcp.custom_route("/health", methods=["GET"])
@@ -39,7 +39,7 @@ def register(mcp: FastMCP):
 
         health_status = HealthStatus(
             status="healthy",
-            timestamp=datetime.now(tz=UTC).isoformat(),
+            timestamp=datetime.now(tz=UTC),
             service=settings.SERVICE_NAME,
             version=settings.SERVICE_VERSION,
         )

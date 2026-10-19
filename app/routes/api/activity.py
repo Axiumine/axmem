@@ -7,11 +7,11 @@ Includes SSE streaming endpoint for real-time event updates.
 import json
 import logging
 
-from fastmcp import FastMCP
 from sse_starlette.sse import EventSourceResponse
 from starlette.requests import Request
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, Response
 
+from app.events import EventBus
 from app.middleware.auth import get_user_from_request
 from app.models.activity_models import ActionType, ActorType, EntityType
 from app.routes.api.query_params import (
@@ -20,6 +20,7 @@ from app.routes.api.query_params import (
     parse_datetime_param,
     parse_int_param,
 )
+from app.routes.server_state import ForgetfulMCP
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +42,7 @@ def parse_pagination(params) -> tuple[int, int]:
     return limit, offset
 
 
-def register(mcp: FastMCP):
+def register(mcp: ForgetfulMCP):
     """Register activity REST routes with FastMCP."""
 
     @mcp.custom_route("/api/v1/activity", methods=["GET"])
@@ -207,7 +208,7 @@ def register(mcp: FastMCP):
         return JSONResponse(response.model_dump(mode="json"))
 
     @mcp.custom_route("/api/v1/activity/stream", methods=["GET"])
-    async def stream_activity(request: Request) -> EventSourceResponse:
+    async def stream_activity(request: Request) -> Response:
         """Stream activity events via Server-Sent Events (SSE).
 
         Events are filtered to only those belonging to the authenticated user.
@@ -235,7 +236,7 @@ def register(mcp: FastMCP):
         except ValueError as e:
             return JSONResponse({"error": str(e)}, status_code=401)
 
-        event_bus = getattr(mcp, "event_bus", None)
+        event_bus: EventBus | None = getattr(mcp, "event_bus", None)
         if event_bus is None:
             return JSONResponse(
                 {"error": "Activity streaming not enabled (ACTIVITY_ENABLED=false)"},
