@@ -304,14 +304,11 @@ def register(mcp: ForgetfulMCP):
         entity_id = path_id(request, "entity_id")
         memory_id = path_id(request, "memory_id")
 
-        try:
-            success = await mcp.entity_service.unlink_entity_from_memory(
-                user_id=user.id,
-                entity_id=entity_id,
-                memory_id=memory_id,
-            )
-        except NotFoundError as e:
-            return JSONResponse({"error": str(e)}, status_code=404)
+        success = await mcp.entity_service.unlink_entity_from_memory(
+            user_id=user.id,
+            entity_id=entity_id,
+            memory_id=memory_id,
+        )
 
         if not success:
             return JSONResponse({"error": "Link not found"}, status_code=404)
