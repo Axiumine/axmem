@@ -68,10 +68,18 @@ def run(
     env: dict[str, str] | None = None,
     timeout: int = 1800,
     cwd: Path | None = None,
+    scrub_git: bool = False,
 ) -> tuple[int, str]:
-    merged = {**os.environ, **(env or {})}
+    """Run a command and return (exit code, combined output).
+
+    ``scrub_git`` drops every ``GIT_*`` variable from the child's environment. A Git hook exports
+    ``GIT_INDEX_FILE`` and friends, and test suites that create temporary repositories must not
+    inherit them, or their git commands act on the repository being committed to.
+    """
+    base = {k: v for k, v in os.environ.items() if not (scrub_git and k.startswith("GIT_"))}
+    merged = {**base, **(env or {})}
     try:
-        proc = subprocess.run(  # nosec B603 - argv list built by the gate definitions, no shell, bounded by timeout
+        proc = subprocess.run(  # nosec B603 - argv lists built from constants and git output, never a shell
             argv,
             cwd=cwd or ROOT,
             env=merged,
@@ -88,9 +96,13 @@ def run(
 
 
 def check(
-    argv: list[str], *, env: dict[str, str] | None = None, timeout: int = 1800,
+    argv: list[str],
+    *,
+    env: dict[str, str] | None = None,
+    timeout: int = 1800,
+    scrub_git: bool = False,
 ) -> tuple[bool, str]:
-    code, out = run(argv, env=env, timeout=timeout)
+    code, out = run(argv, env=env, timeout=timeout, scrub_git=scrub_git)
     return code == 0, out
 
 

@@ -1,11 +1,20 @@
 """The quality-gate runner wires every stage to a real gate and enforces ordering/skips."""
 
 import json
+import os
 import subprocess
+import sys
 
 import pytest
 
 from scripts.quality import cli, core, registry, static, testing
+
+
+@pytest.fixture(autouse=True)
+def _no_inherited_git_environment(monkeypatch):
+    """A Git hook exports GIT_DIR/GIT_INDEX_FILE; tests that init repos in tmp dirs must not inherit them."""
+    for name in [key for key in os.environ if key.startswith("GIT_")]:
+        monkeypatch.delenv(name)
 
 
 def test_every_stage_gate_is_registered():
@@ -178,3 +187,27 @@ def test_mutation_gate_counts_survivors_against_the_tolerance(monkeypatch):
 
 def test_mutation_gate_passes_when_everything_is_killed(monkeypatch):
     assert _mutmut(monkeypatch, (0, ""), "") == (True, "")
+
+
+def test_test_gates_run_without_the_git_hook_environment(monkeypatch):
+    seen = {}
+
+    def fake_run(argv, **kwargs):
+        seen.update(kwargs)
+        return 0, ""
+
+    monkeypatch.setattr(core, "run", fake_run)
+    ok, _ = testing.check_tests(["pytest"])
+    assert ok
+    assert seen["scrub_git"] is True
+
+
+def test_scrub_git_drops_git_variables_from_the_child_environment(monkeypatch):
+    monkeypatch.setenv("GIT_INDEX_FILE", "/nonexistent/index")
+    monkeypatch.setenv("KEEP_ME", "1")
+    code, out = core.run(
+        [sys.executable, "-c", "import os;print(sorted(k for k in os.environ if k in ('GIT_INDEX_FILE','KEEP_ME')))"],
+        scrub_git=True,
+    )
+    assert code == 0
+    assert out.strip() == "['KEEP_ME']"

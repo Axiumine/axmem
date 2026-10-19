@@ -21,16 +21,25 @@ CODE_PREFIXES = ("app/", "tests/", "main.py", "alembic/", "scripts/", "test_harn
 PYTEST = ["-q", "-p", "no:cacheprovider"]
 
 
+def check_tests(argv: list[str], **kwargs) -> tuple[bool, str]:
+    """Run a test command without the ``GIT_*`` variables a Git hook exports.
+
+    Tests create temporary repositories; inheriting ``GIT_DIR``/``GIT_INDEX_FILE`` would make their
+    git commands act on the repository being committed to.
+    """
+    return check(argv, scrub_git=True, **kwargs)
+
+
 def gate_snapshots(ctx: Ctx) -> tuple[bool, str]:
     if ctx.scoped and not ctx.py_files(CODE_PREFIXES):
         raise Skip("no code or test changes")
-    return check([*venv_tool("pytest"), "-m", "snapshot", *PYTEST])
+    return check_tests([*venv_tool("pytest"), "-m", "snapshot", *PYTEST])
 
 
 def gate_tests_fast(ctx: Ctx) -> tuple[bool, str]:
     if ctx.scoped and not ctx.py_files(CODE_PREFIXES):
         raise Skip("no code or test changes")
-    return check([*venv_tool("pytest"), "tests/architecture", "tests/integration", "-x", *PYTEST])
+    return check_tests([*venv_tool("pytest"), "tests/architecture", "tests/integration", "-x", *PYTEST])
 
 
 def gate_tests(_ctx: Ctx) -> tuple[bool, str]:
@@ -44,7 +53,7 @@ def gate_tests(_ctx: Ctx) -> tuple[bool, str]:
 def gate_e2e_postgres(_ctx: Ctx) -> tuple[bool, str]:
     if not docker_ready():
         raise Skip("docker daemon unavailable (PostgreSQL e2e needs it)")
-    return check(
+    return check_tests(
         [*venv_tool("pytest"), "tests/e2e", "-m", "e2e", *PYTEST,
          "--cov", "--cov-branch", "--cov-append", "--cov-report=", "--cov-fail-under=0"],
     )
@@ -57,7 +66,7 @@ def gate_coverage(_ctx: Ctx) -> tuple[bool, str]:
 def gate_compat(_ctx: Ctx) -> tuple[bool, str]:
     if not shutil.which("uv"):
         raise Skip("uv unavailable")
-    return check(
+    return check_tests(
         ["uv", "run", "--frozen", "--python", COMPAT_PYTHON, "--all-extras",
          "pytest", *SUITES_SQLITE, *PYTEST],
         env={"UV_PROJECT_ENVIRONMENT": ".venv314"},
@@ -67,7 +76,7 @@ def gate_compat(_ctx: Ctx) -> tuple[bool, str]:
 def gate_memray(_ctx: Ctx) -> tuple[bool, str]:
     if os.name == "nt":
         raise Skip("memray is not available on Windows")
-    return check([*venv_tool("pytest"), "tests/e2e_sqlite", "-m", "memory", "--memray", *PYTEST])
+    return check_tests([*venv_tool("pytest"), "tests/e2e_sqlite", "-m", "memory", "--memray", *PYTEST])
 
 
 def mutation_targets(ctx: Ctx) -> list[str]:
@@ -99,7 +108,7 @@ def mutant_statuses(results: str, targets: list[str]) -> dict[str, str]:
 def gate_mutation(ctx: Ctx) -> tuple[bool, str]:
     tolerated = int(os.environ.get("MUTATION_MAX_SURVIVORS", "0"))
     targets = mutation_targets(ctx)
-    code, out = run([*venv_tool("mutmut"), "run", *targets], timeout=7200)
+    code, out = run([*venv_tool("mutmut"), "run", *targets], timeout=7200, scrub_git=True)
     tail = "\n".join(out.replace("\r", "\n").splitlines()[-40:])
     if code != 0 or "failed to collect stats" in out:
         return False, f"mutmut could not run the test suite (exit {code}):\n{tail}"
