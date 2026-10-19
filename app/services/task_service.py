@@ -71,7 +71,7 @@ class TaskService:
         self,
         task_repo: TaskRepository,
         plan_service: PlanService,
-        event_bus: "EventBus | None" = None,
+        event_bus: EventBus | None = None,
     ):
         self.task_repo = task_repo
         self.plan_service = plan_service

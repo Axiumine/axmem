@@ -23,7 +23,7 @@ class LocalExecutor:
         self._ctx = CliContext(runtime)
 
     @classmethod
-    async def create(cls) -> "LocalExecutor":
+    async def create(cls) -> LocalExecutor:
         return cls(await build_runtime())
 
     async def execute(self, tool_name: str, arguments: dict[str, Any]) -> Any:

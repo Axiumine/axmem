@@ -74,7 +74,7 @@ class EntityService:
     def __init__(
         self,
         entity_repo: EntityRepository,
-        event_bus: "EventBus | None" = None,
+        event_bus: EventBus | None = None,
     ):
         """Initialize with repository protocol (not concrete implementation)
 

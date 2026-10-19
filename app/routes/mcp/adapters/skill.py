@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 class SkillToolAdapters:
     """Wraps skill service methods as registry-compatible callables"""
 
-    def __init__(self, skill_service: "SkillService", user_service: UserService):
+    def __init__(self, skill_service: SkillService, user_service: UserService):
         self.skill_service = skill_service
         self.user_service = user_service
 
@@ -343,7 +343,7 @@ class SkillToolAdapters:
 
 
 def create_skill_adapters(
-    skill_service: "SkillService", user_service: UserService,
+    skill_service: SkillService, user_service: UserService,
 ) -> dict[str, Any]:
     """Create all skill tool adapters and return as dict"""
     adapters = SkillToolAdapters(skill_service, user_service)

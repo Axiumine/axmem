@@ -44,7 +44,7 @@ class ProjectService:
     def __init__(
         self,
         project_repo: ProjectRepository,
-        event_bus: "EventBus | None" = None,
+        event_bus: EventBus | None = None,
     ):
         """Initialize project service with repository
 

@@ -134,42 +134,42 @@ class UsersTable(Base):
         nullable=False)
 
     # Relationships
-    memories:   Mapped[list["MemoryTable"]] = relationship(
+    memories:   Mapped[list[MemoryTable]] = relationship(
         "MemoryTable",
         back_populates="user",
         cascade="all, delete-orphan",
     )
-    projects: Mapped[list["ProjectsTable"]] = relationship(
+    projects: Mapped[list[ProjectsTable]] = relationship(
         "ProjectsTable",
         back_populates="user",
         cascade="all, delete-orphan",
     )
-    code_artifacts: Mapped[list["CodeArtifactsTable"]] = relationship(
+    code_artifacts: Mapped[list[CodeArtifactsTable]] = relationship(
         "CodeArtifactsTable",
         back_populates="user",
         cascade="all, delete-orphan",
     )
-    documents: Mapped[list["DocumentsTable"]] = relationship(
+    documents: Mapped[list[DocumentsTable]] = relationship(
         "DocumentsTable",
         back_populates="user",
         cascade="all, delete-orphan",
     )
-    entities: Mapped[list["EntitiesTable"]] = relationship(
+    entities: Mapped[list[EntitiesTable]] = relationship(
         "EntitiesTable",
         back_populates="user",
         cascade="all, delete-orphan",
     )
-    files: Mapped[list["FilesTable"]] = relationship(
+    files: Mapped[list[FilesTable]] = relationship(
         "FilesTable",
         back_populates="user",
         cascade="all, delete-orphan",
     )
-    skills: Mapped[list["SkillsTable"]] = relationship(
+    skills: Mapped[list[SkillsTable]] = relationship(
         "SkillsTable",
         back_populates="user",
         cascade="all, delete-orphan",
     )
-    plans: Mapped[list["PlansTable"]] = relationship(
+    plans: Mapped[list[PlansTable]] = relationship(
         "PlansTable",
         back_populates="user",
         cascade="all, delete-orphan",
@@ -231,39 +231,39 @@ class MemoryTable(Base):
     )
 
     # Relationships
-    user: Mapped["UsersTable"] = relationship("UsersTable", back_populates="memories")
-    projects: Mapped[list["ProjectsTable"]] = relationship(
+    user: Mapped[UsersTable] = relationship("UsersTable", back_populates="memories")
+    projects: Mapped[list[ProjectsTable]] = relationship(
         "ProjectsTable",
         secondary=memory_project_association,
         back_populates="memories",
     )
-    code_artifacts: Mapped[list["CodeArtifactsTable"]] = relationship(
+    code_artifacts: Mapped[list[CodeArtifactsTable]] = relationship(
         "CodeArtifactsTable",
         secondary=memory_code_artifact_association,
         back_populates="memories",
     )
-    documents: Mapped[list["DocumentsTable"]] = relationship(
+    documents: Mapped[list[DocumentsTable]] = relationship(
         "DocumentsTable",
         secondary=memory_document_association,
         back_populates="memories",
     )
-    files: Mapped[list["FilesTable"]] = relationship(
+    files: Mapped[list[FilesTable]] = relationship(
         "FilesTable",
         secondary=memory_file_association,
         back_populates="memories",
     )
-    skills: Mapped[list["SkillsTable"]] = relationship(
+    skills: Mapped[list[SkillsTable]] = relationship(
         "SkillsTable",
         secondary=memory_skill_association,
         back_populates="memories",
     )
-    entities: Mapped[list["EntitiesTable"]] = relationship(
+    entities: Mapped[list[EntitiesTable]] = relationship(
         "EntitiesTable",
         secondary=memory_entity_association,
         back_populates="memories",
     )
 
-    linked_memories: Mapped[list["MemoryTable"]] = relationship(
+    linked_memories: Mapped[list[MemoryTable]] = relationship(
         "MemoryTable",
         secondary="memory_links",
         primaryjoin="MemoryTable.id==MemoryLinkTable.source_id",
@@ -271,7 +271,7 @@ class MemoryTable(Base):
         back_populates="linking_memories",
     )
 
-    linking_memories: Mapped[list["MemoryTable"]] = relationship(
+    linking_memories: Mapped[list[MemoryTable]] = relationship(
         "MemoryTable",
         secondary="memory_links",
         primaryjoin="MemoryTable.id==MemoryLinkTable.target_id",
@@ -458,34 +458,34 @@ class ProjectsTable(Base):
     )
 
     # Relationships
-    user: Mapped["UsersTable"] = relationship("UsersTable", back_populates="projects")
-    memories: Mapped[list["MemoryTable"]] = relationship(
+    user: Mapped[UsersTable] = relationship("UsersTable", back_populates="projects")
+    memories: Mapped[list[MemoryTable]] = relationship(
         "MemoryTable",
         secondary=memory_project_association,
         back_populates="projects",
     )
-    code_artifacts: Mapped[list["CodeArtifactsTable"]] = relationship(
+    code_artifacts: Mapped[list[CodeArtifactsTable]] = relationship(
         "CodeArtifactsTable",
         back_populates="project",
     )
-    documents: Mapped[list["DocumentsTable"]] = relationship(
+    documents: Mapped[list[DocumentsTable]] = relationship(
         "DocumentsTable",
         back_populates="project",
     )
-    entities: Mapped[list["EntitiesTable"]] = relationship(
+    entities: Mapped[list[EntitiesTable]] = relationship(
         "EntitiesTable",
         secondary=entity_project_association,
         back_populates="projects",
     )
-    files: Mapped[list["FilesTable"]] = relationship(
+    files: Mapped[list[FilesTable]] = relationship(
         "FilesTable",
         back_populates="project",
     )
-    skills: Mapped[list["SkillsTable"]] = relationship(
+    skills: Mapped[list[SkillsTable]] = relationship(
         "SkillsTable",
         back_populates="project",
     )
-    plans: Mapped[list["PlansTable"]] = relationship(
+    plans: Mapped[list[PlansTable]] = relationship(
         "PlansTable",
         back_populates="project",
     )
@@ -546,14 +546,14 @@ class CodeArtifactsTable(Base):
     )
 
     # Relationships
-    user: Mapped["UsersTable"] = relationship("UsersTable", back_populates="code_artifacts")
-    project: Mapped["ProjectsTable"] = relationship("ProjectsTable", back_populates="code_artifacts")
-    memories: Mapped[list["MemoryTable"]] = relationship(
+    user: Mapped[UsersTable] = relationship("UsersTable", back_populates="code_artifacts")
+    project: Mapped[ProjectsTable] = relationship("ProjectsTable", back_populates="code_artifacts")
+    memories: Mapped[list[MemoryTable]] = relationship(
         "MemoryTable",
         secondary=memory_code_artifact_association,
         back_populates="code_artifacts",
     )
-    skills: Mapped[list["SkillsTable"]] = relationship(
+    skills: Mapped[list[SkillsTable]] = relationship(
         "SkillsTable",
         secondary=skill_code_artifact_association,
         back_populates="code_artifacts",
@@ -612,14 +612,14 @@ class DocumentsTable(Base):
         nullable=False,
     )
      # Relationships
-    user: Mapped["UsersTable"] = relationship("UsersTable", back_populates="documents")
-    project: Mapped["ProjectsTable"] = relationship("ProjectsTable", back_populates="documents")
-    memories: Mapped[list["MemoryTable"]] = relationship(
+    user: Mapped[UsersTable] = relationship("UsersTable", back_populates="documents")
+    project: Mapped[ProjectsTable] = relationship("ProjectsTable", back_populates="documents")
+    memories: Mapped[list[MemoryTable]] = relationship(
         "MemoryTable",
         secondary=memory_document_association,
         back_populates="documents",
     )
-    skills: Mapped[list["SkillsTable"]] = relationship(
+    skills: Mapped[list[SkillsTable]] = relationship(
         "SkillsTable",
         secondary=skill_document_association,
         back_populates="documents",
@@ -680,19 +680,19 @@ class FilesTable(Base):
     )
 
     # Relationships
-    user: Mapped["UsersTable"] = relationship("UsersTable", back_populates="files")
-    project: Mapped["ProjectsTable"] = relationship("ProjectsTable", back_populates="files")
-    memories: Mapped[list["MemoryTable"]] = relationship(
+    user: Mapped[UsersTable] = relationship("UsersTable", back_populates="files")
+    project: Mapped[ProjectsTable] = relationship("ProjectsTable", back_populates="files")
+    memories: Mapped[list[MemoryTable]] = relationship(
         "MemoryTable",
         secondary=memory_file_association,
         back_populates="files",
     )
-    entities: Mapped[list["EntitiesTable"]] = relationship(
+    entities: Mapped[list[EntitiesTable]] = relationship(
         "EntitiesTable",
         secondary=entity_file_association,
         back_populates="files",
     )
-    skills: Mapped[list["SkillsTable"]] = relationship(
+    skills: Mapped[list[SkillsTable]] = relationship(
         "SkillsTable",
         secondary=skill_file_association,
         back_populates="files",
@@ -764,24 +764,24 @@ class SkillsTable(Base):
     )
 
     # Relationships
-    user: Mapped["UsersTable"] = relationship("UsersTable", back_populates="skills")
-    project: Mapped["ProjectsTable"] = relationship("ProjectsTable", back_populates="skills")
-    memories: Mapped[list["MemoryTable"]] = relationship(
+    user: Mapped[UsersTable] = relationship("UsersTable", back_populates="skills")
+    project: Mapped[ProjectsTable] = relationship("ProjectsTable", back_populates="skills")
+    memories: Mapped[list[MemoryTable]] = relationship(
         "MemoryTable",
         secondary=memory_skill_association,
         back_populates="skills",
     )
-    files: Mapped[list["FilesTable"]] = relationship(
+    files: Mapped[list[FilesTable]] = relationship(
         "FilesTable",
         secondary=skill_file_association,
         back_populates="skills",
     )
-    code_artifacts: Mapped[list["CodeArtifactsTable"]] = relationship(
+    code_artifacts: Mapped[list[CodeArtifactsTable]] = relationship(
         "CodeArtifactsTable",
         secondary=skill_code_artifact_association,
         back_populates="skills",
     )
-    documents: Mapped[list["DocumentsTable"]] = relationship(
+    documents: Mapped[list[DocumentsTable]] = relationship(
         "DocumentsTable",
         secondary=skill_document_association,
         back_populates="skills",
@@ -844,25 +844,25 @@ class EntitiesTable(Base):
     )
 
     # Relationships
-    user: Mapped["UsersTable"] = relationship("UsersTable", back_populates="entities")
-    projects: Mapped[list["ProjectsTable"]] = relationship(
+    user: Mapped[UsersTable] = relationship("UsersTable", back_populates="entities")
+    projects: Mapped[list[ProjectsTable]] = relationship(
         "ProjectsTable",
         secondary=entity_project_association,
         back_populates="entities",
     )
-    memories: Mapped[list["MemoryTable"]] = relationship(
+    memories: Mapped[list[MemoryTable]] = relationship(
         "MemoryTable",
         secondary=memory_entity_association,
         back_populates="entities",
     )
-    files: Mapped[list["FilesTable"]] = relationship(
+    files: Mapped[list[FilesTable]] = relationship(
         "FilesTable",
         secondary=entity_file_association,
         back_populates="entities",
     )
 
     # Entity relationships (as source)
-    outgoing_relationships: Mapped[list["EntityRelationshipsTable"]] = relationship(
+    outgoing_relationships: Mapped[list[EntityRelationshipsTable]] = relationship(
         "EntityRelationshipsTable",
         foreign_keys="EntityRelationshipsTable.source_entity_id",
         back_populates="source_entity",
@@ -870,7 +870,7 @@ class EntitiesTable(Base):
     )
 
     # Entity relationships (as target)
-    incoming_relationships: Mapped[list["EntityRelationshipsTable"]] = relationship(
+    incoming_relationships: Mapped[list[EntityRelationshipsTable]] = relationship(
         "EntityRelationshipsTable",
         foreign_keys="EntityRelationshipsTable.target_entity_id",
         back_populates="target_entity",
@@ -946,12 +946,12 @@ class EntityRelationshipsTable(Base):
     )
 
     # Relationships
-    source_entity: Mapped["EntitiesTable"] = relationship(
+    source_entity: Mapped[EntitiesTable] = relationship(
         "EntitiesTable",
         foreign_keys=[source_entity_id],
         back_populates="outgoing_relationships",
     )
-    target_entity: Mapped["EntitiesTable"] = relationship(
+    target_entity: Mapped[EntitiesTable] = relationship(
         "EntitiesTable",
         foreign_keys=[target_entity_id],
         back_populates="incoming_relationships",
@@ -1007,9 +1007,9 @@ class PlansTable(Base):
     )
 
     # Relationships
-    user: Mapped["UsersTable"] = relationship("UsersTable", back_populates="plans")
-    project: Mapped["ProjectsTable"] = relationship("ProjectsTable", back_populates="plans")
-    tasks: Mapped[list["TasksTable"]] = relationship(
+    user: Mapped[UsersTable] = relationship("UsersTable", back_populates="plans")
+    project: Mapped[ProjectsTable] = relationship("ProjectsTable", back_populates="plans")
+    tasks: Mapped[list[TasksTable]] = relationship(
         "TasksTable",
         back_populates="plan",
         cascade="all, delete-orphan",
@@ -1067,8 +1067,8 @@ class TasksTable(Base):
     )
 
     # Relationships
-    plan: Mapped["PlansTable"] = relationship("PlansTable", back_populates="tasks")
-    criteria: Mapped[list["CriteriaTable"]] = relationship(
+    plan: Mapped[PlansTable] = relationship("PlansTable", back_populates="tasks")
+    criteria: Mapped[list[CriteriaTable]] = relationship(
         "CriteriaTable",
         back_populates="task",
         cascade="all, delete-orphan",
@@ -1085,7 +1085,7 @@ class TasksTable(Base):
             return [d.depends_on_task_id for d in self.depends_on]
         return []
 
-    depends_on: Mapped[list["TaskDependenciesTable"]] = relationship(
+    depends_on: Mapped[list[TaskDependenciesTable]] = relationship(
         "TaskDependenciesTable",
         foreign_keys="TaskDependenciesTable.task_id",
         back_populates="task",
@@ -1127,7 +1127,7 @@ class CriteriaTable(Base):
     )
 
     # Relationships
-    task: Mapped["TasksTable"] = relationship("TasksTable", back_populates="criteria")
+    task: Mapped[TasksTable] = relationship("TasksTable", back_populates="criteria")
 
     __table_args__ = (
         Index("ix_criteria_task_id", "task_id"),
@@ -1152,7 +1152,7 @@ class TaskDependenciesTable(Base):
     )
 
     # Relationships
-    task: Mapped["TasksTable"] = relationship(
+    task: Mapped[TasksTable] = relationship(
         "TasksTable",
         foreign_keys=[task_id],
         back_populates="depends_on",

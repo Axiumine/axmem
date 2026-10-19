@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 class PlanToolAdapters:
     """Wraps plan service methods as registry-compatible callables"""
 
-    def __init__(self, plan_service: "PlanService", user_service: UserService):
+    def __init__(self, plan_service: PlanService, user_service: UserService):
         self.plan_service = plan_service
         self.user_service = user_service
 
@@ -121,7 +121,7 @@ class PlanToolAdapters:
         return {"plans": plans, "total_count": len(plans)}
 
 
-def create_plan_adapters(plan_service: "PlanService", user_service: UserService) -> dict[str, Any]:
+def create_plan_adapters(plan_service: PlanService, user_service: UserService) -> dict[str, Any]:
     """Create all plan tool adapters and return as dict"""
     adapters = PlanToolAdapters(plan_service, user_service)
     return {

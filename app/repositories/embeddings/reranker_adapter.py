@@ -71,7 +71,7 @@ class FastEmbedCrossEncoderAdapter:
             cache_dir: str | None,
             providers: list[str] | None = None,
             fastembed_kwargs: FastEmbedKwargs,
-    ) -> "TextCrossEncoder":
+    ) -> TextCrossEncoder:
         from fastembed.rerank.cross_encoder import TextCrossEncoder
 
         provider_kwargs: FastEmbedProviderKwargs = (

@@ -63,7 +63,7 @@ class FastEmbeddingAdapter(EmbeddingsAdapter):
             "cache_dir": settings.FASTEMBED_CACHE_DIR,
         })
 
-    def _create_text_embedding(self, fastembed_kwargs: FastEmbedKwargs) -> "TextEmbedding":
+    def _create_text_embedding(self, fastembed_kwargs: FastEmbedKwargs) -> TextEmbedding:
         from fastembed import TextEmbedding
 
         provider_kwargs: FastEmbedProviderKwargs = (

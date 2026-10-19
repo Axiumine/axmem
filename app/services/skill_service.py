@@ -227,7 +227,7 @@ class SkillService:
     def __init__(
         self,
         skill_repo: SkillRepository,
-        event_bus: "EventBus | None" = None,
+        event_bus: EventBus | None = None,
     ):
         """Initialize with repository protocol (not concrete implementation)
 

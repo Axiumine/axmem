@@ -68,12 +68,12 @@ class MemoryService:
     Optionally emits activity events via event bus for tracking.
     """
 
-    def __init__(self, memory_repo: MemoryRepository, event_bus: "EventBus | None" = None):
+    def __init__(self, memory_repo: MemoryRepository, event_bus: EventBus | None = None):
         self.memory_repo = memory_repo
         self._event_bus = event_bus
         logger.info("Memory service initialised")
 
-    def register_access_tracking_handlers(self, event_bus: "EventBus") -> None:
+    def register_access_tracking_handlers(self, event_bus: EventBus) -> None:
         """Subscribe memory access tracking handlers on the given event bus."""
         event_bus.subscribe("memory.read", self.handle_memory_access_event)
         event_bus.subscribe("memory.queried", self.handle_memory_access_event)

@@ -197,7 +197,7 @@ class EventBus:
         user_id: UUID,
         entity_type: str | None = None,
         action: str | None = None,
-    ) -> AsyncGenerator[dict[str, Any], None]:
+    ) -> AsyncGenerator[dict[str, Any]]:
         """Subscribe to events for a user via async generator (for SSE streaming).
 
         Events are filtered to only those belonging to the specified user, and

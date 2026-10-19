@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 class FileToolAdapters:
     """Wraps file service methods as registry-compatible callables"""
 
-    def __init__(self, file_service: "FileService", user_service: UserService):
+    def __init__(self, file_service: FileService, user_service: UserService):
         self.file_service = file_service
         self.user_service = user_service
 
@@ -171,7 +171,7 @@ class FileToolAdapters:
         return {"success": result, "deleted_id": file_id}
 
 
-def create_file_adapters(file_service: "FileService", user_service: UserService) -> dict[str, Any]:
+def create_file_adapters(file_service: FileService, user_service: UserService) -> dict[str, Any]:
     """Create all file tool adapters and return as dict"""
     adapters = FileToolAdapters(file_service, user_service)
     return {

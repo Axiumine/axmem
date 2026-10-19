@@ -40,7 +40,7 @@ class PlanService:
     def __init__(
         self,
         plan_repo: PlanRepository,
-        event_bus: "EventBus | None" = None,
+        event_bus: EventBus | None = None,
     ):
         self.plan_repo = plan_repo
         self._event_bus = event_bus

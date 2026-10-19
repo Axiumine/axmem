@@ -47,7 +47,7 @@ class CodeArtifactService:
     def __init__(
         self,
         artifact_repo: CodeArtifactRepository,
-        event_bus: "EventBus | None" = None,
+        event_bus: EventBus | None = None,
     ):
         """Initialize with repository protocol (not concrete implementation)
 

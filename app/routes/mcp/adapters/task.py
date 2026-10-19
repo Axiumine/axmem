@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 class TaskToolAdapters:
     """Wraps task service methods as registry-compatible callables"""
 
-    def __init__(self, task_service: "TaskService", user_service: UserService):
+    def __init__(self, task_service: TaskService, user_service: UserService):
         self.task_service = task_service
         self.user_service = user_service
 
@@ -216,7 +216,7 @@ class TaskToolAdapters:
         return {"success": success}
 
 
-def create_task_adapters(task_service: "TaskService", user_service: UserService) -> dict[str, Any]:
+def create_task_adapters(task_service: TaskService, user_service: UserService) -> dict[str, Any]:
     """Create all task tool adapters and return as dict"""
     adapters = TaskToolAdapters(task_service, user_service)
     return {

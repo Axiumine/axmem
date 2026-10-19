@@ -47,7 +47,7 @@ class DocumentService:
     def __init__(
         self,
         document_repo: DocumentRepository,
-        event_bus: "EventBus | None" = None,
+        event_bus: EventBus | None = None,
     ):
         """Initialize with repository protocol (not concrete implementation)
 
