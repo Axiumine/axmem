@@ -485,19 +485,18 @@ class EntityService:
         )
 
         # Emit updated event with changes
-        if changed_fields:
-            changes_dict = {
-                field: {"old": old, "new": new}
-                for field, (old, new) in changed_fields.items()
-            }
-            await self._emit_event(
-                user_id=user_id,
-                entity_type=ActivityEntityType.ENTITY,
-                entity_id=entity_id,
-                action=ActionType.UPDATED,
-                snapshot=entity.model_dump(mode="json"),
-                changes=changes_dict,
-            )
+        changes_dict = {
+            field: {"old": old, "new": new}
+            for field, (old, new) in changed_fields.items()
+        }
+        await self._emit_event(
+            user_id=user_id,
+            entity_type=ActivityEntityType.ENTITY,
+            entity_id=entity_id,
+            action=ActionType.UPDATED,
+            snapshot=entity.model_dump(mode="json"),
+            changes=changes_dict,
+        )
 
         return entity
 

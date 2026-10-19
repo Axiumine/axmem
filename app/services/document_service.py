@@ -331,19 +331,18 @@ class DocumentService:
         )
 
         # Emit updated event with changes
-        if changed_fields:
-            changes_dict = {
-                field: {"old": old, "new": new}
-                for field, (old, new) in changed_fields.items()
-            }
-            await self._emit_event(
-                user_id=user_id,
-                entity_type=EntityType.DOCUMENT,
-                entity_id=document_id,
-                action=ActionType.UPDATED,
-                snapshot=document.model_dump(mode="json"),
-                changes=changes_dict,
-            )
+        changes_dict = {
+            field: {"old": old, "new": new}
+            for field, (old, new) in changed_fields.items()
+        }
+        await self._emit_event(
+            user_id=user_id,
+            entity_type=EntityType.DOCUMENT,
+            entity_id=document_id,
+            action=ActionType.UPDATED,
+            snapshot=document.model_dump(mode="json"),
+            changes=changes_dict,
+        )
 
         return document
 
