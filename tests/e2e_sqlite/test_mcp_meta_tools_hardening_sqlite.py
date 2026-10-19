@@ -13,6 +13,7 @@ import sys
 import pytest
 from fastmcp.exceptions import ToolError
 from rich.logging import RichHandler
+from sqlalchemy.exc import IntegrityError
 
 from app.config import logging_config
 from app.routes.mcp import meta_tools
@@ -58,7 +59,20 @@ async def tool_error(client, tool_name: str, arguments: dict) -> str:
 class TestExecuteErrorsAreSanitised:
     """execute_forgetful_tool keeps domain messages and hides database details."""
 
-    async def test_foreign_key_failure_returns_constraint_message(self, mcp_client):
+    async def test_foreign_key_failure_returns_constraint_message(
+        self, mcp_client, sqlite_app, monkeypatch,
+    ):
+        # An unknown project_id is refused before the database (see the next test), so the
+        # driver's constraint error is raised by the repository itself.
+        async def failing_insert(*args, **kwargs):
+            raise IntegrityError(
+                "INSERT INTO documents (description, content) VALUES (?, ?)",
+                (SECRET_DESCRIPTION, SECRET_CONTENT),
+                Exception("FOREIGN KEY constraint failed"),
+            )
+
+        monkeypatch.setattr(sqlite_app.document_service.document_repo, "create_document", failing_insert)
+
         message = await tool_error(
             mcp_client,
             "create_document",
@@ -67,7 +81,6 @@ class TestExecuteErrorsAreSanitised:
                 "description": SECRET_DESCRIPTION,
                 "content": SECRET_CONTENT,
                 "document_type": "text",
-                "project_id": 9999,
             },
         )
 
@@ -75,21 +88,32 @@ class TestExecuteErrorsAreSanitised:
         assert message.startswith("Failed to execute 'create_document'")
         assert CONSTRAINT_FAILURE in message
 
-    async def test_code_artifact_with_unknown_project_is_sanitised(self, mcp_client):
-        message = await tool_error(
-            mcp_client,
-            "create_code_artifact",
-            {
-                "title": "t",
-                "description": "d",
-                "code": "print(1)",
-                "language": "python",
-                "project_id": 9999,
-            },
-        )
+    @pytest.mark.parametrize(
+        ("tool_name", "arguments"),
+        [
+            (
+                "create_document",
+                {
+                    "title": "t", "description": SECRET_DESCRIPTION,
+                    "content": SECRET_CONTENT, "document_type": "text",
+                },
+            ),
+            (
+                "create_code_artifact",
+                {
+                    "title": "t", "description": "d", "code": "print(1)", "language": "python",
+                },
+            ),
+        ],
+    )
+    async def test_unknown_project_is_reported_as_not_found_without_driver_text(
+        self, mcp_client, tool_name, arguments,
+    ):
+        message = await tool_error(mcp_client, tool_name, {**arguments, "project_id": 9999})
 
         assert_no_leak(message)
-        assert CONSTRAINT_FAILURE in message
+        assert message.startswith(f"Failed to execute '{tool_name}'")
+        assert "Project 9999 not found" in message
 
     async def test_duplicate_entity_relationship_is_sanitised(self, mcp_client):
         ids = []
@@ -108,8 +132,9 @@ class TestExecuteErrorsAreSanitised:
 
         message = await tool_error(mcp_client, "create_entity_relationship", relationship)
 
+        # The repository turns the unique-constraint violation into an authored ConflictError
         assert_no_leak(message)
-        assert CONSTRAINT_FAILURE in message
+        assert "already exists between these entities" in message
 
     async def test_driver_error_for_huge_id_is_generic(self, mcp_client):
         message = await tool_error(mcp_client, "get_memory", {"memory_id": 10**30})
@@ -124,8 +149,12 @@ class TestExecuteErrorsAreSanitised:
             {"skill_md_content": "---\nname: [unclosed\n---\nbody", "importance": 8},
         )
 
-        assert "invalid YAML" in message
+        # The import reports the problem and its line itself (fix/skill-import-export-yaml);
+        # the parser's multi-line text with its quoted input must not reach the client.
+        assert "Invalid YAML frontmatter" in message
         assert "while parsing" not in message
+        assert "<unicode string>" not in message
+        assert len(message) < 200
 
     async def test_domain_not_found_message_is_kept(self, mcp_client):
         message = await tool_error(mcp_client, "get_memory", {"memory_id": 987654})

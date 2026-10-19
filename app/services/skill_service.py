@@ -156,6 +156,23 @@ def _load_frontmatter(raw: str) -> object:
         loader.dispose()
 
 
+def _yaml_error_summary(error: Exception) -> str:
+    """One short line about a YAML failure: the problem and its frontmatter line.
+
+    The parser's own text spans several lines and quotes the input with a caret
+    marker; callers only need to know what is wrong and where.
+    """
+    if isinstance(error, RecursionError):
+        return "nested too deeply"
+
+    problem = getattr(error, "problem", None)
+    mark = getattr(error, "problem_mark", None)
+    if problem and mark is not None:
+        return f"{problem} (frontmatter line {mark.line + 1})"
+
+    return " ".join(str(error).split())
+
+
 def _parse_frontmatter(raw: str) -> object:
     """Parse raw frontmatter, raising ValueError when it is not valid YAML.
 
@@ -181,8 +198,7 @@ def _parse_frontmatter(raw: str) -> object:
         except (yaml.YAMLError, RecursionError) as exc:
             error = exc
 
-    detail = "nested too deeply" if isinstance(error, RecursionError) else str(error)
-    raise ValueError(f"Invalid YAML frontmatter: {detail}") from error
+    raise ValueError(f"Invalid YAML frontmatter: {_yaml_error_summary(error)}") from error
 
 
 def _ensure_json_compatible_metadata(metadata: object) -> None:
