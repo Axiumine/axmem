@@ -5,7 +5,6 @@ PostgreSQL repositories to the session database, so a test can create rows throu
 repositories themselves and read the results back through another repository call.
 Assertions stay in the tests.
 """
-import base64
 import logging
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -16,7 +15,6 @@ from app.config.settings import settings
 from app.models.code_artifact_models import CodeArtifactCreate
 from app.models.document_models import DocumentCreate
 from app.models.entity_models import Entity, EntityCreate, EntityType
-from app.models.file_models import FileCreate
 from app.models.memory_models import Memory, MemoryCreate
 from app.models.project_models import ProjectCreate, ProjectType
 from app.models.user_models import UserCreate
@@ -25,7 +23,6 @@ from app.repositories.postgres.code_artifact_repository import (
 )
 from app.repositories.postgres.document_repository import PostgresDocumentRepository
 from app.repositories.postgres.entity_repository import PostgresEntityRepository
-from app.repositories.postgres.file_repository import PostgresFileRepository
 from app.repositories.postgres.memory_repository import PostgresMemoryRepository
 from app.repositories.postgres.postgres_adapter import PostgresDatabaseAdapter
 from app.repositories.postgres.project_repository import PostgresProjectRepository
@@ -70,7 +67,6 @@ class RepositoryWorld:
     entities: PostgresEntityRepository
     memories: PostgresMemoryRepository
     projects: PostgresProjectRepository
-    files: PostgresFileRepository
     code_artifacts: PostgresCodeArtifactRepository
     documents: PostgresDocumentRepository
 
@@ -91,7 +87,6 @@ async def build_world(db_adapter: PostgresDatabaseAdapter) -> RepositoryWorld:
         entities=PostgresEntityRepository(db_adapter),
         memories=PostgresMemoryRepository(db_adapter, embeddings),
         projects=PostgresProjectRepository(db_adapter),
-        files=PostgresFileRepository(db_adapter),
         code_artifacts=PostgresCodeArtifactRepository(db_adapter),
         documents=PostgresDocumentRepository(db_adapter),
     )
@@ -126,19 +121,6 @@ async def new_project(world: RepositoryWorld, user_id: UUID, name: str = "Projec
         ProjectCreate(name=name, description="d", project_type=ProjectType.DEVELOPMENT),
     )
     return project.id
-
-
-async def new_file(world: RepositoryWorld, user_id: UUID) -> int:
-    created = await world.files.create_file(
-        user_id,
-        FileCreate(
-            filename="a.txt",
-            description="d",
-            data=base64.b64encode(b"hello").decode(),
-            mime_type="text/plain",
-        ),
-    )
-    return created.id
 
 
 async def new_code_artifact(world: RepositoryWorld, user_id: UUID) -> int:

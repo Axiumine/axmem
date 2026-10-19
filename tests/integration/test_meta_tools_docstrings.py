@@ -1,8 +1,7 @@
-"""Tests for dynamic meta-tool docstring generation.
+"""Tests for meta-tool docstring generation.
 
-The discover_forgetful_tools and execute_forgetful_tool docstrings are built
-dynamically at startup based on feature flags. These tests verify that
-feature-flagged tool sections only appear when their flags are enabled.
+The discover_forgetful_tools and execute_forgetful_tool docstrings are built at
+startup from the descriptor mode. These tests verify the verbose and compact forms.
 """
 
 from unittest.mock import patch
@@ -17,60 +16,25 @@ from app.routes.mcp.meta_tools import (
 
 
 class TestBuildCategoryList:
-    """Verify the category filter list reflects enabled features."""
+    """Verify the category filter list."""
 
-    def test_core_categories_always_present(self):
-        """Core categories appear regardless of feature flags."""
-        with patch("app.routes.mcp.meta_tools.settings") as mock_settings:
-            mock_settings.FILES_ENABLED = False
+    def test_every_category_is_listed(self):
+        result = _build_category_list()
 
-            result = _build_category_list()
-
-        for cat in ["user", "memory", "project", "code_artifact", "document", "entity", "linking"]:
-            assert cat in result
-
-    def test_file_category_when_enabled(self):
-        """File category appears when FILES_ENABLED=True."""
-        with patch("app.routes.mcp.meta_tools.settings") as mock_settings:
-            mock_settings.FILES_ENABLED = True
-
-            result = _build_category_list()
-
-        assert "file" in result
-
-    def test_all_features_enabled(self):
-        """All categories present when all features enabled."""
-        with patch("app.routes.mcp.meta_tools.settings") as mock_settings:
-            mock_settings.FILES_ENABLED = True
-
-            result = _build_category_list()
-
-        for cat in ["user", "memory", "project", "code_artifact", "document",
-                     "entity", "linking", "file"]:
-            assert cat in result
+        assert result.split(", ") == [
+            "user", "memory", "project", "code_artifact", "document", "entity", "linking",
+        ]
 
 
 class TestBuildToolCategoriesLine:
     """Verify the pipe-separated categories line in execute_forgetful_tool."""
 
-    def test_core_categories_only(self):
-        """Only core categories when no features enabled."""
-        with patch("app.routes.mcp.meta_tools.settings") as mock_settings:
-            mock_settings.FILES_ENABLED = False
+    def test_every_category_is_listed(self):
+        result = _build_tool_categories_line()
 
-            result = _build_tool_categories_line()
-
-        assert "file" not in result
-        assert "memory" in result
-
-    def test_all_categories_when_all_enabled(self):
-        """All categories in pipe line when all features enabled."""
-        with patch("app.routes.mcp.meta_tools.settings") as mock_settings:
-            mock_settings.FILES_ENABLED = True
-
-            result = _build_tool_categories_line()
-
-        assert "file" in result
+        assert result.split(" | ") == [
+            "memory", "project", "entity", "document", "code_artifact", "linking", "user",
+        ]
 
 
 class TestMcpDescriptorMode:
@@ -105,37 +69,22 @@ class TestMcpDescriptorMode:
 
 
 class TestDiscoverDocstring:
-    """Verify discover_forgetful_tools docstring includes/excludes sections by flag."""
+    """Verify the discover_forgetful_tools docstring."""
 
-    def test_no_optional_sections_when_all_disabled(self):
-        """Feature-flagged sections absent when all flags are False."""
+    def test_tool_sections_are_present(self):
         with patch("app.routes.mcp.meta_tools.settings") as mock_settings:
-            mock_settings.FILES_ENABLED = False
+            mock_settings.MCP_DESCRIPTOR_MODE = "verbose"
 
             doc = _build_discover_docstring()
 
-        # Core sections present
         assert "**User Tools**" in doc
         assert "**Memory Tools**" in doc
         assert "**Entity Tools**" in doc
 
-        # Feature-flagged sections absent
-        assert "**File Tools**" not in doc
-
-    def test_file_section_when_enabled(self):
-        """File tools section included when FILES_ENABLED=True."""
-        with patch("app.routes.mcp.meta_tools.settings") as mock_settings:
-            mock_settings.FILES_ENABLED = True
-
-            doc = _build_discover_docstring()
-
-        assert "**File Tools**" in doc
-        assert "create_file" in doc
-
     def test_workflow_section_always_present(self):
         """The workflow section is always appended."""
         with patch("app.routes.mcp.meta_tools.settings") as mock_settings:
-            mock_settings.FILES_ENABLED = False
+            mock_settings.MCP_DESCRIPTOR_MODE = "verbose"
 
             doc = _build_discover_docstring()
 
@@ -145,7 +94,6 @@ class TestDiscoverDocstring:
         """Compact mode keeps discovery guidance short."""
         with patch("app.routes.mcp.meta_tools.settings") as mock_settings:
             mock_settings.MCP_DESCRIPTOR_MODE = "compact"
-            mock_settings.FILES_ENABLED = True
 
             doc = _build_discover_docstring()
 
@@ -157,37 +105,30 @@ class TestDiscoverDocstring:
 
 
 class TestExecuteDocstring:
-    """Verify execute_forgetful_tool docstring includes/excludes sections by flag."""
+    """Verify the execute_forgetful_tool docstring."""
 
-    def test_no_optional_sections_when_all_disabled(self):
-        """Feature-flagged example sections absent when all flags are False."""
+    def test_examples_are_present(self):
         with patch("app.routes.mcp.meta_tools.settings") as mock_settings:
-            mock_settings.FILES_ENABLED = False
+            mock_settings.MCP_DESCRIPTOR_MODE = "verbose"
 
             doc = _build_execute_docstring()
 
-        # Core examples present
         assert "**Memory Operations:**" in doc
         assert "**Project Organization:**" in doc
 
-        # Feature-flagged examples absent
-        assert "**Files (binary content):**" not in doc
-
-    def test_tool_categories_line_reflects_flags(self):
-        """The Tool Categories line includes enabled feature categories."""
+    def test_tool_categories_line_is_present(self):
         with patch("app.routes.mcp.meta_tools.settings") as mock_settings:
-            mock_settings.FILES_ENABLED = True
+            mock_settings.MCP_DESCRIPTOR_MODE = "verbose"
 
             doc = _build_execute_docstring()
 
-        # The tool categories line should contain all categories
         assert "## Tool Categories" in doc
-        assert "file" in doc
+        assert _build_tool_categories_line() in doc
 
     def test_linking_section_always_present(self):
         """The linking best practices section is always appended."""
         with patch("app.routes.mcp.meta_tools.settings") as mock_settings:
-            mock_settings.FILES_ENABLED = False
+            mock_settings.MCP_DESCRIPTOR_MODE = "verbose"
 
             doc = _build_execute_docstring()
 
@@ -197,7 +138,6 @@ class TestExecuteDocstring:
         """Compact mode points to how_to_use instead of embedding long examples."""
         with patch("app.routes.mcp.meta_tools.settings") as mock_settings:
             mock_settings.MCP_DESCRIPTOR_MODE = "compact"
-            mock_settings.FILES_ENABLED = True
 
             doc = _build_execute_docstring()
 

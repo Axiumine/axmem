@@ -11,7 +11,6 @@ These tests run the services against the in-memory stub repositories, which
 apply updates the same way as the real ones (``model_dump(exclude_unset=True)``).
 """
 import asyncio
-import base64
 from dataclasses import dataclass
 from typing import Any
 
@@ -26,11 +25,8 @@ from app.models.entity_models import (
     EntityUpdate,
 )
 from app.models.entity_models import EntityType as EntityKind
-from app.models.file_models import FileCreate, FileUpdate
 from app.models.project_models import ProjectCreate, ProjectType, ProjectUpdate
 from app.models.user_models import User
-
-FILE_BYTES = base64.b64encode(b"Hello, World!").decode("utf-8")
 
 
 @pytest.fixture
@@ -146,34 +142,6 @@ CASES = [
         change={"name": "Acme Corp"},
         same={"name": "Acme", "tags": ["keep"]},
         entity_type=EntityType.ENTITY,
-    ),
-    Case(
-        name="file",
-        fixture="test_file_service_with_event_bus",
-        model=FileUpdate,
-        create=lambda s, u: s.create_file(
-            u,
-            FileCreate(
-                filename="hello.txt",
-                description="A greeting",
-                data=FILE_BYTES,
-                mime_type="text/plain",
-                tags=["keep"],
-            ),
-        ),
-        update=lambda s, u, i, d: s.update_file(u, i, d),
-        get=lambda s, u, i: s.get_file(u, i),
-        null_fields={
-            "filename": None,
-            "description": None,
-            "data": None,
-            "mime_type": None,
-            "tags": None,
-            "project_id": None,
-        },
-        change={"filename": "renamed.txt"},
-        same={"filename": "hello.txt", "tags": ["keep"]},
-        entity_type=EntityType.FILE,
     ),
     Case(
         name="project",
@@ -327,63 +295,3 @@ async def test_service_empty_update_keeps_updated_at(case, test_user, request):
     result = await case.update(service, test_user.id, created.id, case.model())
 
     assert result.updated_at == updated_at
-
-
-# ---------------------------------------------------------------------------
-# Files: replacing only the content is a change
-# ---------------------------------------------------------------------------
-
-
-async def test_file_content_only_update_emits_updated_event(test_file_service_with_event_bus, test_user):
-    service, bus = test_file_service_with_event_bus
-    created = await service.create_file(
-        test_user.id,
-        FileCreate(
-            filename="data.bin",
-            description="Binary data",
-            data=FILE_BYTES,
-            mime_type="application/octet-stream",
-        ),
-    )
-    original_size = created.size_bytes
-    bus.collected_events.clear()
-    new_content = b"This is much longer content than Hello, World!"
-    new_data = base64.b64encode(new_content).decode("utf-8")
-
-    updated = await service.update_file(test_user.id, created.id, FileUpdate(data=new_data))
-
-    assert updated.data == new_data
-    assert len(bus.collected_events) == 1
-    event = bus.collected_events[0]
-    assert event.entity_type == EntityType.FILE
-    assert event.entity_id == created.id
-    assert event.action == ActionType.UPDATED
-    assert "data" not in event.changes
-    assert event.changes["size_bytes"] == {"old": original_size, "new": len(new_content)}
-    assert "data" not in event.snapshot
-
-
-async def test_file_content_and_metadata_update_reports_size_and_metadata(
-    test_file_service_with_event_bus, test_user,
-):
-    service, bus = test_file_service_with_event_bus
-    created = await service.create_file(
-        test_user.id,
-        FileCreate(
-            filename="data.bin",
-            description="Binary data",
-            data=FILE_BYTES,
-            mime_type="application/octet-stream",
-        ),
-    )
-    bus.collected_events.clear()
-    new_data = base64.b64encode(b"x").decode("utf-8")
-
-    await service.update_file(
-        test_user.id, created.id, FileUpdate(data=new_data, filename="renamed.bin"),
-    )
-
-    assert len(bus.collected_events) == 1
-    changes = bus.collected_events[0].changes
-    assert set(changes) == {"filename", "size_bytes"}
-    assert changes["filename"] == {"old": "data.bin", "new": "renamed.bin"}

@@ -40,7 +40,6 @@ Get any operation's schema at runtime: `how_to_use_forgetful_tool` (MCP) or
 | Detailed analysis or a guide (>300 words) | Document + entry memories | this skill, step 4 |
 | Reusable code | Code artifact | this skill, step 4 |
 | A person, org, device, product, component | Entity | `forgetful-entities` |
-| Binary content (image, PDF, asset) | File | `forgetful-files` |
 | A goal decomposing into steps / a work item | Plan / Task | feature-flagged; check discovery |
 
 Done when: exactly one type is chosen, and routed-away types are handled by their skill.

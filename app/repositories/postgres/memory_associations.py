@@ -1,4 +1,4 @@
-"""Memory associations with projects, code artifacts, documents and files."""
+"""Memory associations with projects, code artifacts and documents."""
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import cast
@@ -12,12 +12,11 @@ from app.models.memory_models import MemoryCreate, MemoryUpdate
 from app.repositories.postgres.postgres_tables import (
     CodeArtifactsTable,
     DocumentsTable,
-    FilesTable,
     MemoryTable,
     ProjectsTable,
 )
 
-AssociatedTable = ProjectsTable | CodeArtifactsTable | DocumentsTable | FilesTable
+AssociatedTable = ProjectsTable | CodeArtifactsTable | DocumentsTable
 
 
 @dataclass(frozen=True)
@@ -35,7 +34,6 @@ ASSOCIATION_KINDS: tuple[AssociationKind, ...] = (
     AssociationKind("project_ids", "projects", ProjectsTable, "Projects"),
     AssociationKind("code_artifact_ids", "code_artifacts", CodeArtifactsTable, "Code artifacts"),
     AssociationKind("document_ids", "documents", DocumentsTable, "Documents"),
-    AssociationKind("file_ids", "files", FilesTable, "Files"),
 )
 
 # MemoryCreate / MemoryUpdate fields that are stored as associations, not as memory columns

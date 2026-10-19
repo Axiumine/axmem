@@ -13,7 +13,6 @@ from app.models.tool_registry_models import (
     ToolParameterDef,
 )
 from app.routes.mcp.tool_adapters import (
-    create_file_adapters,
     create_memory_adapters,
     create_user_adapters,
 )
@@ -232,14 +231,6 @@ def register_memory_tools_metadata(
                     "required": False,
                     "default": None,
                     "example": [2],
-                },
-                {
-                    "name": "file_ids",
-                    "type": "Optional[List[int]]",
-                    "description": "Existing file IDs to link (optional). Files must belong to the current user; unknown IDs fail with not found",
-                    "required": False,
-                    "default": None,
-                    "example": [4],
                 },
                 {
                     "name": "source_repo",
@@ -489,14 +480,6 @@ def register_memory_tools_metadata(
                     "required": False,
                     "default": None,
                     "example": [3],
-                },
-                {
-                    "name": "file_ids",
-                    "type": "Optional[List[int]]",
-                    "description": "New file IDs - replaces existing links (optional). Empty list clears all file links",
-                    "required": False,
-                    "default": None,
-                    "example": [4],
                 },
                 {
                     "name": "source_repo",
@@ -913,7 +896,6 @@ def register_all_tools_metadata(
     document_service,
     entity_service,
     re_embedding_service,
-    file_service=None,
 ):
     """Register all tool metadata and implementations
 
@@ -926,7 +908,6 @@ def register_all_tools_metadata(
         document_service: DocumentService instance
         entity_service: EntityService instance
         re_embedding_service: ReEmbeddingService instance created at startup
-        file_service: FileService instance (optional, behind FILES_ENABLED)
     """
     logger.info("Starting tool registration")
 
@@ -953,12 +934,6 @@ def register_all_tools_metadata(
     register_code_artifact_tools_metadata(registry, code_artifact_adapters)
     register_document_tools_metadata(registry, document_adapters)
     register_entity_tools_metadata(registry, entity_adapters)
-
-    # Conditionally register file tools (behind FILES_ENABLED)
-    if file_service is not None:
-        file_adapters = create_file_adapters(file_service, user_service)
-        register_file_tools_metadata(registry, file_adapters)
-        logger.info("File tools registered")
 
     # Log summary
     categories = registry.list_categories()
@@ -1726,133 +1701,3 @@ def register_entity_tools_metadata(
         )
 
     logger.info(f"Registered {len(tools)} entity tools")
-
-
-# ============================================================================
-# File Tools Metadata
-# ============================================================================
-
-def register_file_tools_metadata(
-    registry: ToolRegistry,
-    adapters: dict[str, Any],
-):
-    """Register file tool metadata and implementations"""
-    tools: list[ToolDef] = [
-        {
-            "name": "create_file",
-            "mutates": True,
-            "description": "Create file for storing binary content (images, PDFs, fonts, etc.) as base64",
-            "parameters": [
-                {"name": "filename", "type": "str", "description": "Original filename with extension (e.g., 'screenshot.png')", "required": True, "example": "diagram.png"},
-                {"name": "description", "type": "str", "description": "What the file contains and when to use it", "required": True, "example": "Architecture diagram for auth service"},
-                {"name": "data", "type": "str", "description": "Base64-encoded file content", "required": True, "example": "iVBORw0KGgo..."},
-                {"name": "mime_type", "type": "str", "description": "MIME type (e.g., 'image/png', 'application/pdf')", "required": True, "example": "image/png"},
-                {"name": "ctx", "type": "Context", "description": "FastMCP Context (automatically injected)", "required": True},
-                {"name": "tags", "type": "Optional[List[str]]", "description": "Tags for categorization", "required": False, "default": None, "example": ["screenshot", "architecture"]},
-                {"name": "project_id", "type": "Optional[int]", "description": "Link to project", "required": False, "default": None, "example": 1},
-                {"name": "source_repo", "type": "Optional[str]", "description": "Repository/project source for provenance tracking", "required": False, "default": None, "example": "owner/repo"},
-                {"name": "source_files", "type": "Optional[List[str]]", "description": "Files that informed this for provenance tracking", "required": False, "default": None, "example": ["src/main.py"]},
-                {"name": "source_url", "type": "Optional[str]", "description": "URL to source material for provenance tracking", "required": False, "default": None, "example": "https://example.com"},
-                {"name": "confidence", "type": "Optional[float]", "description": "Encoding confidence score (0.0-1.0) for provenance tracking", "required": False, "default": None, "example": 0.85},
-                {"name": "encoding_agent", "type": "Optional[str]", "description": "Software running the agent for provenance tracking", "required": False, "default": None, "example": "OpenCode"},
-                {"name": "encoding_version", "type": "Optional[str]", "description": "Version of encoding software for provenance tracking", "required": False, "default": None, "example": "1.0.0"},
-                {"name": "agent_id", "type": "Optional[str]", "description": "Agent identity for provenance tracking", "required": False, "default": None, "example": "CodeAgentUltra"},
-                {"name": "agent_version", "type": "Optional[str]", "description": "Agent version for provenance tracking", "required": False, "default": None, "example": "1.0"},
-                {"name": "agent_model", "type": "Optional[str]", "description": "LLM model used for provenance tracking", "required": False, "default": None, "example": "claude-sonnet-4-6"},
-            ],
-            "returns": "File with id, size_bytes, and timestamps",
-            "examples": [
-                'execute_forgetful_tool("create_file", {"filename": "logo.png", "description": "Project logo", "data": "<base64>", "mime_type": "image/png"})',
-            ],
-            "tags": ["file", "create", "binary"],
-        },
-        {
-            "name": "get_file",
-            "description": "Retrieve file by ID with complete details including base64 data",
-            "parameters": [
-                {"name": "file_id", "type": "int", "description": "ID of the file to retrieve", "required": True, "example": 1},
-                {"name": "ctx", "type": "Context", "description": "FastMCP Context (automatically injected)", "required": True},
-            ],
-            "returns": "Complete File object with base64 data",
-            "examples": [
-                'execute_forgetful_tool("get_file", {"file_id": 1})',
-            ],
-            "tags": ["file", "retrieve", "read"],
-        },
-        {
-            "name": "list_files",
-            "description": "List files with optional filtering by project, MIME type, or tags (excludes binary data)",
-            "parameters": [
-                {"name": "ctx", "type": "Context", "description": "FastMCP Context (automatically injected)", "required": True},
-                {"name": "project_id", "type": "Optional[int]", "description": "Filter by project", "required": False, "default": None, "example": 1},
-                {"name": "mime_type", "type": "Optional[str]", "description": "Filter by MIME type", "required": False, "default": None, "example": "image/png"},
-                {"name": "tags", "type": "Optional[List[str]]", "description": "Filter by tags", "required": False, "default": None, "example": ["screenshot", "ui"]},
-            ],
-            "returns": "Dictionary with files list (summaries, no data) and count",
-            "examples": [
-                'execute_forgetful_tool("list_files", {})',
-                'execute_forgetful_tool("list_files", {"mime_type": "image/png"})',
-            ],
-            "tags": ["file", "list", "query"],
-        },
-        {
-            "name": "update_file",
-            "mutates": True,
-            "description": "Update file metadata or replace content (PATCH semantics)",
-            "parameters": [
-                {"name": "file_id", "type": "int", "description": "ID of the file to update", "required": True, "example": 1},
-                {"name": "ctx", "type": "Context", "description": "FastMCP Context (automatically injected)", "required": True},
-                {"name": "filename", "type": "Optional[str]", "description": "New filename", "required": False, "default": None, "example": "updated.png"},
-                {"name": "description", "type": "Optional[str]", "description": "New description", "required": False, "default": None, "example": "Updated description"},
-                {"name": "data", "type": "Optional[str]", "description": "New base64 content (replaces file)", "required": False, "default": None},
-                {"name": "mime_type", "type": "Optional[str]", "description": "New MIME type", "required": False, "default": None, "example": "image/jpeg"},
-                {"name": "tags", "type": "Optional[List[str]]", "description": "New tags (replaces existing)", "required": False, "default": None, "example": ["updated"]},
-                {"name": "project_id", "type": "Optional[int]", "description": "New project link", "required": False, "default": None, "example": 2},
-                {"name": "source_repo", "type": "Optional[str]", "description": "Repository/project source for provenance tracking", "required": False, "default": None, "example": "owner/repo"},
-                {"name": "source_files", "type": "Optional[List[str]]", "description": "Files that informed this for provenance tracking", "required": False, "default": None, "example": ["src/main.py"]},
-                {"name": "source_url", "type": "Optional[str]", "description": "URL to source material for provenance tracking", "required": False, "default": None, "example": "https://example.com"},
-                {"name": "confidence", "type": "Optional[float]", "description": "Encoding confidence score (0.0-1.0) for provenance tracking", "required": False, "default": None, "example": 0.85},
-                {"name": "encoding_agent", "type": "Optional[str]", "description": "Software running the agent for provenance tracking", "required": False, "default": None, "example": "OpenCode"},
-                {"name": "encoding_version", "type": "Optional[str]", "description": "Version of encoding software for provenance tracking", "required": False, "default": None, "example": "1.0.0"},
-                {"name": "agent_id", "type": "Optional[str]", "description": "Agent identity for provenance tracking", "required": False, "default": None, "example": "CodeAgentUltra"},
-                {"name": "agent_version", "type": "Optional[str]", "description": "Agent version for provenance tracking", "required": False, "default": None, "example": "1.0"},
-                {"name": "agent_model", "type": "Optional[str]", "description": "LLM model used for provenance tracking", "required": False, "default": None, "example": "claude-sonnet-4-6"},
-            ],
-            "returns": "Updated File object",
-            "examples": [
-                'execute_forgetful_tool("update_file", {"file_id": 1, "tags": ["updated"]})',
-            ],
-            "tags": ["file", "update", "patch"],
-        },
-        {
-            "name": "delete_file",
-            "mutates": True,
-            "description": "Delete file (cascades memory and entity associations)",
-            "parameters": [
-                {"name": "file_id", "type": "int", "description": "ID of the file to delete", "required": True, "example": 1},
-                {"name": "ctx", "type": "Context", "description": "FastMCP Context (automatically injected)", "required": True},
-            ],
-            "returns": "Dictionary with deletion confirmation",
-            "examples": [
-                'execute_forgetful_tool("delete_file", {"file_id": 1})',
-            ],
-            "tags": ["file", "delete", "remove"],
-        },
-    ]
-
-    for tool_def in tools:
-        register_simplified_tool(
-            registry=registry,
-            name=tool_def["name"],
-            category=ToolCategory.FILE,
-            description=tool_def["description"],
-            parameters=tool_def["parameters"],
-            returns=tool_def["returns"],
-            implementation=adapters[tool_def["name"]],
-            examples=tool_def.get("examples", []),
-            tags=tool_def.get("tags", []),
-            mutates=tool_def.get("mutates", False),
-        )
-
-    logger.info(f"Registered {len(tools)} file tools")
-

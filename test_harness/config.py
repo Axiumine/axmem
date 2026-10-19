@@ -17,7 +17,6 @@ SKILL_ORDER: tuple[str, ...] = (
     "forgetful-cli-setup",
     "forgetful-remember",
     "forgetful-entities",
-    "forgetful-files",
     "forgetful-recall",
     "forgetful-explore",
     "forgetful-context-gather",

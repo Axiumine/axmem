@@ -26,7 +26,6 @@ files rather than maintaining their own copies.
 | `forgetful-recall` | model | Context needed: task start, "have we solved this before" |
 | `forgetful-explore` | model | Flat search isn't enough; the connected picture matters |
 | `forgetful-entities` | model | A thing (person, system, component) needs modelling |
-| `forgetful-files` | model | Binary content (screenshot, PDF, asset) worth keeping |
 | `forgetful-context-gather` | user | Deep pre-work sweep producing a cited context pack |
 | `forgetful-encode-repo` | user | Bootstrap or refresh a repository in the knowledge base |
 | `forgetful-cli-setup` | user | Connect a terminal/headless agent; operate a local server |

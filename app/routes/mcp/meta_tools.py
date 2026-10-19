@@ -7,9 +7,8 @@ The three meta-tools:
 2. how_to_use_forgetful_tool: Get detailed documentation for a specific tool
 3. execute_forgetful_tool: Dynamically invoke any tool with arguments
 
-Docstrings for discover and execute are built dynamically at registration time based on
-which feature flag (FILES_ENABLED) is active, so LLMs
-only see tools they can actually use.
+Docstrings for discover and execute are built at registration time from the descriptor mode
+(MCP_DESCRIPTOR_MODE).
 """
 
 from typing import Any
@@ -92,15 +91,6 @@ _DISCOVER_CORE_SECTIONS = """\
     - update_entity_relationship: Modify relationship
     - delete_entity_relationship: Remove relationship"""
 
-_DISCOVER_FILE_SECTION = """
-
-    **File Tools** - Binary content storage (images, PDFs, fonts, etc.)
-    - create_file: Store file as base64 with metadata and tags
-    - get_file: Retrieve file by ID with content
-    - list_files: List files with project/mime_type/tags filters
-    - update_file: Modify file metadata or content
-    - delete_file: Remove file"""
-
 
 # ============================================================================
 # Dynamic Docstring Sections — execute_forgetful_tool
@@ -140,13 +130,6 @@ _EXECUTE_CORE_EXAMPLES = """\
     **Code Artifacts (reusable snippets):**
     - Create: execute_forgetful_tool("create_code_artifact", {"title": "Snippet Title", "description": "What this does", "code": "def example(): pass", "language": "python", "project_id": 1})"""
 
-_EXECUTE_FILE_SECTION = """
-
-    **Files (binary content):**
-    - Create: execute_forgetful_tool("create_file", {"filename": "diagram.png", "description": "Architecture diagram", "data": "<base64>", "mime_type": "image/png"})
-    - List: execute_forgetful_tool("list_files", {})
-    - Get: execute_forgetful_tool("get_file", {"file_id": 1})"""
-
 
 # ============================================================================
 # Docstring Builders
@@ -154,18 +137,14 @@ _EXECUTE_FILE_SECTION = """
 
 
 def _build_category_list() -> str:
-    """Build the valid category filter list based on enabled features."""
+    """Build the valid category filter list."""
     categories = ["user", "memory", "project", "code_artifact", "document", "entity", "linking"]
-    if settings.FILES_ENABLED:
-        categories.append("file")
     return ", ".join(categories)
 
 
 def _build_tool_categories_line() -> str:
     """Build the tool categories pipe-separated line for execute_forgetful_tool."""
     categories = ["memory", "project", "entity", "document", "code_artifact", "linking", "user"]
-    if settings.FILES_ENABLED:
-        categories.append("file")
     return " | ".join(categories)
 
 
@@ -217,7 +196,7 @@ Execute any registered Forgetful inner tool by name.
 
 
 def _build_discover_docstring() -> str:
-    """Build discover_forgetful_tools docstring based on feature flags."""
+    """Build the discover_forgetful_tools docstring."""
     categories = _build_category_list()
     if _get_mcp_descriptor_mode() == "compact":
         return _build_compact_discover_docstring(categories)
@@ -243,9 +222,6 @@ Discover available tools, optionally filtered by category
 {_DISCOVER_CORE_SECTIONS}""",
     ]
 
-    if settings.FILES_ENABLED:
-        parts.append(_DISCOVER_FILE_SECTION)
-
     parts.append("""
 
     ## Workflow
@@ -258,7 +234,7 @@ Discover available tools, optionally filtered by category
 
 
 def _build_execute_docstring() -> str:
-    """Build execute_forgetful_tool docstring based on feature flags."""
+    """Build the execute_forgetful_tool docstring."""
     tool_categories = _build_tool_categories_line()
     if _get_mcp_descriptor_mode() == "compact":
         return _build_compact_execute_docstring(tool_categories)
@@ -268,9 +244,6 @@ def _build_execute_docstring() -> str:
 Execute any registered tool dynamically. Forgetful is a semantic memory system for LLMs.
 {_EXECUTE_CORE_EXAMPLES}""",
     ]
-
-    if settings.FILES_ENABLED:
-        parts.append(_EXECUTE_FILE_SECTION)
 
     parts.append(f"""
 
@@ -407,7 +380,7 @@ def ensure_tool_executable(registry, permitted: set, tool_name: str) -> None:
 def register(mcp: ForgetfulMCP):
     """Register meta-tools with the provided FastMCP instance - registry accessed via ctx pattern"""
 
-    # Build dynamic docstrings based on enabled feature flags
+    # Build the docstrings for the configured descriptor mode
     discover_doc = _build_discover_docstring()
     execute_doc = _build_execute_docstring()
 

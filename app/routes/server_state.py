@@ -7,9 +7,7 @@ so ``mypy`` can check both sides instead of seeing a plain ``FastMCP`` with no s
 attributes.
 
 The attributes are declared, not defaulted: they exist only once the lifespan has run,
-exactly as before. The feature-flagged file service is
-declared as present because the routes that read it are registered only while the same
-feature flag is on, which is also when the lifespan attaches it.
+exactly as before.
 """
 from __future__ import annotations
 
@@ -27,7 +25,6 @@ if TYPE_CHECKING:
     from app.services.code_artifact_service import CodeArtifactService
     from app.services.document_service import DocumentService
     from app.services.entity_service import EntityService
-    from app.services.file_service import FileService
     from app.services.memory_service import MemoryService
     from app.services.project_service import ProjectService
     from app.services.re_embedding_service import ReEmbeddingService
@@ -46,9 +43,6 @@ class ForgetfulMCP(FastMCP[Any]):
     entity_service: EntityService
     activity_service: ActivityService
     event_bus: EventBus | None
-
-    # Feature-flagged: attached, and its routes registered, only while the flag is on
-    file_service: FileService
 
     token_cache: TokenCache | None
     registry: ToolRegistry

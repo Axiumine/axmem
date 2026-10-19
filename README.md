@@ -221,7 +221,7 @@ auth, and verification steps end-to-end.
 ## Usage Examples
 
 Axmem exposes only three meta-tools to MCP clients. The tools available through
-`execute_forgetful_tool` depend on the enabled feature flags. Use
+`execute_forgetful_tool` depend on the permitted scopes. Use
 `discover_forgetful_tools` for the current runtime catalog.
 
 ### Example 1: Project-Scoped Memory
@@ -341,8 +341,7 @@ results = execute_forgetful_tool(
 
 ### Tool Categories
 
-The core catalog covers users, memories, projects, entities, code artifacts, and documents.
-Files appear when their feature flag is enabled.
+The catalog covers users, memories, projects, entities, code artifacts, and documents.
 
 For complete documentation with extensive examples, see [Complete Tool Reference](docs/tool_reference.md).
 

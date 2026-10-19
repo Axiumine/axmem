@@ -4,7 +4,6 @@
   "DELETE /api/v1/entities/relationships/{relationship_id}",
   "DELETE /api/v1/entities/{entity_id}",
   "DELETE /api/v1/entities/{entity_id}/memories/{memory_id}",
-  "DELETE /api/v1/files/{file_id}",
   "DELETE /api/v1/memories/{memory_id}",
   "DELETE /api/v1/memories/{memory_id}/links/{target_id}",
   "DELETE /api/v1/projects/{project_id}",
@@ -20,8 +19,6 @@
   "GET /api/v1/entities/{entity_id}",
   "GET /api/v1/entities/{entity_id}/memories",
   "GET /api/v1/entities/{entity_id}/relationships",
-  "GET /api/v1/files",
-  "GET /api/v1/files/{file_id}",
   "GET /api/v1/memories",
   "GET /api/v1/memories/{memory_id}",
   "GET /api/v1/memories/{memory_id}/links",
@@ -34,7 +31,6 @@
   "POST /api/v1/entities/search",
   "POST /api/v1/entities/{entity_id}/memories",
   "POST /api/v1/entities/{entity_id}/relationships",
-  "POST /api/v1/files",
   "POST /api/v1/memories",
   "POST /api/v1/memories/search",
   "POST /api/v1/memories/{memory_id}/links",
@@ -43,7 +39,6 @@
   "PUT /api/v1/documents/{document_id}",
   "PUT /api/v1/entities/relationships/{relationship_id}",
   "PUT /api/v1/entities/{entity_id}",
-  "PUT /api/v1/files/{file_id}",
   "PUT /api/v1/memories/{memory_id}",
   "PUT /api/v1/projects/{project_id}"
 ]

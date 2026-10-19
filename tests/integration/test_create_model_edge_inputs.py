@@ -1,56 +1,15 @@
 """Request models: edge inputs for sizes, enum spelling and non-text values.
 
-Covers the decoded file size limit on create and update, the document size that is worked
-out from the content when the caller passes a null, entity types given as something other
-than text, and memory text fields given as something other than a string.
+Covers the document size that is worked out from the content when the caller passes a
+null, entity types given as something other than text, and memory text fields given as
+something other than a string.
 """
-import base64
-
 import pytest
 from pydantic import ValidationError
 
-from app.config.settings import settings
 from app.models.document_models import DocumentCreate
 from app.models.entity_models import EntityCreate, EntityType
-from app.models.file_models import FileCreate, FileUpdate
 from app.models.memory_models import MemoryCreate
-
-
-def _b64(payload: bytes) -> str:
-    return base64.b64encode(payload).decode("ascii")
-
-
-def _file_kwargs(payload: bytes) -> dict:
-    return {
-        "filename": "a.bin",
-        "description": "d",
-        "data": _b64(payload),
-        "mime_type": "application/octet-stream",
-    }
-
-
-class TestDecodedFileSizeLimit:
-    @pytest.fixture(autouse=True)
-    def _small_limit(self, monkeypatch):
-        monkeypatch.setattr(settings, "FILE_MAX_SIZE_BYTES", 8)
-
-    def test_create_rejects_data_that_decodes_above_the_limit(self):
-        with pytest.raises(ValidationError, match=r"Decoded file size \(9 bytes\) exceeds maximum \(8 bytes\)"):
-            FileCreate(**_file_kwargs(b"123456789"))
-
-    def test_update_rejects_data_that_decodes_above_the_limit(self):
-        with pytest.raises(ValidationError, match=r"Decoded file size \(9 bytes\) exceeds maximum \(8 bytes\)"):
-            FileUpdate(data=_b64(b"123456789"))
-
-    def test_create_accepts_data_that_decodes_to_exactly_the_limit(self):
-        file = FileCreate(**_file_kwargs(b"12345678"))
-
-        assert base64.b64decode(file.data) == b"12345678"
-
-    def test_update_accepts_data_that_decodes_to_exactly_the_limit(self):
-        update = FileUpdate(data=_b64(b"12345678"))
-
-        assert base64.b64decode(update.data) == b"12345678"
 
 
 class TestDocumentSizeFromContent:

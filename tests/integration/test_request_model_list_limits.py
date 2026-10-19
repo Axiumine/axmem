@@ -10,18 +10,14 @@ from app.config.settings import settings
 from app.models.code_artifact_models import CodeArtifactCreate, CodeArtifactUpdate
 from app.models.document_models import DocumentCreate, DocumentUpdate
 from app.models.entity_models import EntityCreate, EntityType, EntityUpdate
-from app.models.file_models import FileCreate, FileUpdate
 
-_FILE = {"filename": "a.bin", "description": "d", "data": "AAAA", "mime_type": "application/octet-stream"}
 _BASE_FIELDS = {
     CodeArtifactCreate: {"title": "t", "description": "d", "code": "x = 1", "language": "python"},
     DocumentCreate: {"title": "t", "description": "d", "content": "c"},
     EntityCreate: {"name": "n", "entity_type": EntityType.TEAM},
-    FileCreate: _FILE,
     CodeArtifactUpdate: {},
     DocumentUpdate: {},
     EntityUpdate: {},
-    FileUpdate: {},
 }
 LIMITED_LISTS = [
     (CodeArtifactCreate, "tags", settings.CODE_ARTIFACT_TAGS_MAX_COUNT),
@@ -32,8 +28,6 @@ LIMITED_LISTS = [
     (EntityUpdate, "tags", settings.ENTITY_TAGS_MAX_COUNT),
     (EntityCreate, "aka", settings.ENTITY_AKA_MAX_COUNT),
     (EntityUpdate, "aka", settings.ENTITY_AKA_MAX_COUNT),
-    (FileCreate, "tags", settings.FILE_TAGS_MAX_COUNT),
-    (FileUpdate, "tags", settings.FILE_TAGS_MAX_COUNT),
 ]
 IDS = [f"{model.__name__}-{field}" for model, field, _ in LIMITED_LISTS]
 

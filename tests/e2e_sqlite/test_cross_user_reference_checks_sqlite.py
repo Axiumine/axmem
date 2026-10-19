@@ -1,6 +1,6 @@
 """SQLite E2E tests: referenced projects and embeddings must belong to the caller.
 
-Documents, code artifacts and files accepted any ``project_id``.
+Documents and code artifacts accepted any ``project_id``.
 The foreign key only checks that the id exists, so a user could attach rows to
 another user's project (and the project owner's later delete then rewrote or
 cascade-deleted those rows), and an unused id surfaced as a raw
@@ -12,7 +12,6 @@ Two layers are covered:
 - the REST surface with two users (full stack), and
 - the memory repository with an offline embedder, including the owner control.
 """
-import base64
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from uuid import uuid4
@@ -27,7 +26,6 @@ from app.repositories.sqlite.memory_repository import SqliteMemoryRepository
 from app.repositories.sqlite.sqlite_adapter import SqliteDatabaseAdapter
 
 UNKNOWN_PROJECT_ID = 424_242
-FILE_DATA = base64.b64encode(b"Hello, World!").decode("utf-8")
 
 # kind -> (collection url, list key, payload builder taking project_id)
 CREATE_CASES = {
@@ -52,19 +50,8 @@ CREATE_CASES = {
             "project_id": pid,
         },
     ),
-    "files": (
-        "/api/v1/files",
-        "files",
-        lambda pid: {
-            "filename": "linked.txt",
-            "description": "File with a project link",
-            "data": FILE_DATA,
-            "mime_type": "text/plain",
-            "project_id": pid,
-        },
-    ),
 }
-UPDATE_KINDS = ["documents", "code-artifacts", "files"]
+UPDATE_KINDS = ["documents", "code-artifacts"]
 
 
 @contextmanager

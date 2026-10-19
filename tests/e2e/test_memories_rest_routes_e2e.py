@@ -31,7 +31,6 @@ async def _obsolete(http_client, memory_id, body=None):
     ("project_ids", "Projects"),
     ("code_artifact_ids", "Code artifacts"),
     ("document_ids", "Documents"),
-    ("file_ids", "Files"),
 ])
 async def test_create_with_unknown_association_id_is_404(http_client, field, label):
     response = await http_client.post(API, json={**MEMORY, field: [999999]})

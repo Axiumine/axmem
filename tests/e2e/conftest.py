@@ -47,7 +47,6 @@ from app.routes.api import (
     code_artifacts,
     documents,
     entities,
-    files,
     health,
     memories,
     projects,
@@ -59,7 +58,6 @@ from app.services.activity_service import ActivityService
 from app.services.code_artifact_service import CodeArtifactService
 from app.services.document_service import DocumentService
 from app.services.entity_service import EntityService
-from app.services.file_service import FileService
 from app.services.memory_service import MemoryService
 from app.services.project_service import ProjectService
 from app.services.re_embedding_service import ReEmbeddingService
@@ -195,14 +193,11 @@ ALL_TABLES = [
     "memory_code_artifact_association",
     "memory_document_association",
     "memory_entity_association",
-    "memory_file_association",
-    "entity_file_association",
     "entity_project_association",
     "entity_relationships",
     "entities",
     "code_artifacts",
     "documents",
-    "files",
     "memories",
     "projects",
     "users",
@@ -361,7 +356,6 @@ def app_settings(request, monkeypatch):
         **getattr(request.module, "SETTINGS_OVERRIDE", {}),
         "DATABASE": "Postgres",
         "POSTGRES_HOST": "127.0.0.1",
-        "FILES_ENABLED": True,
     }
     for key, value in overrides.items():
         monkeypatch.setattr(settings, key, value)
@@ -393,10 +387,6 @@ async def postgres_app(
         code_artifact_service = CodeArtifactService(repos["code_artifact"], event_bus=event_bus)
         document_service = DocumentService(repos["document"], event_bus=event_bus)
         entity_service = EntityService(repos["entity"], event_bus=event_bus)
-        # Conditionally create file service behind FILES_ENABLED
-        file_service = None
-        if settings.FILES_ENABLED and "file" in repos:
-            file_service = FileService(repos["file"], event_bus=event_bus)
 
         mcp.user_service = user_service
         mcp.memory_service = memory_service
@@ -406,9 +396,6 @@ async def postgres_app(
         mcp.entity_service = entity_service
         mcp.activity_service = activity_service
         mcp.event_bus = event_bus
-
-        if file_service:
-            mcp.file_service = file_service
 
         registry = ToolRegistry()
         mcp.registry = registry
@@ -422,7 +409,6 @@ async def postgres_app(
             code_artifact_service=code_artifact_service,
             document_service=document_service,
             entity_service=entity_service,
-            file_service=file_service,
         )
 
         try:
@@ -442,8 +428,6 @@ async def postgres_app(
     documents.register(mcp)
     code_artifacts.register(mcp)
     activity.register(mcp)
-    if settings.FILES_ENABLED:
-        files.register(mcp)
     meta_tools.register(mcp)
 
     yield mcp

@@ -1,6 +1,6 @@
 """Throwaway Forgetful server: a real `forgetful serve` subprocess the agent can reach.
 
-File-backed SQLite (in-memory dies at the process boundary), the files feature on, no
+File-backed SQLite (in-memory dies at the process boundary), no
 auth, FastEmbed with the default (warm) model cache. Env is injected at launch because
 settings freeze at import time in the child. The instance must not depend on whoever
 runs the harness: cwd is the run directory so no repo-local dotenv file leaks in, but
@@ -138,7 +138,6 @@ class ThrowawayForgetful:
             "DATABASE": "SQLite",
             "SQLITE_MEMORY": "false",
             "SQLITE_PATH": str(self.run_dir / "forgetful.db"),
-            "FILES_ENABLED": "true",
             "EMBEDDING_PROVIDER": "FastEmbed",
             "EMBEDDING_MODEL": "BAAI/bge-small-en-v1.5",
             "EMBEDDING_DIMENSIONS": "384",

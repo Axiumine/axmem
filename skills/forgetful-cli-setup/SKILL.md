@@ -75,8 +75,6 @@ same operations.
   for MCP clients that spawn a process).
 - Database via env: `DATABASE=SQLite` with `SQLITE_PATH` (file) or `SQLITE_MEMORY=true`
   (ephemeral), or `DATABASE=Postgres` with `POSTGRES_HOST/PORT/DB/USER/PASSWORD`.
-- Feature flag (default off): `FILES_ENABLED` —
-  discovery reflects whatever is enabled.
 - After changing embedding provider or model: `forgetful re-embed --dry-run` to preview,
   then `forgetful re-embed` (batch size tunable via `--batch-size`).
 

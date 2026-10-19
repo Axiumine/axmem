@@ -5,8 +5,6 @@ ACTIVITY_TRACK_READS on. ``unlink_memories`` used to check the source memory thr
 ``get_memory``, recording a read the user never made: a ``memory.read`` event and a bump of
 ``access_count``.
 """
-import base64
-
 import pytest
 
 from app.config.settings import settings
@@ -14,7 +12,6 @@ from app.exceptions import NotFoundError
 from app.models.activity_models import ActionType, EntityType
 from app.models.code_artifact_models import CodeArtifactCreate
 from app.models.document_models import DocumentCreate
-from app.models.file_models import FileCreate
 from app.models.memory_models import MemoryCreate
 from app.models.project_models import ProjectCreate, ProjectType
 from app.models.user_models import UserCreate
@@ -23,7 +20,6 @@ from app.repositories.sqlite.code_artifact_repository import (
     SqliteCodeArtifactRepository,
 )
 from app.repositories.sqlite.document_repository import SqliteDocumentRepository
-from app.repositories.sqlite.file_repository import SqliteFileRepository
 from app.repositories.sqlite.memory_repository import SqliteMemoryRepository
 from app.repositories.sqlite.project_repository import SqliteProjectRepository
 from app.repositories.sqlite.sqlite_adapter import SqliteDatabaseAdapter
@@ -31,7 +27,6 @@ from app.repositories.sqlite.user_repository import SqliteUserRepository
 from app.services.activity_service import ActivityService
 from app.services.code_artifact_service import CodeArtifactService
 from app.services.document_service import DocumentService
-from app.services.file_service import FileService
 from app.services.memory_service import MemoryService
 from app.services.project_service import ProjectService
 from tests.integration.conftest import CollectingEventBus
@@ -75,7 +70,6 @@ async def stack(monkeypatch):
         artifact_service = CodeArtifactService(
             SqliteCodeArtifactRepository(db_adapter=db), event_bus=bus,
         )
-        file_service = FileService(SqliteFileRepository(db_adapter=db), event_bus=bus)
         yield {
             "user_id": user.id,
             "bus": bus,
@@ -85,14 +79,13 @@ async def stack(monkeypatch):
             "project": project_service,
             "document": document_service,
             "artifact": artifact_service,
-            "file": file_service,
         }
     finally:
         await db.dispose()
 
 
 async def _seed_project_content(s):
-    """A project holding one document, artifact and file."""
+    """A project holding one document and artifact."""
     uid = s["user_id"]
     project = await s["project"].create_project(
         uid, ProjectCreate(name="P", description="proj", project_type=ProjectType.DEVELOPMENT),
@@ -106,16 +99,6 @@ async def _seed_project_content(s):
         uid,
         CodeArtifactCreate(
             title="A", description="art", code="print(1)", language="python", project_id=pid,
-        ),
-    )).id
-    ids["file"] = (await s["file"].create_file(
-        uid,
-        FileCreate(
-            filename="a.txt",
-            description="file",
-            data=base64.b64encode(b"hello").decode(),
-            mime_type="text/plain",
-            project_id=pid,
         ),
     )).id
     await s["bus"].wait_for_pending()
@@ -141,15 +124,11 @@ async def test_explicit_gets_still_emit_read_events(stack):
     await s["project"].get_project(uid, ids["project"])
     await s["document"].get_document(uid, ids["document"])
     await s["artifact"].get_code_artifact(uid, ids["code_artifact"])
-    await s["file"].get_file(uid, ids["file"])
-    await s["file"].list_files(uid)
 
     assert {(kind, action) for kind, _id, action in _noisy_events(s)} == {
         ("project", "read"),
         ("document", "read"),
         ("code_artifact", "read"),
-        ("file", "read"),
-        ("file", "queried"),
     }
 
 

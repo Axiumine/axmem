@@ -61,11 +61,11 @@ variable, and the [FastMCP Auth Documentation](https://fastmcp.wiki/en/servers/a
 
 ## Update Requests (PUT)
 
-`PUT` endpoints for projects, entities, entity relationships, documents, code artifacts and files
+`PUT` endpoints for projects, entities, entity relationships, documents and code artifacts
 use PATCH semantics: send only the fields you want to change.
 
-- A field that is omitted or sent as `null` is left unchanged. For projects, entities, documents, code
-  artifacts and files, a body that changes nothing returns the current record and does not modify
+- A field that is omitted or sent as `null` is left unchanged. For projects, entities, documents and code
+  artifacts, a body that changes nothing returns the current record and does not modify
   `updated_at`. Entity relationships have no change detection: a body that changes nothing still refreshes
   `updated_at` and records an update event.
 - `null` never clears a field. Fields such as `project_id`, `source_url` and `confidence` therefore cannot
@@ -204,12 +204,11 @@ blank `context`.
   "project_ids": [1],
   "code_artifact_ids": [],
   "document_ids": [],
-  "file_ids": [],
   "similar_memories": []
 }
 ```
 
-**Errors:** `404` with a message such as `Projects not found: {999}` when an id in `project_ids`, `code_artifact_ids`, `document_ids` or `file_ids` does not exist (or belongs to another user). Nothing is created in that case.
+**Errors:** `404` with a message such as `Projects not found: {999}` when an id in `project_ids`, `code_artifact_ids` or `document_ids` does not exist (or belongs to another user). Nothing is created in that case.
 
 ### PUT /api/v1/memories/{id}
 
@@ -233,7 +232,7 @@ Update an existing memory.
 
 Provenance fields can be added or updated after memory creation. See POST /api/v1/memories for field descriptions.
 
-A field that is omitted or `null` is left unchanged. The link lists `project_ids`, `code_artifact_ids`, `document_ids` and `file_ids` replace the existing links when provided, and an empty list removes them all.
+A field that is omitted or `null` is left unchanged. The link lists `project_ids`, `code_artifact_ids` and `document_ids` replace the existing links when provided, and an empty list removes them all.
 
 **Response:** Updated memory object
 
@@ -959,5 +958,5 @@ For validation errors (400), the error may contain detailed field-level errors:
 
 Each entry contains only `type`, `loc` and `msg`; the rejected input value is not echoed back.
 Integer query parameters must fit in a signed 64-bit integer, and the identifiers in link request
-bodies (`file_id`, `document_id`, `code_artifact_id`, `memory_id`) must be JSON integers that fit
+bodies (`document_id`, `code_artifact_id`, `memory_id`) must be JSON integers that fit
 too. Anything else returns HTTP 400 instead of reaching the database.

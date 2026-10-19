@@ -87,28 +87,6 @@ class TestCustomValidatorErrors:
         _assert_validation_error(update, "PUT /code-artifacts blank description")
 
     @pytest.mark.asyncio
-    async def test_files_invalid_fields_return_400(self, api):
-        file_id = await _create(api, "/api/v1/files", {
-            "filename": "a.txt", "description": "d", "mime_type": "text/plain",
-            "data": "aGVsbG8=",
-        })
-
-        bad_base64 = await api.post("/api/v1/files", json={
-            "filename": "b.txt", "description": "d", "mime_type": "text/plain",
-            "data": "abc",
-        })
-        _assert_validation_error(bad_base64, "POST /files bad base64")
-
-        blank_name = await api.post("/api/v1/files", json={
-            "filename": "   ", "description": "d", "mime_type": "text/plain",
-            "data": "aGVsbG8=",
-        })
-        _assert_validation_error(blank_name, "POST /files blank filename")
-
-        update = await api.put(f"/api/v1/files/{file_id}", json={"filename": "  "})
-        _assert_validation_error(update, "PUT /files blank filename")
-
-    @pytest.mark.asyncio
     async def test_entities_invalid_fields_return_400(self, api):
         entity_id = await _create_entity(api, "Alice")
         other_id = await _create_entity(api, "Bob")
@@ -209,7 +187,6 @@ class TestIntegerQueryParams:
     @pytest.mark.asyncio
     @pytest.mark.parametrize("path", [
         "/api/v1/documents",
-        "/api/v1/files",
         "/api/v1/code-artifacts",
         "/api/v1/memories",
     ])
@@ -237,7 +214,6 @@ class TestIntegerQueryParams:
         urls = [
             f"/api/v1/documents?project_id={INT32_MAX}",
             "/api/v1/documents?project_id=",
-            "/api/v1/files?project_id=",
             "/api/v1/code-artifacts?project_id=",
             f"/api/v1/entities?offset={INT64_MAX}",
         ]

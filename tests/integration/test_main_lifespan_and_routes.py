@@ -1,16 +1,9 @@
-"""``main.py`` wiring: what the lifespan attaches, which feature routes exist, how CORS is served.
+"""``main.py`` wiring: what the lifespan attaches and how CORS is served.
 
 The lifespan runs in this process against in-memory SQLite (the attached attributes of the
-process-wide server are restored afterwards). The feature-flagged route registration happens at
-import time, so it is observed in a child interpreter started with the flags set. The HTTP serve
-function is observed through the ASGI app it hands to uvicorn.
+process-wide server are restored afterwards). The HTTP serve function is observed through the
+ASGI app it hands to uvicorn.
 """
-
-import json
-import os
-import subprocess  # noqa: S404 - runs this interpreter with a fixed argument list
-import sys
-from pathlib import Path
 
 import httpx
 import pytest
@@ -18,18 +11,6 @@ import pytest
 import main
 from app.config.settings import settings
 from app.middleware.auth import TokenCache
-from app.services.file_service import FileService
-
-ROOT = Path(__file__).resolve().parents[2]
-
-_LIST_ROUTES = (
-    "import json, main; "
-    "print(json.dumps(sorted({route.path for route in main.mcp.http_app().routes})))"
-)
-
-FEATURE_ROUTES = {
-    "/api/v1/files",
-}
 
 
 @pytest.fixture
@@ -52,15 +33,6 @@ def pristine_server():
         setattr(main.mcp, name, value)
 
 
-async def test_lifespan_attaches_every_enabled_optional_service(
-    sqlite_runtime_settings, quiet_logging, pristine_server, monkeypatch,
-):
-    monkeypatch.setattr(settings, "FILES_ENABLED", True)
-
-    async with main.lifespan(main.mcp):
-        assert isinstance(pristine_server.file_service, FileService)
-
-
 async def test_lifespan_leaves_the_token_cache_unset_when_it_is_disabled(
     sqlite_runtime_settings, quiet_logging, pristine_server, monkeypatch,
 ):
@@ -77,32 +49,6 @@ async def test_lifespan_creates_a_token_cache_when_it_is_enabled(
 
     async with main.lifespan(main.mcp):
         assert isinstance(pristine_server.token_cache, TokenCache)
-
-
-def _routes_with_flags(tmp_path, enabled: bool) -> set[str]:
-    env = {
-        **os.environ,
-        "PYTHONPATH": str(ROOT),
-        "XDG_CONFIG_HOME": str(tmp_path / "config"),  # keep the developer's own settings file out
-        "DATABASE": "SQLite",
-        "SQLITE_MEMORY": "true",
-        "FASTMCP_SERVER_AUTH": "",
-        "FILES_ENABLED": str(enabled).lower(),
-    }
-    completed = subprocess.run(  # noqa: S603 - fixed argv, no shell
-        [sys.executable, "-c", _LIST_ROUTES],
-        env=env, cwd=tmp_path, capture_output=True, text=True, timeout=120, check=True,
-    )
-    return set(json.loads(completed.stdout.splitlines()[-1]))
-
-
-def test_feature_flags_decide_which_http_routes_the_server_registers(tmp_path):
-    with_features = _routes_with_flags(tmp_path, enabled=True)
-    without_features = _routes_with_flags(tmp_path, enabled=False)
-
-    assert FEATURE_ROUTES <= with_features
-    assert not FEATURE_ROUTES & without_features
-    assert "/api/v1/memories" in without_features
 
 
 async def test_cors_enabled_serving_answers_preflight_requests_for_the_allowed_origin(monkeypatch):

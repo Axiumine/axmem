@@ -42,7 +42,7 @@ cross-encoder reranking.
 | Graph | Graph REST view, `GraphService` and subgraph SQL removed; memory links and auto-linking stay | A second open-ended graph next to the memory links drifts from any graph a host system keeps | Done (`4954c134`) |
 | Planning | Plans and tasks removed; revision `20261019_drop_planning` | Planning belongs to the host system's tracker, not to a memory server | Done (`bdd4b13e`) |
 | Skills | Skills removed, with import/export and `skill_ids` on memories; revision `20261019_drop_skills` | Skills are files a host system already keeps | Done (`50431302`) |
-| Files | Files removed | A host system keeps its artefacts in its own repository and tracks their state itself | Planned |
+| Files | Files removed, with `file_ids` on memories; revision `20261019_drop_files` | A host system keeps its artefacts in its own repository and tracks their state itself | Done |
 | Documents, code artifacts | Removed | The knowledge layer ingests ADRs, epics and stories with chunking; GitNexus indexes code | Planned |
 | Entities | Entities and relationships removed | A second free-form graph would drift from the Neo4j one | Planned |
 | Activity | Event bus and SSE stream removed | Metrics and tracing belong to the host's observability stack | Planned |

@@ -52,8 +52,7 @@ is refused every tool.
 
 Behavioural, not configurational:
 
-1. `discover_forgetful_tools` returns categories, and they match the server's enabled
-   feature flags (files appear only when enabled).
+1. `discover_forgetful_tools` returns the tool categories.
 2. One `execute_forgetful_tool` round-trip returns real data — `get_current_user` or
    `list_projects` both work as smoke calls.
 

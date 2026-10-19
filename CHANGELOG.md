@@ -58,9 +58,15 @@ without the mark, with the commit that landed it, in the commit that lands it.
   `20261019_drop_skills` drops the tables and activity rows; the downgrade recreates the empty tables. The
   `forgetful-procedures` agent skill file is deleted and the other files in the `skills/` catalogue are edited;
   the catalogue stays.
+- Files: service, repositories, models, REST routes, 5 MCP tools, `FILES_ENABLED` and the `FILE_*` settings,
+  `file_ids` on memories and the `file` activity entity type, tool category and scope. Revision
+  `20261019_drop_files` drops `files`, `memory_file_association` and `entity_file_association` (the stored binary
+  content included) and the file activity rows; the downgrade recreates the empty tables. The `forgetful-files`
+  agent skill file is deleted and the other files in the `skills/` catalogue are edited; the catalogue stays. No
+  optional feature flag is left, so the SQLite e2e feature-flag registry and its test module are gone.
 - Discord badge and banner image from the README, and the PyPI install option, because `forgetful-ai` is
   upstream's package (`b121d350`).
-- **(planned)** Files, documents, code artifacts, entities and relationships, and the activity bus with its SSE
+- **(planned)** Documents, code artifacts, entities and relationships, and the activity bus with its SSE
   stream.
 - **(planned)** Container deployment (`docker/`, image jobs, Nix OCI image); Docker stays as a test dependency.
 - **(planned)** SQLite, PostgreSQL, pgvector and Alembic.

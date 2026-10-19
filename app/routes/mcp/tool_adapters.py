@@ -16,7 +16,6 @@ from app.routes.mcp.adapters.document import (
     create_document_adapters,
 )
 from app.routes.mcp.adapters.entity import EntityToolAdapters, create_entity_adapters
-from app.routes.mcp.adapters.file import FileToolAdapters, create_file_adapters
 from app.routes.mcp.adapters.memory import MemoryToolAdapters, create_memory_adapters
 from app.routes.mcp.adapters.project import ProjectToolAdapters, create_project_adapters
 from app.routes.mcp.adapters.user import UserToolAdapters, create_user_adapters
@@ -34,7 +33,6 @@ __all__ = [
     "CodeArtifactToolAdapters",
     "DocumentToolAdapters",
     "EntityToolAdapters",
-    "FileToolAdapters",
     "MemoryToolAdapters",
     "ProjectToolAdapters",
     "UserToolAdapters",
@@ -48,7 +46,6 @@ __all__ = [
     "create_code_artifact_adapters",
     "create_document_adapters",
     "create_entity_adapters",
-    "create_file_adapters",
     "create_memory_adapters",
     "create_project_adapters",
     "create_user_adapters",

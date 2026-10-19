@@ -21,8 +21,8 @@ This guide provides comprehensive documentation for all tools available in the F
 ## Meta-Tools Pattern
 
 Forgetful uses a **meta-tools pattern** to preserve your LLM's context window. Only
-**3 meta-tools** are visible to MCP clients; the inner tool catalog depends on the enabled
-feature flags.
+**3 meta-tools** are visible to MCP clients; the inner tool catalog depends on the permitted
+scopes.
 
 ### The Three Meta-Tools
 
@@ -30,7 +30,7 @@ feature flags.
 List available tools, optionally filtered by category.
 
 **Parameters:**
-- `category` (optional): Filter by category (`user`, `memory`, `project`, `code_artifact`, `document`, `entity`, `file`) or by `linking`, which is not a category of its own but selects the link and unlink tools of the memory and entity categories. An unknown value is rejected with the list of valid categories
+- `category` (optional): Filter by category (`user`, `memory`, `project`, `code_artifact`, `document`, `entity`) or by `linking`, which is not a category of its own but selects the link and unlink tools of the memory and entity categories. An unknown value is rejected with the list of valid categories
 
 **Returns:**
 - `tools_by_category`: Tools grouped by category
@@ -98,8 +98,7 @@ execute_forgetful_tool(
 
 ## Tool Categories Overview
 
-The core catalog covers users, memories, projects, code artifacts, documents, and entities.
-Files appear only when their feature flag is enabled. Call
+The catalog covers users, memories, projects, code artifacts, documents, and entities. Call
 `discover_forgetful_tools()` for the exact catalog exposed by the running server.
 
 ---
@@ -164,7 +163,6 @@ Create an atomic memory with automatic linking to related memories.
 - `tags` (required): Categorization tags (max 10, each max 100 chars)
 - `project_ids` (optional): Project IDs to link
 - `document_ids` (optional): Document IDs to link
-- `file_ids` (optional): Existing file IDs to link (files must belong to the current user; unknown IDs fail)
 - `code_artifact_ids` (optional): Code artifact IDs to link
 
 **Provenance Tracking (optional):**
@@ -287,7 +285,6 @@ Update existing memory fields (PATCH semantics - only updates provided fields).
 - `context` (optional): Updated context (must not be blank)
 - `keywords` (optional): Updated keywords (each max 100 chars)
 - `tags` (optional): Updated tags (each max 100 chars)
-- `file_ids` (optional): Replaces existing file links; `[]` clears them; omit to leave them unchanged
 
 **Provenance Tracking (optional):**
 - `source_repo` (optional): Repository source (e.g., 'owner/repo')

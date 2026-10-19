@@ -1,14 +1,10 @@
 """E2E tests for MCP tool-surface argument validation with in-memory SQLite
 
-Covers the document, code artifact, entity, file and project link tools reached through
+Covers the document, code artifact, entity and project link tools reached through
 ``execute_forgetful_tool``.
 """
-import base64
-
 import pytest
 from fastmcp.exceptions import ToolError
-
-FILE_DATA = base64.b64encode(b"hello").decode("utf-8")
 
 
 async def call(client, tool_name, **arguments):
@@ -36,14 +32,6 @@ async def make_code_artifact(client, tags=None, **extra):
 async def make_entity(client, name="ent", tags=None, **extra):
     result = await call(
         client, "create_entity", name=name, entity_type="Organization", tags=tags or [], **extra,
-    )
-    return result.data["id"]
-
-
-async def make_file(client, tags=None, **extra):
-    result = await call(
-        client, "create_file", filename="f.txt", description="d", data=FILE_DATA,
-        mime_type="text/plain", tags=tags or [], **extra,
     )
     return result.data["id"]
 
@@ -83,12 +71,6 @@ ID_TOOL_CASES = [
          ("delete_entity", {}), ("get_entity_relationships", {}),
          ("get_entity_memories", {})],
         id="entity",
-    ),
-    pytest.param(
-        make_file, "get_file", "file_id",
-        [("get_file", {}), ("update_file", {"filename": "changed.txt"}),
-         ("delete_file", {})],
-        id="file",
     ),
 ]
 
@@ -173,9 +155,6 @@ async def test_entity_link_and_relationship_tools_reject_invalid_ids(
         ("create_document", {"title": "t", "description": "d", "content": "c"}),
         ("create_code_artifact",
          {"title": "t", "description": "d", "code": "x", "language": "python"}),
-        ("create_file",
-         {"filename": "f.txt", "description": "d", "data": FILE_DATA,
-          "mime_type": "text/plain"}),
         ("create_entity", {"name": "n", "entity_type": "Organization"}),
     ],
 )
@@ -225,7 +204,6 @@ async def test_list_id_does_not_leak_sql_or_user_id(mcp_client):
         (make_document, "list_documents", "documents"),
         (make_code_artifact, "list_code_artifacts", "code_artifacts"),
         (make_entity, "list_entities", "entities"),
-        (make_file, "list_files", "files"),
     ],
 )
 async def test_list_tools_treat_scalar_tags_string_as_one_tag(mcp_client, make, list_tool, key):
@@ -275,8 +253,6 @@ async def test_list_filters_validate_project_ids_and_project_id(mcp_client):
         await call(mcp_client, "list_documents", project_id=True)
     with pytest.raises(ToolError, match="project_id (must|cannot)"):
         await call(mcp_client, "list_code_artifacts", project_id=1.5)
-    with pytest.raises(ToolError, match="project_id (must|cannot)"):
-        await call(mcp_client, "list_files", project_id="x")
 
     by_project = await call(mcp_client, "list_documents", project_id=str(project_id))
     assert by_project.data["total_count"] == 1

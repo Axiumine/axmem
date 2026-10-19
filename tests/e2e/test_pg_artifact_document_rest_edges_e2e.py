@@ -1,7 +1,7 @@
-"""PostgreSQL: REST behaviour of code artifacts, documents and files at their edges.
+"""PostgreSQL: REST behaviour of code artifacts and documents at their edges.
 
-Unknown ids on update and delete, filters that narrow a listing (language, document type,
-project) and the normalisation of a language on update. All checks go through the REST API
+Unknown ids on update and delete, filters that narrow a listing (language, document type)
+and the normalisation of a language on update. All checks go through the REST API
 and read the persisted state back through a second request.
 """
 import pytest
@@ -13,16 +13,7 @@ UNKNOWN_ID = 987654
 RESOURCES = {
     "code-artifacts": ("Code artifact", {"title": "renamed"}),
     "documents": ("Document", {"title": "renamed"}),
-    "files": ("File", {"description": "renamed"}),
 }
-
-
-async def _create_project(http_client, name: str) -> int:
-    response = await http_client.post("/api/v1/projects", json={
-        "name": name, "description": "d", "project_type": "development",
-    })
-    assert response.status_code == 201
-    return response.json()["id"]
 
 
 async def _create_code_artifact(http_client, title: str, **extra) -> dict:
@@ -36,15 +27,6 @@ async def _create_code_artifact(http_client, title: str, **extra) -> dict:
 async def _create_document(http_client, title: str, **extra) -> dict:
     response = await http_client.post("/api/v1/documents", json={
         "title": title, "description": "d", "content": "body", **extra,
-    })
-    assert response.status_code == 201
-    return response.json()
-
-
-async def _create_file(http_client, filename: str, **extra) -> dict:
-    response = await http_client.post("/api/v1/files", json={
-        "filename": filename, "description": "d", "data": "aGVsbG8=",
-        "mime_type": "text/plain", **extra,
     })
     assert response.status_code == 201
     return response.json()
@@ -116,17 +98,4 @@ async def test_document_listing_filters_by_document_type(http_client):
     assert response.status_code == 200
     body = response.json()
     assert [d["title"] for d in body["documents"]] == ["notes"]
-    assert body["total"] == 1
-
-
-async def test_file_listing_filters_by_project(http_client):
-    project_id = await _create_project(http_client, "files project")
-    await _create_file(http_client, "inside.txt", project_id=project_id)
-    await _create_file(http_client, "outside.txt")
-
-    response = await http_client.get("/api/v1/files", params={"project_id": project_id})
-
-    assert response.status_code == 200
-    body = response.json()
-    assert [f["filename"] for f in body["files"]] == ["inside.txt"]
     assert body["total"] == 1

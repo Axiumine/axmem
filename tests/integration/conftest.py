@@ -9,7 +9,6 @@ import pytest
 from app.services.code_artifact_service import CodeArtifactService
 from app.services.document_service import DocumentService
 from app.services.entity_service import EntityService
-from app.services.file_service import FileService
 from app.services.memory_service import MemoryService
 from app.services.project_service import ProjectService
 from app.services.user_service import UserService
@@ -18,7 +17,6 @@ from tests.integration.stubs import (
     InMemoryCodeArtifactRepository,
     InMemoryDocumentRepository,
     InMemoryEntityRepository,
-    InMemoryFileRepository,
     InMemoryMemoryRepository,
     InMemoryProjectRepository,
     InMemoryUserRepository,
@@ -149,27 +147,6 @@ def test_document_service_with_event_bus(mock_document_repository):
     return service, event_bus
 
 
-# ============ File Testing Fixtures ============
-
-
-@pytest.fixture
-def mock_file_repository():
-    return InMemoryFileRepository()
-
-
-@pytest.fixture
-def test_file_service(mock_file_repository):
-    return FileService(mock_file_repository)
-
-
-@pytest.fixture
-def test_file_service_with_event_bus(mock_file_repository):
-    """Provides a FileService with event bus for testing event emission."""
-    event_bus = CollectingEventBus()
-    service = FileService(mock_file_repository, event_bus=event_bus)
-    return service, event_bus
-
-
 # ============ Entity Testing Fixtures ============
 
 
@@ -201,7 +178,6 @@ _SQLITE_RUNTIME_FIELDS = [
     "EMBEDDING_PROVIDER",
     "RERANKING_ENABLED",
     "FORGETFUL_SCOPES",
-    "FILES_ENABLED",
     "ACTIVITY_ENABLED",
 ]
 
@@ -221,7 +197,6 @@ def sqlite_runtime_settings():
     settings.EMBEDDING_PROVIDER = "FastEmbed"
     settings.RERANKING_ENABLED = False
     settings.FORGETFUL_SCOPES = "*"
-    settings.FILES_ENABLED = False
     settings.ACTIVITY_ENABLED = False
     yield settings
     for name, value in original.items():

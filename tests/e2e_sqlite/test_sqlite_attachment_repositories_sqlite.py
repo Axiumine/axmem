@@ -1,10 +1,9 @@
-"""Code artifact, document and file repositories on a real SQLite database.
+"""Code artifact and document repositories on a real SQLite database.
 
-The three repositories share one contract: a storage failure is logged with the caller's
+The two repositories share one contract: a storage failure is logged with the caller's
 context and re-raised unchanged, an update of an unknown row is a NotFoundError that is not
 logged as a failure, and a rejected row never leaves partial state behind.
 """
-import base64
 import sqlite3
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -16,11 +15,9 @@ import pytest
 from app.exceptions import NotFoundError
 from app.models.code_artifact_models import CodeArtifactCreate, CodeArtifactUpdate
 from app.models.document_models import DocumentCreate, DocumentUpdate
-from app.models.file_models import FileCreate, FileUpdate
 from app.repositories.sqlite import (
     code_artifact_repository,
     document_repository,
-    file_repository,
 )
 from tests.e2e_sqlite.sqlite_repository_helpers import (
     UNKNOWN_ID,
@@ -81,23 +78,6 @@ KINDS = {
         list="list_documents",
         update="update_document",
         delete="delete_document",
-    ),
-    "file": Kind(
-        noun="file",
-        module=file_repository,
-        repository=file_repository.SqliteFileRepository,
-        new=lambda: FileCreate(
-            filename="notes.txt",
-            description="Meeting notes",
-            data=base64.b64encode(b"hello").decode(),
-            mime_type="text/plain",
-        ),
-        patch=lambda: FileUpdate(description="Meeting notes, revised"),
-        create="create_file",
-        get="get_file_by_id",
-        list="list_files",
-        update="update_file",
-        delete="delete_file",
     ),
 }
 KIND_IDS = list(KINDS)

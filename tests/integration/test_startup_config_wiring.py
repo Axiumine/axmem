@@ -48,7 +48,6 @@ from app.repositories.postgres.postgres_tables import (
     DocumentsTable,
     EntitiesTable,
     EntityRelationshipsTable,
-    FilesTable,
 )
 from app.utils.provenance import PROVENANCE_ENV_MAP
 
@@ -334,7 +333,6 @@ def test_provenance_default_at_the_cap_is_accepted(monkeypatch, setting):
 POSTGRES_COLUMNS = {
     "CODE_ARTIFACT_TITLE_MAX_LENGTH": (CodeArtifactsTable, "title"),
     "DOCUMENT_TITLE_MAX_LENGTH": (DocumentsTable, "title"),
-    "FILE_FILENAME_MAX_LENGTH": (FilesTable, "filename"),
     "ENTITY_NAME_MAX_LENGTH": (EntitiesTable, "name"),
     "ENTITY_TYPE_MAX_LENGTH": (EntitiesTable, "custom_type"),
     "ENTITY_RELATIONSHIP_TYPE_MAX_LENGTH": (EntityRelationshipsTable, "relationship_type"),

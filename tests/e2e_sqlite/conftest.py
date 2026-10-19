@@ -10,7 +10,6 @@ Key differences from Docker E2E tests:
 - Runs by default (no @pytest.mark.e2e required)
 """
 from contextlib import asynccontextmanager
-from dataclasses import dataclass, field
 
 import pytest
 from fastmcp import FastMCP
@@ -32,7 +31,6 @@ from app.repositories.sqlite.code_artifact_repository import (
 )
 from app.repositories.sqlite.document_repository import SqliteDocumentRepository
 from app.repositories.sqlite.entity_repository import SqliteEntityRepository
-from app.repositories.sqlite.file_repository import SqliteFileRepository
 from app.repositories.sqlite.memory_repository import SqliteMemoryRepository
 from app.repositories.sqlite.project_repository import SqliteProjectRepository
 
@@ -45,7 +43,6 @@ from app.routes.api import (
     code_artifacts,
     documents,
     entities,
-    files,
     health,
     memories,
     projects,
@@ -58,41 +55,10 @@ from app.services.activity_service import ActivityService
 from app.services.code_artifact_service import CodeArtifactService
 from app.services.document_service import DocumentService
 from app.services.entity_service import EntityService
-from app.services.file_service import FileService
 from app.services.memory_service import MemoryService
 from app.services.project_service import ProjectService
 from app.services.re_embedding_service import ReEmbeddingService
 from app.services.user_service import UserService
-
-# ============================================================================
-# Feature Flag Registry
-# ============================================================================
-# Maps feature flag names to the services, tool registry kwargs, and REST route
-# modules they control. To add a new feature flag:
-#   1. Add an entry here
-#   2. Add the wiring logic in _build_feature_services()
-#   3. Add route modules to "routes"
-# Tests in test_feature_flags_sqlite.py automatically pick up new entries.
-# ============================================================================
-
-@dataclass
-class FeatureFlagDef:
-    """Definition of a feature-flagged capability."""
-    # Tool categories that should be absent when disabled
-    categories: list[str]
-    # Sample tool names to verify absence (not exhaustive — just spot checks)
-    sample_tools: list[str]
-    # REST route prefixes that should 404 when disabled
-    route_prefixes: list[str] = field(default_factory=list)
-
-
-FEATURE_FLAGS: dict[str, FeatureFlagDef] = {
-    "files": FeatureFlagDef(
-        categories=["file"],
-        sample_tools=["create_file", "get_file", "list_files"],
-        route_prefixes=["/api/v1/files"],
-    ),
-}
 
 
 @pytest.fixture(scope="module")
@@ -131,18 +97,15 @@ def reranker_adapter():
 
 
 # ============================================================================
-# App Builder — shared between sqlite_app and feature-flag-off fixtures
+# App Builder — the fully-wired in-memory SQLite app behind the sqlite_app fixture
 # ============================================================================
 
-async def build_sqlite_app(embedding_adapter, reranker_adapter, enabled_features: set[str] | None = None):
+async def build_sqlite_app(embedding_adapter, reranker_adapter):
     """Build a fully-wired FastMCP app with in-memory SQLite.
 
     Args:
         embedding_adapter: Embedding adapter instance
         reranker_adapter: Reranker adapter instance (or None)
-        enabled_features: Set of feature flag names to enable.
-            None means ALL features enabled (default for most tests).
-            Empty set means no optional features.
     """
     from app.config.settings import settings
 
@@ -154,16 +117,12 @@ async def build_sqlite_app(embedding_adapter, reranker_adapter, enabled_features
     settings.DATABASE = "SQLite"
     settings.SQLITE_MEMORY = True
 
-    # If None, enable everything
-    if enabled_features is None:
-        enabled_features = set(FEATURE_FLAGS.keys())
-
     try:
         # Create database adapter with in-memory SQLite
         db_adapter = SqliteDatabaseAdapter()
         await db_adapter.init_db()
 
-        # Core repositories (always created)
+        # Repositories
         user_repository = SqliteUserRepository(db_adapter=db_adapter)
         memory_repository = SqliteMemoryRepository(
             db_adapter=db_adapter,
@@ -176,9 +135,6 @@ async def build_sqlite_app(embedding_adapter, reranker_adapter, enabled_features
         entity_repository = SqliteEntityRepository(db_adapter=db_adapter)
         activity_repository = SqliteActivityRepository(db_adapter=db_adapter)
 
-        # Feature-flagged repositories
-        file_repository = SqliteFileRepository(db_adapter=db_adapter) if "files" in enabled_features else None
-
         @asynccontextmanager
         async def lifespan(app):
             """Application lifecycle with SQLite initialization"""
@@ -186,7 +142,7 @@ async def build_sqlite_app(embedding_adapter, reranker_adapter, enabled_features
 
             activity_service = ActivityService(activity_repository)
 
-            # Core services (always created)
+            # Services
             user_service = UserService(user_repository)
             memory_service = MemoryService(memory_repository, event_bus=None)
             project_service = ProjectService(project_repository, event_bus=None)
@@ -194,12 +150,7 @@ async def build_sqlite_app(embedding_adapter, reranker_adapter, enabled_features
             document_service = DocumentService(document_repository, event_bus=None)
             entity_service = EntityService(entity_repository, event_bus=None)
 
-            # Feature-flagged services
-            file_service = None
-            if "files" in enabled_features:
-                file_service = FileService(file_repository, event_bus=None)
-
-            # Store core services on FastMCP instance
+            # Store services on FastMCP instance
             mcp.user_service = user_service
             mcp.memory_service = memory_service
             mcp.project_service = project_service
@@ -209,15 +160,11 @@ async def build_sqlite_app(embedding_adapter, reranker_adapter, enabled_features
             mcp.activity_service = activity_service
             mcp.event_bus = event_bus
 
-            # Store feature-flagged services
-            if file_service:
-                mcp.file_service = file_service
-
             # Create and attach registry
             registry = ToolRegistry()
             mcp.registry = registry
 
-            # Register tools — optional services passed as None when disabled
+            # Register tools
             register_all_tools_metadata(
                 registry=registry,
                 user_service=user_service,
@@ -227,7 +174,6 @@ async def build_sqlite_app(embedding_adapter, reranker_adapter, enabled_features
                 code_artifact_service=code_artifact_service,
                 document_service=document_service,
                 entity_service=entity_service,
-                file_service=file_service,
             )
 
             # Resolve instance-level scope ceiling
@@ -240,7 +186,7 @@ async def build_sqlite_app(embedding_adapter, reranker_adapter, enabled_features
         # Create FastMCP app
         mcp = FastMCP("Forgetful-SQLite-E2E", lifespan=lifespan)
 
-        # Core routes (always registered)
+        # Routes
         health.register(mcp)
         auth.register(mcp)
         memories.register(mcp)
@@ -249,10 +195,6 @@ async def build_sqlite_app(embedding_adapter, reranker_adapter, enabled_features
         documents.register(mcp)
         code_artifacts.register(mcp)
         activity.register(mcp)
-
-        # Feature-flagged routes
-        if "files" in enabled_features:
-            files.register(mcp)
 
         meta_tools.register(mcp)
 
@@ -274,9 +216,9 @@ async def build_sqlite_app(embedding_adapter, reranker_adapter, enabled_features
 async def sqlite_app(embedding_adapter, reranker_adapter):
     """Create and configure FastMCP application with in-memory SQLite backend.
 
-    All optional features are ENABLED. Function-scoped for test isolation.
+    Function-scoped for test isolation.
     """
-    async for app in build_sqlite_app(embedding_adapter, reranker_adapter, enabled_features=None):
+    async for app in build_sqlite_app(embedding_adapter, reranker_adapter):
         yield app
 
 

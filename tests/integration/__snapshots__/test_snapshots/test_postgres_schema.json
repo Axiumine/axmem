@@ -32,9 +32,6 @@
     "CREATE INDEX ix_entities_tags ON entities USING gin (tags)",
     "CREATE INDEX ix_entities_user_id ON entities (user_id)"
   ],
-  "entity_file_association": [
-    "CREATE TABLE entity_file_association (\n\tentity_id INTEGER NOT NULL, \n\tfile_id INTEGER NOT NULL, \n\tPRIMARY KEY (entity_id, file_id), \n\tFOREIGN KEY(entity_id) REFERENCES entities (id) ON DELETE CASCADE, \n\tFOREIGN KEY(file_id) REFERENCES files (id) ON DELETE CASCADE\n)"
-  ],
   "entity_project_association": [
     "CREATE TABLE entity_project_association (\n\tentity_id INTEGER NOT NULL, \n\tproject_id INTEGER NOT NULL, \n\tPRIMARY KEY (entity_id, project_id), \n\tFOREIGN KEY(entity_id) REFERENCES entities (id) ON DELETE CASCADE, \n\tFOREIGN KEY(project_id) REFERENCES projects (id) ON DELETE CASCADE\n)"
   ],
@@ -45,13 +42,6 @@
     "CREATE INDEX ix_entity_relationships_target_entity_id ON entity_relationships (target_entity_id)",
     "CREATE UNIQUE INDEX ix_entity_relationships_unique ON entity_relationships (source_entity_id, target_entity_id, relationship_type)",
     "CREATE INDEX ix_entity_relationships_user_id ON entity_relationships (user_id)"
-  ],
-  "files": [
-    "CREATE TABLE files (\n\tid SERIAL NOT NULL, \n\tuser_id UUID NOT NULL, \n\tproject_id INTEGER, \n\tfilename VARCHAR(255) NOT NULL, \n\tdescription TEXT NOT NULL, \n\tdata BYTEA NOT NULL, \n\tmime_type VARCHAR(255) NOT NULL, \n\tsize_bytes INTEGER NOT NULL, \n\ttags VARCHAR[] NOT NULL, \n\tsource_repo TEXT, \n\tsource_files VARCHAR[], \n\tsource_url TEXT, \n\tconfidence FLOAT, \n\tencoding_agent TEXT, \n\tencoding_version TEXT, \n\tagent_id TEXT, \n\tagent_version TEXT, \n\tagent_model TEXT, \n\tcreated_at TIMESTAMP WITH TIME ZONE NOT NULL, \n\tupdated_at TIMESTAMP WITH TIME ZONE NOT NULL, \n\tPRIMARY KEY (id), \n\tFOREIGN KEY(user_id) REFERENCES users (id) ON DELETE CASCADE, \n\tFOREIGN KEY(project_id) REFERENCES projects (id) ON DELETE SET NULL\n)",
-    "CREATE INDEX ix_files_mime_type ON files (mime_type)",
-    "CREATE INDEX ix_files_project_id ON files (project_id)",
-    "CREATE INDEX ix_files_tags ON files USING gin (tags)",
-    "CREATE INDEX ix_files_user_id ON files (user_id)"
   ],
   "memories": [
     "CREATE TABLE memories (\n\tid SERIAL NOT NULL, \n\tuser_id UUID NOT NULL, \n\ttitle TEXT NOT NULL, \n\tcontent TEXT NOT NULL, \n\tcontext TEXT NOT NULL, \n\tkeywords VARCHAR[] NOT NULL, \n\ttags VARCHAR[] NOT NULL, \n\timportance INTEGER NOT NULL, \n\tembedding VECTOR(384) NOT NULL, \n\tsource_repo TEXT, \n\tsource_files VARCHAR[], \n\tsource_url TEXT, \n\tconfidence FLOAT, \n\tencoding_agent TEXT, \n\tencoding_version TEXT, \n\tagent_id TEXT, \n\tagent_version TEXT, \n\tagent_model TEXT, \n\tis_obsolete BOOLEAN NOT NULL, \n\tobsolete_reason TEXT, \n\tsuperseded_by INTEGER, \n\tobsoleted_at TIMESTAMP WITH TIME ZONE, \n\taccess_count INTEGER NOT NULL, \n\tlast_accessed_at TIMESTAMP WITH TIME ZONE, \n\tcreated_at TIMESTAMP WITH TIME ZONE NOT NULL, \n\tupdated_at TIMESTAMP WITH TIME ZONE NOT NULL, \n\tPRIMARY KEY (id), \n\tFOREIGN KEY(user_id) REFERENCES users (id) ON DELETE CASCADE, \n\tFOREIGN KEY(superseded_by) REFERENCES memories (id) ON DELETE SET NULL\n)",
@@ -73,9 +63,6 @@
   ],
   "memory_entity_association": [
     "CREATE TABLE memory_entity_association (\n\tmemory_id INTEGER NOT NULL, \n\tentity_id INTEGER NOT NULL, \n\tPRIMARY KEY (memory_id, entity_id), \n\tFOREIGN KEY(memory_id) REFERENCES memories (id) ON DELETE CASCADE, \n\tFOREIGN KEY(entity_id) REFERENCES entities (id) ON DELETE CASCADE\n)"
-  ],
-  "memory_file_association": [
-    "CREATE TABLE memory_file_association (\n\tmemory_id INTEGER NOT NULL, \n\tfile_id INTEGER NOT NULL, \n\tPRIMARY KEY (memory_id, file_id), \n\tFOREIGN KEY(memory_id) REFERENCES memories (id) ON DELETE CASCADE, \n\tFOREIGN KEY(file_id) REFERENCES files (id) ON DELETE CASCADE\n)"
   ],
   "memory_links": [
     "CREATE TABLE memory_links (\n\tid SERIAL NOT NULL, \n\tuser_id UUID NOT NULL, \n\tsource_id INTEGER NOT NULL, \n\ttarget_id INTEGER NOT NULL, \n\tcreated_at TIMESTAMP WITH TIME ZONE NOT NULL, \n\tPRIMARY KEY (id), \n\tFOREIGN KEY(user_id) REFERENCES users (id) ON DELETE CASCADE, \n\tFOREIGN KEY(source_id) REFERENCES memories (id) ON DELETE CASCADE, \n\tFOREIGN KEY(target_id) REFERENCES memories (id) ON DELETE CASCADE\n)",

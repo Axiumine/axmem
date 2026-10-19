@@ -65,7 +65,6 @@ class MemoryToolAdapters:
         project_ids: list[int] | None = None,
         code_artifact_ids: list[int] | None = None,
         document_ids: list[int] | None = None,
-        file_ids: list[int] | None = None,
         # Provenance tracking fields
         source_repo: str | None = None,
         source_files: list[str] | None = None,
@@ -92,7 +91,6 @@ class MemoryToolAdapters:
             project_ids=coerce_optional_int_ids(project_ids, "project_ids"),
             code_artifact_ids=coerce_optional_int_ids(code_artifact_ids, "code_artifact_ids"),
             document_ids=coerce_optional_int_ids(document_ids, "document_ids"),
-            file_ids=coerce_optional_int_ids(file_ids, "file_ids"),
             source_repo=source_repo,
             source_files=source_files,
             source_url=source_url,
@@ -130,7 +128,6 @@ class MemoryToolAdapters:
             project_ids=memory.project_ids,
             code_artifact_ids=memory.code_artifact_ids,
             document_ids=memory.document_ids,
-            file_ids=memory.file_ids,
             similar_memories=similar_memories,
             obsolete_matches=obsolete_matches,
         )
@@ -199,7 +196,6 @@ class MemoryToolAdapters:
         project_ids: list[int] | None = None,
         code_artifact_ids: list[int] | None = None,
         document_ids: list[int] | None = None,
-        file_ids: list[int] | None = None,
         # Provenance tracking fields
         source_repo: str | None = None,
         source_files: list[str] | None = None,
@@ -229,7 +225,6 @@ class MemoryToolAdapters:
             project_ids=coerce_optional_int_ids(project_ids, "project_ids"),
             code_artifact_ids=coerce_optional_int_ids(code_artifact_ids, "code_artifact_ids"),
             document_ids=coerce_optional_int_ids(document_ids, "document_ids"),
-            file_ids=coerce_optional_int_ids(file_ids, "file_ids"),
             source_repo=source_repo,
             source_files=source_files,
             source_url=source_url,

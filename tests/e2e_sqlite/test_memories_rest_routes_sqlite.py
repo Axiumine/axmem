@@ -27,7 +27,6 @@ ASSOCIATION_FIELDS = [
     ("project_ids", "Projects"),
     ("code_artifact_ids", "Code artifacts"),
     ("document_ids", "Documents"),
-    ("file_ids", "Files"),
 ]
 
 
@@ -106,7 +105,6 @@ class TestCreateMemoryResponse:
         body = response.json()
         assert body["document_ids"] == [document.json()["id"]]
         assert body["project_ids"] == [project.json()["id"]]
-        assert body["file_ids"] == []
 
 
 class TestUpdateMemoryErrors:

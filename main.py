@@ -25,7 +25,6 @@ from app.routes.api import (
     code_artifacts,
     documents,
     entities,
-    files,
     health,
     memories,
     projects,
@@ -67,9 +66,6 @@ async def lifespan(app):
     mcp.entity_service = services.entity
     mcp.activity_service = services.activity
     mcp.event_bus = runtime.event_bus
-
-    if services.file:
-        mcp.file_service = services.file
 
     logger.info("Services initialized and attached to FastMCP instance")
 
@@ -123,9 +119,6 @@ projects.register(mcp)
 documents.register(mcp)
 code_artifacts.register(mcp)
 activity.register(mcp)
-
-if settings.FILES_ENABLED:
-    files.register(mcp)
 
 meta_tools.register(mcp)
 

@@ -1,6 +1,5 @@
 """Contracts of the revision that dropped the skills tables, run against SQLite and PostgreSQL."""
 
-import base64
 from typing import Any
 
 from sqlalchemy import text
@@ -9,7 +8,6 @@ from app.bootstrap import create_repositories
 from app.config.settings import settings
 from app.models.code_artifact_models import CodeArtifactCreate
 from app.models.document_models import DocumentCreate
-from app.models.file_models import FileCreate
 from app.models.memory_models import MemoryCreate
 from app.models.project_models import ProjectCreate, ProjectType
 from app.models.user_models import UserCreate
@@ -74,13 +72,6 @@ async def store_skill_rows_and_events(db: Any) -> dict[str, Any]:
     code_artifact = await repos["code_artifact"].create_code_artifact(
         owner, CodeArtifactCreate(title="t", description="d", code="print(1)", language="python"),
     )
-    stored_file = await repos["file"].create_file(
-        owner,
-        FileCreate(
-            filename="a.txt", description="d", mime_type="text/plain",
-            data=base64.b64encode(b"hello").decode(),
-        ),
-    )
 
     # PostgreSQL stores the skill embedding in the row and has array tags; SQLite keeps the
     # embedding in vec_skills and stores the tags as JSON.
@@ -97,13 +88,21 @@ async def store_skill_rows_and_events(db: Any) -> dict[str, Any]:
         "memory": memory.id,
         "document": document.id,
         "code_artifact": code_artifact.id,
-        "file": stored_file.id,
         "embedding": str([0.1] * settings.EMBEDDING_DIMENSIONS),
     }
+    # The files table is not part of the application any more: its revision brings it back.
+    insert_file = (
+        "INSERT INTO files (id, user_id, filename, description, data, mime_type, size_bytes, tags) "
+        "VALUES (1, :owner, 'a.txt', 'd', 'hello', 'text/plain', 5, '{}')"
+        if is_postgres(db) else
+        "INSERT INTO files (id, user_id, filename, description, data, mime_type, size_bytes, tags) "
+        "VALUES (1, :owner, 'a.txt', 'd', 'hello', 'text/plain', 5, '[]')"
+    )
     statements = [
+        insert_file,
         insert_skill,
         "INSERT INTO memory_skill_association (memory_id, skill_id) VALUES (:memory, 1)",
-        "INSERT INTO skill_file_association (skill_id, file_id) VALUES (1, :file)",
+        "INSERT INTO skill_file_association (skill_id, file_id) VALUES (1, 1)",
         "INSERT INTO skill_code_artifact_association (skill_id, code_artifact_id) VALUES (1, :code_artifact)",
         "INSERT INTO skill_document_association (skill_id, document_id) VALUES (1, :document)",
     ]
@@ -137,8 +136,7 @@ async def vec_skills_tables(db: Any) -> list[str]:
 
 
 class TestSkillsRemoval:
-    async def test_upgrade_drops_the_skill_tables_and_their_activity_events(self, skills_db, monkeypatch):
-        monkeypatch.setattr(settings, "FILES_ENABLED", True)  # the file repository holds a skill target
+    async def test_upgrade_drops_the_skill_tables_and_their_activity_events(self, skills_db):
         config = alembic_config()
         await run_migration(skills_db, config, "downgrade", LAST_REVISION_WITH_SKILLS)
         assert all(await skill_shapes(skills_db)), "downgrade must bring the tables back"

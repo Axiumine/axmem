@@ -5,7 +5,6 @@ can make the second step fail or the first step find nothing. The services must 
 actually happened and emit a ``deleted`` event only when they have a snapshot of a removed record.
 """
 
-import base64
 import logging
 from uuid import uuid4
 
@@ -16,7 +15,6 @@ from app.models.code_artifact_models import CodeArtifactCreate
 from app.models.document_models import DocumentCreate
 from app.models.entity_models import EntityCreate
 from app.models.entity_models import EntityType as EntityKind
-from app.models.file_models import FileCreate
 from app.models.project_models import ProjectCreate, ProjectType
 
 USER_ID = uuid4()
@@ -38,16 +36,6 @@ def _create_entity(service):
     return service.create_entity(USER_ID, EntityCreate(name="Ent", entity_type=EntityKind.INDIVIDUAL))
 
 
-def _create_file(service):
-    return service.create_file(
-        USER_ID,
-        FileCreate(
-            filename="a.txt", description="d", mime_type="text/plain",
-            data=base64.b64encode(b"hello").decode(),
-        ),
-    )
-
-
 # fixture of the service, how it creates a record, the repository getter the snapshot comes from,
 # the service's delete method and the activity entity type of the emitted events
 RECORDS = {
@@ -58,10 +46,6 @@ RECORDS = {
     "code_artifact": (
         "test_code_artifact_service_with_event_bus", _create_code_artifact, "artifact_repo",
         "get_code_artifact_by_id", "delete_code_artifact", EntityType.CODE_ARTIFACT,
-    ),
-    "file": (
-        "test_file_service_with_event_bus", _create_file, "file_repo",
-        "get_file_by_id", "delete_file", EntityType.FILE,
     ),
     "entity": (
         "test_entity_service_with_event_bus", _create_entity, "entity_repo",

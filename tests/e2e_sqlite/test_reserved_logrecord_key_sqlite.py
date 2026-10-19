@@ -1,9 +1,8 @@
-"""E2E tests: INFO logging must not break files and projects on SQLite.
+"""E2E tests: INFO logging must not break projects on SQLite.
 
-Several log calls passed ``extra={"name": ...}`` (or ``"filename"``), keys reserved by
-``logging.LogRecord``. ``Logger.makeRecord`` raises ``KeyError`` for those, so file
-creation and project listing crashed whenever INFO was enabled for the
-module loggers.
+Several log calls passed ``extra={"name": ...}``, a key reserved by
+``logging.LogRecord``. ``Logger.makeRecord`` raises ``KeyError`` for those, so project
+listing crashed whenever INFO was enabled for the module loggers.
 
 ``init_db`` runs Alembic, whose ``fileConfig`` call disables every app logger that
 already exists and resets the root level, which hides the crash in the default test
@@ -18,9 +17,7 @@ import pytest
 
 LOGGERS = (
     "app.services.project_service",
-    "app.services.file_service",
     "app.repositories.sqlite.project_repository",
-    "app.repositories.sqlite.file_repository",
 )
 
 
@@ -57,23 +54,6 @@ def info_logging_mcp(mcp_client, caplog):
 
 def _messages(caplog, logger_name: str) -> set[str]:
     return {r.getMessage() for r in caplog.records if r.name == logger_name}
-
-
-@pytest.mark.asyncio
-async def test_create_file_via_api_with_info_logging(http_client, info_logging_http):
-    response = await http_client.post(
-        "/api/v1/files",
-        json={
-            "filename": "info-logging.txt",
-            "description": "Created while INFO logging is enabled",
-            "data": "SGVsbG8sIFdvcmxkIQ==",
-            "mime_type": "text/plain",
-        },
-    )
-
-    assert response.status_code == 201, response.text
-    assert response.json()["filename"] == "info-logging.txt"
-    assert "creating file" in _messages(info_logging_http, "app.services.file_service")
 
 
 @pytest.mark.asyncio

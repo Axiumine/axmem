@@ -1,15 +1,14 @@
 """E2E tests (service -> repository -> in-memory SQLite) for tag filters and list loading.
 
-Covers two behaviours of the SQLite list_* queries for documents, code
-artifacts and files:
+Covers two behaviours of the SQLite list_* queries for documents and code
+artifacts:
 
 1. The ``tags`` filter must be an exact, case-sensitive array membership test
    (the same contract as the PostgreSQL ``&&`` overlap): non-ASCII tags are
    found, ``%``/``_``/quote characters in the filter have no special meaning.
-2. Summary listings must not fetch the heavy ``files.data`` /
-   ``documents.content`` columns that the summary models never expose.
+2. The summary listing must not fetch the heavy ``documents.content`` column
+   that the summary model never exposes.
 """
-import base64
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from uuid import uuid4
@@ -20,18 +19,15 @@ from sqlalchemy import event
 from app.config.settings import settings
 from app.models.code_artifact_models import CodeArtifactCreate
 from app.models.document_models import DocumentCreate
-from app.models.file_models import FileCreate
 from app.models.user_models import UserCreate
 from app.repositories.sqlite.code_artifact_repository import (
     SqliteCodeArtifactRepository,
 )
 from app.repositories.sqlite.document_repository import SqliteDocumentRepository
-from app.repositories.sqlite.file_repository import SqliteFileRepository
 from app.repositories.sqlite.sqlite_adapter import SqliteDatabaseAdapter
 from app.repositories.sqlite.user_repository import SqliteUserRepository
 from app.services.code_artifact_service import CodeArtifactService
 from app.services.document_service import DocumentService
-from app.services.file_service import FileService
 
 EMBEDDING_DIMENSIONS = 384
 
@@ -44,7 +40,6 @@ class Stack:
     user_id: object
     documents: DocumentService
     artifacts: CodeArtifactService
-    files: FileService
 
 
 @pytest.fixture
@@ -76,9 +71,6 @@ async def stack():
             ),
             artifacts=CodeArtifactService(
                 SqliteCodeArtifactRepository(db_adapter=adapter), event_bus=None,
-            ),
-            files=FileService(
-                SqliteFileRepository(db_adapter=adapter), event_bus=None,
             ),
         )
     finally:
@@ -117,7 +109,7 @@ def _build_kind(name: str, stack: Stack) -> Kind:
             found = await stack.documents.list_documents(uid, tags=tags)
             return {d.title for d in found}
 
-    elif name == "code_artifact":
+    else:
         async def create(label: str, tags: list[str]) -> None:
             await stack.artifacts.create_code_artifact(
                 uid,
@@ -134,28 +126,11 @@ def _build_kind(name: str, stack: Stack) -> Kind:
             found = await stack.artifacts.list_code_artifacts(uid, tags=tags)
             return {a.title for a in found}
 
-    else:
-        async def create(label: str, tags: list[str]) -> None:
-            await stack.files.create_file(
-                uid,
-                FileCreate(
-                    filename=label,
-                    description="d",
-                    data=base64.b64encode(b"payload").decode(),
-                    mime_type="text/plain",
-                    tags=tags,
-                ),
-            )
-
-        async def list_labels(tags: list[str]) -> set[str]:
-            found = await stack.files.list_files(uid, tags=tags)
-            return {f.filename for f in found}
-
     return Kind(create=create, list_labels=list_labels)
 
 
 @pytest.fixture(
-    params=["document", "code_artifact", "file"],
+    params=["document", "code_artifact"],
 )
 def kind(request, stack: Stack) -> Kind:
     return _build_kind(request.param, stack)
@@ -224,7 +199,7 @@ async def test_any_of_several_tags_matches_and_untagged_never_does(kind: Kind):
 
 
 # ---------------------------------------------------------------------------
-# Summary listings must not fetch heavy columns
+# The summary listing must not fetch heavy columns
 # ---------------------------------------------------------------------------
 
 
@@ -244,37 +219,6 @@ def _selects_from(statements: list[str], table: str) -> list[str]:
         for s in statements
         if s.lstrip().upper().startswith("SELECT") and f"FROM {table}" in s
     ]
-
-
-async def test_list_files_does_not_select_blob_column(stack: Stack):
-    payload = base64.b64encode(b"\x01" * 4096).decode()
-    created = await stack.files.create_file(
-        stack.user_id,
-        FileCreate(
-            filename="blob.bin",
-            description="binary",
-            data=payload,
-            mime_type="application/octet-stream",
-            tags=["bin"],
-        ),
-    )
-    statements = _capture_statements(stack.adapter)
-
-    summaries = await stack.files.list_files(stack.user_id)
-
-    list_selects = _selects_from(statements, "files")
-    assert list_selects
-    assert not any("files.data" in s for s in list_selects), list_selects[0]
-    assert [s.id for s in summaries] == [created.id]
-    summary = summaries[0]
-    assert summary.filename == "blob.bin"
-    assert summary.mime_type == "application/octet-stream"
-    assert summary.size_bytes == 4096
-    assert summary.tags == ["bin"]
-
-    # The full record (with its data) is still retrievable
-    full = await stack.files.get_file(stack.user_id, created.id)
-    assert full.data == payload
 
 
 async def test_list_documents_does_not_select_content_column(stack: Stack):

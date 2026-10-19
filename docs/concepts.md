@@ -110,7 +110,7 @@ Forgetful supports optional provenance fields on all object types so you can tra
 
 ### Coverage by Object Type
 
-- **All 9 fields**: Memories, Projects, Documents, Code Artifacts, Files, Entities
+- **All 9 fields**: Memories, Projects, Documents, Code Artifacts, Entities
 - **8 fields (no `confidence`)**: Entity relationships — these already carry their own relationship-level confidence
 - Memories previously had 6 fields; `agent_id`, `agent_version`, and `agent_model` were added to bring them in line with all other types
 

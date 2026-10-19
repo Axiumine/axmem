@@ -47,6 +47,10 @@
     "down_revision": "20261008_plan_external_ref",
     "revision": "20261018_skill_unique_name"
   },
+  "20261019_drop_files_tables.py": {
+    "down_revision": "20261019_drop_skills",
+    "revision": "20261019_drop_files"
+  },
   "20261019_drop_planning_tables.py": {
     "down_revision": "20261018_skill_unique_name",
     "revision": "20261019_drop_planning"

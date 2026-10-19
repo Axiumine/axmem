@@ -1,13 +1,12 @@
-"""E2E tests (real PostgreSQL) for document/file summary listings and tag filters.
+"""E2E tests (real PostgreSQL) for the document summary listing and tag filters.
 
 PostgreSQL counterpart of
 ``tests/e2e_sqlite/test_sqlite_tag_filters_and_list_loading_sqlite.py``:
 
-- summary listings must not fetch ``files.data`` / ``documents.content``;
+- the summary listing must not fetch ``documents.content``;
 - the exact, case-sensitive ``tags`` contract that the SQLite backend now
   matches (``&&`` array overlap: Unicode, ``%``, ``_`` and quotes are literal).
 """
-import base64
 from uuid import uuid4
 
 import pytest
@@ -15,10 +14,8 @@ import pytest_asyncio
 from sqlalchemy import event
 
 from app.models.document_models import DocumentCreate
-from app.models.file_models import FileCreate
 from app.models.user_models import UserCreate
 from app.repositories.postgres.document_repository import PostgresDocumentRepository
-from app.repositories.postgres.file_repository import PostgresFileRepository
 from app.repositories.postgres.user_repository import PostgresUserRepository
 
 pytestmark = [
@@ -62,36 +59,6 @@ class _StatementCapture:
             for s in self.statements
             if s.lstrip().upper().startswith("SELECT") and f"FROM {table}" in s
         ]
-
-
-async def test_list_files_does_not_select_blob_column(db_adapter, user_id):
-    repo = PostgresFileRepository(db_adapter=db_adapter)
-    payload = base64.b64encode(b"\x01" * 4096).decode()
-    created = await repo.create_file(
-        user_id,
-        FileCreate(
-            filename="blob.bin",
-            description="binary",
-            data=payload,
-            mime_type="application/octet-stream",
-            tags=["bin"],
-        ),
-    )
-
-    with _StatementCapture(db_adapter) as capture:
-        summaries = await repo.list_files(user_id)
-
-    list_selects = capture.selects_from("files")
-    assert list_selects
-    assert not any("files.data" in s for s in list_selects), list_selects[0]
-    assert [s.id for s in summaries] == [created.id]
-    assert summaries[0].filename == "blob.bin"
-    assert summaries[0].size_bytes == 4096
-    assert summaries[0].tags == ["bin"]
-
-    # The full record (with its data) is still retrievable
-    full = await repo.get_file_by_id(user_id, created.id)
-    assert full.data == payload
 
 
 async def test_list_documents_does_not_select_content_column(db_adapter, user_id):

@@ -1,6 +1,6 @@
 """PostgreSQL repositories: database failures are logged and re-raised unchanged.
 
-Code artifacts, documents and files share one failure contract. Whatever operation fails
+Code artifacts and documents share one failure contract. Whatever operation fails
 because the database cannot be used, the repository writes an error record naming the
 operation (and the user and record involved) and then lets the original exception reach the
 caller, so the service and route layers can turn it into a server error. No database is
@@ -14,12 +14,10 @@ from sqlalchemy.exc import OperationalError
 
 from app.models.code_artifact_models import CodeArtifactCreate, CodeArtifactUpdate
 from app.models.document_models import DocumentCreate, DocumentUpdate
-from app.models.file_models import FileCreate, FileUpdate
 from app.repositories.postgres.code_artifact_repository import (
     PostgresCodeArtifactRepository,
 )
 from app.repositories.postgres.document_repository import PostgresDocumentRepository
-from app.repositories.postgres.file_repository import PostgresFileRepository
 from tests.integration.postgres_failure_injection import (
     UnreachableDatabaseAdapter,
     connection_lost_error,
@@ -30,7 +28,6 @@ RECORD_ID = 41
 
 ARTIFACT = CodeArtifactCreate(title="t", description="d", code="x = 1", language="python")
 DOCUMENT = DocumentCreate(title="t", description="d", content="body")
-FILE = FileCreate(filename="a.txt", description="d", data="aGVsbG8=", mime_type="text/plain")
 
 # (repository class, method, keyword arguments besides user_id, expected error message)
 FAILING_OPERATIONS = [
@@ -85,32 +82,6 @@ FAILING_OPERATIONS = [
         PostgresDocumentRepository, "delete_document",
         {"document_id": RECORD_ID}, f"Failed to delete document {RECORD_ID}",
         id="document-delete",
-    ),
-    pytest.param(
-        PostgresFileRepository, "create_file",
-        {"file_data": FILE}, "Failed to create file",
-        id="file-create",
-    ),
-    pytest.param(
-        PostgresFileRepository, "get_file_by_id",
-        {"file_id": RECORD_ID}, f"Failed to get file {RECORD_ID}",
-        id="file-get",
-    ),
-    pytest.param(
-        PostgresFileRepository, "list_files",
-        {}, "Failed to list files",
-        id="file-list",
-    ),
-    pytest.param(
-        PostgresFileRepository, "update_file",
-        {"file_id": RECORD_ID, "file_data": FileUpdate(description="n")},
-        f"Failed to update file {RECORD_ID}",
-        id="file-update",
-    ),
-    pytest.param(
-        PostgresFileRepository, "delete_file",
-        {"file_id": RECORD_ID}, f"Failed to delete file {RECORD_ID}",
-        id="file-delete",
     ),
 ]
 

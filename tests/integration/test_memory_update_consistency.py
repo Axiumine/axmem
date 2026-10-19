@@ -19,7 +19,6 @@ NULLABLE_FIELDS = [
     "project_ids",
     "code_artifact_ids",
     "document_ids",
-    "file_ids",
     "source_repo",
     "source_files",
     "source_url",

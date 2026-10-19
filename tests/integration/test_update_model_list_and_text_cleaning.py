@@ -17,7 +17,6 @@ from app.models.entity_models import (
     EntityType,
     EntityUpdate,
 )
-from app.models.file_models import FileUpdate
 from app.models.memory_models import MemoryUpdate
 from app.models.project_models import ProjectUpdate
 
@@ -26,7 +25,6 @@ UPDATE_MODELS = [
     DocumentUpdate,
     EntityUpdate,
     EntityRelationshipUpdate,
-    FileUpdate,
     MemoryUpdate,
     ProjectUpdate,
 ]
@@ -53,7 +51,6 @@ class TestSourceFilesOnUpdate:
         (DocumentUpdate, "tags"),
         (EntityUpdate, "tags"),
         (EntityUpdate, "aka"),
-        (FileUpdate, "tags"),
     ],
     ids=lambda value: value if isinstance(value, str) else value.__name__,
 )

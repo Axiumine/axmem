@@ -6,7 +6,6 @@ must not damage the record: on SQLite a null list column used to be stored as
 JSON ``null`` and the record could no longer be read, updated or deleted, and
 NOT NULL columns raised ``IntegrityError`` (HTTP 500).
 """
-import base64
 from dataclasses import dataclass
 
 import pytest
@@ -89,19 +88,6 @@ RESOURCES = [
         same_field="title",
     ),
     Resource(
-        name="file",
-        base="/api/v1/files",
-        payload={
-            "filename": "t.txt",
-            "description": "A text file",
-            "data": base64.b64encode(b"Hello, World!").decode(),
-            "mime_type": "text/plain",
-            "tags": ["a", "b"],
-        },
-        null_fields=("filename", "description", "data", "mime_type", "tags"),
-        same_field="filename",
-    ),
-    Resource(
         name="entity",
         base="/api/v1/entities",
         payload={
@@ -168,7 +154,7 @@ async def test_put_value_next_to_null_applies_only_the_value(http_client, resour
     resource_id = await _create(http_client, resource)
     before = await _get(http_client, resource, resource_id)
     other_nulls = [field for field in resource.null_fields if field != resource.same_field]
-    new_value = "Renamed" if resource.name != "file" else "renamed.txt"
+    new_value = "Renamed"
     body = {**dict.fromkeys(other_nulls), resource.same_field: new_value}
 
     response = await http_client.put(f"{resource.base}/{resource_id}", json=body)

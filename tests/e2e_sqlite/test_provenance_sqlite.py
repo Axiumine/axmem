@@ -4,7 +4,6 @@ Tests the full stack with in-memory SQLite: create with provenance fields,
 retrieve, verify all fields persisted and round-trip correctly.
 """
 
-import base64
 from unittest.mock import patch
 
 import pytest
@@ -227,40 +226,6 @@ async def test_entity_relationship_provenance_roundtrip(mcp_client):
     assert_provenance_fields(result.data, PROVENANCE_FIELDS_8)
     # Relationship's own confidence should be preserved independently
     assert result.data["confidence"] == 0.9
-
-
-# ============================================================================
-# File provenance round-trip
-# ============================================================================
-
-
-@pytest.mark.asyncio
-async def test_file_provenance_roundtrip(mcp_client):
-    """Create file with all provenance fields, retrieve, verify persistence."""
-    # Small base64 encoded PNG (1x1 pixel)
-    tiny_png = base64.b64encode(b"\x89PNG\r\n\x1a\n" + b"\x00" * 50).decode()
-
-    result = await mcp_client.call_tool(
-        "execute_forgetful_tool",
-        {
-            "tool_name": "create_file",
-            "arguments": {
-                "filename": "provenance-test.png",
-                "description": "Testing provenance on files",
-                "data": tiny_png,
-                "mime_type": "image/png",
-                **PROVENANCE_FIELDS_9,
-            },
-        },
-    )
-    assert result.data is not None
-    file_id = result.data["id"]
-
-    get_result = await mcp_client.call_tool(
-        "execute_forgetful_tool",
-        {"tool_name": "get_file", "arguments": {"file_id": file_id}},
-    )
-    assert_provenance_fields(get_result.data, PROVENANCE_FIELDS_9)
 
 
 # ============================================================================

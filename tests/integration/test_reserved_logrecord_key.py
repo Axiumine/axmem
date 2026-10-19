@@ -22,14 +22,12 @@ from uuid import uuid4
 
 import pytest
 
-from app.models.file_models import FileCreate
 from app.models.project_models import ProjectCreate
 
 APP_DIR = Path(__file__).resolve().parents[2] / "app"
 
 AFFECTED_LOGGERS = (
     "app.services.project_service",
-    "app.services.file_service",
     "app.repositories.postgres.project_repository",
     "app.repositories.sqlite.project_repository",
 )
@@ -132,22 +130,6 @@ async def test_list_projects_with_info_logging(test_project_service, info_loggin
     assert [p.name for p in projects] == ["Forgetful"]
     record = _single_record(info_logging, "app.services.project_service", "listing projects")
     assert record.name_filter == "forget"
-
-
-async def test_create_file_with_info_logging(test_file_service, info_logging):
-    file = await test_file_service.create_file(
-        uuid4(),
-        FileCreate(
-            filename="hello.txt",
-            description="A greeting file",
-            data="SGVsbG8sIFdvcmxkIQ==",
-            mime_type="text/plain",
-        ),
-    )
-
-    assert file.filename == "hello.txt"
-    record = _single_record(info_logging, "app.services.file_service", "creating file")
-    assert record.file_name == "hello.txt"
 
 
 class _FailingDbAdapter:

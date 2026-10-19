@@ -29,7 +29,7 @@ class _FailingEventBus:
 class TestEntityHistoryRejectsBadRequests:
     @pytest.mark.parametrize(
         "entity_type",
-        ["link", "file", "entity_memory_link"],
+        ["link", "entity_project_link", "entity_memory_link"],
     )
     async def test_entity_type_without_history_is_rejected_with_the_valid_types(
         self, http_client, entity_type,

@@ -19,7 +19,6 @@ def with_relationships(stmt: Select[tuple[MemoryTable]]) -> Select[tuple[MemoryT
         selectinload(MemoryTable.linking_memories),
         selectinload(MemoryTable.code_artifacts),
         selectinload(MemoryTable.documents),
-        selectinload(MemoryTable.files),
     )
 
 

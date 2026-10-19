@@ -203,7 +203,6 @@ def register(mcp: ForgetfulMCP):
             project_ids=memory.project_ids,
             code_artifact_ids=memory.code_artifact_ids,
             document_ids=memory.document_ids,
-            file_ids=memory.file_ids,
             similar_memories=similar_memories,
             obsolete_matches=obsolete_matches,
         )

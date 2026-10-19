@@ -1,4 +1,4 @@
-"""Association of a memory with projects, code artifacts, documents and files"""
+"""Association of a memory with projects, code artifacts and documents"""
 from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
@@ -11,7 +11,6 @@ from app.models.memory_models import MemoryCreate, MemoryUpdate
 from app.repositories.sqlite.sqlite_tables import (
     CodeArtifactsTable,
     DocumentsTable,
-    FilesTable,
     MemoryTable,
     ProjectsTable,
 )
@@ -31,7 +30,6 @@ MEMORY_ASSOCIATIONS = (
     MemoryAssociation("project_ids", "projects", ProjectsTable, "Projects"),
     MemoryAssociation("code_artifact_ids", "code_artifacts", CodeArtifactsTable, "Code artifacts"),
     MemoryAssociation("document_ids", "documents", DocumentsTable, "Documents"),
-    MemoryAssociation("file_ids", "files", FilesTable, "Files"),
 )
 
 
