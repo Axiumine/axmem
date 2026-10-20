@@ -1,6 +1,6 @@
 """PostgreSQL memory repository: search filters, reranking input and targeted re-embedding.
 
-Searches run against pgvector with a deterministic embedder; the cross-encoder is the real
+Searches run against pgvector with the real TensorRT embedder; the cross-encoder is the real
 TensorRT reranker behind a recorder that passes every call through. Re-embedding is checked through the memories the repository reports back.
 """
 import pytest
@@ -10,12 +10,7 @@ from sqlalchemy import select
 from app.config.settings import settings
 from app.repositories.postgres.memory_repository import PostgresMemoryRepository
 from app.repositories.postgres.postgres_tables import MemoryTable
-from tests.e2e.pg_memory_repository_helpers import (
-    HashingEmbeddings,
-    create_user,
-    memory_data,
-    vector_for,
-)
+from tests.e2e.pg_memory_repository_helpers import create_user, memory_data
 
 pytestmark = [pytest.mark.e2e, pytest.mark.asyncio(loop_scope="session")]
 
@@ -40,8 +35,8 @@ async def owner(db_adapter):
 
 
 @pytest_asyncio.fixture(loop_scope="session")
-async def memories(db_adapter, reranker_adapter):
-    return PostgresMemoryRepository(db_adapter, HashingEmbeddings(), RecordingReranker(reranker_adapter))
+async def memories(db_adapter, reranker_adapter, tensorrt_embedder):
+    return PostgresMemoryRepository(db_adapter, tensorrt_embedder, RecordingReranker(reranker_adapter))
 
 
 async def _search(memories, owner, **overrides):
@@ -71,12 +66,12 @@ async def test_search_leaves_out_excluded_memory_ids(memories, owner):
 
 
 async def test_reranking_without_query_context_scores_candidates_against_the_bare_query(
-    db_adapter, owner, reranker_adapter, monkeypatch,
+    db_adapter, owner, reranker_adapter, tensorrt_embedder, monkeypatch,
 ):
     monkeypatch.setattr(settings, "RERANKING_ENABLED", True)
     monkeypatch.setattr(settings, "DENSE_SEARCH_CANDIDATES", 5)
     reranker = RecordingReranker(reranker_adapter)
-    memories = PostgresMemoryRepository(db_adapter, HashingEmbeddings(), reranker)
+    memories = PostgresMemoryRepository(db_adapter, tensorrt_embedder, reranker)
     for title in ("first", "second", "third"):
         await memories.create_memory(owner, memory_data(title))
 
@@ -132,13 +127,13 @@ async def _stored_embedding(db_adapter, memory_id):
 
 
 async def test_upserting_embeddings_skips_memories_the_user_does_not_own(
-    db_adapter, memories, owner,
+    db_adapter, memories, owner, tensorrt_embedder,
 ):
     intruder = await create_user(db_adapter, "memory-search-intruder")
     mine = await memories.create_memory(owner, memory_data("mine"))
     theirs = await memories.create_memory(intruder, memory_data("theirs"))
     untouched = await _stored_embedding(db_adapter, theirs.id)
-    replacement = vector_for("replacement")
+    replacement = await tensorrt_embedder.generate_embedding("replacement")
 
     written = await memories.upsert_targeted_embeddings(
         owner, [(theirs.id, replacement), (mine.id, replacement)],

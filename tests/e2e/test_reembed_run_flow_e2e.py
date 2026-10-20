@@ -4,7 +4,6 @@ Tests ReEmbeddingService -> PostgresMemoryRepository: the schema must be left ex
 application models declare it once a re-embed has completed.
 """
 import argparse
-import hashlib
 from datetime import UTC, datetime
 from uuid import uuid4
 
@@ -17,17 +16,8 @@ from app.config.settings import settings
 from app.models.memory_models import MemoryCreate
 from app.repositories.postgres.memory_repository import PostgresMemoryRepository
 from app.services.re_embedding_service import ReEmbeddingService
-from tests.embedding_stubs import BatchViaSingle
 
 pytestmark = pytest.mark.asyncio(loop_scope="session")
-
-
-class StubEmbeddings(BatchViaSingle):
-    """Deterministic offline embeddings at the configured width."""
-
-    async def generate_embedding(self, text: str) -> list[float]:
-        digest = hashlib.sha256(text.encode()).digest()
-        return [(digest[i % len(digest)] + 1) / 256.0 for i in range(settings.EMBEDDING_DIMENSIONS)]
 
 
 async def embedding_is_nullable(db_adapter, table: str = "memories") -> bool:
@@ -68,11 +58,11 @@ async def restore_schema(db_adapter, table: str) -> None:
 
 
 @pytest_asyncio.fixture(loop_scope="session")
-async def memory_repo(db_adapter, clean_database):
+async def memory_repo(db_adapter, clean_database, tensorrt_embedder):
     """Repository on a schema that starts exactly as the migrations create it."""
     await restore_schema(db_adapter, "memories")
     repo = PostgresMemoryRepository(
-        db_adapter=db_adapter, embedding_adapter=StubEmbeddings(), rerank_adapter=None,
+        db_adapter=db_adapter, embedding_adapter=tensorrt_embedder, rerank_adapter=None,
     )
     try:
         yield repo
@@ -83,7 +73,7 @@ async def memory_repo(db_adapter, clean_database):
 @pytest.mark.e2e
 @pytest.mark.parametrize("count", [0, 3], ids=["empty", "three-memories"])
 async def test_not_null_embedding_constraint_is_restored_after_re_embed(
-    memory_repo, db_adapter, count,
+    memory_repo, db_adapter, tensorrt_embedder, count,
 ):
     # Arrange
     user_id = await create_user(db_adapter)
@@ -95,7 +85,7 @@ async def test_not_null_embedding_constraint_is_restored_after_re_embed(
     assert not await embedding_is_nullable(db_adapter)
 
     # Act
-    result = await ReEmbeddingService(memory_repo, StubEmbeddings(), batch_size=2).re_embed_all()
+    result = await ReEmbeddingService(memory_repo, tensorrt_embedder, batch_size=2).re_embed_all()
 
     # Assert: the reset relaxes the column while vectors are rebuilt; a finished run restores it.
     assert result.validation.all_passed
@@ -128,7 +118,7 @@ async def _memory_vector_widths(db_adapter):
 
 @pytest.mark.e2e
 async def test_memories_are_migrated_from_another_model_and_keep_their_constraint(
-    memory_repo, db_adapter,
+    memory_repo, db_adapter, tensorrt_embedder,
 ):
     # Arrange: stored memories whose vectors came from another (8-wide) model, while the
     # application already runs with the new configuration, as after a restart.
@@ -137,7 +127,7 @@ async def test_memories_are_migrated_from_another_model_and_keep_their_constrain
     await _store_vectors_from_another_model(db_adapter)
 
     # Act
-    result = await ReEmbeddingService(memory_repo, StubEmbeddings(), batch_size=1).re_embed_all()
+    result = await ReEmbeddingService(memory_repo, tensorrt_embedder, batch_size=1).re_embed_all()
 
     # Assert: memories have vectors of the configured width again.
     assert (result.total_memories, result.total_processed) == (2, 2)
@@ -151,7 +141,7 @@ async def test_memories_are_migrated_from_another_model_and_keep_their_constrain
 
 @pytest.mark.e2e
 async def test_dry_run_counts_without_touching_the_schema(
-    memory_repo, db_adapter, monkeypatch, capsys,
+    memory_repo, db_adapter, tensorrt_embedder, monkeypatch, capsys,
 ):
     # Arrange: one memory, and the migration version the database is at.
     import app.bootstrap
@@ -159,7 +149,7 @@ async def test_dry_run_counts_without_touching_the_schema(
 
     monkeypatch.setattr(app.config.logging_config, "configure_logging", lambda **_: None)
     monkeypatch.setattr(main.atexit, "register", lambda *_: None)
-    monkeypatch.setattr(app.bootstrap, "get_embedding_adapter", StubEmbeddings)
+    monkeypatch.setattr(app.bootstrap, "get_embedding_adapter", lambda: tensorrt_embedder)
     user_id = await create_user(db_adapter)
     await memory_repo.create_memory(user_id, MemoryCreate(
         title="Memory", content="content", context="run flow",

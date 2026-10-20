@@ -2,11 +2,10 @@
 
 The memory service validates ids and normalises filters before it calls the repository, so the
 repository's own behaviour for an omitted exclusion list, an empty batch or an unknown memory is
-only visible when it is called directly. Embeddings come from a deterministic offline stub.
+only visible when it is called directly. Embeddings come from the real TensorRT embedder.
 """
 import pytest
 
-from app.config.settings import settings
 from app.exceptions import NotFoundError
 from app.models.memory_models import MemoryCreate
 from app.repositories.sqlite.memory_repository import SqliteMemoryRepository
@@ -15,13 +14,6 @@ from tests.e2e_sqlite.sqlite_repository_helpers import (
     create_user,
     open_adapter,
 )
-
-
-class TopicEmbeddings:
-    """Offline embedder: every text maps to the same unit vector, so all memories are neighbours."""
-
-    async def generate_embedding(self, text: str) -> list[float]:
-        return [1.0, *([0.0] * (settings.EMBEDDING_DIMENSIONS - 1))]
 
 
 def _memory(title: str) -> MemoryCreate:
@@ -42,9 +34,9 @@ async def adapter(monkeypatch):
 
 
 @pytest.fixture
-async def repo(adapter):
+async def repo(adapter, tensorrt_embedder):
     return SqliteMemoryRepository(
-        db_adapter=adapter, embedding_adapter=TopicEmbeddings(), rerank_adapter=None,
+        db_adapter=adapter, embedding_adapter=tensorrt_embedder, rerank_adapter=None,
     )
 
 

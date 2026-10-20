@@ -1,8 +1,8 @@
 """PostgreSQL memory repository: search filters and targeted re-embedding.
 
-Calls the repository directly against real rows and a real vector index. Search runs with a
-constant embedding, so every memory is equally close to every query and the filters and the
-reranker alone decide what comes back.
+Calls the repository directly against real rows and a real vector index, with the real TensorRT
+embedder. The filters decide which memories may come back; the tests that name an order use texts
+whose meaning separates them.
 """
 import pytest
 import pytest_asyncio
@@ -11,7 +11,6 @@ from app.config.settings import settings
 from app.repositories.postgres.memory_repository import PostgresMemoryRepository
 from app.repositories.postgres.postgres_tables import Base
 from tests.e2e.pg_repository_world_e2e_helpers import (
-    ConstantEmbeddings,
     RepositoryWorld,
     build_world,
     new_memory,
@@ -21,8 +20,8 @@ pytestmark = [pytest.mark.e2e, pytest.mark.asyncio(loop_scope="session")]
 
 
 @pytest_asyncio.fixture(loop_scope="session")
-async def world(db_adapter) -> RepositoryWorld:
-    return await build_world(db_adapter)
+async def world(db_adapter, tensorrt_embedder) -> RepositoryWorld:
+    return await build_world(db_adapter, tensorrt_embedder)
 
 
 @pytest_asyncio.fixture(loop_scope="session")
@@ -50,10 +49,10 @@ async def _search(world: RepositoryWorld, **overrides):
 
 
 async def test_search_without_context_reranks_the_candidates_it_returns(
-    world, db_adapter, reranker_adapter, monkeypatch,
+    world, db_adapter, reranker_adapter, tensorrt_embedder, monkeypatch,
 ):
     monkeypatch.setattr(settings, "RERANKING_ENABLED", True)
-    repo = PostgresMemoryRepository(db_adapter, ConstantEmbeddings(), reranker_adapter)
+    repo = PostgresMemoryRepository(db_adapter, tensorrt_embedder, reranker_adapter)
     owner = world.owner
     espresso = await new_memory(
         world, owner, "Espresso machine descaling",
@@ -148,10 +147,12 @@ async def test_targeted_embedding_upsert_with_no_updates_writes_nothing(world):
     assert await world.memories.upsert_targeted_embeddings(world.owner, []) == []
 
 
-async def test_targeted_embedding_upsert_skips_memories_of_other_users(world):
+async def test_targeted_embedding_upsert_skips_memories_of_other_users(world, tensorrt_embedder):
     owned = await new_memory(world, world.owner, "Owned")
     strangers = await new_memory(world, world.stranger, "Stranger memory")
-    new_vector = [0.02] * settings.EMBEDDING_DIMENSIONS
+    new_vector = await tensorrt_embedder.generate_embedding("a text that none of the memories holds")
+    strangers_row = await world.memories.get_memory_table_by_id(world.stranger, strangers.id)
+    strangers_before = [float(value) for value in strangers_row.embedding]
 
     written = await world.memories.upsert_targeted_embeddings(
         world.owner, [(strangers.id, new_vector), (owned.id, new_vector)],
@@ -160,5 +161,5 @@ async def test_targeted_embedding_upsert_skips_memories_of_other_users(world):
     assert written == [owned.id]
     owned_row = await world.memories.get_memory_table_by_id(world.owner, owned.id)
     strangers_row = await world.memories.get_memory_table_by_id(world.stranger, strangers.id)
-    assert float(owned_row.embedding[0]) == pytest.approx(0.02)
-    assert float(strangers_row.embedding[0]) == pytest.approx(0.01)
+    assert [float(value) for value in owned_row.embedding] == pytest.approx(new_vector, abs=1e-5)
+    assert [float(value) for value in strangers_row.embedding] == strangers_before

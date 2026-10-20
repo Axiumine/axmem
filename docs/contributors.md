@@ -118,15 +118,48 @@ from the cache, 6 to 9 s when one has to be built). The fixtures return the prod
 production defaults (`get_embedding_adapter()`, `get_reranker_adapter()`), so a test that needs real vectors
 depends on `tensorrt_embedder` and sets `EMBEDDING_PROVIDER = "TensorRT"`.
 
-What stays a test double, and why: HTTP mock transports and loopback HTTP servers for `HttpRerankAdapter`
-and the gateway embeddings adapter (the code under test is the HTTP client); stub embedding adapters in
-tests whose subject is not the vectors (storage, ordering, error paths) and that need a vector they can
-choose;
-recorders and spies that delegate to the real reranker (to observe the candidates a search sends it);
-a barrier around `TensorRTEngine.infer` (to force two inferences to overlap); a module finder that hides
-`tensorrt` or `cuda` in a subprocess (to prove the server refuses to start rather than falling back); and
-one deliberately invalid `cudaMemcpy` (to prove a failed CUDA call is reported and cleared). Everything
-else about the embedder and the reranker is the real engine on the real GPU.
+What stays a test double, and why:
+
+- HTTP mock transports, SDK clients pointed at in-process fake endpoints and the in-process fake gateway,
+  for the remote embeddings adapters (Azure, Google, OpenAI, Ollama, gateway) and `HttpRerankAdapter`: the
+  code under test is the client, and a test cannot reach those services.
+- Fake adapters in `tests/integration/test_startup_config_wiring.py`: they record which provider
+  `get_embedding_adapter` builds for a setting; no vector is involved.
+- Fault injection around the real embedder, in `tests/embedding_doubles.py`: `spy_on` wraps it in call
+  recorders and a test assigns `side_effect` to make one call fail; `failing_on` fails the n-th call;
+  `DelegatingEmbedder` subclasses add latency, a gate, a hook that changes the memory during the call or a
+  vector of the wrong width, and still return the real vector; `MigratingEmbedder` changes the vector on
+  purpose and fails or stalls at a chosen call inside a child process. The real model never fails or stalls
+  on cue, so these cannot be real.
+- `NarrowedEmbedder`: the model has one width (384), so tests that change `EMBEDDING_DIMENSIONS` cut the real
+  vector to the width under test and scale it back to length 1.
+- One malformed batch, a provider that returns one vector too few (the service must fall back to single calls).
+- In-memory repositories and the SQLite and PostgreSQL stores that stand in for storage in integration
+  tests. Their keyword-overlap similarity is a stand-in for the database, not for the embedder.
+- Recorders and spies that delegate to the real reranker (to observe the candidates a search sends it);
+  a barrier around `TensorRTEngine.infer` (to force two inferences to overlap); a module finder that hides
+  `tensorrt` or `cuda` in a subprocess (to prove the server refuses to start rather than falling back); and
+  one deliberately invalid `cudaMemcpy` (to prove a failed CUDA call is reported and cleared).
+
+Everything else about the embedder and the reranker is the real engine on the real GPU. A test that needs
+vectors uses the `tensorrt_embedder` fixture; a test that mocks the repository takes `embedding_spy`.
+
+Real vectors are not equal for equal meaning, so tests that depend on similarity use texts that are clearly
+similar or clearly unrelated instead of identical vectors. The texts are in `tests/embedding_texts.py`; the
+cosine values below were measured with the production embedder, and
+`tests/integration/test_embedding_texts.py` pins them (tolerance 0.03), so a model or numerics change fails
+there first.
+
+| Pair | Cosine | Relied on by |
+|---|---|---|
+| Sourdough feeding notes, other number in the title | 0.99 | duplicates above the 0.89 obsolete-warning threshold |
+| Sourdough feeding and sourdough baking | 0.83 | links above the 0.7 auto-link cutoff, no obsolete warning |
+| Sourdough feeding and Postgres pool sizing | 0.46 | unrelated, below the cutoff |
+| Sourdough baking and Postgres pool sizing | 0.37 | unrelated, below the cutoff |
+| Feeding query and the feeding notes, the baking note | 0.88, 0.78 | the query finds the feeding notes first |
+| Backup seeds "Original memory/content 0" and "1", "2" | 0.946, 0.932 | the obsolete warning fires in the backup-restore checks |
+| Backup seed and the same text with the "migrated: " prefix | 0.933 | the changed-provider embedder differs from the original |
+| "Alice private secret" and "Bob own note" memories | 0.77 | cross-user reference checks link above the cutoff, asserted before the test |
 
 The embedder tests (`tests/integration/test_tensorrt_embedder.py`) compare vectors with goldens computed
 once from the CPU fp32 model, check unit length, batching and chunking at 63, 64, 65 and 133 texts,
@@ -140,14 +173,14 @@ fails if the guard recorded anything.
 
 **Location**: `tests/integration/`
 
-**Purpose**: Test business logic with stubbed I/O (no real database required; the reranker is real)
+**Purpose**: Test business logic with stubbed I/O (no real database required; the embedder and the reranker are real)
 
 **Run locally**:
 ```bash
 uv run pytest tests/integration/
 ```
 
-These tests use in-memory stubs for storage, run the real embedder and reranker where they are the subject or the runtime needs them, and run fast (~seconds). They form the bulk of our test suite and catch 90% of issues.
+These tests use in-memory stubs for storage and run the real embedder and reranker, and run fast (~seconds). They form the bulk of our test suite and catch 90% of issues.
 
 ### End-to-End Tests
 
@@ -202,7 +235,7 @@ backup restores memories, metadata, links, obsolete state, and searchable vector
 run the real CLI, fail the embedding provider after a saved batch or during the final search
 check, and verify that automatic recovery restores the original data.
 
-The embedding provider returns fixed vectors, so these tests need no model downloads or API keys.
+The embedding provider is the real TensorRT embedder; a wrapper around it makes the provider fail on cue in the child process.
 PostgreSQL requires `pg_dump` and `psql` compatible with the PostgreSQL 16 test server. CI installs
 the client tools explicitly and fails if either is missing; local runs skip with an explanation.
 
@@ -240,7 +273,7 @@ uv tool run ruff check .
 1. `lint` (hosted Ubuntu runner, no GPU): check architecture boundaries and rule proofs, then run linting. The
    TensorRT libraries are left out of its environment (`--no-install-package tensorrt-cu13-libs`).
 2. `test` (self-hosted GPU runner, `runs-on: [self-hosted, linux, gpu]`): run integration tests (stubbed
-   storage and embeddings, real reranker) and SQLite E2E tests (real SQLite, full stack).
+   storage, real embedder and reranker) and SQLite E2E tests (real SQLite, full stack).
 3. `smoke-test` (hosted runner): build the wheel, check the Alembic files are included and
    `forgetful --help` works.
 
@@ -251,7 +284,7 @@ TensorRT reranker is Linux-only.
 **Merge requirements**: Configure branch rules to require this workflow's `test` check.
 The workflow alone does not make it mandatory for merging.
 
-**Test Coverage**: Integration tests validate business logic with stubbed storage and embeddings and the real reranker. SQLite E2E tests validate the complete application stack including real database interactions, all without Docker dependencies.
+**Test Coverage**: Integration tests validate business logic with stubbed storage and the real embedder and reranker. SQLite E2E tests validate the complete application stack including real database interactions, all without Docker dependencies.
 
 ### `e2e.yml` - PostgreSQL E2E Validation
 

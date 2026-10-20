@@ -162,16 +162,126 @@ against the free memory of the GPU. The test suite checks this before it runs (s
 
 ## Model files and offline hosts
 
-Each model is fetched once from Hugging Face into its own directory (`EMBEDDING_MODEL_DIR`,
-`RERANKING_MODEL_DIR`): `onnx/model.onnx` and `tokenizer.json`, at a pinned revision for the
-default models. A `manifest.json` records their SHA-256 on first use; a later start whose files no
-longer match refuses to run instead of building an engine from changed bytes. Files that are
-already present are never downloaded, so for a host without internet access copy the directory
-from a connected host (or place `onnx/model.onnx` and `tokenizer.json` in
-`<EMBEDDING_MODEL_DIR>/BAAI--bge-small-en-v1.5/` and
-`<RERANKING_MODEL_DIR>/Xenova--ms-marco-MiniLM-L-12-v2/`) and set `HF_HUB_OFFLINE=1`. With
-`HF_HUB_OFFLINE=1` a missing file is reported as `model-unavailable` and nothing tries the network.
-See [offline setup](OFFLINE_SETUP.md).
+Both models run in the server process on the GPU, so a host needs the network only to fetch their
+files once. Each model reads two files, `onnx/model.onnx` and `tokenizer.json`, from its own
+directory. The first start fetches them from Hugging Face (at a pinned revision for the default
+models); every later start, and every start on a host whose directory already holds the files,
+needs no network at all.
+
+| Setting | Default | Holds |
+|---|---|---|
+| `EMBEDDING_MODEL_DIR` | `models/embedder` in the platform user data directory (Linux: `~/.local/share/forgetful/models/embedder`) | `BAAI--bge-small-en-v1.5/onnx/model.onnx`, `tokenizer.json`, `manifest.json` |
+| `RERANKING_MODEL_DIR` | `models/reranker` in the same place | `Xenova--ms-marco-MiniLM-L-12-v2/onnx/model.onnx`, `tokenizer.json`, `manifest.json` |
+| `EMBEDDING_ENGINE_CACHE_DIR`, `RERANKING_ENGINE_CACHE_DIR` | `models/tensorrt` in the same place | TensorRT engines, rebuilt on the host in a few seconds |
+
+The directory of a model is named after the repository id with `/` replaced by `--`. Files that are
+already there are never downloaded. A `manifest.json` records the SHA-256 of both files on first
+use, and a later start whose files no longer match refuses to run instead of building an engine
+from changed bytes. Copy only the model directories: engines belong to one GPU and driver.
+
+### Pre-seeding an offline host
+
+What an offline host needs beyond the installed program (`uv sync` from a checkout, while the
+network is available; `uv run --no-sync main.py` then contacts neither PyPI nor a build):
+
+- the embedding model directory (`EMBEDDING_MODEL_DIR`)
+- the reranking model directory (`RERANKING_MODEL_DIR`)
+- the token-counting data of tiktoken (below)
+
+On a connected host, after one successful start (or `forgetful --re-embed --dry-run`, which starts
+the embedder):
+
+```bash
+cd ~/.local/share/forgetful/models/
+tar -czf axmem-models.tar.gz embedder/ reranker/
+```
+
+Transfer the archive (USB, network share, ...) and on the offline host:
+
+```bash
+mkdir -p ~/.local/share/forgetful/models/
+tar -xzf axmem-models.tar.gz -C ~/.local/share/forgetful/models/
+```
+
+Then set `HF_HUB_OFFLINE=1` so that nothing tries the network. A file that is missing is reported
+at start as `Error: the embedder cannot start: model-unavailable` (or `the reranker`) naming the
+model directory, instead of waiting for a connection that never comes:
+
+```bash
+HF_HUB_OFFLINE=1 AUTH_MODE=none uv run --no-sync main.py serve
+```
+
+The server refuses to start without `AUTH_MODE`; `AUTH_MODE=none` serves one local tenant on stdio
+or a loopback bind. Set it in the environment or in the user settings file
+(`~/.config/forgetful/` on Linux).
+
+To keep the models somewhere else, set the directories explicitly (changing a path does not move
+existing files; copy them first):
+
+```dotenv
+EMBEDDING_MODEL_DIR=/opt/models/embedder
+RERANKING_MODEL_DIR=/opt/models/reranker
+EMBEDDING_ENGINE_CACHE_DIR=/opt/models/tensorrt
+RERANKING_ENGINE_CACHE_DIR=/opt/models/tensorrt
+```
+
+Memory queries also use tiktoken's token-counting data, which has a separate cache
+(`TIKTOKEN_CACHE_DIR`, read by tiktoken itself). Without it, queries still work but budget tokens
+with an approximate character-based estimate. Populate it while the network is available and keep
+it on persistent storage:
+
+```bash
+uv run python -c 'from app.utils.token_counter import TokenCounter; TokenCounter()'
+```
+
+```dotenv
+TIKTOKEN_CACHE_DIR=/opt/models/tiktoken
+```
+
+Fully offline operation also needs a locally reachable database and authentication service, as
+applicable. The embeddings provider and the reranker are local in the default setup, so the server
+makes no call to any other host.
+
+### Verifying the files
+
+```bash
+find ~/.local/share/forgetful/models/embedder ~/.local/share/forgetful/models/reranker -name "*.onnx" -o -name tokenizer.json
+# .../embedder/BAAI--bge-small-en-v1.5/onnx/model.onnx
+# .../embedder/BAAI--bge-small-en-v1.5/tokenizer.json
+# .../reranker/Xenova--ms-marco-MiniLM-L-12-v2/onnx/model.onnx
+# .../reranker/Xenova--ms-marco-MiniLM-L-12-v2/tokenizer.json
+```
+
+Then start the server with `HF_HUB_OFFLINE=1`; the log shows one `embedder ready in ...` and one
+`reranker ready in ...` line when both models are up on the GPU.
+
+### Other models
+
+To use different models, set a Hugging Face repository id that holds `onnx/model.onnx` and
+`tokenizer.json`:
+
+```bash
+EMBEDDING_MODEL=BAAI/bge-base-en-v1.5
+EMBEDDING_DIMENSIONS=768
+RERANKING_MODEL=cross-encoder/ms-marco-MiniLM-L-6-v2
+```
+
+Other models are fetched from Hugging Face on first use (or must be placed in their model
+directory by hand), and a different embedding model or width needs `forgetful --re-embed`
+([embedding migration](embedding_migration.md)).
+
+### Troubleshooting
+
+Models not found:
+
+1. Verify that the model directory exists and is readable by your user.
+2. Check that the repository directory holds `onnx/model.onnx` and `tokenizer.json` (the directory name is the repository id with `/` replaced by `--`).
+3. Check that `EMBEDDING_MODEL_DIR` / `RERANKING_MODEL_DIR` point to the right place (with a custom path), and that `EMBEDDING_MODEL` / `RERANKING_MODEL` name the repository you copied.
+4. A `manifest.json` that no longer matches the files makes the start refuse with `model-unavailable`; restore the files, or delete the model directory named in the message so it is fetched again.
+
+A model is downloaded although you have it: verify that the files are in the right subdirectory
+(table above), check the log for the directory in use, and make sure the model names are the
+defaults or name the repositories you placed.
 
 ## Startup refusal causes
 

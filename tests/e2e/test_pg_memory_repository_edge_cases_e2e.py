@@ -10,11 +10,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.exceptions import InvalidStateTransitionError, NotFoundError
 from app.repositories.postgres.memory_repository import PostgresMemoryRepository
-from tests.e2e.pg_memory_repository_helpers import (
-    HashingEmbeddings,
-    create_user,
-    memory_data,
-)
+from tests.e2e.pg_memory_repository_helpers import create_user, memory_data
 
 pytestmark = [pytest.mark.e2e, pytest.mark.asyncio(loop_scope="session")]
 
@@ -28,8 +24,8 @@ async def owner(db_adapter):
 
 
 @pytest_asyncio.fixture(loop_scope="session")
-async def memories(db_adapter):
-    return PostgresMemoryRepository(db_adapter, HashingEmbeddings())
+async def memories(db_adapter, tensorrt_embedder):
+    return PostgresMemoryRepository(db_adapter, tensorrt_embedder)
 
 
 async def test_getting_an_unknown_memory_raises_not_found(memories, owner):

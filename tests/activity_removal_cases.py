@@ -5,7 +5,6 @@ from typing import Any
 from sqlalchemy import text
 
 from app.bootstrap import create_repositories
-from app.config.settings import settings
 from app.models.memory_models import MemoryCreate
 from app.models.user_models import UserCreate
 from tests.migration_helpers import (
@@ -22,13 +21,6 @@ REMOVED_TABLE = "activity_log"
 REMOVED_MEMORY_COLUMNS = ("access_count", "last_accessed_at")
 REMOVED_MEMORY_INDEX = "ix_memories_last_accessed_at"
 EVENT_TYPES = ("memory", "project", "link")
-
-
-class StubEmbeddings:
-    """Deterministic embeddings so the tests never load a model."""
-
-    async def generate_embedding(self, text: str) -> list[float]:
-        return [0.1] * settings.EMBEDDING_DIMENSIONS
 
 
 def is_postgres(db: Any) -> bool:
@@ -57,9 +49,9 @@ def assert_removed(parts: dict[str, Any]) -> None:
     }
 
 
-async def store_events_and_counters(db: Any) -> dict[str, Any]:
+async def store_events_and_counters(db: Any, embedder: Any) -> dict[str, Any]:
     """Fill the activity log and the access counters; returns the owner and the kept rows."""
-    repos = create_repositories(db, StubEmbeddings(), None)
+    repos = create_repositories(db, embedder, None)
     user = await repos["user"].create_user(
         UserCreate(external_id="activity-removal", name="Activity", email="activity@example.test"),
     )
@@ -90,12 +82,12 @@ async def store_events_and_counters(db: Any) -> dict[str, Any]:
 
 
 class TestActivityRemoval:
-    async def test_upgrade_drops_the_log_and_the_counters_and_keeps_the_rows(self, activity_db):
+    async def test_upgrade_drops_the_log_and_the_counters_and_keeps_the_rows(self, activity_db, tensorrt_embedder):
         config = alembic_config()
         await run_migration(activity_db, config, "downgrade", LAST_REVISION_WITH_ACTIVITY)
         restored = await current_parts(activity_db)
         assert restored[REMOVED_TABLE] and all(restored["memory_columns"].values()), "downgrade must bring them back"
-        kept = await store_events_and_counters(activity_db)
+        kept = await store_events_and_counters(activity_db, tensorrt_embedder)
 
         await run_migration(activity_db, config, "upgrade", "head")
 
@@ -112,10 +104,10 @@ class TestActivityRemoval:
             assert [row[0] for row in memories] == [kept["memory"], kept["linked"]]
             assert {frozenset(row) for row in links} == {frozenset({kept["memory"], kept["linked"]})}
 
-    async def test_downgrade_restores_the_counters_as_never_accessed(self, activity_db):
+    async def test_downgrade_restores_the_counters_as_never_accessed(self, activity_db, tensorrt_embedder):
         config = alembic_config()
         assert_removed(await current_parts(activity_db))
-        repos = create_repositories(activity_db, StubEmbeddings(), None)
+        repos = create_repositories(activity_db, tensorrt_embedder, None)
         user = await repos["user"].create_user(
             UserCreate(external_id="activity-restore", name="Restore", email="restore@example.test"),
         )

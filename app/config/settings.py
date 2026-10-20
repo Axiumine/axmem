@@ -24,7 +24,7 @@ _default_config_dir = Path(user_config_dir("forgetful", ensure_exists=False))
 
 # Accepted values of the enumerated settings; the first entry is the default. Matching is
 # case-insensitive and the spelling below is the canonical one the rest of the code compares to.
-EMBEDDING_PROVIDERS = ("TensorRT", "FastEmbed", "Azure", "Google", "OpenAI", "Ollama", "gateway")
+EMBEDDING_PROVIDERS = ("TensorRT", "Azure", "Google", "OpenAI", "Ollama", "gateway")
 RERANKING_PROVIDERS = ("TensorRT", "HTTP")
 LOG_FORMATS = ("console", "json")
 # AUTH_MODE has no default choice: a blank value stays blank and the server refuses to start
@@ -70,16 +70,6 @@ def _field_name(info: ValidationInfo) -> str:
     # pydantic leaves field_name None only for validators that are not bound to a field;
     # every validator in this module is registered with @field_validator on named fields.
     return cast(str, info.field_name)
-
-
-def parse_onnx_providers(value: str | None) -> list[str] | None:
-    """Split a comma-separated ONNX Runtime provider list; None keeps FastEmbed's default."""
-    if value is None or not value.strip():
-        return None
-    providers = [name.strip() for name in value.split(",")]
-    if any(not name for name in providers):
-        raise ValueError("ONNX provider lists must not contain empty entries")
-    return providers
 
 
 class Settings(BaseSettings):
@@ -184,11 +174,10 @@ class Settings(BaseSettings):
     ENFORCE_ENV_OVERWRITE: bool = False  # When True, env values override agent-provided values
 
     # Search Configuration
-    EMBEDDING_PROVIDER: str = "TensorRT" # TensorRT | FastEmbed | Azure | Google | OpenAI | Ollama | gateway
+    EMBEDDING_PROVIDER: str = "TensorRT" # TensorRT | Azure | Google | OpenAI | Ollama | gateway
     # TensorRT: the Hugging Face repository the ONNX model and tokenizer come from. Other providers: their model name.
     EMBEDDING_MODEL: str = "BAAI/bge-small-en-v1.5"
     EMBEDDING_DIMENSIONS: int = 384              # TensorRT checks it against the width the model returns at startup
-    EMBEDDING_ONNX_PROVIDERS: str = ""  # FastEmbed only; comma-separated ONNX Runtime providers, empty = default
     # Local TensorRT embeddings only.
     EMBEDDING_TF32: bool = False                 # True lets the engine use TF32 tensor cores (faster, not exact fp32)
     EMBEDDING_MODEL_DIR: str = str(_default_data_dir / "models" / "embedder")  # model.onnx and tokenizer.json, fetched once
@@ -241,10 +230,6 @@ class Settings(BaseSettings):
     RERANKING_MODEL_DIR: str = str(_default_data_dir / "models" / "reranker")  # model.onnx and tokenizer.json, fetched once
     RERANKING_ENGINE_CACHE_DIR: str = str(_default_data_dir / "models" / "tensorrt")  # built engines, one directory per fingerprint
     DENSE_SEARCH_CANDIDATES: int = 20 # number of candidates to retrieve from the dense search
-
-    # FASTEMBED CACHE CONFIGURATION
-    FASTEMBED_CACHE_DIR: str = str(_default_data_dir / "models" / "fastembed")
-    FASTEMBED_LOCAL_FILES_ONLY: bool = False      # When True, FastEmbed only loads models from local cache
 
     @field_validator("OBSOLETE_WARNING_THRESHOLD")
     @classmethod
@@ -308,16 +293,6 @@ class Settings(BaseSettings):
         if len(value) > limit:
             raise ValueError(f"{field_name} must be at most {limit} characters (got {len(value)})")
         return value
-
-    @field_validator("EMBEDDING_ONNX_PROVIDERS")
-    @classmethod
-    def _validate_onnx_providers(cls, value: str) -> str:
-        parse_onnx_providers(value)
-        return value
-
-    @property
-    def embedding_onnx_providers(self) -> list[str] | None:
-        return parse_onnx_providers(self.EMBEDDING_ONNX_PROVIDERS)
 
     """Pydantic Configuration"""
 

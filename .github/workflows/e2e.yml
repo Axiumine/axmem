@@ -17,7 +17,7 @@ concurrency:
 jobs:
   e2e:
     name: e2e (py${{ matrix.python }})
-    # The suite runs the real TensorRT reranker: self-hosted runner with an NVIDIA GPU (see docs/quality-gates.md)
+    # The suite runs the real TensorRT embedder and reranker: self-hosted runner with an NVIDIA GPU (see docs/quality-gates.md)
     runs-on: [self-hosted, linux, gpu]
     timeout-minutes: 20
     strategy:
@@ -49,14 +49,6 @@ jobs:
           sudo apt-get install --yes postgresql-client
           pg_dump --version
           psql --version
-
-      - name: Cache FastEmbed models
-        uses: actions/cache@v3
-        with:
-          path: ~/.cache/fastembed
-          key: fastembed-${{ hashFiles('**/pyproject.toml') }}
-          restore-keys: |
-            fastembed-
 
       - name: Run E2E tests
         run: uv run --frozen pytest tests/e2e/ -v -m e2e

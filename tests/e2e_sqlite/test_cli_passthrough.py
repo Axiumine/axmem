@@ -137,7 +137,7 @@ def test_call_unknown_tool_json_mode_emits_error_object(cli_sqlite_env, monkeypa
 
     assert code == 1
     assert out == ""
-    # Third-party libs (onnxruntime) may write warnings to stderr during model load;
+    # Third-party libs (TensorRT, CUDA) may write warnings to stderr during model load;
     # the scriptable contract is that the error object is the last stderr line.
     payload = json.loads(err.strip().splitlines()[-1])
     assert "not found in registry" in payload["error"]

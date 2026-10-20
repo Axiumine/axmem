@@ -688,7 +688,7 @@ async def test_a_full_re_embed_sends_each_batch_of_memories_in_one_request():
 @pytest.mark.parametrize(("provider", "shown"), [
     ("gateway", "embed-small"),
     ("Azure", "azure-deployment"),
-    ("FastEmbed", "some/local-model"),
+    ("OpenAI", "some/local-model"),
     ("TensorRT", "some/local-model"),
 ])
 def test_the_re_embed_preview_names_the_model_the_provider_uses(monkeypatch, capsys, provider, shown):

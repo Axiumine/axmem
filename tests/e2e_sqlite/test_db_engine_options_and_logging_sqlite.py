@@ -36,19 +36,11 @@ INITIALIZE = {
 }
 
 
-# Runs the real stdio server entry point, with the embedding model swapped for a stub so the
-# subprocess never downloads a FastEmbed model (and so never needs the network).
+# Runs the real stdio server entry point, with the real TensorRT embedder (the model files and
+# engines are those the session fixture has already put on disk, and nothing goes to the network).
 SERVER_SCRIPT = """
 import main
-from app import bootstrap
 
-
-class StubEmbeddings:
-    async def generate_embedding(self, text):
-        return [0.0] * bootstrap.settings.EMBEDDING_DIMENSIONS
-
-
-bootstrap.get_embedding_adapter = StubEmbeddings
 main._serve("stdio", None, None)
 """
 
@@ -68,6 +60,9 @@ def _run_stdio_server(tmp_path: Path, db_logging: str) -> tuple[str, str]:
         DATABASE="SQLite",
         SQLITE_MEMORY="true",
         RERANKING_ENABLED="false",
+        EMBEDDING_MODEL_DIR=settings.EMBEDDING_MODEL_DIR,
+        EMBEDDING_ENGINE_CACHE_DIR=settings.EMBEDDING_ENGINE_CACHE_DIR,
+        HF_HUB_OFFLINE="1",
         AUTH_MODE="none",
         DB_LOGGING=db_logging,
     )
@@ -99,7 +94,7 @@ def _non_jsonrpc_lines(stdout: str) -> list[str]:
     return bad
 
 
-def test_stdio_stdout_carries_only_jsonrpc_with_db_logging(tmp_path):
+def test_stdio_stdout_carries_only_jsonrpc_with_db_logging(tmp_path, tensorrt_embedder):
     stdout, stderr = _run_stdio_server(tmp_path, "true")
 
     # Guards against a setup error: the handshake really happened.

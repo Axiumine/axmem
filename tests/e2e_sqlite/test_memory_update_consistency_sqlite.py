@@ -4,8 +4,6 @@ Covers REST null handling, the project scope round-tripping on every read path, 
 embedding written by update_memory.
 """
 import asyncio
-import hashlib
-import random
 import struct
 from contextlib import asynccontextmanager
 from uuid import uuid4
@@ -22,6 +20,7 @@ from app.repositories.sqlite.sqlite_adapter import SqliteDatabaseAdapter
 from app.repositories.sqlite.user_repository import SqliteUserRepository
 from app.services.memory_service import MemoryService
 from app.utils.embedding_helpers import build_embedding_text
+from tests.embedding_doubles import DelegatingEmbedder
 
 CREATE_BODY = {
     "title": "Original title",
@@ -248,25 +247,20 @@ async def test_search_and_linked_memories_report_the_project(http_client):
 # ============================================================================
 
 
-class RecordingEmbedder:
-    """Deterministic text -> vector adapter that mimics a remote provider.
+class RecordingEmbedder(DelegatingEmbedder):
+    """The real embedder, slowed and observed like a remote provider.
 
     latency: seconds each call takes, so concurrent updates overlap like real network calls
     before_return: optional coroutine run on every call, used to change the row mid-embedding
     """
 
-    def __init__(self):
+    def __init__(self, real):
+        super().__init__(real)
         self.latency = 0.0
         self.calls = 0
         self.open_sessions = lambda: 0
         self.sessions_open_during_calls: list[int] = []
         self.before_return = None
-
-    @staticmethod
-    def vector(value: str) -> list[float]:
-        seed = int.from_bytes(hashlib.sha256(value.encode()).digest()[:8], "big")
-        rng = random.Random(seed)
-        return [rng.uniform(-1.0, 1.0) for _ in range(settings.EMBEDDING_DIMENSIONS)]
 
     async def generate_embedding(self, text: str) -> list[float]:  # noqa: A002
         self.calls += 1
@@ -275,11 +269,11 @@ class RecordingEmbedder:
             await asyncio.sleep(self.latency)
         if self.before_return is not None:
             await self.before_return(self.calls)
-        return self.vector(text)
+        return await super().generate_embedding(text)
 
 
 @pytest.fixture
-async def embedding_stack(tmp_path, monkeypatch):
+async def embedding_stack(tmp_path, monkeypatch, tensorrt_embedder):
     """Service and repository on a file backed SQLite database.
 
     Concurrent writers need separate connections, which the shared in-memory database
@@ -292,7 +286,7 @@ async def embedding_stack(tmp_path, monkeypatch):
     db = SqliteDatabaseAdapter()
     await db.init_db()
 
-    embedder = RecordingEmbedder()
+    embedder = RecordingEmbedder(tensorrt_embedder)
     open_sessions = 0
     real_session = db.session
 
@@ -353,9 +347,9 @@ def _same_vector(left, right):
     return len(left) == len(right) and all(abs(a - b) < 1e-5 for a, b in zip(left, right, strict=True))
 
 
-async def _assert_embedding_matches_row(repo, db, user_id, memory_id):
+async def _assert_embedding_matches_row(repo, db, embedder, user_id, memory_id):
     final = await repo.get_memory_by_id(user_id=user_id, memory_id=memory_id)
-    expected = RecordingEmbedder.vector(build_embedding_text(final))
+    expected = await embedder.real.generate_embedding(build_embedding_text(final))
     assert _same_vector(await _stored_vector(db, memory_id), expected), (
         f"stored embedding does not match the stored row (title={final.title!r}, content={final.content!r})"
     )
@@ -378,7 +372,7 @@ async def test_sequential_updates_keep_embedding_in_sync(embedding_stack):
     await service.update_memory(user_id, memory.id, MemoryUpdate(title="new title"))
     await service.update_memory(user_id, memory.id, MemoryUpdate(content="new content"))
 
-    final = await _assert_embedding_matches_row(repo, db, user_id, memory.id)
+    final = await _assert_embedding_matches_row(repo, db, embedder, user_id, memory.id)
     assert (final.title, final.content) == ("new title", "new content")
 
 
@@ -392,7 +386,7 @@ async def test_concurrent_updates_of_different_fields_keep_embedding_in_sync(emb
         service.update_memory(user_id, memory.id, MemoryUpdate(content="new content")),
     )
 
-    final = await _assert_embedding_matches_row(repo, db, user_id, memory.id)
+    final = await _assert_embedding_matches_row(repo, db, embedder, user_id, memory.id)
     assert (final.title, final.content) == ("new title", "new content")
 
 
@@ -408,7 +402,7 @@ async def test_burst_of_concurrent_updates_keeps_embedding_in_sync(embedding_sta
         service.update_memory(user_id, memory.id, MemoryUpdate(keywords=["burst"])),
     )
 
-    final = await _assert_embedding_matches_row(repo, db, user_id, memory.id)
+    final = await _assert_embedding_matches_row(repo, db, embedder, user_id, memory.id)
     assert (final.title, final.content, final.context, final.keywords) == (
         "burst title", "burst content", "burst context", ["burst"],
     )
@@ -424,7 +418,7 @@ async def test_concurrent_updates_of_same_field_keep_embedding_in_sync(embedding
         service.update_memory(user_id, memory.id, MemoryUpdate(title="second title", tags=["gamma"])),
     )
 
-    final = await _assert_embedding_matches_row(repo, db, user_id, memory.id)
+    final = await _assert_embedding_matches_row(repo, db, embedder, user_id, memory.id)
     assert final.tags == ["gamma"]
     assert final.title in {"first title", "second title"}
 

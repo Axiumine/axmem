@@ -1,25 +1,15 @@
 """Embedding Adapter to abstract provider specific implementation details"""
 import asyncio
 import logging
-import time
-from itertools import batched
-from typing import TYPE_CHECKING, NotRequired, TypedDict
+from typing import NotRequired, TypedDict
 
 from google import genai
 from google.genai import types
 from openai import AzureOpenAI, OpenAI
 
 from app.config.settings import settings
-from app.protocols.embedding_protocol import EMBEDDING_BATCH_LIMIT, EmbeddingsAdapter
-from app.repositories.embeddings.fastembed_offline import (
-    FastEmbedKwargs,
-    FastEmbedProviderKwargs,
-    load_fastembed_model,
-)
+from app.protocols.embedding_protocol import EmbeddingsAdapter
 from app.utils.url_helpers import redact_url
-
-if TYPE_CHECKING:
-    from fastembed import TextEmbedding
 
 logger = logging.getLogger(__name__)
 
@@ -49,74 +39,6 @@ class _OneTextPerRequest(EmbeddingsAdapter):
 
     async def generate_embeddings(self, texts: list[str]) -> list[list[float]]:
         return [await self.generate_embedding(text) for text in texts]
-
-
-class FastEmbeddingAdapter(EmbeddingsAdapter):
-    """Generate embeddings using the fastembed library"""
-
-    def __init__(self, providers: list[str] | None = None):
-        logger.info("Initialising Fastembed model", extra={
-            "embedding_model": settings.EMBEDDING_MODEL,
-            "cache_dir": settings.FASTEMBED_CACHE_DIR,
-        })
-        self.providers = providers
-
-        start_time = time.time()
-        self.model = load_fastembed_model(
-            model_role="embedding",
-            model_name=settings.EMBEDDING_MODEL,
-            cache_dir=settings.FASTEMBED_CACHE_DIR,
-            factory=lambda fastembed_kwargs: self._create_text_embedding(fastembed_kwargs),
-        )
-        elapsed = time.time() - start_time
-
-        logger.info("FasteEmbed model loaded successfully", extra={
-            "elapsed_time": f"{elapsed:.2f}s",
-            "cache_dir": settings.FASTEMBED_CACHE_DIR,
-        })
-
-    def _create_text_embedding(self, fastembed_kwargs: FastEmbedKwargs) -> TextEmbedding:
-        from fastembed import TextEmbedding
-
-        provider_kwargs: FastEmbedProviderKwargs = (
-            {"providers": self.providers} if self.providers is not None else {}
-        )
-        return TextEmbedding(
-            model_name=settings.EMBEDDING_MODEL,
-            cache_dir=settings.FASTEMBED_CACHE_DIR,
-            **fastembed_kwargs,
-            **provider_kwargs,
-        )
-
-    async def generate_embedding(self, text: str) -> list[float]:
-        try:
-            # Inference is CPU bound and synchronous: keep it off the event loop.
-            embeddings = await asyncio.to_thread(lambda: list(self.model.embed(text)))
-        except Exception:
-            logger.error("Error generating embeddings", exc_info=True, extra={
-                "embedding provider": "fastembed",
-                "embedding model": settings.EMBEDDING_MODEL,
-            })
-            raise
-
-        return list(map(float, embeddings[0]))
-
-    def _embed_group(self, texts: list[str]) -> list:
-        return list(self.model.embed(texts))
-
-    async def generate_embeddings(self, texts: list[str]) -> list[list[float]]:
-        vectors: list[list[float]] = []
-        for group in batched(texts, EMBEDDING_BATCH_LIMIT):
-            try:
-                embedded = await asyncio.to_thread(self._embed_group, list(group))
-            except Exception:
-                logger.error("Error generating embeddings", exc_info=True, extra={
-                    "embedding provider": "fastembed",
-                    "embedding model": settings.EMBEDDING_MODEL,
-                })
-                raise
-            vectors.extend(list(map(float, vector)) for vector in embedded)
-        return vectors
 
 
 class AzureOpenAIAdapter(_OneTextPerRequest):

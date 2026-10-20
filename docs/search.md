@@ -44,10 +44,6 @@ instead. There is no sparse full-text search or reciprocal rank fusion.
 ### TensorRT (default)
 `EMBEDDING_PROVIDER=TensorRT` embeds in the server process on the NVIDIA GPU with `BAAI/bge-small-en-v1.5` (CLS pooling, L2 normalised, 384 dimensions, texts truncated to 512 tokens), in strict fp32. There is no CPU path: a host without a usable GPU refuses to start and says why. See [GPU models](gpu-models.md).
 
-### [FastEmbed](https://github.com/qdrant/fastembed)
-For local CPU embeddings the excellent embedding solution developed by Qdrant is still selectable (`EMBEDDING_PROVIDER=FastEmbed`). Local re-ranking does not use FastEmbed: it runs a cross-encoder on the GPU through TensorRT, see [GPU models](gpu-models.md).
-
-
 ### [Google](https://ai.google.dev/gemini-api/docs/embeddings)
 We also support Google Embedding models available via the Gemini API
 

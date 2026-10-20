@@ -2,7 +2,7 @@
 
 The SQLite memory repository read the source embedding for the similarity searches
 without checking that the memory belongs to the caller. These tests drive the memory
-repository with an offline embedder, including the owner control.
+repository with the real TensorRT embedder, including the owner control.
 """
 from datetime import UTC, datetime
 from uuid import uuid4
@@ -15,6 +15,7 @@ from app.exceptions import NotFoundError
 from app.models.memory_models import MemoryCreate
 from app.repositories.sqlite.memory_repository import SqliteMemoryRepository
 from app.repositories.sqlite.sqlite_adapter import SqliteDatabaseAdapter
+from tests.embedding_doubles import similarity
 
 # ============================================================================
 # Memory repository: similarity searches must not use another user's embedding
@@ -23,21 +24,8 @@ from app.repositories.sqlite.sqlite_adapter import SqliteDatabaseAdapter
 DIMS = 384
 
 
-class FakeEmbeddingAdapter:
-    """Deterministic offline embedder: 'topic-alpha' texts share one direction."""
-
-    async def generate_embedding(self, text: str) -> list[float]:
-        vec = [0.0] * DIMS
-        if "topic-alpha" in text:
-            vec[0] = 1.0
-            vec[1] = 0.01 * (len(text) % 7)
-        else:
-            vec[2] = 1.0
-        return vec
-
-
 @pytest.fixture
-async def memory_repo_and_db():
+async def memory_repo_and_db(tensorrt_embedder):
     original = (settings.DATABASE, settings.SQLITE_MEMORY, settings.EMBEDDING_DIMENSIONS)
     settings.DATABASE = "SQLite"
     settings.SQLITE_MEMORY = True
@@ -46,7 +34,7 @@ async def memory_repo_and_db():
     await db_adapter.init_db()
     repo = SqliteMemoryRepository(
         db_adapter=db_adapter,
-        embedding_adapter=FakeEmbeddingAdapter(),
+        embedding_adapter=tensorrt_embedder,
         rerank_adapter=None,
     )
     try:
@@ -130,9 +118,15 @@ async def test_find_similar_memories_rejects_other_users_memory(memory_repo_and_
 
 
 @pytest.mark.asyncio
-async def test_find_obsolete_matches_ignores_other_users_memory(memory_repo_and_db):
+async def test_find_obsolete_matches_ignores_other_users_memory(memory_repo_and_db, tensorrt_embedder):
     """A foreign memory id yields no obsolete matches, as on PostgreSQL."""
     repo, db = memory_repo_and_db
+    # The two texts are close (cosine about 0.8, above the 0.5 cutoff below), so a repository that
+    # ranked against the foreign embedding would return Bob's memory.
+    closeness = await similarity(
+        tensorrt_embedder, _memory("Alice private secret"), _memory("Bob obsolete note"),
+    )
+    assert closeness > 0.7
     alice, bob = uuid4(), uuid4()
     await _create_user(db, alice)
     await _create_user(db, bob)

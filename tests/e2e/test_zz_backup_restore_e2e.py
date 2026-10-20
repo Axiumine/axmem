@@ -15,7 +15,6 @@ from app.bootstrap import create_backup_service
 from app.config.settings import settings
 from app.models.memory_models import MemoryCreate
 from app.repositories.postgres.memory_repository import PostgresMemoryRepository
-from tests.backup_restore_cases import BackupTestEmbeddings
 
 pytestmark = [
     pytest.mark.asyncio(loop_scope="session"),
@@ -28,15 +27,9 @@ def backup_directory(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "SQLITE_PATH", str(tmp_path / "backup-test.db"))
 
 
-@pytest.fixture
-def embedding_adapter():
-    """Backup checks need real vectors, but no external model or API."""
-    return BackupTestEmbeddings()
-
-
 @pytest_asyncio.fixture(loop_scope="session")
 async def memory_repo(db_adapter, embedding_adapter):
-    """Repo using the configured embedding adapter."""
+    """Repo using the real TensorRT embedder (the ``embedding_adapter`` fixture of the e2e conftest)."""
     repo = PostgresMemoryRepository(
         db_adapter=db_adapter,
         embedding_adapter=embedding_adapter,

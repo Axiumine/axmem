@@ -22,9 +22,9 @@ without the mark, with the commit that landed it, in the commit that lands it.
   unpushed commits that match a term in the clone-local, untracked `.git/info/denylist`; `SKIP` does not bypass it.
 - This changelog and [docs/changes-from-forgetful.md](docs/changes-from-forgetful.md), with a rule in `AGENTS.md`
   that every commit that changes behaviour updates both.
-- Optional `gateway` embeddings provider (`EMBEDDING_PROVIDER=gateway`) that posts JSON to an HTTP embeddings gateway. Settings: `GATEWAY_URL`, `GATEWAY_PATH`, `GATEWAY_TOKEN` (a secret value), `GATEWAY_AUTH_HEADER`, `GATEWAY_TENANT_HEADER`, `GATEWAY_TENANT`, `GATEWAY_BACKEND`, `GATEWAY_MODEL`, `GATEWAY_AGENT_ID`, `GATEWAY_METADATA` (a JSON object of strings) and `GATEWAY_SUPPORTS_DIMENSIONS`; none is read or required unless the provider is selected, and the default provider is unchanged. Texts go out in requests of at most 256, each with a fresh `request_id`, an `X-Idempotency-Key` that a retry of the same chunk reuses and an `X-Correlation-Id` shared by one call. Statuses 429 and 503 are retried after `Retry-After` (at most 30 s), 502, 504 and network errors with a growing wait, four attempts in all; 403, 422 and every other status fail at once, with the status and `code` in the error and never the body. A reply is refused unless it has one finite vector per text and each is `EMBEDDING_DIMENSIONS` wide. Tests run against an in-process fake gateway.
-- `generate_embeddings(texts)` on the `EmbeddingsAdapter` contract and on every provider (FastEmbed embeds a batch natively in groups of 256; Azure, Google, OpenAI and Ollama embed one text per request). `ReEmbeddingService` embeds each batch of memories with one call; a failed batch in `rebuild_embeddings` is retried memory by memory, so one rejected memory is still reported as `embedding_failed` alone.
-- Direct TensorRT 11 reranker (`RERANKING_PROVIDER=TensorRT`, the default), strict fp32, run on the NVIDIA GPU with
+- Optional `gateway` embeddings provider (`EMBEDDING_PROVIDER=gateway`, `0e50a541`) that posts JSON to an HTTP embeddings gateway. Settings: `GATEWAY_URL`, `GATEWAY_PATH`, `GATEWAY_TOKEN` (a secret value), `GATEWAY_AUTH_HEADER`, `GATEWAY_TENANT_HEADER`, `GATEWAY_TENANT`, `GATEWAY_BACKEND`, `GATEWAY_MODEL`, `GATEWAY_AGENT_ID`, `GATEWAY_METADATA` (a JSON object of strings) and `GATEWAY_SUPPORTS_DIMENSIONS`; none is read or required unless the provider is selected, and the default provider is unchanged. Texts go out in requests of at most 256, each with a fresh `request_id`, an `X-Idempotency-Key` that a retry of the same chunk reuses and an `X-Correlation-Id` shared by one call. Statuses 429 and 503 are retried after `Retry-After` (at most 30 s), 502, 504 and network errors with a growing wait, four attempts in all; 403, 422 and every other status fail at once, with the status and `code` in the error and never the body. A reply is refused unless it has one finite vector per text and each is `EMBEDDING_DIMENSIONS` wide. Tests run against an in-process fake gateway.
+- `generate_embeddings(texts)` on the `EmbeddingsAdapter` contract and on every provider (Azure, Google, OpenAI and Ollama embed one text per request; the FastEmbed provider that embedded a batch natively was removed, see Removed). `ReEmbeddingService` embeds each batch of memories with one call; a failed batch in `rebuild_embeddings` is retried memory by memory, so one rejected memory is still reported as `embedding_failed` alone.
+- Direct TensorRT 11 reranker (`RERANKING_PROVIDER=TensorRT`, the default; `d77aedcb`), strict fp32, run on the NVIDIA GPU with
   the CUDA Python bindings and no ONNX Runtime. It fetches `onnx/model.onnx` and `tokenizer.json` once into
   `RERANKING_MODEL_DIR` (pinned revision for the default model, SHA-256 manifest) and builds one engine per
   fingerprint (model SHA-256, TensorRT version, GPU name, compute capability, driver major version, TF32, optimization
@@ -43,7 +43,7 @@ without the mark, with the commit that landed it, in the commit that lands it.
   exceeds the GPU memory. New tests run the real engine: golden scores, chunking, concurrent workers, engine cache
   rebuild and pruning, damaged plans, and subprocess runs with `CUDA_VISIBLE_DEVICES=-1` and with the TensorRT
   libraries hidden.
-- In-process TensorRT embeddings provider (`EMBEDDING_PROVIDER=TensorRT`, the new default), strict fp32, on the
+- In-process TensorRT embeddings provider (`EMBEDDING_PROVIDER=TensorRT`, the new default; `5b047f2b`), strict fp32, on the
   same runner, engine cache, fingerprint, warm-up and startup refusal as the reranker. The model is
   `BAAI/bge-small-en-v1.5` (its `onnx/model.onnx` and `tokenizer.json` are byte-identical to the Xenova export; both
   repositories are pinned and the SHA-256 is recorded), with CLS pooling, L2 normalisation, truncation at 512 tokens,
@@ -54,7 +54,7 @@ without the mark, with the commit that landed it, in the commit that lands it.
   the cause `dimensions` and releases the engine. A server, `--re-embed` or other command that cannot run the
   embedder exits with code 1 and `Error: the embedder cannot start: <cause>`. The embedder and the reranker share one
   CUDA context; the server logs the start-up line of each and the combined GPU memory of the process (about 4.1 GiB
-  for the pair). Offline hosts copy `EMBEDDING_MODEL_DIR` and set `HF_HUB_OFFLINE=1` (`docs/OFFLINE_SETUP.md`).
+  for the pair). Offline hosts copy `EMBEDDING_MODEL_DIR` and set `HF_HUB_OFFLINE=1` (`docs/gpu-models.md`).
   `docs/embedding_migration.md` gains the FastEmbed to TensorRT and wrong-width cases.
 - Standalone end-to-end test (`tests/e2e_sqlite/test_standalone_sqlite.py`): the real server in a subprocess with the
   GPU models, a static token, no `GATEWAY_*` variable and `HF_HUB_OFFLINE=1`, behind a guard that refuses and records
@@ -82,9 +82,10 @@ without the mark, with the commit that landed it, in the commit that lands it.
 - Coverage data is written to `.coverage-data/` (`[tool.coverage.run] data_file`) instead of the repository root,
   because `parallel = true` makes every measured process write its own `.coverage.*` fragment, and interrupted
   runs left them behind. `.coverage-data/` is ignored by Git, semgrep, trivy, Qodana and radon.
-- **(planned)** NVIDIA GPU is a hard requirement for development and runtime; there is no CPU path and no skip.
-  Landed for the reranker, the default embedder and the test suites; the FastEmbed CPU provider stays selectable
-  until it is removed (see Removed).
+- NVIDIA GPU is a hard requirement for development and runtime; there is no CPU path and no skip. The reranker,
+  the default embedder, the test suites and, with the removal of FastEmbed, every local model are on the GPU.
+  The remote embeddings providers, `RERANKING_PROVIDER=HTTP` and `RERANKING_ENABLED=false` are the explicit ways
+  to run without one.
 - Embeddings are computed in the server process on the GPU by default (`EMBEDDING_PROVIDER=TensorRT`) instead of
   coming only from the router. The earlier plan for router-only embeddings is replaced; the `gateway` provider stays
   optional and no `GATEWAY_*` setting is read unless it is selected. `EMBEDDING_PROVIDER` defaults to `TensorRT`
@@ -96,9 +97,14 @@ without the mark, with the commit that landed it, in the commit that lands it.
 - **(planned)** Memory ids become UUIDs.
 - The integration and end-to-end suites run the real TensorRT embedder and reranker on the GPU through the session
   fixtures `tensorrt_embedder` and `tensorrt_reranker` (the production adapters; there is no test-only embedder), with
-  no stub reranker, fake module, `gpu` marker or skip; HTTP mock transports, embedding stubs for tests whose subject
-  is not the vectors, spies that delegate to the real adapters and fault injection (a barrier around `TensorRTEngine.infer`, hidden libraries in a subprocess, one invalid `cudaMemcpy`)
-  remain. Every CI job that runs tests or coverage (`ci.yml` `test`, `e2e.yml`, and the `snapshots`, `coverage`,
+  no stub embedder or reranker, fake module, `gpu` marker or skip. The embedding stubs (`MockEmbeddingsAdapter`,
+  `BatchViaSingle` and the per-file hashing, constant and fixed-vector adapters) are gone: tests that depend on
+  similarity (the 0.7 auto-link cutoff, the 0.89 obsolete warning, ordering of results, duplicates) use clearly
+  similar and clearly unrelated texts, whose measured cosines `tests/integration/test_embedding_texts.py` pins and
+  `docs/contributors.md` lists. HTTP mock transports and in-process fake endpoints for the remote providers, spies
+  and wrappers that delegate to the real adapters (fault injection on cue, added latency, a vector cut to another
+  width) and fault injection in the engine (a barrier around `TensorRTEngine.infer`, hidden libraries in a
+  subprocess, one invalid `cudaMemcpy`) remain. Every CI job that runs tests or coverage (`ci.yml` `test`, `e2e.yml`, and the `snapshots`, `coverage`,
   `memory` and `mutation` jobs of `quality.yml`) moves to `runs-on: [self-hosted, linux, gpu]`; the static gates,
   the architecture tests, `trivy`, `qodana` and the wheel smoke test stay on hosted runners, and the static job
   installs without the TensorRT libraries. The runner is not provisioned by the repository. The Windows leg of
@@ -175,7 +181,17 @@ without the mark, with the commit that landed it, in the commit that lands it.
 - FastEmbed cross-encoder reranker: `FastEmbedCrossEncoderAdapter`, its DirectML handling, the `RERANKING_THREADS` and
   `RERANKING_ONNX_PROVIDERS` settings and the tests of that adapter and of its worker pool. Older environment files
   that still set the removed settings keep working, because unknown settings are ignored.
-- **(planned)** FastEmbed, ONNX Runtime and the local CPU embedder.
+- FastEmbed, ONNX Runtime and the local CPU embedder: `FastEmbeddingAdapter`, `fastembed_offline.py`, the first-run
+  model check, `parse_onnx_providers` and the `FASTEMBED_CACHE_DIR`, `FASTEMBED_LOCAL_FILES_ONLY` and
+  `EMBEDDING_ONNX_PROVIDERS` settings, with the `fastembed` dependency and the packages that only it needed
+  (`onnxruntime`, `flatbuffers`, `loguru`, `mmh3`, `pillow`, `protobuf`, `py-rust-stemmers`, `win32-setctime`).
+  `EMBEDDING_PROVIDER` accepts `TensorRT` (default), `Azure`, `Google`, `OpenAI`, `Ollama` and `gateway`;
+  `FastEmbed` is rejected at startup with an error naming the setting. Older environment files that still set the
+  removed settings keep working, because unknown settings are ignored. A database filled by FastEmbed is moved with
+  `forgetful --re-embed` ([docs/embedding_migration.md](docs/embedding_migration.md)). `docs/OFFLINE_SETUP.md` is
+  deleted and its offline guidance is the "Model files and offline hosts" section of
+  [docs/gpu-models.md](docs/gpu-models.md); the FastEmbed cache steps of the three workflows are gone. No schema
+  change.
 
 ### Fixed
 

@@ -5,11 +5,9 @@ Covers:
 - `rebuild_embeddings` failures return stable reason codes and blame only the failing memory.
 - `rebuild_embeddings(project=...)` rejects unknown or foreign project scopes.
 
-Uses a deterministic offline embedding adapter, so no model download is needed.
+Uses the real TensorRT embedder, wrapped only to hold a call or to return a vector of the wrong width.
 """
 import asyncio
-import hashlib
-import random
 import sqlite3
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
@@ -29,43 +27,43 @@ from app.repositories.sqlite.user_repository import SqliteUserRepository
 from app.routes.mcp.tool_adapters import MemoryToolAdapters
 from app.services.memory_service import MemoryService
 from app.services.re_embedding_service import ReEmbeddingService
-from tests.embedding_stubs import BatchViaSingle
+from tests.embedding_doubles import DelegatingEmbedder
 
 DIMS = 384
 LEAK_MARKERS = ("[SQL:", "INSERT INTO", "[parameters:", "vec_memories", "\\x00", "b'", "Dimension mismatch")
 
 
-class GatedEmbeddingAdapter(BatchViaSingle):
-    """Deterministic adapter; can hold calls whose text contains `gate_marker`.
+class GatedEmbeddingAdapter(DelegatingEmbedder):
+    """The real embedder; can hold calls whose text contains `gate_marker`.
 
-    `wrong_dimension_marker` makes texts containing it return a vector of the wrong length,
-    which the vec0 table rejects at write time (like a misconfigured provider would).
+    `wrong_dimension_marker` makes texts containing it return a vector of the wrong length (the
+    model's vector plus one component), which the vec0 table rejects at write time, like a
+    misconfigured provider would.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, real) -> None:
+        super().__init__(real)
         self.gate_marker: str | None = None
         self.wrong_dimension_marker: str | None = None
         self.reached = asyncio.Event()
         self.release = asyncio.Event()
 
-    @staticmethod
-    def vector(text_: str, dims: int = DIMS) -> list[float]:
-        rng = random.Random(int(hashlib.md5(text_.encode()).hexdigest()[:8], 16))
-        vec = [rng.random() for _ in range(dims)]
-        magnitude = sum(x * x for x in vec) ** 0.5 or 1.0
-        return [x / magnitude for x in vec]
+    async def vector(self, text_: str) -> list[float]:
+        """The model's vector for ``text_``, with no gate and no fault."""
+        return await self.real.generate_embedding(text_)
 
     async def generate_embedding(self, text: str) -> list[float]:
         if self.gate_marker and self.gate_marker in text:
             self.reached.set()
             await self.release.wait()
+        vector = await super().generate_embedding(text)
         if self.wrong_dimension_marker and self.wrong_dimension_marker in text:
-            return self.vector(text, DIMS + 1)
-        return self.vector(text)
+            return [*vector, 0.0]
+        return vector
 
 
 @asynccontextmanager
-async def _open_stack(sqlite_path: str | None = None):
+async def _open_stack(embedding_adapter, sqlite_path: str | None = None):
     """Yield (repo, db_adapter, embedder, user_id) on in-memory SQLite or a database file."""
     saved = (
         settings.DATABASE,
@@ -83,7 +81,7 @@ async def _open_stack(sqlite_path: str | None = None):
 
     db_adapter = SqliteDatabaseAdapter()
     await db_adapter.init_db()
-    embedder = GatedEmbeddingAdapter()
+    embedder = GatedEmbeddingAdapter(embedding_adapter)
     repo = SqliteMemoryRepository(db_adapter=db_adapter, embedding_adapter=embedder, rerank_adapter=None)
     users = SqliteUserRepository(db_adapter=db_adapter)
     user = await users.create_user(UserCreate(external_id=f"ext-{uuid4()}", name="u", email="u@example.com"))
@@ -104,16 +102,16 @@ async def _open_stack(sqlite_path: str | None = None):
 
 
 @pytest.fixture
-async def stack():
-    async with _open_stack() as opened:
+async def stack(tensorrt_embedder):
+    async with _open_stack(tensorrt_embedder) as opened:
         yield opened
 
 
 @pytest.fixture
-async def file_stack(tmp_path):
+async def file_stack(tmp_path, tensorrt_embedder):
     """File-backed database: separate connections really are separate, as in production."""
     db_file = tmp_path / "forgetful.db"
-    async with _open_stack(str(db_file)) as opened:
+    async with _open_stack(tensorrt_embedder, str(db_file)) as opened:
         yield (*opened, str(db_file))
 
 
@@ -197,7 +195,7 @@ async def test_rebuild_does_not_clobber_embedding_of_concurrent_update(stack):
         user_id=user_id, memory_id=memory.id, updated_memory=MemoryUpdate(content="NEW-CONTENT"),
     )
     assert updated.content == "NEW-CONTENT"
-    new_vector = sqlite_vec.serialize_float32(embedder.vector("T NEW-CONTENT c k t"))
+    new_vector = sqlite_vec.serialize_float32(await embedder.vector("T NEW-CONTENT c k t"))
     assert await _vec_blob(db_adapter, memory.id) == new_vector
 
     embedder.release.set()
@@ -219,7 +217,7 @@ async def test_upsert_targeted_embeddings_only_writes_rows_unchanged_since_read(
         first.id: await _vec_blob(db_adapter, first.id),
         second.id: await _vec_blob(db_adapter, second.id),
     }
-    new_vector = embedder.vector("refreshed")
+    new_vector = await embedder.vector("refreshed")
 
     await asyncio.sleep(0.05)
     await repo.update_memory(
@@ -244,7 +242,7 @@ async def test_upsert_targeted_embeddings_only_writes_rows_unchanged_since_read(
 async def test_upsert_targeted_embeddings_without_expectation_still_writes(stack):
     repo, db_adapter, embedder, user_id = stack
     memory = await repo.create_memory(user_id, _memory("content"))
-    new_vector = embedder.vector("refreshed")
+    new_vector = await embedder.vector("refreshed")
 
     written = await repo.upsert_targeted_embeddings(user_id=user_id, updates=[(memory.id, new_vector)])
 
@@ -286,8 +284,8 @@ async def test_upsert_targeted_embeddings_version_check_is_atomic_with_the_write
     repo, db_adapter, embedder, user_id, db_file = file_stack
     memory = await repo.create_memory(user_id, _memory("OLD-CONTENT"))
     read = await repo.get_memory_by_id(user_id, memory.id)
-    stale_vector = embedder.vector("computed from OLD-CONTENT")
-    fresh_blob = sqlite_vec.serialize_float32(embedder.vector("computed from NEW-CONTENT"))
+    stale_vector = await embedder.vector("computed from OLD-CONTENT")
+    fresh_blob = sqlite_vec.serialize_float32(await embedder.vector("computed from NEW-CONTENT"))
 
     competing_edits: list[str | None] = []
 
@@ -320,12 +318,12 @@ async def test_upsert_targeted_embeddings_skips_row_edited_on_another_connection
     repo, db_adapter, embedder, user_id, db_file = file_stack
     memory = await repo.create_memory(user_id, _memory("OLD-CONTENT"))
     read = await repo.get_memory_by_id(user_id, memory.id)
-    fresh_blob = sqlite_vec.serialize_float32(embedder.vector("computed from NEW-CONTENT"))
+    fresh_blob = sqlite_vec.serialize_float32(await embedder.vector("computed from NEW-CONTENT"))
     assert _commit_edit_on_second_connection(db_file, memory.id, fresh_blob) is None
 
     written = await repo.upsert_targeted_embeddings(
         user_id=user_id,
-        updates=[(memory.id, embedder.vector("computed from OLD-CONTENT"))],
+        updates=[(memory.id, await embedder.vector("computed from OLD-CONTENT"))],
         expected_updated_at={memory.id: read.updated_at},
     )
 
@@ -368,7 +366,7 @@ async def test_batch_write_failure_blames_only_the_failing_memory(stack):
     assert result.skipped_ids == []
     assert await _vec_blob(db_adapter, memories[1].id) == original[memories[1].id]
     for memory in (memories[0], memories[2]):
-        expected = embedder.vector(f"T content {memory.id - memories[0].id} c k t")
+        expected = await embedder.vector(f"T content {memory.id - memories[0].id} c k t")
         assert await _vec_blob(db_adapter, memory.id) == sqlite_vec.serialize_float32(expected)
 
 

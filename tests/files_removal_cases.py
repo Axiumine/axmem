@@ -5,7 +5,6 @@ from typing import Any
 from sqlalchemy import text
 
 from app.bootstrap import create_repositories
-from app.config.settings import settings
 from app.models.memory_models import MemoryCreate
 from app.models.user_models import UserCreate
 from tests.migration_helpers import (
@@ -28,13 +27,6 @@ FILE_TABLES = (
 KEPT_EVENT_TYPES = ("memory", "project")
 
 
-class StubEmbeddings:
-    """Deterministic embeddings so the tests never load a model."""
-
-    async def generate_embedding(self, text: str) -> list[float]:
-        return [0.1] * settings.EMBEDDING_DIMENSIONS
-
-
 async def file_shapes(db: Any) -> dict[str, dict[str, Any] | None]:
     return await table_shapes(db, FILE_TABLES)
 
@@ -47,9 +39,9 @@ def is_postgres(db: Any) -> bool:
     return db._engine.dialect.name == "postgresql"
 
 
-async def store_file_rows_and_events(db: Any) -> dict[str, Any]:
+async def store_file_rows_and_events(db: Any, embedder: Any) -> dict[str, Any]:
     """Fill every file table plus the activity log; returns the owner and the kept rows."""
-    repos = create_repositories(db, StubEmbeddings(), None)
+    repos = create_repositories(db, embedder, None)
     user = await repos["user"].create_user(
         UserCreate(external_id="files-removal", name="Files", email="files@example.test"),
     )
@@ -98,11 +90,11 @@ async def store_file_rows_and_events(db: Any) -> dict[str, Any]:
 
 
 class TestFilesRemoval:
-    async def test_upgrade_drops_the_file_tables_and_their_activity_events(self, files_db):
+    async def test_upgrade_drops_the_file_tables_and_their_activity_events(self, files_db, tensorrt_embedder):
         config = alembic_config()
         await run_migration(files_db, config, "downgrade", LAST_REVISION_WITH_FILES)
         assert all(await file_shapes(files_db)), "downgrade must bring the tables back"
-        kept = await store_file_rows_and_events(files_db)
+        kept = await store_file_rows_and_events(files_db, tensorrt_embedder)
 
         async with upgraded_to(files_db, config, FILES_DROP_REVISION):
             assert_file_tables_absent(await file_shapes(files_db))

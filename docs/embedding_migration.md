@@ -14,7 +14,7 @@ You need to run a re-embedding migration whenever you change any of these settin
 
 | Setting | Example Change |
 |---------|---------------|
-| `EMBEDDING_PROVIDER` | `TensorRT` -> `OpenAI`, `FastEmbed` -> `TensorRT`, or any provider -> `gateway` |
+| `EMBEDDING_PROVIDER` | `TensorRT` -> `OpenAI`, or any provider -> `gateway` |
 | `EMBEDDING_MODEL` | `bge-small-en-v1.5` -> `text-embedding-3-small` |
 | `EMBEDDING_DIMENSIONS` | `384` -> `1536` |
 | `EMBEDDING_TF32` | `false` -> `true` (TensorRT only; TF32 changes the vectors slightly) |
@@ -237,12 +237,12 @@ rm /path/to/forgetful-pg-*.sql          # PostgreSQL
 
 ## Common Migration Scenarios
 
-### FastEmbed (CPU) to TensorRT (local GPU)
+### FastEmbed (removed) to TensorRT (local GPU)
 
-`TensorRT` is the default provider. A database that was filled by the `FastEmbed` provider is moved over like any other provider change:
+The `FastEmbed` provider (local CPU, ONNX Runtime) no longer exists. `EMBEDDING_PROVIDER=FastEmbed` stops startup with an error that names the setting, and the `FASTEMBED_CACHE_DIR`, `FASTEMBED_LOCAL_FILES_ONLY` and `EMBEDDING_ONNX_PROVIDERS` settings are ignored. `TensorRT` is the default provider, so a database that was filled by `FastEmbed` is moved over by removing the old line and re-embedding. The model name and the width stay the same, but the vectors come from another runtime and are not identical, so `--re-embed` rewrites all of them:
 
 ```bash
-# .env (or remove the line: TensorRT is the default)
+# settings file (or remove the EMBEDDING_PROVIDER line: TensorRT is the default)
 EMBEDDING_PROVIDER=TensorRT
 EMBEDDING_MODEL=BAAI/bge-small-en-v1.5
 EMBEDDING_DIMENSIONS=384
@@ -251,7 +251,7 @@ EMBEDDING_DIMENSIONS=384
 forgetful --re-embed --batch-size 50
 ```
 
-The first start downloads the model files once into `EMBEDDING_MODEL_DIR` and builds the engine (a few seconds); see [GPU models](./gpu-models.md) and [offline setup](./OFFLINE_SETUP.md). If the GPU, the TensorRT libraries or the model files are missing, `--re-embed` stops before any backup or schema change with `Error: the embedder cannot start: ...`.
+The first start downloads the model files once into `EMBEDDING_MODEL_DIR` and builds the engine (a few seconds); see [GPU models](./gpu-models.md) and [offline hosts](./gpu-models.md#model-files-and-offline-hosts). If the GPU, the TensorRT libraries or the model files are missing, `--re-embed` stops before any backup or schema change with `Error: the embedder cannot start: ...`.
 
 ### Wrong width at start-up
 

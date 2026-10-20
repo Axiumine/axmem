@@ -66,7 +66,7 @@ def _child_env(tmp_path: Path) -> dict[str, str]:
         "XDG_CONFIG_HOME": str(tmp_path / "config"),
         "DATABASE": "SQLite",
         "SQLITE_MEMORY": "true",
-        "EMBEDDING_PROVIDER": "FastEmbed",
+        "EMBEDDING_PROVIDER": "TensorRT",
         "RERANKING_ENABLED": "false",
         "CORS_ENABLED": "false",
         "FASTMCP_SERVER_AUTH": "",

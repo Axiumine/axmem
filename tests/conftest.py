@@ -3,6 +3,7 @@
 import pytest
 
 from app.config.settings import settings
+from tests.embedding_doubles import spy_on
 
 
 @pytest.fixture(autouse=True)
@@ -56,3 +57,13 @@ def tensorrt_embedder():
         yield get_embedding_adapter()
     finally:
         settings_before.undo()
+
+
+@pytest.fixture
+def embedding_spy(tensorrt_embedder):
+    """The real embedder behind call-recording spies (see ``tests.embedding_doubles.spy_on``).
+
+    For service tests with a mocked repository: the vectors are the model's, the spies show how
+    the service called it, and a test injects a provider fault by assigning ``side_effect``.
+    """
+    return spy_on(tensorrt_embedder)

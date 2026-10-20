@@ -1,27 +1,20 @@
-"""Auto-linking only connects memories with sufficient cosine similarity."""
+"""Auto-linking only connects memories with sufficient cosine similarity.
+
+The embedder is the real TensorRT one. The anchor and the related memory are clearly similar
+(cosine 0.83, above the 0.7 cutoff) and the unrelated memory is far from both (below 0.5); see
+``tests/auto_link_cases.py``.
+"""
 
 import pytest
 
 from app.config.settings import settings
-from tests.embedding_stubs import BatchViaSingle
-
-
-class KnownEmbeddings(BatchViaSingle):
-    """Predictable embeddings keep the threshold test independent of a model download."""
-
-    async def generate_embedding(self, text: str) -> list[float]:
-        vectors = {
-            "Anchor": (1.0, 0.0),
-            "Unrelated": (0.0, 1.0),
-            "Related": (0.8, 0.6),
-        }
-        x, y = vectors[text.split(maxsplit=1)[0]]
-        return [x, y, *([0.0] * 382)]
-
-
-@pytest.fixture(scope="module")
-def embedding_adapter():
-    return KnownEmbeddings()
+from tests.auto_link_cases import (
+    ANCHOR,
+    RELATED,
+    UNRELATED,
+    assert_the_cutoff_separates_the_texts,
+    create_through_the_tool,
+)
 
 
 @pytest.fixture(scope="module")
@@ -30,26 +23,15 @@ def reranker_adapter():
 
 
 @pytest.mark.asyncio
-async def test_create_memory_links_only_above_similarity_cutoff(mcp_client):
-    async def create(title: str):
-        return await mcp_client.call_tool("execute_forgetful_tool", {
-            "tool_name": "create_memory",
-            "arguments": {
-                "title": title,
-                "content": "A test memory",
-                "context": "Checking automatic links",
-                "keywords": [],
-                "tags": [],
-                "importance": 7,
-            },
-        })
+async def test_create_memory_links_only_above_similarity_cutoff(mcp_client, embedding_adapter):
+    await assert_the_cutoff_separates_the_texts(embedding_adapter)
 
     # Arrange: the closest existing memory can still be unrelated.
-    anchor = await create("Anchor")
+    anchor = await create_through_the_tool(mcp_client, ANCHOR)
 
-    # Act: create an unrelated memory, then one whose cosine similarity is 0.8.
-    unrelated = await create("Unrelated")
-    related = await create("Related")
+    # Act: create an unrelated memory, then a clearly similar one.
+    unrelated = await create_through_the_tool(mcp_client, UNRELATED)
+    related = await create_through_the_tool(mcp_client, RELATED)
 
     # Assert: only the related memory is auto-linked.
     assert unrelated.data["similar_memories"] == []
@@ -59,25 +41,14 @@ async def test_create_memory_links_only_above_similarity_cutoff(mcp_client):
 
 
 @pytest.mark.asyncio
-async def test_rebuild_embeddings_respects_similarity_cutoff(mcp_client, monkeypatch):
-    async def create(title: str):
-        return await mcp_client.call_tool("execute_forgetful_tool", {
-            "tool_name": "create_memory",
-            "arguments": {
-                "title": title,
-                "content": "A test memory",
-                "context": "Checking rebuilt links",
-                "keywords": [],
-                "tags": [],
-                "importance": 7,
-            },
-        })
+async def test_rebuild_embeddings_respects_similarity_cutoff(mcp_client, embedding_adapter, monkeypatch):
+    await assert_the_cutoff_separates_the_texts(embedding_adapter)
 
     # Arrange: create memories without links, then enable auto-linking for rebuild.
     monkeypatch.setattr(settings, "MEMORY_NUM_AUTO_LINK", 0)
-    anchor = await create("Anchor")
-    unrelated = await create("Unrelated")
-    related = await create("Related")
+    anchor = await create_through_the_tool(mcp_client, ANCHOR)
+    unrelated = await create_through_the_tool(mcp_client, UNRELATED)
+    related = await create_through_the_tool(mcp_client, RELATED)
     monkeypatch.setattr(settings, "MEMORY_NUM_AUTO_LINK", 3)
 
     # Act: rebuild the anchor through the public tool.

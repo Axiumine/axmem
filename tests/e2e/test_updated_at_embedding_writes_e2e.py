@@ -5,7 +5,7 @@ fires the `updated_at` column `onupdate` default unless the statement pins the c
 backdate `updated_at` through raw SQL and assert the repository writes leave it untouched, and that a
 targeted rebuild does not overwrite a vector computed from older content.
 
-Uses a deterministic embedding adapter so no model is needed.
+The embeddings come from the real TensorRT embedder.
 """
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
@@ -14,29 +14,18 @@ import pytest
 import pytest_asyncio
 from sqlalchemy import text
 
-from app.config.settings import settings
 from app.models.memory_models import MemoryCreate
 from app.repositories.postgres.memory_repository import PostgresMemoryRepository
 from app.services.re_embedding_service import ReEmbeddingService
-from tests.embedding_stubs import BatchViaSingle
 
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 
-class StubEmbeddings(BatchViaSingle):
-    """Deterministic embedding adapter, independent of the configured provider."""
-
-    async def generate_embedding(self, text: str) -> list[float]:
-        vector = [0.0] * settings.EMBEDDING_DIMENSIONS
-        vector[len(text) % settings.EMBEDDING_DIMENSIONS] = 1.0
-        return vector
-
-
 @pytest_asyncio.fixture(loop_scope="session")
-async def memory_repo(db_adapter):
+async def memory_repo(db_adapter, tensorrt_embedder):
     repo = PostgresMemoryRepository(
         db_adapter=db_adapter,
-        embedding_adapter=StubEmbeddings(),
+        embedding_adapter=tensorrt_embedder,
         rerank_adapter=None,
     )
     try:
@@ -100,10 +89,10 @@ async def _embedding_text(db_adapter, memory_id):
 
 
 @pytest.mark.e2e
-async def test_re_embed_all_keeps_updated_at(memory_repo, db_adapter):
+async def test_re_embed_all_keeps_updated_at(memory_repo, db_adapter, tensorrt_embedder):
     user_id, backdated = await _seed(memory_repo, db_adapter)
 
-    result = await ReEmbeddingService(memory_repo, StubEmbeddings(), batch_size=2).re_embed_all()
+    result = await ReEmbeddingService(memory_repo, tensorrt_embedder, batch_size=2).re_embed_all()
 
     assert result.total_processed == len(backdated)
     assert result.validation.count_ok
@@ -111,10 +100,10 @@ async def test_re_embed_all_keeps_updated_at(memory_repo, db_adapter):
 
 
 @pytest.mark.e2e
-async def test_rebuild_targeted_keeps_updated_at(memory_repo, db_adapter):
+async def test_rebuild_targeted_keeps_updated_at(memory_repo, db_adapter, tensorrt_embedder):
     user_id, backdated = await _seed(memory_repo, db_adapter)
 
-    result = await ReEmbeddingService(memory_repo, StubEmbeddings(), batch_size=10).rebuild_targeted(
+    result = await ReEmbeddingService(memory_repo, tensorrt_embedder, batch_size=10).rebuild_targeted(
         user_id=user_id,
         memory_ids=list(backdated),
     )
@@ -125,14 +114,15 @@ async def test_rebuild_targeted_keeps_updated_at(memory_repo, db_adapter):
 
 
 @pytest.mark.e2e
-async def test_upsert_targeted_embeddings_only_writes_rows_unchanged_since_read(memory_repo, db_adapter):
+async def test_upsert_targeted_embeddings_only_writes_rows_unchanged_since_read(
+    memory_repo, db_adapter, tensorrt_embedder,
+):
     user_id, backdated = await _seed(memory_repo, db_adapter, count=2)
     changed_id, unchanged_id = list(backdated)
     expected = dict(backdated)
     expected[changed_id] = backdated[changed_id] - timedelta(days=1)  # row was edited after the batch was read
     original = {memory_id: await _embedding_text(db_adapter, memory_id) for memory_id in backdated}
-    vector = [0.0] * settings.EMBEDDING_DIMENSIONS
-    vector[7] = 1.0
+    vector = await tensorrt_embedder.generate_embedding("text that none of the memories holds")
 
     written = await memory_repo.upsert_targeted_embeddings(
         user_id=user_id,
@@ -147,11 +137,12 @@ async def test_upsert_targeted_embeddings_only_writes_rows_unchanged_since_read(
 
 
 @pytest.mark.e2e
-async def test_upsert_targeted_embeddings_without_expectation_still_writes(memory_repo, db_adapter):
+async def test_upsert_targeted_embeddings_without_expectation_still_writes(
+    memory_repo, db_adapter, tensorrt_embedder,
+):
     user_id, backdated = await _seed(memory_repo, db_adapter, count=1)
     (memory_id,) = backdated
-    vector = [0.0] * settings.EMBEDDING_DIMENSIONS
-    vector[3] = 1.0
+    vector = await tensorrt_embedder.generate_embedding("text that none of the memories holds")
 
     written = await memory_repo.upsert_targeted_embeddings(user_id=user_id, updates=[(memory_id, vector)])
 

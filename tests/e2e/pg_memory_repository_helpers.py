@@ -1,31 +1,13 @@
 """Builders shared by the PostgreSQL memory repository end-to-end tests.
 
-The tests drive ``PostgresMemoryRepository`` directly, with a deterministic embedder, so
-they need an owning user, a few memories and a way to give them distinguishable vectors.
+The tests drive ``PostgresMemoryRepository`` directly, with the real TensorRT embedder
+(the ``tensorrt_embedder`` fixture), so they need an owning user and a few memories.
 """
-import hashlib
-import random
 from uuid import UUID
 
-from app.config.settings import settings
 from app.models.memory_models import MemoryCreate
 from app.models.user_models import UserCreate
 from app.repositories.postgres.user_repository import PostgresUserRepository
-from tests.embedding_stubs import BatchViaSingle
-
-
-def vector_for(text: str) -> list[float]:
-    """Deterministic pseudo-random vector for ``text`` (same text, same vector)."""
-    seed = int.from_bytes(hashlib.sha256(text.encode()).digest()[:8], "big")
-    rng = random.Random(seed)
-    return [rng.uniform(-1.0, 1.0) for _ in range(settings.EMBEDDING_DIMENSIONS)]
-
-
-class HashingEmbeddings(BatchViaSingle):
-    """Embedding adapter returning ``vector_for(text)`` without calling any provider."""
-
-    async def generate_embedding(self, text: str) -> list[float]:
-        return vector_for(text)
 
 
 async def create_user(db_adapter, external_id: str) -> UUID:

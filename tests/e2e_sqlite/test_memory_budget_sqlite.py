@@ -13,7 +13,7 @@ MEMORY_COUNT = 60
 
 @pytest.fixture(autouse=True)
 async def _warm_models(embedding_adapter, reranker_adapter):
-    """Load the ONNX models before the measured section so budgets cover our code only."""
+    """Load the TensorRT engines before the measured section so budgets cover our code only."""
     await embedding_adapter.generate_embedding("warm up")
     if reranker_adapter is not None:
         await reranker_adapter.rerank("warm up", ["warm up", "cold start"])

@@ -41,15 +41,18 @@ def get_embedding_adapter():
     """Create embedding adapter based on settings.
 
     The default ``TensorRT`` provider runs the model on the NVIDIA GPU of this machine and raises
-    ``TensorRTStartupError`` when it cannot start; there is no fallback to another provider. The
-    ``gateway`` provider (and its ``GATEWAY_*`` settings) is only touched when it is selected.
+    ``TensorRTStartupError`` when it cannot start; there is no fallback to another provider. Azure,
+    Google, OpenAI and Ollama are remote choices, and the ``gateway`` provider (with its
+    ``GATEWAY_*`` settings) is only touched when it is selected.
     """
     provider = canonical_choice("EMBEDDING_PROVIDER", settings.EMBEDDING_PROVIDER, EMBEDDING_PROVIDERS)
     if provider == "TensorRT":
         return _shared_tensorrt_embedder()
+    if provider == "gateway":
+        from app.repositories.embeddings.gateway_adapter import GatewayEmbeddingsAdapter
+        return GatewayEmbeddingsAdapter()
     from app.repositories.embeddings.embedding_adapter import (
         AzureOpenAIAdapter,
-        FastEmbeddingAdapter,
         GoogleEmbeddingsAdapter,
         OllamaEmbeddingsAdapter,
         OpenAIEmbeddingsAdapter,
@@ -61,12 +64,7 @@ def get_embedding_adapter():
         return GoogleEmbeddingsAdapter()
     if provider == "OpenAI":
         return OpenAIEmbeddingsAdapter()
-    if provider == "Ollama":
-        return OllamaEmbeddingsAdapter()
-    if provider == "gateway":
-        from app.repositories.embeddings.gateway_adapter import GatewayEmbeddingsAdapter
-        return GatewayEmbeddingsAdapter()
-    return FastEmbeddingAdapter(providers=settings.embedding_onnx_providers)
+    return OllamaEmbeddingsAdapter()  # canonical_choice leaves only Ollama after the branches above
 
 
 _TENSORRT_ADAPTERS: dict[tuple, Any] = {}
@@ -164,21 +162,6 @@ def log_tensorrt_models(*adapters) -> None:
     logger.info(f"GPU memory with the {roles} loaded: {gpu_memory().describe()}; {sharing}")
 
 
-def check_first_run_models():
-    """Log message on first run when FastEmbed models need to be downloaded."""
-    if canonical_choice("EMBEDDING_PROVIDER", settings.EMBEDDING_PROVIDER, EMBEDDING_PROVIDERS) != "FastEmbed":
-        return
-    cache_dir = Path(settings.FASTEMBED_CACHE_DIR)
-    if not cache_dir.exists() or not any(cache_dir.iterdir()):
-        if settings.FASTEMBED_LOCAL_FILES_ONLY:
-            logger.info(
-                "FastEmbed local-files-only mode enabled - models must already exist in cache",
-                extra={"cache_dir": settings.FASTEMBED_CACHE_DIR},
-            )
-            return
-        logger.info("First run detected - downloading embedding models. This may take a minute...")
-
-
 def create_db_adapter():
     """Create database adapter based on settings."""
     if settings.DATABASE == "Postgres":
@@ -246,8 +229,6 @@ class Runtime:
 
 async def build_runtime() -> Runtime:
     """Build the full runtime stack: adapters -> repos -> services -> registry -> scopes."""
-    check_first_run_models()
-
     embeddings_adapter = get_embedding_adapter()
     reranker_adapter = get_reranker_adapter()
     logger.info("Embedding adapters initialized")

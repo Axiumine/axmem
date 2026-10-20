@@ -10,7 +10,6 @@ import pytest
 import pytest_asyncio
 from sqlalchemy import update
 
-from app.config.settings import settings
 from app.exceptions import InvalidStateTransitionError, NotFoundError
 from app.models.memory_models import MemoryUpdate
 from app.repositories.postgres.memory_repository import (
@@ -24,6 +23,7 @@ from tests.e2e.pg_repository_world_e2e_helpers import (
     captured_logger,
     new_memory,
 )
+from tests.embedding_doubles import DelegatingEmbedder
 
 pytestmark = [pytest.mark.e2e, pytest.mark.asyncio(loop_scope="session")]
 
@@ -33,14 +33,15 @@ OUT_OF_RANGE_ID = 99_999_999_999
 
 
 @pytest_asyncio.fixture(loop_scope="session")
-async def world(db_adapter) -> RepositoryWorld:
-    return await build_world(db_adapter)
+async def world(db_adapter, tensorrt_embedder) -> RepositoryWorld:
+    return await build_world(db_adapter, tensorrt_embedder)
 
 
-class RenamingEmbeddings:
-    """Embedding stand-in during which another writer renames the memory, every time."""
+class RenamingEmbeddings(DelegatingEmbedder):
+    """The real embedder, during whose call another writer renames the memory, every time."""
 
-    def __init__(self, db_adapter, memory_id: int):
+    def __init__(self, real, db_adapter, memory_id: int):
+        super().__init__(real)
         self.db_adapter = db_adapter
         self.memory_id = memory_id
         self.calls = 0
@@ -53,7 +54,7 @@ class RenamingEmbeddings:
                 .where(MemoryTable.id == self.memory_id)
                 .values(title=f"concurrent edit {self.calls}"),
             )
-        return [0.01] * settings.EMBEDDING_DIMENSIONS
+        return await super().generate_embedding(text)
 
 
 def _split_by_level(
@@ -83,10 +84,10 @@ async def test_update_of_another_users_memory_is_not_found_and_changes_nothing(w
 
 
 async def test_update_keeps_a_memory_that_changes_during_embedding_and_warns_on_the_last_attempt(
-    world, db_adapter, caplog,
+    world, db_adapter, caplog, tensorrt_embedder,
 ):
     memory = await new_memory(world, world.owner, "Original title")
-    embeddings = RenamingEmbeddings(db_adapter, memory.id)
+    embeddings = RenamingEmbeddings(tensorrt_embedder, db_adapter, memory.id)
     repo = PostgresMemoryRepository(db_adapter, embeddings)
 
     with captured_logger(caplog, MEMORY_LOGGER, logging.INFO) as records:

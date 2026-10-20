@@ -15,11 +15,8 @@ from app.repositories.postgres.memory_repository import (
     MAX_EMBEDDING_ATTEMPTS,
     PostgresMemoryRepository,
 )
-from tests.e2e.pg_memory_repository_helpers import (
-    HashingEmbeddings,
-    create_user,
-    memory_data,
-)
+from tests.e2e.pg_memory_repository_helpers import create_user, memory_data
+from tests.embedding_doubles import DelegatingEmbedder
 
 pytestmark = [pytest.mark.e2e, pytest.mark.asyncio(loop_scope="session")]
 
@@ -27,10 +24,11 @@ UNKNOWN_ID = 987654
 MODULE = "app.repositories.postgres.memory_repository"
 
 
-class EditingEmbeddings(HashingEmbeddings):
-    """Embedder during whose provider call a second client renames the memory."""
+class EditingEmbeddings(DelegatingEmbedder):
+    """The real embedder, during whose call a second client renames the memory."""
 
-    def __init__(self, other_client, user_id, memory_id):
+    def __init__(self, real, other_client, user_id, memory_id):
+        super().__init__(real)
         self._other_client = other_client
         self._user_id = user_id
         self._memory_id = memory_id
@@ -55,13 +53,13 @@ async def owner(db_adapter):
 
 
 @pytest_asyncio.fixture(loop_scope="session")
-async def overtaken_update(db_adapter, owner, caplog, monkeypatch):
+async def overtaken_update(db_adapter, owner, caplog, monkeypatch, tensorrt_embedder):
     """Run an update whose memory is renamed by another client during every embedding call."""
     monkeypatch.setattr(logging.getLogger(MODULE), "disabled", False)
     caplog.set_level(logging.INFO, logger=MODULE)
-    other_client = PostgresMemoryRepository(db_adapter, HashingEmbeddings())
+    other_client = PostgresMemoryRepository(db_adapter, tensorrt_embedder)
     memory = await other_client.create_memory(owner, memory_data("original"))
-    embedder = EditingEmbeddings(other_client, owner, memory.id)
+    embedder = EditingEmbeddings(tensorrt_embedder, other_client, owner, memory.id)
     updater = PostgresMemoryRepository(db_adapter, embedder)
 
     updated = await updater.update_memory(
@@ -92,8 +90,8 @@ async def test_update_that_keeps_being_overtaken_warns_once_and_retries_before(o
     assert len(retries) == MAX_EMBEDDING_ATTEMPTS - 1
 
 
-async def test_updating_a_memory_that_no_longer_exists_raises_not_found(db_adapter, owner):
-    repository = PostgresMemoryRepository(db_adapter, HashingEmbeddings())
+async def test_updating_a_memory_that_no_longer_exists_raises_not_found(db_adapter, owner, tensorrt_embedder):
+    repository = PostgresMemoryRepository(db_adapter, tensorrt_embedder)
     existing = await repository.create_memory(owner, memory_data("unrelated"))
 
     with pytest.raises(NotFoundError, match=f"Memory with id {UNKNOWN_ID} not found"):

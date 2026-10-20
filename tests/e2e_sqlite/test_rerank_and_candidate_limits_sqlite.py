@@ -1,11 +1,10 @@
 """Reranked search honours ``k`` against the real SQLite repositories (sqlite-vec, no Docker).
 
-Only the embedding provider is a stand-in and the cross-encoder is the real TensorRT reranker
+The embedder is the real TensorRT embedder and the cross-encoder is the real TensorRT reranker
 (behind a recorder that passes every call through), so these tests drive the real candidate
 fetch, rerank hand-off and truncation in ``search_scored``.
 """
 import json
-import math
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
@@ -18,33 +17,6 @@ from app.repositories.embeddings.reranker_adapter import HttpRerankAdapter
 from app.repositories.sqlite.memory_repository import SqliteMemoryRepository
 from app.repositories.sqlite.sqlite_adapter import SqliteDatabaseAdapter
 from app.repositories.sqlite.user_repository import SqliteUserRepository
-
-DIMENSIONS = settings.EMBEDDING_DIMENSIONS
-
-
-class FixedEmbeddings:
-    """Every text maps to the same unit vector, so every row matches every query."""
-
-    async def generate_embedding(self, text):
-        vector = [0.0] * DIMENSIONS
-        vector[0] = 1.0
-        return vector
-
-
-class AngleEmbeddings:
-    """The query sits at angle 0 and memories at increasing angles (alpha is closest)."""
-
-    ANGLES = {"alpha": 0.1, "beta": 0.5, "BESTMATCH": 1.0}
-
-    async def generate_embedding(self, text):
-        angle = 0.0
-        for key, theta in self.ANGLES.items():
-            if key in text:
-                angle = theta
-        vector = [0.0] * DIMENSIONS
-        vector[0] = math.cos(angle)
-        vector[1] = math.sin(angle)
-        return vector
 
 
 class RecordingReranker:
@@ -81,10 +53,10 @@ def reranker(tensorrt_reranker):
     return RecordingReranker(tensorrt_reranker)
 
 
-async def _memories(adapter, user_id, reranker, count, embeddings=None):
+async def _memories(adapter, user_id, reranker, count, embeddings):
     repo = SqliteMemoryRepository(
         db_adapter=adapter,
-        embedding_adapter=embeddings or FixedEmbeddings(),
+        embedding_adapter=embeddings,
         rerank_adapter=reranker,
     )
     for index in range(count):
@@ -95,19 +67,19 @@ async def _memories(adapter, user_id, reranker, count, embeddings=None):
     return repo
 
 
-async def _search_memories(repo, user_id, k):
+async def _search_memories(repo, user_id, k, query="q"):
     return await repo.search_scored(
-        user_id=user_id, query="q", query_context="", k=k,
+        user_id=user_id, query=query, query_context="", k=k,
         importance_threshold=None, project=None, exclude_ids=None,
     )
 
 
 async def test_memory_search_returns_k_when_k_exceeds_dense_candidates(
-    sqlite_env, monkeypatch, reranker,
+    sqlite_env, monkeypatch, reranker, tensorrt_embedder,
 ):
     adapter, user_id = sqlite_env
     monkeypatch.setattr(settings, "DENSE_SEARCH_CANDIDATES", 5)
-    repo = await _memories(adapter, user_id, reranker, 12)
+    repo = await _memories(adapter, user_id, reranker, 12, tensorrt_embedder)
 
     found = await _search_memories(repo, user_id, k=8)
 
@@ -115,11 +87,11 @@ async def test_memory_search_returns_k_when_k_exceeds_dense_candidates(
 
 
 async def test_memory_search_returns_every_match_when_fewer_than_k(
-    sqlite_env, monkeypatch, reranker,
+    sqlite_env, monkeypatch, reranker, tensorrt_embedder,
 ):
     adapter, user_id = sqlite_env
     monkeypatch.setattr(settings, "DENSE_SEARCH_CANDIDATES", 5)
-    repo = await _memories(adapter, user_id, reranker, 6)
+    repo = await _memories(adapter, user_id, reranker, 6, tensorrt_embedder)
 
     found = await _search_memories(repo, user_id, k=8)
 
@@ -127,11 +99,11 @@ async def test_memory_search_returns_every_match_when_fewer_than_k(
 
 
 async def test_memory_search_still_reranks_when_k_is_within_dense_candidates(
-    sqlite_env, monkeypatch, reranker,
+    sqlite_env, monkeypatch, reranker, tensorrt_embedder,
 ):
     adapter, user_id = sqlite_env
     monkeypatch.setattr(settings, "DENSE_SEARCH_CANDIDATES", 5)
-    repo = await _memories(adapter, user_id, reranker, 8)
+    repo = await _memories(adapter, user_id, reranker, 8, tensorrt_embedder)
 
     found = await _search_memories(repo, user_id, k=3)
 
@@ -172,13 +144,13 @@ def index_order_rerank_url():
 
 
 async def test_http_reranker_answering_in_document_order_still_picks_best_match(
-    sqlite_env, monkeypatch, index_order_rerank_url,
+    sqlite_env, monkeypatch, index_order_rerank_url, tensorrt_embedder,
 ):
     adapter, user_id = sqlite_env
     monkeypatch.setattr(settings, "DENSE_SEARCH_CANDIDATES", 20)
     repo = SqliteMemoryRepository(
         db_adapter=adapter,
-        embedding_adapter=AngleEmbeddings(),
+        embedding_adapter=tensorrt_embedder,
         rerank_adapter=HttpRerankAdapter(model="m", url=index_order_rerank_url, api_key=""),
     )
     for word in ("alpha", "beta", "BESTMATCH"):
@@ -187,7 +159,15 @@ async def test_http_reranker_answering_in_document_order_still_picks_best_match(
             keywords=[word], tags=["t"], importance=7,
         ))
 
-    found = await _search_memories(repo, user_id, k=1)
+    # The dense search ranks alpha first for this query, so the best match is not the first document
+    # the reranker receives: only a reranker that sorts by score picks it.
+    dense = await repo.semantic_search_scored(
+        user_id, "alpha", k=3, importance_threshold=None, project=None, exclude_ids=None,
+    )
+    assert [memory.keywords for memory, _ in dense][0] == ["alpha"]
+    assert "BESTMATCH" in [memory.keywords[0] for memory, _ in dense]
+
+    found = await _search_memories(repo, user_id, k=1, query="alpha")
 
     assert len(found) == 1
     memory, score = found[0]

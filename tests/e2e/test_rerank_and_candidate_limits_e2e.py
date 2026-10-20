@@ -1,8 +1,8 @@
 """PostgreSQL reranked search: honour ``k`` and never hold a connection while awaiting providers.
 
 Runs the real PostgreSQL memory repository (pgvector, RLS sessions, default
-connection pool). Only the embedding provider is a stand-in; the cross-encoder is the real TensorRT
-reranker behind a spy that records the pool state and passes every call through.
+connection pool). The embedder and the cross-encoder are the real TensorRT models, each behind a spy
+that records the pool state and passes every call through.
 """
 import asyncio
 
@@ -13,27 +13,24 @@ from app.models.memory_models import MemoryCreate, MemoryUpdate
 from app.models.user_models import UserCreate
 from app.repositories.postgres.memory_repository import PostgresMemoryRepository
 from app.repositories.postgres.user_repository import PostgresUserRepository
+from tests.embedding_doubles import DelegatingEmbedder
 
 pytestmark = [
     pytest.mark.e2e,
     pytest.mark.asyncio(loop_scope="session"),
 ]
 
-DIMENSIONS = settings.EMBEDDING_DIMENSIONS
+class SpyEmbeddings(DelegatingEmbedder):
+    """The real embedder; records the pooled connections in use at every call."""
 
-
-class SpyEmbeddings:
-    """Every text maps to the same unit vector; records pooled connections in use per call."""
-
-    def __init__(self, pool):
+    def __init__(self, real, pool):
+        super().__init__(real)
         self.pool = pool
         self.checked_out = []
 
     async def generate_embedding(self, text):
         self.checked_out.append(self.pool.checkedout())
-        vector = [0.0] * DIMENSIONS
-        vector[0] = 1.0
-        return vector
+        return await super().generate_embedding(text)
 
 
 class SpyReranker:
@@ -65,8 +62,8 @@ async def user_id(db_adapter):
 
 
 @pytest.fixture
-def embeddings(db_adapter):
-    return SpyEmbeddings(db_adapter._engine.pool)
+def embeddings(db_adapter, tensorrt_embedder):
+    return SpyEmbeddings(tensorrt_embedder, db_adapter._engine.pool)
 
 
 async def _seed_memories(repo, user_id, count):

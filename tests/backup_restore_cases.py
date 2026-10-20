@@ -1,4 +1,8 @@
-"""Shared backup checks: real databases and CLI, with only the provider replaced."""
+"""Shared backup checks: real databases, CLI and TensorRT embedder.
+
+The only wrapper is ``MigratingEmbedder`` in the child process of the failed-rebuild test: it makes the
+migration write vectors that differ from the seeded ones (it embeds the text with a prefix) and fails on cue.
+"""
 
 import asyncio
 import os
@@ -11,25 +15,13 @@ from app.bootstrap import create_backup_service
 from app.config.settings import settings
 from app.models.memory_models import MemoryCreate
 from app.models.user_models import UserCreate
-from tests.embedding_stubs import BatchViaSingle
+from app.utils.embedding_helpers import build_embedding_text
+from tests.embedding_doubles import MigratingEmbedder, similarity
 
-
-class BackupTestEmbeddings(BatchViaSingle):
-    """Use one known vector when seeding, and a different vector during migration."""
-
-    def __init__(self, failure=None):
-        self.failure = failure
-        self.calls = 0
-
-    async def generate_embedding(self, text):
-        self.calls += 1
-        # Three memories, batch size one: fail after a committed batch, or in validation.
-        fail_at = {"provider_error": 2, "search_error": 4}.get(self.failure)
-        if self.calls == fail_at:
-            raise RuntimeError("Deliberate backup test provider failure")
-        vector = [0.0] * settings.EMBEDDING_DIMENSIONS
-        vector[1 if self.failure else 0] = 1.0
-        return vector
+# Three memories, batch size one: fail after a committed batch (the second call), or in the final
+# validation search (the fourth call).
+FAIL_AT = {"provider_error": 2, "search_error": 4}
+OBSOLETE_CUTOFF = 0.89
 
 
 async def seed_memories(repos):
@@ -50,24 +42,45 @@ async def seed_memories(repos):
     return user.id, originals
 
 
-async def assert_originals_restored(repo, user_id, originals):
-    """Check content, metadata, links, lifecycle state, and vector search results."""
+async def assert_stored_rows_unchanged(repo, user_id, originals):
     assert await repo.count_all_memories() == 3
     for original in originals:
         assert await repo.get_memory_by_id(user_id, original.id) == original
     assert await repo.validate_embedding_count()
     assert await repo.validate_embedding_dimensions()
-    found = await repo.search_scored(
-        user_id=user_id, query="original vector", query_context="backup test", k=10,
-        importance_threshold=None, project=None, exclude_ids=None,
-    )
-    assert {item.id for item, _ in found} == {originals[0].id, originals[1].id}
-    assert [score.similarity for _, score in found] == pytest.approx([1.0, 1.0])
+
+
+async def assert_search_finds_each_memory_by_its_own_text(repo, user_id, originals):
+    for original in originals[:2]:
+        found = await repo.search_scored(
+            user_id=user_id, query=build_embedding_text(original), query_context="backup test", k=10,
+            importance_threshold=None, project=None, exclude_ids=None,
+        )
+        assert {item.id for item, _ in found} == {originals[0].id, originals[1].id}  # not the obsolete one
+        best, score = found[0]
+        assert best.id == original.id
+        assert score.similarity == pytest.approx(1.0, abs=1e-4)
+
+
+async def assert_obsolete_match_scores_as_computed(repo, user_id, originals):
+    expected = await similarity(repo.embedding_adapter, originals[0], originals[2])
+    assert expected > OBSOLETE_CUTOFF  # the seeded memories 0 and 2 are close enough to match
     obsolete = await repo.find_obsolete_matches(
-        user_id, originals[0].id, limit=3, min_similarity=0.89,
+        user_id, originals[0].id, limit=3, min_similarity=OBSOLETE_CUTOFF,
     )
     assert [item.id for item, _ in obsolete] == [originals[2].id]
-    assert obsolete[0][1] == pytest.approx(1.0)
+    assert obsolete[0][1] == pytest.approx(expected, abs=1e-4)
+
+
+async def assert_originals_restored(repo, user_id, originals):
+    """Check content, metadata, links, lifecycle state, and vector search results.
+
+    The vectors are the model's for each memory's embedding text, so a vector that a failed migration
+    wrote (it embeds a prefixed text) shows as a cosine below 1 against the memory's own text.
+    """
+    await assert_stored_rows_unchanged(repo, user_id, originals)
+    await assert_search_finds_each_memory_by_its_own_text(repo, user_id, originals)
+    await assert_obsolete_match_scores_as_computed(repo, user_id, originals)
 
 
 async def run_reembed_cli(failure, encoding):
@@ -80,6 +93,7 @@ async def run_reembed_cli(failure, encoding):
     ):
         env[name] = str(getattr(settings, name))
     env["RERANKING_ENABLED"] = "false"
+    env["HF_HUB_OFFLINE"] = "1"
     env["PYTHONIOENCODING"] = encoding
     process = await asyncio.create_subprocess_exec(
         sys.executable, "-m", "tests.backup_restore_cases", failure,
@@ -143,11 +157,16 @@ class BackupRestoreCases:
 
 
 if __name__ == "__main__":
-    # Replace the external embedding provider only. CLI dispatch and recovery stay real.
+    # Wrap the real embedder only. CLI dispatch and recovery stay real.
     import app.bootstrap
     from main import cli
 
-    provider = BackupTestEmbeddings(failure=sys.argv[1])
+    async def deliberate_failure():
+        raise RuntimeError("Deliberate backup test provider failure")
+
+    provider = MigratingEmbedder(
+        app.bootstrap.get_embedding_adapter(), stop_at=FAIL_AT[sys.argv[1]], stop=deliberate_failure,
+    )
     app.bootstrap.get_embedding_adapter = lambda: provider
     sys.argv = ["forgetful", "re-embed", "--batch-size", "1"]
     sys.exit(cli())

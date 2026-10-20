@@ -1,7 +1,5 @@
 """Integration tests for unobsolete_memory restore path."""
 import asyncio
-import hashlib
-import random
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from uuid import uuid4
@@ -135,20 +133,6 @@ async def test_unobsolete_concurrent_restore_one_success_one_invalid_state(test_
     assert len(invalid) == 1
 
 
-class _StaticEmbeddingAdapter:
-    """Deterministic offline embeddings for SQLite integration checks."""
-
-    def __init__(self, dimensions: int = 384):
-        self.dimensions = dimensions
-
-    async def generate_embedding(self, text: str) -> list[float]:
-        seed = int(hashlib.md5(text.encode()).hexdigest()[:8], 16)
-        rng = random.Random(seed)
-        vec = [rng.random() for _ in range(self.dimensions)]
-        magnitude = sum(x * x for x in vec) ** 0.5 or 1.0
-        return [x / magnitude for x in vec]
-
-
 async def _sqlite_user(db_adapter, user_id):
     now = datetime.now(UTC).isoformat()
     async with db_adapter.system_session() as session:
@@ -169,7 +153,7 @@ async def _sqlite_user(db_adapter, user_id):
 
 
 @asynccontextmanager
-async def _sqlite_memory_stack():
+async def _sqlite_memory_stack(embedding_adapter):
     """Yield (db_adapter, repo, service) on in-memory SQLite, restoring settings on exit."""
     original_sqlite_memory = settings.SQLITE_MEMORY
     original_database = settings.DATABASE
@@ -181,7 +165,6 @@ async def _sqlite_memory_stack():
 
     db_adapter = SqliteDatabaseAdapter()
     await db_adapter.init_db()
-    embedding_adapter = _StaticEmbeddingAdapter(dimensions=384)
     repo = SqliteMemoryRepository(
         db_adapter=db_adapter,
         embedding_adapter=embedding_adapter,
@@ -202,9 +185,9 @@ async def _sqlite_memory_stack():
 
 
 @pytest.mark.asyncio
-async def test_unobsolete_concurrent_restore_sqlite_atomic():
+async def test_unobsolete_concurrent_restore_sqlite_atomic(tensorrt_embedder):
     """SQLite conditional UPDATE: concurrent restores yield one winner."""
-    async with _sqlite_memory_stack() as (db_adapter, repo, service):
+    async with _sqlite_memory_stack(tensorrt_embedder) as (db_adapter, repo, service):
         user_id = uuid4()
         await _sqlite_user(db_adapter, user_id)
         mem = await repo.create_memory(

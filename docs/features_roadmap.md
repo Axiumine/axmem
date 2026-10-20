@@ -14,7 +14,7 @@
 - [x] Repository Adapters
     - [x] Add SQLLite repository support
 - [ ] Embedding Adapters
-    - [x] Fastembed
+    - [x] TensorRT (in-process on the NVIDIA GPU, the default; replaced the FastEmbed CPU embedder)
     - [x] Google
     - [x] AzureOpenAI
     - [x] Open AI

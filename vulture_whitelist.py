@@ -14,7 +14,6 @@ from app.middleware.auth import TokenCache
 from app.models.memory_models import MemoryScore, MemorySummary, ObsoleteMatch
 from app.models.user_models import User, UserCreate
 from app.repositories.embeddings.embedding_adapter import _EmbeddingsCreateKwargs
-from app.repositories.embeddings.fastembed_offline import FastEmbedKwargs
 from app.repositories.postgres import postgres_tables
 from app.repositories.sqlite import sqlite_tables
 from app.routes.cli.remote_executor import RemoteExecutor
@@ -46,10 +45,9 @@ ReportIssue.evidence
 WalkthroughReport.steps
 
 # --- TypedDict keys forwarded as **kwargs to third-party constructors -----------------
-# The OpenAI-style embeddings client and the FastEmbed model constructor read these keys.
+# The OpenAI-style embeddings clients read these keys.
 _EmbeddingsCreateKwargs.input
 _EmbeddingsCreateKwargs.dimensions
-FastEmbedKwargs.local_files_only
 
 # --- SQLAlchemy ORM columns and relationships ------------------------------------------
 # Columns are the table schema (pinned by the schema snapshots and the alembic revisions);

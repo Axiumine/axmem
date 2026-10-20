@@ -33,13 +33,6 @@ KEPT_EVENT_TYPES = ("memory", "project")
 VEC_SKILLS_QUERY = "SELECT name FROM sqlite_master WHERE name = 'vec_skills'"
 
 
-class StubEmbeddings:
-    """Deterministic embeddings so the tests never load a model."""
-
-    async def generate_embedding(self, text: str) -> list[float]:
-        return [0.1] * settings.EMBEDDING_DIMENSIONS
-
-
 async def skill_shapes(db: Any) -> dict[str, dict[str, Any] | None]:
     return await table_shapes(db, SKILL_TABLES)
 
@@ -52,9 +45,9 @@ def is_postgres(db: Any) -> bool:
     return db._engine.dialect.name == "postgresql"
 
 
-async def store_skill_rows_and_events(db: Any) -> dict[str, Any]:
+async def store_skill_rows_and_events(db: Any, embedder: Any) -> dict[str, Any]:
     """Fill every skill table plus the activity log; returns the owner and the kept rows."""
-    repos = create_repositories(db, StubEmbeddings(), None)
+    repos = create_repositories(db, embedder, None)
     user = await repos["user"].create_user(
         UserCreate(external_id="skills-removal", name="Skills", email="skills@example.test"),
     )
@@ -130,11 +123,11 @@ async def vec_skills_tables(db: Any) -> list[str]:
 
 
 class TestSkillsRemoval:
-    async def test_upgrade_drops_the_skill_tables_and_their_activity_events(self, skills_db):
+    async def test_upgrade_drops_the_skill_tables_and_their_activity_events(self, skills_db, tensorrt_embedder):
         config = alembic_config()
         await run_migration(skills_db, config, "downgrade", LAST_REVISION_WITH_SKILLS)
         assert all(await skill_shapes(skills_db)), "downgrade must bring the tables back"
-        kept = await store_skill_rows_and_events(skills_db)
+        kept = await store_skill_rows_and_events(skills_db, tensorrt_embedder)
         if not is_postgres(skills_db):
             await create_vec_skills(skills_db)
             assert await vec_skills_tables(skills_db) == ["vec_skills"]

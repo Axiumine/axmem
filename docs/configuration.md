@@ -582,13 +582,12 @@ ENFORCE_ENV_OVERWRITE=true
 ### `EMBEDDING_PROVIDER`
 - **Default**: `TensorRT`
 - **Description**: Embedding generation provider
-- **Current Support**: TensorRT | FastEmbed | Azure | Google | OpenAI | Ollama | gateway
+- **Current Support**: TensorRT | Azure | Google | OpenAI | Ollama | gateway
 - **Values**:
   - `TensorRT` - The model runs in the server process on an NVIDIA GPU with TensorRT, in strict fp32 (CLS pooling, unit-length vectors). No other service is needed. There is no CPU path and no fallback: a server that cannot start the engine refuses to start and says why. See [GPU models](gpu-models.md)
-  - `FastEmbed` - The earlier local ONNX Runtime embedder; it needs `EMBEDDING_MODEL=BAAI/bge-small-en-v1.5` or another FastEmbed model name, and is slated for removal
   - `Azure`, `Google`, `OpenAI`, `Ollama` - Remote providers, configured below
   - `gateway` - An optional HTTP embeddings gateway, configured below
-- **Note**: Matched case-insensitively. Any other value stops startup with an error naming the setting; an empty value keeps the default. Changing the provider needs a re-embed of all existing memories, see the [Embedding Migration Guide](./embedding_migration.md). `gateway` is optional: no `GATEWAY_*` setting is read or required while another provider is selected, and the default configuration needs no network access once the model files are on disk
+- **Note**: Matched case-insensitively. Any other value (including the removed `FastEmbed`) stops startup with an error naming the setting; an empty value keeps the default. Changing the provider needs a re-embed of all existing memories, see the [Embedding Migration Guide](./embedding_migration.md). `gateway` is optional: no `GATEWAY_*` setting is read or required while another provider is selected, and the default configuration needs no network access once the model files are on disk
 - **Example**: `EMBEDDING_PROVIDER=TensorRT`
 
 ### `EMBEDDING_MODEL`
@@ -614,7 +613,7 @@ ENFORCE_ENV_OVERWRITE=true
 ### `EMBEDDING_MODEL_DIR`
 - **Default**: `models/embedder` in the platform user data directory (e.g., `~/.local/share/forgetful/models/embedder`)
 - **Description**: Where the TensorRT embedder keeps the model files (`onnx/model.onnx`, `tokenizer.json`) and a `manifest.json` with their SHA-256, under a directory named after the repository (`BAAI--bge-small-en-v1.5`)
-- **Note**: Only used when `EMBEDDING_PROVIDER=TensorRT`. Files already present are never downloaded, so a host without internet access can be seeded by copying the directory, and `HF_HUB_OFFLINE=1` then keeps the Hugging Face client from trying (see [Offline Setup Guide](OFFLINE_SETUP.md)). A file that no longer matches its recorded SHA-256 stops startup
+- **Note**: Only used when `EMBEDDING_PROVIDER=TensorRT`. Files already present are never downloaded, so a host without internet access can be seeded by copying the directory, and `HF_HUB_OFFLINE=1` then keeps the Hugging Face client from trying (see [Model files and offline hosts](gpu-models.md#model-files-and-offline-hosts)). A file that no longer matches its recorded SHA-256 stops startup
 - **Example**: `EMBEDDING_MODEL_DIR=/var/lib/forgetful/models/embedder`
 
 ### `EMBEDDING_ENGINE_CACHE_DIR`
@@ -623,18 +622,11 @@ ENFORCE_ENV_OVERWRITE=true
 - **Note**: Only used when `EMBEDDING_PROVIDER=TensorRT`. The fingerprint covers the model SHA-256, TensorRT version, GPU name, compute capability, driver major version, `EMBEDDING_TF32` and the optimization profile (batch 1 to 64, sequence 2 to 512); a change in any of them rebuilds the engine. The embedder and the reranker may share one cache directory because each engine has a directory of its own. See [GPU models](gpu-models.md#engine-cache)
 - **Example**: `EMBEDDING_ENGINE_CACHE_DIR=/var/lib/forgetful/models/tensorrt`
 
-### `EMBEDDING_ONNX_PROVIDERS`
-- **Default**: (empty string)
-- **Values**: Comma-separated ONNX Runtime execution provider names, in priority order
-- **Description**: Execution providers for the local FastEmbed embedding model
-- **Note**: Only used when `EMBEDDING_PROVIDER=FastEmbed`. Empty keeps FastEmbed's default provider selection. Every listed provider must be available in the installed ONNX Runtime package (for example `onnxruntime-directml` for `DmlExecutionProvider`): FastEmbed refuses to load the model when one is missing
-- **Example**: `EMBEDDING_ONNX_PROVIDERS=DmlExecutionProvider,CPUExecutionProvider`
-
 ### `EMBEDDING_REQUEST_TIMEOUT_SECONDS`
 - **Default**: `60`
 - **Values**: Positive number of seconds
 - **Description**: Per-request timeout for the remote embedding providers (Azure, Google, OpenAI, Ollama and the gateway), so a server that accepts a connection but never answers fails the request instead of hanging it
-- **Note**: Ignored by TensorRT and FastEmbed (local). The OpenAI and Azure SDK clients retry failed requests twice, so a single call can take up to three times this value; the gateway adapter makes up to four attempts per request. Raise it if your server needs longer to answer, for example while an Ollama model is loading
+- **Note**: Ignored by TensorRT (local). The OpenAI and Azure SDK clients retry failed requests twice, so a single call can take up to three times this value; the gateway adapter makes up to four attempts per request. Raise it if your server needs longer to answer, for example while an Ollama model is loading
 - **Example**: `EMBEDDING_REQUEST_TIMEOUT_SECONDS=120`
 
 ### `DENSE_SEARCH_CANDIDATES`
@@ -807,7 +799,7 @@ A reply is checked before anything is stored: the number of vectors must equal t
 - **Values**:
   - `TensorRT` - Local cross-encoder run directly on an NVIDIA GPU with TensorRT, in strict fp32. There is no CPU path and no fallback: a server that cannot start the engine refuses to start and says why
   - `HTTP` - Any server exposing a `/v1/rerank`-compatible endpoint (Jina, Cohere, vLLM, llama.cpp, Infinity, etc.)
-- **Note**: Matched case-insensitively. Any other value (including the earlier `FastEmbed`) stops startup with an error naming the setting; an empty value keeps the default
+- **Note**: Matched case-insensitively. Any other value (including the removed `FastEmbed`) stops startup with an error naming the setting; an empty value keeps the default
 - **Example**: `RERANKING_PROVIDER=HTTP`
 
 #### `RERANKING_MODEL`
@@ -841,7 +833,7 @@ service, not this local setting.
 #### `RERANKING_MODEL_DIR`
 - **Default**: `models/reranker` in the platform user data directory (e.g., `~/.local/share/forgetful/models/reranker`)
 - **Description**: Where the TensorRT reranker keeps the model files (`onnx/model.onnx`, `tokenizer.json`) and a `manifest.json` with their SHA-256
-- **Note**: Only used when `RERANKING_PROVIDER=TensorRT`. Files already present are never downloaded, so an offline host can be seeded by copying the directory (see [Offline Setup Guide](OFFLINE_SETUP.md)). A file that no longer matches its recorded SHA-256 stops startup
+- **Note**: Only used when `RERANKING_PROVIDER=TensorRT`. Files already present are never downloaded, so an offline host can be seeded by copying the directory (see [Model files and offline hosts](gpu-models.md#model-files-and-offline-hosts)). A file that no longer matches its recorded SHA-256 stops startup
 - **Example**: `RERANKING_MODEL_DIR=/var/lib/forgetful/models/reranker`
 
 #### `RERANKING_ENGINE_CACHE_DIR`
@@ -874,23 +866,6 @@ service, not this local setting.
 - **Description**: How long an HTTP re-ranking request may take (connect, send, and wait for the response) before the search fails
 - **Note**: Only used when `RERANKING_PROVIDER=HTTP`. Raise it for CPU-only rerank servers or services that load their model on first use, since each search scores up to `DENSE_SEARCH_CANDIDATES` documents in one request. Earlier versions allowed only 5 seconds and this was not configurable
 - **Example**: `RERANKING_TIMEOUT=120`
-
-### FastEmbed Cache Configuration
-
-#### `FASTEMBED_CACHE_DIR`
-- **Default**: Platform-specific user data directory (e.g., `~/.local/share/forgetful/models/fastembed`)
-- **Description**: Directory where FastEmbed models are cached
-- **Purpose**: Avoids re-downloading models on each startup
-- **Note**: Can be customized for offline deployments (see [Offline Setup Guide](OFFLINE_SETUP.md))
-- **Example**: `FASTEMBED_CACHE_DIR=/app/data/models/fastembed`
-
-#### `FASTEMBED_LOCAL_FILES_ONLY`
-
-- **Default**: `false`
-- **Description**: Restrict the FastEmbed embedding model to files already present in `FASTEMBED_CACHE_DIR`. The TensorRT embedder and reranker are not affected: they never download files that are already in `EMBEDDING_MODEL_DIR` and `RERANKING_MODEL_DIR`
-- **Purpose**: Prevents HuggingFace/GCS download attempts in locked-down or offline environments
-- **Note**: When enabled, pre-populate the cache first or startup fails with a local-cache error
-- **Example**: `FASTEMBED_LOCAL_FILES_ONLY=true`
 
 ---
 

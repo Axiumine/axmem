@@ -60,7 +60,6 @@ def fake_adapters(monkeypatch):
         "GoogleEmbeddingsAdapter",
         "OpenAIEmbeddingsAdapter",
         "OllamaEmbeddingsAdapter",
-        "FastEmbeddingAdapter",
     ):
         monkeypatch.setattr(embedding_module, name, fake(name))
     monkeypatch.setattr(gateway_module, "GatewayEmbeddingsAdapter", fake("GatewayEmbeddingsAdapter"))
@@ -74,7 +73,6 @@ def fake_adapters(monkeypatch):
         ("EMBEDDING_PROVIDER", "OLLAMA", "Ollama"),
         ("EMBEDDING_PROVIDER", " azure ", "Azure"),
         ("EMBEDDING_PROVIDER", "google", "Google"),
-        ("EMBEDDING_PROVIDER", "fastembed", "FastEmbed"),
         ("EMBEDDING_PROVIDER", " tensorrt ", "TensorRT"),
         ("EMBEDDING_PROVIDER", " Gateway ", "gateway"),
         ("RERANKING_PROVIDER", "http", "HTTP"),
@@ -94,6 +92,7 @@ def test_choice_settings_are_normalised_to_canonical_spelling(monkeypatch, setti
     ("setting", "typo"),
     [
         ("EMBEDDING_PROVIDER", "Opnai"),
+        ("EMBEDDING_PROVIDER", "FastEmbed"),  # the CPU FastEmbed provider no longer exists
         ("RERANKING_PROVIDER", "Htp"),
         ("RERANKING_PROVIDER", "FastEmbed"),  # the ONNX Runtime reranker no longer exists
         ("LOG_FORMAT", "jsno"),
@@ -119,8 +118,6 @@ def test_blank_choice_setting_keeps_the_default(monkeypatch, setting):
         ("ollama", "OllamaEmbeddingsAdapter"),
         ("azure", "AzureOpenAIAdapter"),
         ("google", "GoogleEmbeddingsAdapter"),
-        ("fastembed", "FastEmbeddingAdapter"),
-        ("FastEmbed", "FastEmbeddingAdapter"),
         ("gateway", "GatewayEmbeddingsAdapter"),
         ("GATEWAY", "GatewayEmbeddingsAdapter"),
     ],
@@ -143,7 +140,7 @@ def test_the_tensorrt_embedder_starts_early_only_when_it_is_the_provider(monkeyp
     monkeypatch.setattr(settings, "EMBEDDING_PROVIDER", "TensorRT")
     assert bootstrap.start_tensorrt_embedder() is tensorrt_embedder
 
-    for other in ("OpenAI", "FastEmbed", "gateway"):
+    for other in ("OpenAI", "Ollama", "gateway"):
         monkeypatch.setattr(settings, "EMBEDDING_PROVIDER", other)
         assert bootstrap.start_tensorrt_embedder() is None  # built later, with the runtime
 

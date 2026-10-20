@@ -49,7 +49,7 @@ def test_container_env_fences_both_routes():
     assert env["SQLITE_MEMORY"] == "false"
     assert env["SQLITE_PATH"] == DECOY_DB
     assert env["RERANKING_ENABLED"] == "false"
-    assert env["EMBEDDING_PROVIDER"] == "FastEmbed"
+    assert env["EMBEDDING_PROVIDER"] == "TensorRT"
     # A fresh container inherits nothing, so there must be no token to scrub - and
     # none accidentally introduced either
     assert "FORGETFUL_TOKEN" not in env

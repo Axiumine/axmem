@@ -1,6 +1,6 @@
 """Service-level regression tests for `ReEmbeddingService` targeted rebuilds.
 
-Uses an AsyncMock repository and a mocked embedding adapter, no database required.
+Uses an AsyncMock repository (no database required) and the real embedder behind call-recording spies.
 The real-SQL counterparts live in `tests/e2e_sqlite/test_updated_at_embedding_writes_sqlite.py`.
 """
 from datetime import UTC, datetime, timedelta
@@ -12,6 +12,7 @@ import pytest
 from app.config.settings import settings
 from app.models.memory_models import Memory
 from app.services.re_embedding_service import ReEmbeddingService
+from tests.embedding_doubles import failing_on
 
 SECRET_DETAIL = "[SQL: INSERT INTO vec_memories ...] [parameters: ('1', b'\\x00\\x01')] key=sk-secret"
 
@@ -49,25 +50,18 @@ def _make_repo(memories: list[Memory]) -> AsyncMock:
     return repo
 
 
-def _make_adapter() -> AsyncMock:
-    adapter = AsyncMock()
-    adapter.generate_embedding.return_value = [0.1] * 384
-    adapter.generate_embeddings.side_effect = lambda texts: [[0.1] * 384 for _ in texts]
-    return adapter
-
-
-async def test_upsert_receives_the_updated_at_observed_when_the_batch_was_read():
+async def test_upsert_receives_the_updated_at_observed_when_the_batch_was_read(embedding_spy):
     memories = [_make_memory(i) for i in range(1, 4)]
     repo = _make_repo(memories)
 
-    await ReEmbeddingService(repo, _make_adapter(), batch_size=20).rebuild_targeted(user_id=uuid4())
+    await ReEmbeddingService(repo, embedding_spy, batch_size=20).rebuild_targeted(user_id=uuid4())
 
     repo.upsert_targeted_embeddings.assert_awaited_once()
     kwargs = repo.upsert_targeted_embeddings.await_args.kwargs
     assert kwargs["expected_updated_at"] == {memory.id: memory.updated_at for memory in memories}
 
 
-async def test_rows_rejected_by_the_conditional_write_are_reported_as_skipped():
+async def test_rows_rejected_by_the_conditional_write_are_reported_as_skipped(embedding_spy):
     memories = [_make_memory(i) for i in range(1, 4)]
     repo = _make_repo(memories)
 
@@ -76,27 +70,23 @@ async def test_rows_rejected_by_the_conditional_write_are_reported_as_skipped():
 
     repo.upsert_targeted_embeddings.side_effect = upsert
 
-    result = await ReEmbeddingService(repo, _make_adapter(), batch_size=20).rebuild_targeted(user_id=uuid4())
+    result = await ReEmbeddingService(repo, embedding_spy, batch_size=20).rebuild_targeted(user_id=uuid4())
 
     assert result.rebuilt_ids == [1, 3]
     assert result.skipped_ids == [2]
     assert result.failed == []
 
 
-async def test_embedding_failure_reports_a_stable_code_not_the_exception_text():
+async def test_embedding_failure_reports_a_stable_code_not_the_exception_text(embedding_spy):
     memories = [_make_memory(i) for i in range(1, 4)]
     repo = _make_repo(memories)
-    adapter = _make_adapter()
-    calls = {"n": 0}
-
-    async def flaky(_text):
-        calls["n"] += 1
-        if calls["n"] == 2:
-            raise RuntimeError(f"provider rejected request {SECRET_DETAIL}")
-        return [0.1] * 384
+    adapter = embedding_spy
 
     adapter.generate_embeddings.side_effect = RuntimeError(f"provider rejected batch {SECRET_DETAIL}")
-    adapter.generate_embedding.side_effect = flaky
+    adapter.generate_embedding.side_effect = failing_on(
+        adapter.real.generate_embedding, call=2,
+        error=RuntimeError(f"provider rejected request {SECRET_DETAIL}"),
+    )
 
     result = await ReEmbeddingService(repo, adapter, batch_size=20).rebuild_targeted(user_id=uuid4())
 
@@ -104,7 +94,7 @@ async def test_embedding_failure_reports_a_stable_code_not_the_exception_text():
     assert result.failed == [{"memory_id": 2, "reason": "embedding_failed"}]
 
 
-async def test_persistence_failure_blames_only_the_memory_that_cannot_be_written():
+async def test_persistence_failure_blames_only_the_memory_that_cannot_be_written(embedding_spy):
     memories = [_make_memory(i) for i in range(1, 4)]
     repo = _make_repo(memories)
 
@@ -115,14 +105,14 @@ async def test_persistence_failure_blames_only_the_memory_that_cannot_be_written
 
     repo.upsert_targeted_embeddings.side_effect = upsert
 
-    result = await ReEmbeddingService(repo, _make_adapter(), batch_size=20).rebuild_targeted(user_id=uuid4())
+    result = await ReEmbeddingService(repo, embedding_spy, batch_size=20).rebuild_targeted(user_id=uuid4())
 
     assert sorted(result.rebuilt_ids) == [1, 3]
     assert result.skipped_ids == []
     assert result.failed == [{"memory_id": 2, "reason": "persistence_failed"}]
 
 
-async def test_retry_after_batch_failure_keeps_the_per_row_version_check():
+async def test_retry_after_batch_failure_keeps_the_per_row_version_check(embedding_spy):
     memories = [_make_memory(i) for i in range(1, 3)]
     repo = _make_repo(memories)
     attempts = []
@@ -135,7 +125,7 @@ async def test_retry_after_batch_failure_keeps_the_per_row_version_check():
 
     repo.upsert_targeted_embeddings.side_effect = upsert
 
-    result = await ReEmbeddingService(repo, _make_adapter(), batch_size=20).rebuild_targeted(user_id=uuid4())
+    result = await ReEmbeddingService(repo, embedding_spy, batch_size=20).rebuild_targeted(user_id=uuid4())
 
     assert sorted(result.rebuilt_ids) == [1, 2]
     assert attempts[1:] == [
@@ -144,23 +134,23 @@ async def test_retry_after_batch_failure_keeps_the_per_row_version_check():
     ]
 
 
-async def test_auto_link_failure_reports_a_stable_code(monkeypatch):
+async def test_auto_link_failure_reports_a_stable_code(monkeypatch, embedding_spy):
     memories = [_make_memory(1)]
     repo = _make_repo(memories)
     repo.find_similar_memories.side_effect = RuntimeError(f"link lookup failed {SECRET_DETAIL}")
     monkeypatch.setattr(settings, "MEMORY_NUM_AUTO_LINK", 1)
 
-    result = await ReEmbeddingService(repo, _make_adapter(), batch_size=20).rebuild_targeted(user_id=uuid4())
+    result = await ReEmbeddingService(repo, embedding_spy, batch_size=20).rebuild_targeted(user_id=uuid4())
 
     assert result.rebuilt_ids == [1]
     assert result.failed == [{"memory_id": 1, "phase": "auto_link", "reason": "auto_link_failed"}]
 
 
-async def test_project_scope_must_exist_and_be_owned_even_without_memory_ids():
+async def test_project_scope_must_exist_and_be_owned_even_without_memory_ids(embedding_spy):
     user_id = uuid4()
     repo = _make_repo([])
     repo.project_exists_for_user.return_value = False
-    service = ReEmbeddingService(repo, _make_adapter())
+    service = ReEmbeddingService(repo, embedding_spy)
 
     with pytest.raises(ValueError, match=r"project='atlas' not found"):
         await service.validate_targeted_scope(user_id, None, "atlas")
@@ -168,16 +158,16 @@ async def test_project_scope_must_exist_and_be_owned_even_without_memory_ids():
     repo.project_exists_for_user.assert_awaited_once_with(user_id=user_id, project="atlas")
 
 
-async def test_owned_project_scope_is_accepted_without_memory_ids():
+async def test_owned_project_scope_is_accepted_without_memory_ids(embedding_spy):
     repo = _make_repo([])
-    service = ReEmbeddingService(repo, _make_adapter())
+    service = ReEmbeddingService(repo, embedding_spy)
 
     await service.validate_targeted_scope(uuid4(), None, "atlas")
 
 
-async def test_global_scope_does_not_look_up_a_project():
+async def test_global_scope_does_not_look_up_a_project(embedding_spy):
     repo = _make_repo([])
-    service = ReEmbeddingService(repo, _make_adapter())
+    service = ReEmbeddingService(repo, embedding_spy)
 
     await service.validate_targeted_scope(uuid4(), None, None)
 

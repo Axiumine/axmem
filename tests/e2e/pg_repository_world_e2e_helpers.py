@@ -1,17 +1,17 @@
 """Shared setup for the PostgreSQL repository-level e2e modules.
 
 ``build_world`` registers two users (``owner`` and ``stranger``) and wires the real
-PostgreSQL repositories to the session database, so a test can create rows through the
-repositories themselves and read the results back through another repository call.
-Assertions stay in the tests.
+PostgreSQL repositories to the session database and the real TensorRT embedder, so a test
+can create rows through the repositories themselves and read the results back through
+another repository call. Assertions stay in the tests.
 """
 import logging
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
+from typing import Any
 from uuid import UUID
 
-from app.config.settings import settings
 from app.models.memory_models import Memory, MemoryCreate
 from app.models.user_models import UserCreate
 from app.repositories.postgres.memory_repository import PostgresMemoryRepository
@@ -40,13 +40,6 @@ def captured_logger(
         target.disabled = was_disabled
 
 
-class ConstantEmbeddings:
-    """Embedding stand-in: the same vector for any text, in the configured width."""
-
-    async def generate_embedding(self, text: str) -> list[float]:
-        return [0.01] * settings.EMBEDDING_DIMENSIONS
-
-
 @dataclass
 class RepositoryWorld:
     """Two users and the real memory repository, all on the session database."""
@@ -57,7 +50,7 @@ class RepositoryWorld:
     memories: PostgresMemoryRepository
 
 
-async def build_world(db_adapter: PostgresDatabaseAdapter) -> RepositoryWorld:
+async def build_world(db_adapter: PostgresDatabaseAdapter, embedder: Any) -> RepositoryWorld:
     users = PostgresUserRepository(db_adapter)
     owner = await users.create_user(
         UserCreate(external_id="owner-repo-e2e", name="Owner", email="owner@example.com"),
@@ -65,12 +58,11 @@ async def build_world(db_adapter: PostgresDatabaseAdapter) -> RepositoryWorld:
     stranger = await users.create_user(
         UserCreate(external_id="stranger-repo-e2e", name="Stranger", email="stranger@example.com"),
     )
-    embeddings = ConstantEmbeddings()
     return RepositoryWorld(
         db_adapter=db_adapter,
         owner=owner.id,
         stranger=stranger.id,
-        memories=PostgresMemoryRepository(db_adapter, embeddings),
+        memories=PostgresMemoryRepository(db_adapter, embedder),
     )
 
 

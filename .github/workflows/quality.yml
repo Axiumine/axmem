@@ -18,12 +18,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  FASTEMBED_CACHE_DIR: ${{ github.workspace }}/.cache/fastembed
-
 # GPU runner: a self-hosted runner labelled [self-hosted, linux, gpu] with an NVIDIA GPU (driver R580 or newer).
 # Every job that runs tests/integration, tests/e2e_sqlite or tests/e2e needs it, because the suites run the real
-# TensorRT reranker. See docs/quality-gates.md for the runner requirements.
+# TensorRT embedder and reranker. See docs/quality-gates.md for the runner requirements.
 
 jobs:
   static:
@@ -103,12 +100,6 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --yes postgresql-client
-      - uses: actions/cache@v4
-        with:
-          path: ${{ env.FASTEMBED_CACHE_DIR }}
-          key: fastembed-${{ runner.os }}-${{ hashFiles('**/pyproject.toml') }}
-          restore-keys: |
-            fastembed-${{ runner.os }}-
       - run: uv run --frozen python -m scripts.quality gate tests
       - run: uv run --frozen python -m scripts.quality gate e2e-postgres
       - run: uv run --frozen python -m scripts.quality gate coverage

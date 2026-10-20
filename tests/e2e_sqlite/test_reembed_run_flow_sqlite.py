@@ -1,13 +1,14 @@
 """The re-embed run on a real SQLite file: vector storage, dry run and recovery.
 
-Only the embedding provider is replaced. The service, repositories, backup tools and the
-CLI entry point (in this process, or in a child process where a signal or a console
-codec is involved) are the real ones.
+The embedder is the real TensorRT one, behind two wrappers: ``NarrowedEmbedder`` cuts its vector to the
+configured width (the model has one width, and these tests change the width), and the child process
+of the recovery tests fails or stalls on cue. The service, repositories, backup tools and the CLI
+entry point (in this process, or in a child process where a signal or a console codec is involved)
+are the real ones.
 """
 
 import argparse
 import asyncio
-import hashlib
 import os
 import signal
 import sqlite3
@@ -27,23 +28,20 @@ from app.repositories.sqlite.memory_repository import SqliteMemoryRepository
 from app.repositories.sqlite.sqlite_adapter import SqliteDatabaseAdapter
 from app.services.re_embedding_service import ReEmbeddingService
 from tests.backup_restore_cases import (
-    BackupTestEmbeddings,
     assert_originals_restored,
     seed_memories,
 )
-from tests.embedding_stubs import BatchViaSingle
+from tests.embedding_doubles import NarrowedEmbedder
 
 ROOT = Path(__file__).resolve().parents[2]
 OLD_DIMS = 4
 NEW_DIMS = 6
 
 
-class FakeEmbedder(BatchViaSingle):
-    """Deterministic embedder whose output width follows the (changeable) configuration."""
-
-    async def generate_embedding(self, text):
-        digest = hashlib.sha256(text.encode()).digest()
-        return [(digest[i] / 255.0) + 0.01 for i in range(settings.EMBEDDING_DIMENSIONS)]
+@pytest.fixture
+def embedder(tensorrt_embedder):
+    """The real embedder, cut to the configured width (OLD_DIMS, NEW_DIMS or 384)."""
+    return NarrowedEmbedder(tensorrt_embedder)
 
 
 @pytest.fixture
@@ -58,29 +56,28 @@ def db_file(tmp_path, monkeypatch):
 
 
 @pytest.fixture
-def quiet_cli(monkeypatch):
+def quiet_cli(monkeypatch, embedder):
     """Run main._run_reembed in this process without reconfiguring the test's logging."""
     import app.bootstrap
     import app.config.logging_config
 
     monkeypatch.setattr(app.config.logging_config, "configure_logging", lambda **_: None)
     monkeypatch.setattr(main.atexit, "register", lambda *_: None)
-    monkeypatch.setattr(app.bootstrap, "get_embedding_adapter", FakeEmbedder)
+    monkeypatch.setattr(app.bootstrap, "get_embedding_adapter", lambda: embedder)
 
 
-async def open_stack():
+async def open_stack(embedder):
     """Open the database the way a freshly started process would, then wire repositories."""
     adapter = SqliteDatabaseAdapter()
     await adapter.init_db()
-    embedder = FakeEmbedder()
     memories = SqliteMemoryRepository(
         db_adapter=adapter, embedding_adapter=embedder, rerank_adapter=None,
     )
     return adapter, memories
 
 
-async def create_user(adapter):
-    repos = create_repositories(adapter, FakeEmbedder(), None)
+async def create_user(adapter, embedder):
+    repos = create_repositories(adapter, embedder, None)
     user = await repos["user"].create_user(UserCreate(
         external_id="reembed-run-flow", name="Run Flow", email="run-flow@example.test",
     ))
@@ -111,30 +108,30 @@ def use_new_dimensions(monkeypatch):
 
 
 class TestEmptyDatabase:
-    async def test_re_embed_all_resizes_vector_storage(self, db_file, monkeypatch):
+    async def test_re_embed_all_resizes_vector_storage(self, db_file, monkeypatch, embedder):
         # Arrange: a database that never stored anything, then a wider embedding model.
-        adapter, _ = await open_stack()
+        adapter, _ = await open_stack(embedder)
         await adapter.dispose()
         use_new_dimensions(monkeypatch)
-        adapter, memories = await open_stack()
+        adapter, memories = await open_stack(embedder)
         try:
             assert vec_dimensions(db_file, "vec_memories") == OLD_DIMS  # init_db keeps it
 
             # Act
-            result = await ReEmbeddingService(memories, FakeEmbedder()).re_embed_all()
+            result = await ReEmbeddingService(memories, embedder).re_embed_all()
 
             # Assert: storage matches the configuration, so the next insert succeeds.
             assert result.validation.all_passed
             assert vec_dimensions(db_file, "vec_memories") == NEW_DIMS
-            user_id = await create_user(adapter)
+            user_id = await create_user(adapter, embedder)
             assert (await memories.create_memory(user_id, new_memory("after"))).id is not None
         finally:
             await adapter.dispose()
 
     async def test_cli_resizes_vector_storage_without_a_backup(
-        self, db_file, monkeypatch, quiet_cli, capsys,
+        self, db_file, monkeypatch, quiet_cli, capsys, embedder,
     ):
-        adapter, _ = await open_stack()
+        adapter, _ = await open_stack(embedder)
         await adapter.dispose()
         use_new_dimensions(monkeypatch)
 
@@ -201,10 +198,10 @@ class TestDryRun:
         assert not db_file.exists()
 
     async def test_dry_run_reports_counts_and_leaves_vector_storage_alone(
-        self, db_file, monkeypatch, quiet_cli, capsys,
+        self, db_file, monkeypatch, quiet_cli, capsys, embedder,
     ):
-        adapter, memories = await open_stack()
-        user_id = await create_user(adapter)
+        adapter, memories = await open_stack(embedder)
+        user_id = await create_user(adapter, embedder)
         await memories.create_memory(user_id, new_memory("one"))
         await memories.create_memory(user_id, new_memory("two"))
         await adapter.dispose()
@@ -219,39 +216,29 @@ class TestDryRun:
         assert not list(db_file.parent.glob("*.bak-*"))
 
 
-# A child process runs the real CLI. Its embedding provider embeds the first memory, then
-# either stops the run with an error whose text no legacy console can print, or parks the
+# A child process runs the real CLI with the real TensorRT embedder behind a MigratingEmbedder (its
+# vectors differ from the stored ones, so a missing restore is visible). The child embeds the first
+# memory, then either stops the run with an error whose text no legacy console can print, or parks the
 # event loop so the test can deliver a signal in the middle of the migration.
 DRIVER = r"""
 import asyncio
 import sys
 
 import app.bootstrap
-from app.config.settings import settings
 from main import cli
+from tests.embedding_doubles import MigratingEmbedder
 
 mode = sys.argv[1]
 
 
-class Provider:
-    calls = 0
-
-    async def generate_embeddings(self, texts):
-        return [await self.generate_embedding(text) for text in texts]
-
-    async def generate_embedding(self, text):
-        self.calls += 1
-        vector = [0.0] * settings.EMBEDDING_DIMENSIONS
-        vector[1] = 1.0  # differs from the seed vector, so a missing restore is visible
-        if self.calls == 2:
-            if mode == "unencodable":
-                raise RuntimeError("速率限制 → retry later")
-            print("READY_FOR_SIGNAL", flush=True)
-            await asyncio.sleep(60)
-        return vector
+async def stop_the_second_call():
+    if mode == "unencodable":
+        raise RuntimeError("速率限制 → retry later")
+    print("READY_FOR_SIGNAL", flush=True)
+    await asyncio.sleep(60)
 
 
-provider = Provider()
+provider = MigratingEmbedder(app.bootstrap.get_embedding_adapter(), stop_at=2, stop=stop_the_second_call)
 app.bootstrap.get_embedding_adapter = lambda: provider
 sys.argv = ["forgetful", "re-embed", "--batch-size", "1"]
 sys.exit(cli())
@@ -259,12 +246,12 @@ sys.exit(cli())
 
 
 @pytest.fixture
-async def backup_database(db_file, monkeypatch):
+async def backup_database(db_file, monkeypatch, tensorrt_embedder):
     monkeypatch.setattr(settings, "EMBEDDING_DIMENSIONS", 384)
     adapter = create_db_adapter()
     try:
         await adapter.init_db()
-        yield adapter, create_repositories(adapter, BackupTestEmbeddings(), None)
+        yield adapter, create_repositories(adapter, tensorrt_embedder, None)
     finally:
         await adapter.dispose()
 
@@ -275,6 +262,7 @@ def child_environment(encoding="utf-8"):
         env[name] = str(getattr(settings, name))
     env.update({
         "RERANKING_ENABLED": "false",
+        "HF_HUB_OFFLINE": "1",
         "PYTHONIOENCODING": encoding,
         "PYTHONUNBUFFERED": "1",
         "PYTHONPATH": str(ROOT),

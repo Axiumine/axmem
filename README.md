@@ -73,7 +73,7 @@ Memories belong to a **tenant**, the owner of a set of memories, and a tenant ne
 - Flexible storage – SQLite (default, zero-config; slated for removal, see the note above) or PostgreSQL (for scale and production deployments)
 - Stores memories as vectors so they can be retrieved with natural-language queries from AI agents.
 - Cross-encoder reranking to improve recall and precision of memory retrieval. It runs on an NVIDIA GPU with TensorRT 11 in strict fp32 and has no CPU path; see [GPU models](docs/gpu-models.md). A remote rerank service (`RERANKING_PROVIDER=HTTP`) or `RERANKING_ENABLED=false` runs without a GPU.
-- Standalone embeddings: the default `TensorRT` provider runs `BAAI/bge-small-en-v1.5` in this process on an NVIDIA GPU (strict fp32, CLS pooling, unit-length vectors) with no model service on the network. It has no CPU path; see [GPU models](docs/gpu-models.md). Other providers are explicit choices: the optional HTTP embeddings gateway (`EMBEDDING_PROVIDER=gateway`, nothing reads a `GATEWAY_*` setting unless it is selected), FastEmbed, Azure, Google, OpenAI or Ollama. Switching providers or dimensions needs a re-embed, see [Embedding Migration](docs/embedding_migration.md)
+- Standalone embeddings: the default `TensorRT` provider runs `BAAI/bge-small-en-v1.5` in this process on an NVIDIA GPU (strict fp32, CLS pooling, unit-length vectors) with no model service on the network. It has no CPU path; see [GPU models](docs/gpu-models.md). Other providers are explicit choices: the optional HTTP embeddings gateway (`EMBEDDING_PROVIDER=gateway`, nothing reads a `GATEWAY_*` setting unless it is selected), Azure, Google, OpenAI or Ollama. Switching providers or dimensions needs a re-embed, see [Embedding Migration](docs/embedding_migration.md)
 - Automatic linking of semantically similar memories, automating the creation of the knowledge graph.
 
 For the complete roadmap, see [Features Roadmap](docs/features_roadmap.md).
@@ -91,7 +91,7 @@ GPU, or without the TensorRT libraries or the model files, the server refuses to
 cause; there is no CPU path and no fallback. The first start downloads the two models from Hugging Face
 (about 260 MB) and builds one TensorRT engine for each (about 6 to 8 seconds each); later starts load the
 cached engines in well under a second. On a host without internet access, copy the model directories
-beforehand and set `HF_HUB_OFFLINE=1` ([Offline setup](docs/OFFLINE_SETUP.md)). The explicit ways to run
+beforehand and set `HF_HUB_OFFLINE=1` ([Model files and offline hosts](docs/gpu-models.md#model-files-and-offline-hosts)). The explicit ways to run
 without a GPU are another `EMBEDDING_PROVIDER` and `RERANKING_PROVIDER=HTTP` or `RERANKING_ENABLED=false`.
 Details: [GPU models](docs/gpu-models.md).
 
@@ -355,7 +355,7 @@ For vector search and optional cross-encoder reranking, see
 ### Key Settings (Optional)
 
 - `MEMORY_TOKEN_BUDGET` – Max tokens for query results (default: `8000`)
-- `EMBEDDING_PROVIDER` – `TensorRT` (default, in-process on the GPU), `FastEmbed`, `Azure`, `Google`, `OpenAI`, `Ollama` or `gateway`
+- `EMBEDDING_PROVIDER` – `TensorRT` (default, in-process on the GPU), `Azure`, `Google`, `OpenAI`, `Ollama` or `gateway`
 - `EMBEDDING_MODEL` – For `TensorRT`, the Hugging Face repository of the ONNX model (default: `BAAI/bge-small-en-v1.5`)
 - `EMBEDDING_DIMENSIONS` – Vector width (default: `384`); checked against the model at startup
 - `RERANKING_ENABLED` – Rerank search results (default: `true`; needs an NVIDIA GPU unless `RERANKING_PROVIDER=HTTP`)
@@ -390,7 +390,6 @@ For all environment variables with detailed explanations, see [Configuration Gui
 
 - [MCP Protocol Specification](https://modelcontextprotocol.io/) – Model Context Protocol docs
 - [pgvector](https://github.com/pgvector/pgvector) – PostgreSQL vector extension
-- [FastEmbed](https://github.com/qdrant/fastembed) – Optional CPU embedding provider
 - [TensorRT](https://developer.nvidia.com/tensorrt) – GPU inference for the embedder and the reranker
 - [Zettelkasten Principle](https://en.wikipedia.org/wiki/Zettelkasten) – Atomic note-taking method
 

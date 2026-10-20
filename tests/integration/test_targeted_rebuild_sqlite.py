@@ -1,12 +1,9 @@
 """Integration tests for targeted rebuild on a real (in-memory) SQLite stack.
 
-Unlike `tests/e2e_sqlite/test_re_embedding_sqlite.py`, this module never
-downloads a FastEmbed model; it runs offline using a deterministic mock
-embedding adapter so CI and offline laptops can exercise the persistence
-layer of the new `rebuild_embeddings` MCP tool (issue #39).
+Unlike `tests/e2e_sqlite/test_re_embedding_sqlite.py`, this module drives the repository and the
+re-embedding service directly, with the real TensorRT embedder, to exercise the persistence layer
+of the `rebuild_embeddings` MCP tool (issue #39).
 """
-import hashlib
-import random
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from uuid import uuid4
@@ -22,25 +19,10 @@ from app.repositories.sqlite.memory_repository import SqliteMemoryRepository
 from app.repositories.sqlite.sqlite_adapter import SqliteDatabaseAdapter
 from app.routes.mcp.tool_adapters import MemoryToolAdapters
 from app.services.re_embedding_service import ReEmbeddingService
-from tests.embedding_stubs import BatchViaSingle
-
-
-class StaticEmbeddingAdapter(BatchViaSingle):
-    """Deterministic, fully offline embedding adapter for SQLite-vec tests."""
-
-    def __init__(self, dimensions: int = 384):
-        self.dimensions = dimensions
-
-    async def generate_embedding(self, text: str) -> list[float]:
-        seed = int(hashlib.md5(text.encode()).hexdigest()[:8], 16)
-        rng = random.Random(seed)
-        vec = [rng.random() for _ in range(self.dimensions)]
-        magnitude = sum(x * x for x in vec) ** 0.5 or 1.0
-        return [x / magnitude for x in vec]
 
 
 @pytest.fixture
-async def sqlite_repo():
+async def sqlite_repo(tensorrt_embedder):
     original_sqlite_memory = settings.SQLITE_MEMORY
     original_database = settings.DATABASE
     original_dims = settings.EMBEDDING_DIMENSIONS
@@ -52,7 +34,7 @@ async def sqlite_repo():
     db_adapter = SqliteDatabaseAdapter()
     await db_adapter.init_db()
 
-    embedding_adapter = StaticEmbeddingAdapter(dimensions=384)
+    embedding_adapter = tensorrt_embedder
     repo = SqliteMemoryRepository(
         db_adapter=db_adapter,
         embedding_adapter=embedding_adapter,
@@ -199,17 +181,17 @@ async def test_upsert_targeted_embeddings_rejects_unowned_ids(sqlite_repo):
     user_a, memories_a = await _seed_memories(repo, db_adapter, count=1)
     user_b, memories_b = await _seed_memories(repo, db_adapter, count=1)
 
-    fake_vector = await embedding_adapter.generate_embedding("anything")
+    vector = await embedding_adapter.generate_embedding("anything")
 
     written = await repo.upsert_targeted_embeddings(
         user_id=user_a,
-        updates=[(memories_b[0].id, fake_vector)],
+        updates=[(memories_b[0].id, vector)],
     )
     assert written == []
 
     written = await repo.upsert_targeted_embeddings(
         user_id=user_a,
-        updates=[(memories_a[0].id, fake_vector)],
+        updates=[(memories_a[0].id, vector)],
     )
     assert written == [memories_a[0].id]
 
@@ -276,10 +258,10 @@ async def test_upsert_targeted_embeddings_leaves_foreign_vector_unchanged(sqlite
     foreign_memory = memories_b[0]
     original_blob = await _vec_blob(db_adapter, foreign_memory.id)
 
-    fake_vector = await embedding_adapter.generate_embedding("foreign overwrite attempt")
+    vector = await embedding_adapter.generate_embedding("foreign overwrite attempt")
     written = await repo.upsert_targeted_embeddings(
         user_id=user_a,
-        updates=[(foreign_memory.id, fake_vector)],
+        updates=[(foreign_memory.id, vector)],
     )
 
     assert written == []

@@ -1,6 +1,6 @@
 """Integration tests for the full re-embed run: storage reset and constraints.
 
-Uses mocked repositories and embedding adapter, so no real database is required.
+Uses mocked repositories (no real database is required) and the real embedder behind call-recording spies.
 """
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock
@@ -9,6 +9,7 @@ import pytest
 
 from app.models.memory_models import Memory
 from app.services.re_embedding_service import ReEmbeddingService
+from tests.embedding_doubles import failing_on
 
 
 def _memory(memory_id: int) -> Memory:
@@ -39,17 +40,10 @@ def _memory_repo(memories: list[Memory]):
     return repo
 
 
-def _embedder():
-    adapter = AsyncMock()
-    adapter.generate_embedding.return_value = [0.1] * 8
-    adapter.generate_embeddings.side_effect = lambda texts: [[0.1] * 8 for _ in texts]
-    return adapter
-
-
-async def test_empty_database_still_resets_vector_storage():
+async def test_empty_database_still_resets_vector_storage(embedding_spy):
     """A dimension change on a database without memories must still resize the vector storage."""
     memory_repo = _memory_repo([])
-    embedder = _embedder()
+    embedder = embedding_spy
 
     result = await ReEmbeddingService(memory_repo, embedder).re_embed_all()
 
@@ -61,7 +55,7 @@ async def test_empty_database_still_resets_vector_storage():
     assert result.validation.all_passed
 
 
-async def test_constraints_are_restored_only_after_validation_passes():
+async def test_constraints_are_restored_only_after_validation_passes(embedding_spy):
     memory_repo = _memory_repo([_memory(1)])
     calls: list[str] = []
 
@@ -75,25 +69,27 @@ async def test_constraints_are_restored_only_after_validation_passes():
     memory_repo.validate_search_works.side_effect = validate
     memory_repo.finalize_embedding_storage.side_effect = finalize
 
-    await ReEmbeddingService(memory_repo, _embedder()).re_embed_all()
+    await ReEmbeddingService(memory_repo, embedding_spy).re_embed_all()
 
     assert calls == ["validate", "finalize"]
 
 
-async def test_failed_validation_keeps_constraints_relaxed():
+async def test_failed_validation_keeps_constraints_relaxed(embedding_spy):
     memory_repo = _memory_repo([_memory(1)])
     memory_repo.validate_embedding_count.return_value = False
 
-    result = await ReEmbeddingService(memory_repo, _embedder()).re_embed_all()
+    result = await ReEmbeddingService(memory_repo, embedding_spy).re_embed_all()
 
     assert not result.validation.all_passed
     memory_repo.finalize_embedding_storage.assert_not_called()
 
 
-async def test_failed_run_never_restores_constraints():
+async def test_failed_run_never_restores_constraints(embedding_spy):
     memory_repo = _memory_repo([_memory(1), _memory(2)])
-    embedder = _embedder()
-    embedder.generate_embeddings.side_effect = [[[0.1] * 8], RuntimeError("provider down")]
+    embedder = embedding_spy
+    embedder.generate_embeddings.side_effect = failing_on(
+        embedder.real.generate_embeddings, call=2, error=RuntimeError("provider down"),
+    )
 
     with pytest.raises(RuntimeError, match="provider down"):
         await ReEmbeddingService(memory_repo, embedder, batch_size=1).re_embed_all()
@@ -101,10 +97,10 @@ async def test_failed_run_never_restores_constraints():
     memory_repo.finalize_embedding_storage.assert_not_called()
 
 
-async def test_caller_can_reset_storage_itself():
+async def test_caller_can_reset_storage_itself(embedding_spy):
     """The CLI resets storage as its own visible step, so the run must not reset it twice."""
     memory_repo = _memory_repo([_memory(1)])
-    service = ReEmbeddingService(memory_repo, _embedder())
+    service = ReEmbeddingService(memory_repo, embedding_spy)
 
     await service.re_embed_all(reset_storage=False)
 

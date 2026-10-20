@@ -8,7 +8,6 @@ from sqlalchemy.pool import NullPool
 
 from alembic import command
 from app.bootstrap import create_repositories
-from app.config.settings import settings
 from app.models.memory_models import MemoryCreate
 from app.models.user_models import UserCreate
 from tests.migration_helpers import (
@@ -44,13 +43,6 @@ INSERT_RELATIONSHIP = (
     "INSERT INTO entity_relationships (user_id, source_entity_id, target_entity_id, relationship_type, "
     "created_at, updated_at) VALUES (:owner, 1, 2, 'works_with', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
 )
-
-
-class StubEmbeddings:
-    """Deterministic embeddings so the tests never load a model."""
-
-    async def generate_embedding(self, text: str) -> list[float]:
-        return [0.1] * settings.EMBEDDING_DIMENSIONS
 
 
 async def removed_shapes(db: Any) -> dict[str, dict[str, Any] | None]:
@@ -111,9 +103,9 @@ async def original_shapes(db: Any) -> dict[str, dict[str, Any] | None]:
         await engine.dispose()
 
 
-async def store_removed_rows_and_events(db: Any) -> dict[str, Any]:
+async def store_removed_rows_and_events(db: Any, embedder: Any) -> dict[str, Any]:
     """Fill every removed table plus the activity log; returns the owner and the kept rows."""
-    repos = create_repositories(db, StubEmbeddings(), None)
+    repos = create_repositories(db, embedder, None)
     user = await repos["user"].create_user(
         UserCreate(external_id="entities-removal", name="Entities", email="entities@example.test"),
     )
@@ -152,11 +144,11 @@ async def store_removed_rows_and_events(db: Any) -> dict[str, Any]:
 
 
 class TestEntitiesRemoval:
-    async def test_upgrade_drops_the_tables_and_their_activity_events(self, entities_db):
+    async def test_upgrade_drops_the_tables_and_their_activity_events(self, entities_db, tensorrt_embedder):
         config = alembic_config()
         await run_migration(entities_db, config, "downgrade", LAST_REVISION_WITH_ENTITIES)
         assert all(await removed_shapes(entities_db)), "downgrade must bring the tables back"
-        kept = await store_removed_rows_and_events(entities_db)
+        kept = await store_removed_rows_and_events(entities_db, tensorrt_embedder)
 
         async with upgraded_to(entities_db, config, ENTITIES_DROP_REVISION):
             assert_removed_tables_absent(await removed_shapes(entities_db))

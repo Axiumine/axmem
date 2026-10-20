@@ -1,9 +1,9 @@
 """Integration test fixtures with in-memory stubs (no real database required)
 
-The stub repositories and test doubles live in ``tests/integration/stubs/`` (one
+The stub repositories live in ``tests/integration/stubs/`` (one
 module per domain); this module imports them and exposes the fixtures the tests use.
-Only database, HTTP and embedding I/O is stubbed: the reranker is the real TensorRT engine
-on the GPU (``tensorrt_reranker``), and the suite refuses to run without that GPU.
+Only database and HTTP I/O is stubbed: the embedder and the reranker are the real TensorRT engines
+on the GPU (``tensorrt_embedder``, ``tensorrt_reranker``), and the suite refuses to run without that GPU.
 """
 
 import pytest
@@ -14,7 +14,6 @@ from tests.gpu_preflight import require_gpu
 from tests.integration.stubs import (
     InMemoryMemoryRepository,
     InMemoryUserRepository,
-    MockEmbeddingsAdapter,
 )
 
 
@@ -44,12 +43,6 @@ def test_tenant_service(mock_user_repository):
 
 
 # ============ Memory Testing Fixtures ============
-
-
-@pytest.fixture
-def mock_embeddings_adapter():
-    """Provides a mock embeddings adapter"""
-    return MockEmbeddingsAdapter(dimensions=384)
 
 
 @pytest.fixture

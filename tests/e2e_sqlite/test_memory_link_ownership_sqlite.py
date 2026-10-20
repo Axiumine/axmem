@@ -7,7 +7,7 @@ the victim could not remove the resulting link.
 
 Two layers are covered:
 - the MCP tool surface with two users (full stack), and
-- the repository with a stub embedding adapter, including unlink by the victim.
+- the repository with the real TensorRT embedder, including unlink by the victim.
 """
 from datetime import UTC, datetime
 from uuid import uuid4
@@ -121,15 +121,6 @@ async def test_link_memories_from_other_users_source_is_rejected_e2e(
 # ============================================================================
 
 
-class StubEmbedding:
-    """Deterministic embedding so no model download is needed."""
-
-    async def generate_embedding(self, text: str) -> list[float]:
-        vec = [0.0] * settings.EMBEDDING_DIMENSIONS
-        vec[hash(text) % settings.EMBEDDING_DIMENSIONS] = 1.0
-        return vec
-
-
 async def _create_user(db_adapter, user_id) -> None:
     now = datetime.now(UTC).isoformat()
     async with db_adapter.system_session() as session:
@@ -161,7 +152,7 @@ def _memory(title: str) -> MemoryCreate:
 
 
 @pytest.fixture
-async def two_user_stack():
+async def two_user_stack(tensorrt_embedder):
     original_database, original_sqlite_memory = settings.DATABASE, settings.SQLITE_MEMORY
     settings.DATABASE = "SQLite"
     settings.SQLITE_MEMORY = True
@@ -169,7 +160,7 @@ async def two_user_stack():
         db_adapter = SqliteDatabaseAdapter()
         await db_adapter.init_db()
         repo = SqliteMemoryRepository(
-            db_adapter=db_adapter, embedding_adapter=StubEmbedding(), rerank_adapter=None,
+            db_adapter=db_adapter, embedding_adapter=tensorrt_embedder, rerank_adapter=None,
         )
         service = MemoryService(repo)
         user_a, user_b = uuid4(), uuid4()

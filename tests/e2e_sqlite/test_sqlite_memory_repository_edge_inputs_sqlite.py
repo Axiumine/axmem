@@ -17,9 +17,9 @@ UNKNOWN_ID = 4242
 
 
 @pytest.fixture
-async def stack(monkeypatch):
+async def stack(monkeypatch, tensorrt_embedder):
     monkeypatch.setattr(settings, "RERANKING_ENABLED", False)
-    async with open_repository_stack(monkeypatch) as repository_stack:
+    async with open_repository_stack(monkeypatch, tensorrt_embedder) as repository_stack:
         yield repository_stack
 
 

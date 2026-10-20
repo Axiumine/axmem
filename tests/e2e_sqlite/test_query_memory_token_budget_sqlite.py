@@ -2,28 +2,18 @@
 import pytest
 
 from app.config.settings import settings
+from tests.embedding_texts import (
+    BAKING_CONTENT,
+    BAKING_CONTEXT,
+    BAKING_TITLE,
+    FEEDING_CONTENT,
+    FEEDING_CONTEXT,
+    FEEDING_QUERY,
+    FEEDING_QUERY_CONTEXT,
+    FEEDING_TITLE,
+)
 
 SPECIAL_TOKEN_CONTENT = "GPT models use the <|endoftext|> special token to separate documents"
-
-
-class KnownEmbeddings:
-    """Predictable embeddings: Query and Primary are identical, Other is close enough to auto-link."""
-
-    async def generate_embedding(self, text: str) -> list[float]:
-        vectors = {
-            "Primary": (1.0, 0.0),
-            "Query": (1.0, 0.0),
-            "Other": (0.9, 0.4359),  # cosine ~0.90 to Primary, above the 0.7 auto-link threshold
-            "Tokenizer": (1.0, 0.0),
-            "Large": (1.0, 0.0),
-        }
-        x, y = vectors[text.split(maxsplit=1)[0]]
-        return [x, y, *([0.0] * 382)]
-
-
-@pytest.fixture(scope="module")
-def embedding_adapter():
-    return KnownEmbeddings()
 
 
 @pytest.fixture(scope="module")
@@ -36,11 +26,11 @@ async def _call(client, tool, arguments):
     return result.data
 
 
-async def _create(client, title, importance=5, content="content"):
+async def _create(client, title, importance=5, content="content", context="ctx"):
     created = await _call(client, "create_memory", {
         "title": title,
         "content": content,
-        "context": "ctx",
+        "context": context,
         "keywords": [],
         "tags": [],
         "importance": importance,
@@ -143,16 +133,30 @@ async def test_configured_budget_truncates_mcp_results(mcp_client, http_client, 
     assert result["truncated"] is True
 
 
+async def _create_primary(client, index, importance):
+    """A memory the quota queries find first: the sourdough-starter feeding family."""
+    return await _create(
+        client, f"{FEEDING_TITLE} {index}", importance, FEEDING_CONTENT, FEEDING_CONTEXT,
+    )
+
+
+async def _create_other(client, index, importance):
+    """A related memory (above the 0.7 auto-link threshold of the primaries) that ranks below them for the query."""
+    return await _create(
+        client, f"{BAKING_TITLE} {index}", importance, BAKING_CONTENT, BAKING_CONTEXT,
+    )
+
+
 @pytest.mark.asyncio
 async def test_explicit_links_to_other_primaries_do_not_use_up_link_quota(mcp_client, monkeypatch):
     monkeypatch.setattr(settings, "MEMORY_NUM_AUTO_LINK", 0)
-    primaries = [await _create(mcp_client, f"Primary {i}", 9) for i in range(4)]
-    others = [await _create(mcp_client, f"Other {i}", 5) for i in range(6)]
+    primaries = [await _create_primary(mcp_client, i, 9) for i in range(4)]
+    others = [await _create_other(mcp_client, i, 5) for i in range(6)]
     # The first primary is linked to the 3 other primaries (importance 9) and 6 non-primaries (importance 5)
     await _call(mcp_client, "link_memories", {"memory_id": primaries[0], "related_ids": primaries[1:] + others})
 
     result = await _call(mcp_client, "query_memory", {
-        "query": "Query text", "query_context": "looking up memories", "k": 4, "max_links_per_primary": 3,
+        "query": FEEDING_QUERY, "query_context": FEEDING_QUERY_CONTEXT, "k": 4, "max_links_per_primary": 3,
     })
 
     assert sorted(m["id"] for m in result["primary_memories"]) == sorted(primaries)
@@ -164,8 +168,8 @@ async def test_explicit_links_to_other_primaries_do_not_use_up_link_quota(mcp_cl
 @pytest.mark.asyncio
 async def test_auto_links_to_other_primaries_do_not_use_up_link_quota(mcp_client, monkeypatch):
     monkeypatch.setattr(settings, "MEMORY_NUM_AUTO_LINK", 3)
-    primaries = [await _create(mcp_client, f"Primary {i}", 8) for i in range(4)]
-    others = [await _create(mcp_client, f"Other {i}", 5) for i in range(4)]
+    primaries = [await _create_primary(mcp_client, i, 8) for i in range(4)]
+    others = [await _create_other(mcp_client, i, 5) for i in range(4)]
     non_primary_neighbours = 0
     for primary_id in primaries:
         memory = await _call(mcp_client, "get_memory", {"memory_id": primary_id})
@@ -173,7 +177,7 @@ async def test_auto_links_to_other_primaries_do_not_use_up_link_quota(mcp_client
     assert non_primary_neighbours > 0, "setup: no primary was auto-linked to a non-primary memory"
 
     result = await _call(mcp_client, "query_memory", {
-        "query": "Query text", "query_context": "looking up memories", "k": 4, "max_links_per_primary": 3,
+        "query": FEEDING_QUERY, "query_context": FEEDING_QUERY_CONTEXT, "k": 4, "max_links_per_primary": 3,
     })
 
     assert sorted(m["id"] for m in result["primary_memories"]) == sorted(primaries)

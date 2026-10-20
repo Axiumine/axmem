@@ -71,7 +71,7 @@ def build_container_env(server_url: str) -> dict[str, str]:
         "DATABASE": "SQLite",
         "SQLITE_MEMORY": "false",
         "SQLITE_PATH": DECOY_DB,
-        "EMBEDDING_PROVIDER": "FastEmbed",
+        "EMBEDDING_PROVIDER": "TensorRT",
         "EMBEDDING_MODEL": "BAAI/bge-small-en-v1.5",
         "EMBEDDING_DIMENSIONS": "384",
         "RERANKING_ENABLED": "false",

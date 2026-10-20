@@ -300,7 +300,7 @@ def _resolved_settings(tmp_path: Path, name: str, user_config: str | None) -> di
 def test_child_settings_ignore_host_shell_and_user_config(tmp_path, monkeypatch):
     # Arrange: a neutral baseline first - what the server resolves on a clean host
     for name in ("FORGETFUL_SCOPES", "MCP_DESCRIPTOR_MODE", "MEMORY_NUM_AUTO_LINK",
-                 "FASTEMBED_CACHE_DIR"):
+                 "EMBEDDING_MODEL_DIR"):
         monkeypatch.delenv(name, raising=False)
     baseline = _resolved_settings(tmp_path, "clean", user_config=None)
 
@@ -309,7 +309,7 @@ def test_child_settings_ignore_host_shell_and_user_config(tmp_path, monkeypatch)
     monkeypatch.setenv("FORGETFUL_SCOPES", "read")
     monkeypatch.setenv("mcp_descriptor_mode", "compact")
     monkeypatch.setenv("MEMORY_NUM_AUTO_LINK", "0")
-    monkeypatch.setenv("FASTEMBED_CACHE_DIR", str(tmp_path / "warm-cache"))
+    monkeypatch.setenv("EMBEDDING_MODEL_DIR", str(tmp_path / "warm-cache"))
     user_config = (
         "FORGETFUL_SCOPES=read:memories\n"
         "LOG_FORMAT=json\n"
@@ -322,7 +322,7 @@ def test_child_settings_ignore_host_shell_and_user_config(tmp_path, monkeypatch)
     leaky = _resolved_settings(tmp_path, "leaky", user_config=user_config)
 
     # Assert: the instance under test is the same as on a clean host ...
-    machine_plumbing = {"FASTEMBED_CACHE_DIR"}
+    machine_plumbing = {"EMBEDDING_MODEL_DIR"}
     assert {k: v for k, v in leaky.items() if k not in machine_plumbing} == {
         k: v for k, v in baseline.items() if k not in machine_plumbing
     }
@@ -332,5 +332,5 @@ def test_child_settings_ignore_host_shell_and_user_config(tmp_path, monkeypatch)
     assert baseline["MEMORY_NUM_AUTO_LINK"] == 3
     assert baseline["MEMORY_TITLE_MAX_LENGTH"] == 200
     assert baseline["LOG_FORMAT"] == "console"
-    # The developer's warm model cache is machine plumbing and keeps resolving
-    assert leaky["FASTEMBED_CACHE_DIR"] == str(tmp_path / "warm-cache")
+    # The developer's warm model directory is machine plumbing and keeps resolving
+    assert leaky["EMBEDDING_MODEL_DIR"] == str(tmp_path / "warm-cache")

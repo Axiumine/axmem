@@ -11,7 +11,7 @@ The agent runs **inside a sandbox container** (pattern ported from eval-harness'
 DockerRunner): it can only see the mounted skill artifacts and staged credential
 copies, so the host filesystem — and the real knowledge base — are out of reach by
 construction, not by convention. The throwaway server stays on the host, where the
-FastEmbed cache is warm.
+TensorRT model directory is warm.
 
 ## Prerequisites
 
@@ -73,8 +73,8 @@ not covered: there the container uid no longer owns the bind mounts.
 ## What a run does
 
 1. Build/verify the sandbox image, boot `forgetful serve` as a host subprocess:
-   file-backed SQLite in the run dir, `AUTH_MODE=none` on the loopback bind, FastEmbed
-   embeddings (warm default cache), `/health` polled to 200. Every other Forgetful
+   file-backed SQLite in the run dir, `AUTH_MODE=none` on the loopback bind, TensorRT
+   embeddings (warm default model directory), `/health` polled to 200. Every other Forgetful
    setting is pinned to its default, so shell variables and
    `~/.config/forgetful` cannot leak into the instance under review; the server is the
    `forgetful` next to the interpreter running the harness, and the harness reaches it

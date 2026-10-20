@@ -1,7 +1,7 @@
 """Throwaway Forgetful server: a real `forgetful serve` subprocess the agent can reach.
 
 File-backed SQLite (in-memory dies at the process boundary), no
-auth, FastEmbed with the default (warm) model cache. Env is injected at launch because
+auth, the TensorRT embedder with the default (warm) model and engine directories. Env is injected at launch because
 settings freeze at import time in the child. The instance must not depend on whoever
 runs the harness: cwd is the run directory so no repo-local dotenv file leaks in, but
 the absolute user-config dotenv file (and the shell) still reach the child, so every
@@ -35,12 +35,13 @@ class HarnessInfraError(RuntimeError):
     """The harness itself failed - not a finding about the agent or the docs."""
 
 
-# Machine plumbing rather than instance behaviour: the warm model cache (and whether to
-# stay offline) is wherever the developer keeps it, so these keep resolving as usual.
+# Machine plumbing rather than instance behaviour: the warm model and engine directories are
+# wherever the developer keeps them, so these keep resolving as usual.
 _HOST_PASSTHROUGH = frozenset({
-    "FASTEMBED_CACHE_DIR",
-    "FASTEMBED_LOCAL_FILES_ONLY",
-    "EMBEDDING_ONNX_PROVIDERS",
+    "EMBEDDING_MODEL_DIR",
+    "EMBEDDING_ENGINE_CACHE_DIR",
+    "RERANKING_MODEL_DIR",
+    "RERANKING_ENGINE_CACHE_DIR",
 })
 
 
@@ -141,7 +142,7 @@ class ThrowawayForgetful:
             "DATABASE": "SQLite",
             "SQLITE_MEMORY": "false",
             "SQLITE_PATH": str(self.run_dir / "forgetful.db"),
-            "EMBEDDING_PROVIDER": "FastEmbed",
+            "EMBEDDING_PROVIDER": "TensorRT",
             "EMBEDDING_MODEL": "BAAI/bge-small-en-v1.5",
             "EMBEDDING_DIMENSIONS": "384",
             "RERANKING_ENABLED": "false",

@@ -2,7 +2,7 @@
 
 ``open_repository_stack`` wires the real in-memory SQLite adapter (sqlite-vec tables and
 migrations included) to the memory repository, plus two users so ownership
-checks can be exercised.
+checks can be exercised. The embedder is the caller's (the real TensorRT one in the tests).
 """
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -17,13 +17,6 @@ from app.repositories.sqlite.sqlite_adapter import SqliteDatabaseAdapter
 from app.repositories.sqlite.user_repository import SqliteUserRepository
 
 
-class FakeEmbeddings:
-    """Deterministic embedding adapter: every text maps to the same vector."""
-
-    async def generate_embedding(self, text: str) -> list[float]:
-        return [0.01] * settings.EMBEDDING_DIMENSIONS
-
-
 @dataclass
 class RepositoryStack:
     """Repositories sharing one in-memory SQLite database."""
@@ -35,7 +28,7 @@ class RepositoryStack:
 
 
 @asynccontextmanager
-async def open_repository_stack(monkeypatch: Any) -> AsyncIterator[RepositoryStack]:
+async def open_repository_stack(monkeypatch: Any, embeddings: Any) -> AsyncIterator[RepositoryStack]:
     """Open a fresh in-memory SQLite database with the repositories and two users."""
     monkeypatch.setattr(settings, "DATABASE", "SQLite")
     monkeypatch.setattr(settings, "SQLITE_MEMORY", True)
@@ -49,7 +42,6 @@ async def open_repository_stack(monkeypatch: Any) -> AsyncIterator[RepositorySta
         other = await users.create_user(
             UserCreate(external_id="repo-other", name="Other", email="other@example.test"),
         )
-        embeddings = FakeEmbeddings()
         yield RepositoryStack(
             adapter=adapter,
             user_id=owner.id,

@@ -20,7 +20,6 @@ dependencies = [
     "asyncpg==0.31.0",
     "dotenv==0.9.9",
     "fastapi==0.136.3",
-    "fastembed==0.8.0",
     "fastmcp==3.2.2",
     "cuda-python==13.4.4",
     "google-genai==1.66.0",
@@ -162,7 +161,7 @@ source_modules = [
     "app.middleware.logging_middleware", "app.exceptions", "app.version",
 ]
 forbidden_modules = [
-    "sqlalchemy", "openai", "google", "fastembed", "httpx", "ollama",
+    "sqlalchemy", "openai", "google", "httpx", "ollama",
     "tensorrt", "cuda", "tokenizers", "huggingface_hub",
     "subprocess", "shutil",
 ]
@@ -240,7 +239,7 @@ init_typed = true
 warn_required_dynamic_aliases = true
 
 [[tool.mypy.overrides]]
-module = ["sqlite_vec.*", "fastembed.*", "pgvector.*", "tiktoken.*", "dotenv.*", "tensorrt.*", "tensorrt_bindings.*", "cuda.*", "tokenizers.*"]
+module = ["sqlite_vec.*", "pgvector.*", "tiktoken.*", "dotenv.*", "tensorrt.*", "tensorrt_bindings.*", "cuda.*", "tokenizers.*"]
 ignore_missing_imports = true
 
 [tool.pylint.main]
