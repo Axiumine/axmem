@@ -365,3 +365,26 @@ def test_gpu_memory_describes_itself_in_gibibytes(process_bytes, held):
     memory = GpuMemory(process_bytes=process_bytes, used_bytes=4 * 1024**3, total_bytes=24 * 1024**3)
 
     assert memory.describe() == f"{held}; the device has 4.00 of 24 GiB in use"
+
+
+def test_a_failed_call_notes_the_cuda_error_so_that_the_health_route_can_report_it(plan_bytes):
+    """A sticky error fails every call at the call itself, where ``verify`` is never reached."""
+    engine = TensorRTEngine(plan_bytes, PROFILE)
+    assert engine.failure == ""
+
+    cudart.cudaMemcpy(0, 0, 4, cudart.cudaMemcpyKind.cudaMemcpyHostToDevice)  # a CUDA call that fails
+    with pytest.raises(ProfileError):
+        engine.infer(make_inputs(65, 16))  # a call that fails, outside the profile
+
+    assert "cudaErrorInvalidValue" in engine.failure
+    with pytest.raises(TensorRTError, match="unusable after an earlier failure"):
+        engine.infer(make_inputs(1, 4))
+    engine.close()
+
+
+def test_a_failed_call_without_a_cuda_error_leaves_the_engine_usable(engine):
+    with pytest.raises(ProfileError):
+        engine.infer(make_inputs(65, 16))
+
+    assert engine.failure == ""
+    assert engine.infer(make_inputs(1, 4)).shape == (1, 1)

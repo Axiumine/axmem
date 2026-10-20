@@ -151,8 +151,8 @@ def test_one_warning_names_every_ignored_setting(caplog):
 
     [record] = caplog.records
     message = record.getMessage()
-    assert "DATABASE: Qdrant is the only store" in message
-    assert "FORGETFUL_SERVER: the product was renamed: the variable is AXMEM_SERVER now" in message
+    assert "DATABASE (Qdrant is the only store" in message
+    assert "FORGETFUL_SERVER (the product was renamed: the variable is AXMEM_SERVER now)" in message
     assert record.ignored_settings == ["DATABASE", "FORGETFUL_SERVER"]
 
 

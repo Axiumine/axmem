@@ -106,7 +106,7 @@ class QdrantMemoryReadMixin(QdrantMemoryBase):
             "include_obsolete": include_obsolete,
             "sort_by": sort_by,
             "sort_order": sort_order,
-            "tags_filter": tags,
+            "tags_filtered": bool(tags),
         })
         return await self._memories(scope, page), total
 

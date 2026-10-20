@@ -7,6 +7,7 @@ stack from one place. Heavy imports stay inside functions to keep module import 
 from __future__ import annotations
 
 import atexit
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -20,6 +21,13 @@ from app.config.settings import (
     RERANKING_PROVIDERS,
     canonical_choice,
     settings,
+)
+from app.exceptions import (
+    ClusterInconsistentError,
+    EmbeddingUnavailableError,
+    OperatorCommandError,
+    QdrantStartupError,
+    TensorRTError,
 )
 from app.routes.mcp.tool_metadata_registry import register_all_tools_metadata
 from app.routes.mcp.tool_registry import ToolRegistry
@@ -134,17 +142,6 @@ def _release_tensorrt_adapters() -> None:
 atexit.register(_release_tensorrt_adapters)
 
 
-def start_tensorrt_embedder():
-    """Build or load the TensorRT embedder now when it is the configured provider; otherwise do nothing.
-
-    The server calls this before it binds a port, so a machine that cannot run the embedder refuses
-    to start with the cause. Any other provider is built later, with the runtime.
-    """
-    if canonical_choice("EMBEDDING_PROVIDER", settings.EMBEDDING_PROVIDER, EMBEDDING_PROVIDERS) == "TensorRT":
-        return get_embedding_adapter()
-    return None
-
-
 def get_reranker_adapter():
     """Create the reranker adapter if enabled.
 
@@ -179,6 +176,72 @@ def log_tensorrt_models(*adapters) -> None:
     logger.info(f"GPU memory with the {roles} loaded: {gpu_memory().describe()}; {sharing}")
 
 
+def _os_error_cause(exc: OSError) -> str:
+    return f"{exc.strerror or exc}: {exc.filename}" if exc.filename else str(exc.strerror or exc)
+
+
+def _missing_package_cause(exc: ImportError) -> str:
+    return f"a Python package that this setting needs is not installed ({exc.name or exc})"
+
+
+def operator_failure(exc: BaseException) -> str | None:
+    """One line that says why a command or the start-up failed, when an operator can act on the cause.
+
+    The failures an operator really meets are answered here: a model or engine that cannot start, an
+    embeddings provider that refuses, Qdrant down or rejecting the key or the layout, a failed HTTP call, a file
+    that cannot be read or written (permission, a full disk), a value or a JSON file that is wrong, and a
+    provider package that is not installed. Anything else is a bug and returns None, so it keeps its traceback.
+    """
+    from app.repositories.qdrant.client import describe_failure
+
+    causes: tuple[tuple[type | tuple[type, ...], Callable[[Any], str]], ...] = (
+        ((TensorRTError, QdrantStartupError, ClusterInconsistentError, OperatorCommandError), str),
+        (EmbeddingUnavailableError, lambda error: f"the embeddings provider is unavailable: {error}"),
+        (OSError, _os_error_cause),
+        (ImportError, _missing_package_cause),
+        (ValueError, str),
+    )
+    cause = next((describe(exc) for kinds, describe in causes if isinstance(exc, kinds)), None)
+    if cause is None:
+        cause = describe_failure(exc) or ""
+    return " ".join(cause.split()) or None
+
+
+async def check_runtime_start() -> None:
+    """Refuse, before a server binds anything, what ``build_runtime`` would refuse for a reason an operator can fix.
+
+    ``build_runtime`` runs inside the server's lifespan, where a refusal ends as a traceback of the web server
+    and not as a line: the scope ceiling must parse, and Qdrant must be reachable, accept the key, be recent
+    enough and hold collections of the layout the settings describe (the collections are created when missing,
+    as the lifespan would). The models are built before this, by the caller.
+    """
+    from app.routes.mcp.scope_resolver import parse_scopes
+
+    try:
+        parse_scopes(settings.AXMEM_SCOPES)
+    except ValueError as exc:
+        raise ValueError(f"AXMEM_SCOPES is not valid: {exc}") from exc
+    stack = create_qdrant_stack()
+    try:
+        await stack.schema.ensure()
+    finally:
+        await stack.close()
+
+
+def engine_failures(adapters) -> list[str]:
+    """Why a local model can no longer serve, one line per model; empty while every one of them can.
+
+    A TensorRT engine that met a sticky CUDA error refuses all later work until the process restarts. The
+    health route reports it, so that a probe or a supervisor restarts the server. Remote providers and a disabled
+    reranker (None) have nothing to report.
+    """
+    return [
+        reason
+        for adapter in adapters
+        if callable(getattr(adapter, "unusable_reason", None)) and (reason := adapter.unusable_reason())
+    ]
+
+
 @dataclass
 class Services:
     """Service layer instances."""
@@ -196,6 +259,11 @@ class Runtime:
     registry: ToolRegistry
     permitted_tools: set[str]
     instance_scopes: frozenset[str]
+    adapters: tuple[Any, ...] = ()
+
+    def engine_failures(self) -> list[str]:
+        """Why a local model can no longer serve (see ``engine_failures``), one line per model."""
+        return engine_failures(self.adapters)
 
 
 async def build_runtime() -> Runtime:
@@ -251,6 +319,7 @@ async def build_runtime() -> Runtime:
         registry=registry,
         permitted_tools=permitted_tools,
         instance_scopes=instance_scopes,
+        adapters=(embeddings_adapter, reranker_adapter),
     )
 
 

@@ -8,9 +8,20 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.bootstrap import build_runtime, dispose_runtime
+from app.bootstrap import (
+    build_runtime,
+    dispose_runtime,
+    engine_failures,
+    operator_failure,
+)
 from app.config.settings import settings
-from app.exceptions import QdrantStartupError
+from app.exceptions import (
+    ClusterInconsistentError,
+    EmbeddingUnavailableError,
+    OperatorCommandError,
+    QdrantStartupError,
+    TensorRTStartupError,
+)
 from app.models.memory_models import MemoryCreate
 from app.models.tenant_models import Tenant
 
@@ -78,3 +89,68 @@ async def test_build_runtime_closes_the_qdrant_connections_when_the_collections_
         await build_runtime()
 
     assert len(closed) == 1
+
+
+class _Remote:
+    """A remote provider: it has no engine, so it has nothing to report."""
+
+
+def test_engine_failures_names_each_local_model_that_can_no_longer_serve(tensorrt_embedder, tensorrt_reranker, monkeypatch):
+    assert engine_failures((tensorrt_embedder, tensorrt_reranker, None, _Remote())) == []
+
+    with monkeypatch.context() as broken:
+        broken.setattr(tensorrt_reranker._engine, "_failure", "cudaErrorIllegalAddress")
+        assert engine_failures((tensorrt_embedder, tensorrt_reranker, None, _Remote())) == [
+            "the reranker engine is unusable after an earlier failure (cudaErrorIllegalAddress); restart the server",
+        ]
+        broken.setattr(tensorrt_embedder._engine, "_failure", "cudaErrorLaunchFailure")
+        assert [reason.split(" engine")[0] for reason in engine_failures((tensorrt_embedder, tensorrt_reranker))] == [
+            "the embedder",
+            "the reranker",
+        ]
+
+    assert engine_failures((tensorrt_embedder, tensorrt_reranker)) == []
+
+
+async def test_the_runtime_reports_the_failures_of_the_models_it_was_built_with(runtime_settings, monkeypatch, tensorrt_embedder):
+    runtime = await build_runtime()
+    try:
+        assert runtime.engine_failures() == []
+        with monkeypatch.context() as broken:
+            broken.setattr(tensorrt_embedder._engine, "_failure", "cudaErrorIllegalAddress")
+            assert len(runtime.engine_failures()) == 1
+    finally:
+        await dispose_runtime(runtime)
+
+
+def _unexpected(status: int):
+    from httpx import Headers
+    from qdrant_client.http.exceptions import UnexpectedResponse
+
+    return UnexpectedResponse(status, "Reason", b"", Headers())
+
+
+@pytest.mark.parametrize(
+    ("error", "line"),
+    [
+        (TensorRTStartupError("no-gpu", "no NVIDIA GPU is visible to CUDA"), "no NVIDIA GPU is visible to CUDA"),
+        (QdrantStartupError("Qdrant at http://x:6333 cannot be reached"), "Qdrant at http://x:6333 cannot be reached"),
+        (ClusterInconsistentError("the nodes differ"), "the nodes differ"),
+        (OperatorCommandError("Qdrant refused the snapshot s: HTTP 400"), "Qdrant refused the snapshot s: HTTP 400"),
+        (EmbeddingUnavailableError("budget spent"), "the embeddings provider is unavailable: budget spent"),
+        (PermissionError(13, "Permission denied", "/var/backups"), "Permission denied: /var/backups"),
+        (OSError(28, "No space left on device"), "No space left on device"),
+        (OSError("plain"), "plain"),
+        (ModuleNotFoundError("No module named 'openai'", name="openai"), "a Python package that this setting needs is not installed (openai)"),
+        (ImportError("broken"), "a Python package that this setting needs is not installed (broken)"),
+        (ValueError("OPENAI_API_KEY must be configured\n  for the adapter"), "OPENAI_API_KEY must be configured for the adapter"),
+        (_unexpected(401), "Qdrant refused the request (HTTP 401): check QDRANT_API_KEY"),
+    ],
+)
+def test_operator_failure_gives_one_line_for_what_an_operator_can_fix(error, line):
+    assert operator_failure(error) == line
+
+
+@pytest.mark.parametrize("bug", [KeyError("x"), AttributeError("y"), TypeError("z"), RuntimeError("w"), ValueError(""), ValueError("  ")])
+def test_operator_failure_leaves_bugs_and_empty_messages_to_their_traceback(bug):
+    assert operator_failure(bug) is None

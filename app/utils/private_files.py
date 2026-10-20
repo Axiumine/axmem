@@ -9,6 +9,7 @@ import os
 import stat
 import sys
 from pathlib import Path
+from typing import TextIO
 
 _OWNER_ONLY_FILE = 0o600
 _OWNER_ONLY_DIR = 0o700
@@ -46,3 +47,18 @@ def create_private_file(path: Path) -> None:
         os.close(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, _OWNER_ONLY_FILE))
     except FileExistsError:
         restrict_to_owner(path)
+
+
+def open_new_private_text_file(path: Path) -> TextIO:
+    """Open a new text file for writing, readable by its owner only, in place of whatever has that name.
+
+    For a file written into a directory that other accounts can write to (``/tmp``, a shared export
+    directory), where a planted symbolic link must not redirect the write to a file of the owner. The name is
+    unlinked first (a link is removed, never followed) and the file is created with ``O_EXCL`` and, where the
+    system has it, ``O_NOFOLLOW``, so a link planted between the two steps makes the call fail instead of
+    writing through it. The file is written through the descriptor of that creation, never by name again.
+    """
+    with contextlib.suppress(FileNotFoundError):
+        path.unlink()
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), _OWNER_ONLY_FILE)
+    return os.fdopen(descriptor, "w", encoding="utf-8")

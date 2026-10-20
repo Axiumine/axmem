@@ -82,9 +82,23 @@ _Context = Annotated[
     BeforeValidator(_reject_unencodable),
     AfterValidator(_reject_blank),
 ]
+# A search query and the reason given with it go through the embedder and the reranker, whose cost grows with
+# their length: they are bounded like every other text field (settings MEMORY_QUERY_MAX_LENGTH and
+# MEMORY_QUERY_CONTEXT_MAX_LENGTH).
 _Query = Annotated[
     str,
-    StringConstraints(min_length=1),
+    StringConstraints(min_length=1, max_length=settings.MEMORY_QUERY_MAX_LENGTH),
+    BeforeValidator(_reject_unencodable),
+    AfterValidator(_reject_blank),
+]
+_QueryContext = Annotated[
+    str,
+    StringConstraints(min_length=1, max_length=settings.MEMORY_QUERY_CONTEXT_MAX_LENGTH),
+    BeforeValidator(_reject_unencodable),
+]
+_ObsoleteReason = Annotated[
+    str,
+    StringConstraints(min_length=1, max_length=settings.MEMORY_OBSOLETE_REASON_MAX_LENGTH),
     BeforeValidator(_reject_unencodable),
     AfterValidator(_reject_blank),
 ]
@@ -128,6 +142,10 @@ class _ScopeHolder(BaseModel):
     project: _Scope
 
 
+class _ReasonHolder(BaseModel):
+    reason: _ObsoleteReason
+
+
 def clean_scope(project: str | None) -> str | None:
     """The trimmed project scope label, or None when there is no scope
 
@@ -147,6 +165,25 @@ def clean_scope(project: str | None) -> str | None:
         if error["type"] == "unencodable_text":
             raise ValueError(error["msg"]) from None
         raise ValueError(f"project: {error['msg']}") from None
+
+def clean_obsolete_reason(reason: Any) -> str:
+    """The reason a memory is marked obsolete, if it is text that can be stored and shown
+
+    A reason that is not a string, is blank, is longer than MEMORY_OBSOLETE_REASON_MAX_LENGTH or cannot be
+    encoded as UTF-8 would be stored as it is and then either make every read of the memory fail (a number or
+    an object) or be returned with every read (a multi-megabyte text).
+
+    Raises:
+        ValueError: If the reason cannot be stored
+    """
+    try:
+        return _ReasonHolder(reason=reason).reason
+    except ValidationError as exc:
+        error = exc.errors()[0]
+        if error["type"] == "unencodable_text":
+            raise ValueError(error["msg"]) from None
+        raise ValueError(f"reason: {error['msg']}") from None
+
 
 # Values accepted for sorting memory listings (same sets as the REST list endpoint)
 VALID_SORT_BY: tuple[str, ...] = ("created_at", "updated_at", "importance")
@@ -210,6 +247,7 @@ class MemoryCreate(BaseModel):
     )
     source_files: list[_SourceFile] | None = Field(
         default=None,
+        max_length=settings.MEMORY_SOURCE_FILES_MAX_COUNT,
         description="Files that informed this memory (JSON list of paths)",
     )
     source_url: str | None = Field(
@@ -309,6 +347,7 @@ class MemoryUpdate(BaseModel):
     )
     source_files: list[_SourceFile] | None = Field(
         None,
+        max_length=settings.MEMORY_SOURCE_FILES_MAX_COUNT,
         description="New source files list. Replaces existing if provided, unchanged if null.",
     )
     source_url: str | None = Field(
@@ -472,9 +511,8 @@ class MemoryQueryRequest(BaseModel):
         ...,
         description="Natural language query for semantic search (e.g., 'Python logging best practices')",
     )
-    query_context: str = Field(
+    query_context: _QueryContext = Field(
         ...,
-        min_length=1,
         description="Contextual reasoning behind why you are searching for this information",
     )
     k: int = Field(
@@ -543,7 +581,12 @@ class MemoryQueryResult(BaseModel):
 class MemoryLinkRequest(BaseModel):
     """Request model for linking memories"""
     memory_id: UUID = Field(..., description="Source memory ID")
-    related_ids: list[UUID] = Field(..., min_length=1, description="Target memory IDs to link")
+    related_ids: list[UUID] = Field(
+        ...,
+        min_length=1,
+        max_length=settings.MEMORY_LINKS_MAX_PER_REQUEST,
+        description="Target memory IDs to link",
+    )
 
     @field_validator("related_ids")
     @classmethod

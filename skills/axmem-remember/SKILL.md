@@ -88,8 +88,8 @@ overview" fails the test — split it.
 | 6–7 | Milestones, minor context |
 | 5 | Noise floor: bulk/automated captures meant to stay out of normal recall |
 
-- Stamp provenance when derived from source material: `source_repo`, `source_files`,
-  `source_url`.
+- Stamp provenance when derived from source material: `source_repo`, `source_files`
+  (at most 50 paths), `source_url`.
 
 Long-form variant: content over ~300 words becomes 3–7 atomic memories, one per decision,
 fact or pattern, tied together with `link_memories`. Reusable code is stored in a memory too:

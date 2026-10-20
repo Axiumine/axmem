@@ -136,15 +136,6 @@ def test_tensorrt_embedding_factory_returns_the_shared_engine_ignoring_case(monk
     assert bootstrap.get_embedding_adapter() is bootstrap.get_embedding_adapter()
 
 
-def test_the_tensorrt_embedder_starts_early_only_when_it_is_the_provider(monkeypatch, fake_adapters, tensorrt_embedder):
-    monkeypatch.setattr(settings, "EMBEDDING_PROVIDER", "TensorRT")
-    assert bootstrap.start_tensorrt_embedder() is tensorrt_embedder
-
-    for other in ("OpenAI", "Ollama", "gateway"):
-        monkeypatch.setattr(settings, "EMBEDDING_PROVIDER", other)
-        assert bootstrap.start_tensorrt_embedder() is None  # built later, with the runtime
-
-
 def test_embedding_factory_rejects_unknown_provider(monkeypatch, fake_adapters):
     monkeypatch.setattr(settings, "EMBEDDING_PROVIDER", "Opnai")
 

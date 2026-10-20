@@ -38,13 +38,20 @@ from app.repositories.qdrant.store import (
     Scope,
 )
 from app.utils.embedding_helpers import build_embedding_text
-from app.utils.private_files import create_private_file
+from app.utils.private_files import open_new_private_text_file
 
 logger = logging.getLogger(__name__)
 
 FORMAT = "axmem-export"
 FORMAT_VERSION = 1
 IMPORT_BATCH = 64
+
+
+def _uuid(value: Any) -> UUID:
+    """The id a record holds as text; ``UUID`` itself would take an integer or raise ``AttributeError`` for it."""
+    if not isinstance(value, str):
+        raise TypeError("an id must be text")
+    return UUID(value)
 
 
 def _line(record: dict[str, Any]) -> str:
@@ -72,9 +79,10 @@ class QdrantArchiveAdapter:
         summary = ArchiveSummary()
         tenants: set[str] = set()
         partial = path.with_name(path.name + ".partial")
-        create_private_file(partial)
+        # Created anew and written through its descriptor: a link planted at the ``.partial`` name must not redirect it
+        out = open_new_private_text_file(partial)
         try:
-            with partial.open("w", encoding="utf-8") as out:
+            with out:
                 out.write(_line({
                     "kind": "header", "format": FORMAT, "version": FORMAT_VERSION, "created": stamp(datetime.now(UTC)),
                 }))
@@ -123,7 +131,8 @@ class QdrantArchiveAdapter:
         tenants: set[str] = set()
         memories: list[StoredMemory] = []
         links: list[tuple[UUID, UUID, UUID]] = []
-        with path.open(encoding="utf-8") as source:
+        # Read as bytes and decoded line by line: a line that is not UTF-8 is a line to skip, not the end of the import
+        with path.open("rb") as source:
             self._read_header(source.readline())
             for number, raw in enumerate(source, start=2):
                 record = self._parse(raw, number, summary)
@@ -150,10 +159,10 @@ class QdrantArchiveAdapter:
         return summary
 
     @staticmethod
-    def _read_header(line: str) -> None:
+    def _read_header(line: bytes) -> None:
         try:
-            header = json.loads(line)
-        except json.JSONDecodeError as exc:
+            header = json.loads(line.decode("utf-8"))
+        except (ValueError, RecursionError) as exc:  # not UTF-8, not JSON, nested too deep, or a number of thousands of digits
             raise ValueError("The file is not an Axmem export: its first line is not JSON") from exc
         if not isinstance(header, dict) or header.get("format") != FORMAT:
             raise ValueError("The file is not an Axmem export: the header names another format")
@@ -165,12 +174,12 @@ class QdrantArchiveAdapter:
         summary.skipped += 1
         logger.warning("Skipped a line of the import", extra={"line": number, "reason": reason})
 
-    def _parse(self, raw: str, number: int, summary: ArchiveSummary) -> dict[str, Any] | None:
+    def _parse(self, raw: bytes, number: int, summary: ArchiveSummary) -> dict[str, Any] | None:
         if not raw.strip():
             return None
         try:
-            record = json.loads(raw)
-        except json.JSONDecodeError:
+            record = json.loads(raw.decode("utf-8"))
+        except (ValueError, RecursionError):  # not UTF-8, not JSON, nested too deep, or a number of thousands of digits
             self._skip(number, summary, "not JSON")
             return None
         if not isinstance(record, dict) or "kind" not in record:
@@ -181,14 +190,18 @@ class QdrantArchiveAdapter:
     def _stored(self, record: dict[str, Any], number: int, summary: ArchiveSummary) -> StoredMemory | None:
         try:
             memory = Memory.model_validate(record["memory"])
-            return StoredMemory(memory=memory, tenant_id=UUID(record["tenant_id"]), version=max(int(record["version"]), 1))
-        except (KeyError, ValueError, TypeError, ValidationError):
+            stored = StoredMemory(memory=memory, tenant_id=_uuid(record["tenant_id"]), version=max(int(record["version"]), 1))
+            if not build_embedding_text(memory).strip():
+                raise ValueError("no text to embed")
+            json.dumps(memory.model_dump(mode="json"), ensure_ascii=False).encode("utf-8")  # a lone surrogate cannot be sent on
+        except (KeyError, ValueError, TypeError, OverflowError, ValidationError):
             self._skip(number, summary, "invalid memory")
             return None
+        return stored
 
     def _link(self, record: dict[str, Any], number: int, summary: ArchiveSummary) -> tuple[UUID, UUID, UUID] | None:
         try:
-            return UUID(record["tenant_id"]), UUID(record["a"]), UUID(record["b"])
+            return _uuid(record["tenant_id"]), _uuid(record["a"]), _uuid(record["b"])
         except (KeyError, ValueError, TypeError):
             self._skip(number, summary, "invalid link")
             return None

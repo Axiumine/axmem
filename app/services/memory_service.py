@@ -25,6 +25,7 @@ from app.models.memory_models import (
     MemorySummary,
     MemoryUpdate,
     ObsoleteMatch,
+    clean_obsolete_reason,
     clean_scope,
 )
 from app.protocols.memory_protocol import MemoryRepository
@@ -85,7 +86,7 @@ class MemoryService:
         Returns:
             MemoryQueryResults with primary memories, linked memories, and metadata
         """
-        logger.info("querying primary memories", extra={"query": memory_query.query})
+        logger.info("querying primary memories", extra={"query_length": len(memory_query.query)})
         scored = await self.memory_repo.search_scored(
             user_id=user_id,
             query=memory_query.query,
@@ -177,46 +178,62 @@ class MemoryService:
             memory=memory_data,
         )
 
-        similar_memories = []
-        linked_ids = []
+        similar_memories: list[MemorySummary] = []
         if settings.MEMORY_NUM_AUTO_LINK > 0:
+            similar_memories = await self._auto_link(user_id, memory)
+
+        return memory, similar_memories
+
+    async def _auto_link(self, user_id: UUID, memory: Memory) -> list[MemorySummary]:
+        """Link a stored memory to its nearest neighbours and return their summaries.
+
+        The memory is already stored when this runs, and an id is new for every create: if a failure here
+        (a Qdrant timeout, a 5xx, a read-back that misses) failed the call, the client would retry and store the
+        memory a second time. So a failure is logged and the call succeeds without links.
+        ``rebuild_embeddings`` for the memory id (the log line names it) computes the links again.
+        """
+        try:
             similar_scored = await self.memory_repo.find_similar_memories_scored(
                 memory_id=memory.id,
                 user_id=user_id,
                 max_links=settings.MEMORY_NUM_AUTO_LINK,
             )
+            if not similar_scored:
+                return []
 
-            if similar_scored:
-                target_ids = [m.id for m, _ in similar_scored]
-                linked_ids = await self.memory_repo.create_links_batch(
-                    user_id=user_id,
-                    source_id=memory.id,
-                    target_ids=target_ids,
+            target_ids = [m.id for m, _ in similar_scored]
+            memory.linked_memory_ids = await self.memory_repo.create_links_batch(
+                user_id=user_id,
+                source_id=memory.id,
+                target_ids=target_ids,
+            )
+            logger.info("Automatically linked memories", extra={
+                "user_id": user_id,
+                "memory_id": memory.id,
+                "number linked": len(target_ids),
+            })
+            return [
+                MemorySummary(
+                    id=m.id,
+                    title=m.title,
+                    keywords=m.keywords,
+                    tags=m.tags,
+                    importance=m.importance,
+                    created_at=m.created_at,
+                    updated_at=m.updated_at,
+                    similarity=round(sim, 4),
                 )
-                memory.linked_memory_ids = linked_ids
-
-                # Convert to MemorySummary for response
-                similar_memories = [
-                    MemorySummary(
-                        id=m.id,
-                        title=m.title,
-                        keywords=m.keywords,
-                        tags=m.tags,
-                        importance=m.importance,
-                        created_at=m.created_at,
-                        updated_at=m.updated_at,
-                        similarity=round(sim, 4),
-                    )
-                    for m, sim in similar_scored
-                ]
-
-                logger.info("Automatically linked memories", extra={
-                    "user_id": user_id,
-                    "memory_id": memory.id,
-                    "number linked": len(target_ids),
-                })
-
-        return memory, similar_memories
+                for m, sim in similar_scored
+            ]
+        except Exception:
+            logger.warning(
+                "Automatic linking failed after memory %s was stored, so it has no links; "
+                "run rebuild_embeddings for this memory id to link it",
+                memory.id,
+                extra={"user_id": user_id, "memory_id": memory.id},
+                exc_info=True,
+            )
+            return []
 
     async def update_memory(
             self,
@@ -282,7 +299,9 @@ class MemoryService:
             NotFoundError: If the memory (or the superseding memory) is not found
             InvalidStateTransitionError: If the memory is already obsolete or would
                 be superseded by itself
+            ValueError: If the reason is not a non-blank text within MEMORY_OBSOLETE_REASON_MAX_LENGTH
         """
+        reason = clean_obsolete_reason(reason)
         logger.info("Marking memory as obsolete", extra={
             "memory_id": memory_id,
             "user_id": user_id,

@@ -277,6 +277,17 @@ def build_tool_documentation(registry, permitted: set, tool_name: str) -> dict[s
     return tool.metadata.to_detailed_dict()
 
 
+# The longest tool or category name a caller may send. The registry's names are far shorter; the cap keeps a
+# hostile name out of the logs and out of the error text that echoes it back.
+NAME_MAX_LENGTH = 100
+
+
+def ensure_name_length(value: str | None, what: str) -> None:
+    """Raise ToolError for a tool or category name longer than ``NAME_MAX_LENGTH``, before anything logs it."""
+    if value is not None and len(value) > NAME_MAX_LENGTH:
+        raise ToolError(f"{what} must be at most {NAME_MAX_LENGTH} characters")
+
+
 def reject_invalid_argument_names(tool_name: str, arguments: dict[str, Any]) -> None:
     """Raise ToolError if an argument name could not be a Python keyword argument.
 
@@ -334,6 +345,7 @@ def register(mcp: AxmemMCP):
     ) -> dict[str, Any]:
         """Placeholder - set dynamically below"""
         try:
+            ensure_name_length(category, "category")
             registry = server_of(ctx).registry
             permitted, _ = get_effective_scopes(ctx)
             logger.info("discover_axmem_tools: category=%r", category)
@@ -372,6 +384,7 @@ def register(mcp: AxmemMCP):
             Detailed tool documentation with JSON schema
         """
         try:
+            ensure_name_length(tool_name, "tool_name")
             registry = server_of(ctx).registry
             permitted, _ = get_effective_scopes(ctx)
             logger.info("how_to_use_axmem_tool: tool_name=%r", tool_name)
@@ -398,6 +411,7 @@ def register(mcp: AxmemMCP):
     ) -> Any:
         """Placeholder - set dynamically below"""
         try:
+            ensure_name_length(tool_name, "tool_name")
             reject_invalid_argument_names(tool_name, arguments)
 
             registry = server_of(ctx).registry

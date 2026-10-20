@@ -13,6 +13,7 @@ import json
 import logging
 import logging.config
 import logging.handlers
+import os
 import re
 import sys
 from collections.abc import Iterator
@@ -24,10 +25,22 @@ from uuid import UUID
 from app.config.settings import LOG_FORMATS, canonical_choice
 
 
+def wants_colour(stream: object) -> bool:
+    """Whether ANSI colour codes belong on ``stream``: it is a terminal and ``NO_COLOR`` is not set.
+
+    A pipe, a file or a log collector would otherwise show the escape sequences as text. ``NO_COLOR``
+    (https://no-color.org) turns colour off whatever the stream is: any non-empty value counts.
+    """
+    if os.environ.get("NO_COLOR"):
+        return False
+    isatty = getattr(stream, "isatty", None)
+    return bool(isatty and isatty())
+
+
 class ConsoleFormatter(logging.Formatter):
     """Console formatter with Pretty ANSI colour codes for development.
 
-    Colours log levels for easy visual scanning:
+    Colours log levels for easy visual scanning, when ``colour`` is true (see ``wants_colour``):
     - DEBUG: Cyan
     - INFO: Green
     - WARNING: Yellow
@@ -44,8 +57,14 @@ class ConsoleFormatter(logging.Formatter):
      }
     RESET = "\033[0m"
 
+    def __init__(self, *args, colour: bool = True, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.colour = colour
+
     def format(self, record: logging.LogRecord) -> str:
         """Format a log record with coloured level name."""
+        if not self.colour:
+            return super().format(record)
         colour = self.COLOURS.get(record.levelname, self.RESET)
 
         levelname_coloured = f"{colour}{record.levelname}{self.RESET}"
@@ -58,6 +77,10 @@ class ConsoleFormatter(logging.Formatter):
         record.levelname = original_levelname
 
         return formatted
+
+# The attributes every LogRecord has; anything else on a record came from ``extra={...}`` or from the queue handler.
+_RECORD_ATTRIBUTES = frozenset(vars(logging.LogRecord("", 0, "", 0, "", (), None))) | {"message", "asctime", "taskName"}
+
 
 class SensitiveDataFilter(logging.Filter):
     """Filter to mask sensitive data in log messages.
@@ -93,23 +116,35 @@ class SensitiveDataFilter(logging.Filter):
         ),
         # api-key=something, "api_key": "something" (the Qdrant API key travels in the api-key header)
         (re.compile(r'api[-_]?key["\']?\s*[:=]\s*["\']?([^"\s,}]+)["\']?', re.IGNORECASE), "api-key=***"),
-        # URL with credentials: scheme://user:password@host
-        (re.compile(r"://[^:/@]+:[^@]+@", re.IGNORECASE), "://***:***@"),
+        # URL with credentials: scheme://user:password@host. Both parts stop at whitespace and at the characters
+        # that end a URL's authority, and are bounded, so a hostile text of "://a:" repeated cannot make the scan
+        # of each "://" run to the end of the message (that was quadratic and froze the event loop).
+        (re.compile(r"://[^\s:/?#@]{1,256}:[^\s/?#@]{1,1024}@", re.IGNORECASE), "://***:***@"),
     ]
 
+    # Text longer than this is shortened before it is scanned (its head and its tail stay): a log line of
+    # this size is a mistake or an attack, and the scan cost grows with the text.
+    MAX_TEXT_LENGTH = 32_768
+    _MAX_DEPTH = 4
+
     def filter(self, record: logging.LogRecord) -> bool:
-        """Mask sensitive data in log message.
+        """Mask sensitive data in the message, the arguments, the traceback and the ``extra`` fields.
 
         Returns True to allow the log through (after modification).
         """
         if isinstance(record.msg, str):
-            for pattern, replacement in self.SENSITIVE_PATTERNS:
-                record.msg = pattern.sub(replacement, record.msg)
+            record.msg = self._mask_value(record.msg)
 
         self._mask_args(record)
         self._mask_exception_text(record)
+        self._mask_extra_fields(record)
 
         return True
+
+    def _mask_extra_fields(self, record: logging.LogRecord) -> None:
+        """Mask what ``logger.info(..., extra={...})`` put on the record: the JSON formatter writes all of it."""
+        for key in set(vars(record)) - _RECORD_ATTRIBUTES:
+            setattr(record, key, self._mask_value(getattr(record, key)))
 
     def _mask_args(self, record: logging.LogRecord) -> None:
         """Mask the %-style arguments of a record, whether passed as a dict or a tuple"""
@@ -133,12 +168,26 @@ class SensitiveDataFilter(logging.Filter):
         if record.exc_text:
             record.exc_text = self._mask_value(record.exc_text)
 
-    def _mask_value(self, value):
-        """Mask a value if it's a string that matches patterns"""
+    def _mask_value(self, value, depth: int = 0):
+        """Mask a string, or the strings inside a list, tuple or dict; anything else is returned as it is"""
         if isinstance(value, str):
+            value = self._shorten(value)
             for pattern, replacement in self.SENSITIVE_PATTERNS:
                 value = pattern.sub(replacement, value)
+        elif depth < self._MAX_DEPTH:
+            if isinstance(value, list | tuple):
+                return type(value)(self._mask_value(item, depth + 1) for item in value)
+            if isinstance(value, dict):
+                return {key: self._mask_value(item, depth + 1) for key, item in value.items()}
         return value
+
+    @classmethod
+    def _shorten(cls, text: str) -> str:
+        """``text`` itself, or its head and its tail with a note of how much was left out"""
+        if len(text) <= cls.MAX_TEXT_LENGTH:
+            return text
+        half = cls.MAX_TEXT_LENGTH // 2
+        return f"{text[:half]} ...[{len(text) - 2 * half} characters left out]... {text[-half:]}"
 
 
 class JSONFormatter(logging.Formatter):
@@ -246,6 +295,7 @@ def _stderr_handler(log_format: str) -> logging.StreamHandler:
         formatter = ConsoleFormatter(
             fmt="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
             datefmt="%Y-%m-%d %H:%M:%S",
+            colour=wants_colour(sys.stderr),
         )
     handler = logging.StreamHandler(sys.stderr)
     handler.setFormatter(formatter)

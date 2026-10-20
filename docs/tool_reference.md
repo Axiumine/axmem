@@ -135,7 +135,7 @@ Create an atomic memory with automatic linking to related memories.
 
 **Provenance Tracking (optional):**
 - `source_repo` (optional): Repository source (e.g., 'owner/repo', max 200 chars)
-- `source_files` (optional): List of file paths that informed this memory (each max 4096 chars)
+- `source_files` (optional): List of file paths that informed this memory (at most 50 paths, each max 4096 chars)
 - `source_url` (optional): URL to original source material (max 2048 chars)
 - `confidence` (optional): Encoding confidence score (0.0-1.0)
 - `encoding_agent` (optional): Agent/process that created this memory (max 100 chars)
@@ -149,7 +149,7 @@ encoded as UTF-8 (for example a lone surrogate).
 - `title`: Created memory title
 - `project`: The memory's project scope, or `null`
 - `linked_memory_ids`: Automatically linked memory IDs
-- `similar_memories`: Summaries of the automatic-link candidates; each entry includes `similarity` (cosine similarity to the new memory)
+- `similar_memories`: Summaries of the automatic-link candidates; each entry includes `similarity` (cosine similarity to the new memory). If the linking fails after the memory was stored (a Qdrant timeout, for example), the call still succeeds with both empty and logs a warning that names the memory; do not create it again, run `rebuild_embeddings` for its id to link it
 - `obsolete_matches`: Up to 3 obsolete memories similar to the new content (on by default via `OBSOLETE_WARNING_ENABLED`); each match includes `id`, `title`, `similarity`, `obsolete_reason`, `superseded_by`, `obsoleted_at`, `project`. Warning-only; never blocks creation. Empty when the feature is disabled.
 
 **Example:**
@@ -196,8 +196,8 @@ memory = execute_axmem_tool(
 Semantic search across all memories with context-aware ranking.
 
 **Parameters:**
-- `query` (required): Natural language search query (must not be blank)
-- `query_context` (required): Why the search is being performed
+- `query` (required): Natural language search query (must not be blank, at most `MEMORY_QUERY_MAX_LENGTH` = 2000 characters)
+- `query_context` (required): Why the search is being performed (at most `MEMORY_QUERY_CONTEXT_MAX_LENGTH` = 2000 characters)
 - `k` (optional): Number of primary results (default: 3, maximum: 20)
 - `include_links` (optional): Include linked memories (default: true)
 - `max_links_per_primary` (optional): Linked memories per primary result (default: 5)
@@ -301,7 +301,7 @@ Manually create bidirectional links between memories.
 - `memory_ids` (optional, List[UUID string]): Pair/list of memory IDs `[src, target1, target2, ...]`
 
 **Returns:**
-- Dict with `linked_memory_ids` (list of target IDs newly linked). Target IDs that do not exist, belong to another tenant, or are already linked are skipped.
+- Dict with `linked_memory_ids` (list of target IDs newly linked). Target IDs that do not exist, belong to another tenant, or are already linked are skipped. At most `MEMORY_LINKS_MAX_PER_REQUEST` (50) targets per call; `unlink_memories` has the same limit.
 
 **Examples:**
 ```python
@@ -376,7 +376,7 @@ Soft delete a memory with audit trail and supersession tracking.
 
 **Parameters:**
 - `memory_id` (required): Memory ID to mark obsolete
-- `reason` (required): Reason for obsolescence
+- `reason` (required): Reason for obsolescence: a text that is not blank, at most `MEMORY_OBSOLETE_REASON_MAX_LENGTH` = 500 characters (a number or an object is refused and the memory stays active)
 - `superseded_by` (optional): ID of replacement memory (must be an existing memory other than `memory_id`)
 
 **Returns:**

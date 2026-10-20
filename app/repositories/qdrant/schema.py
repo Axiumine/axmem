@@ -13,11 +13,11 @@ from datetime import UTC, datetime
 
 from qdrant_client import AsyncQdrantClient
 from qdrant_client import models as qm
-from qdrant_client.http.exceptions import UnexpectedResponse
+from qdrant_client.http.exceptions import ResponseHandlingException, UnexpectedResponse
 
 from app.config.settings import settings
 from app.exceptions import QdrantStartupError
-from app.repositories.qdrant.client import NodePool
+from app.repositories.qdrant.client import NodePool, describe_request_failure
 
 logger = logging.getLogger(__name__)
 
@@ -94,13 +94,17 @@ class QdrantSchema:
         ``check_width=False`` accepts a live collection whose vectors are of another width than
         ``EMBEDDING_DIMENSIONS``; only re-embedding, which replaces that collection, does.
         """
-        await self.pool.require_supported_server()
-        # Creating a collection goes through the cluster's consensus, which can time out under load (a 500 answer);
-        # every step checks what exists first, so a repeat continues where the failed one stopped
-        attempts = settings.QDRANT_WRITE_ATTEMPTS
-        await self.pool.run(self._ensure_links, attempts=attempts)
-        wanted = self.dimensions if check_width else None
-        await self.pool.run(lambda client: self._ensure_live(client, wanted), attempts=attempts)
+        try:
+            await self.pool.require_supported_server()
+            # Creating a collection goes through the cluster's consensus, which can time out under load (a 500
+            # answer); every step checks what exists first, so a repeat continues where the failed one stopped
+            attempts = settings.QDRANT_WRITE_ATTEMPTS
+            await self.pool.run(self._ensure_links, attempts=attempts)
+            wanted = self.dimensions if check_width else None
+            await self.pool.run(lambda client: self._ensure_live(client, wanted), attempts=attempts)
+        except (UnexpectedResponse, ResponseHandlingException) as exc:
+            # A node that is down, or a key it refuses, is the most common reason a start fails: say so in a line
+            raise QdrantStartupError(describe_request_failure(exc)) from exc
 
     async def _ensure_links(self, client: AsyncQdrantClient) -> None:
         name = self.names.links

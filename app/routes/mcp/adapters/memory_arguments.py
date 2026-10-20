@@ -11,6 +11,7 @@ from uuid import UUID
 
 from fastmcp.exceptions import ToolError
 
+from app.config.settings import settings
 from app.routes.mcp.adapters.arguments import coerce_memory_id, coerce_memory_ids
 
 _CREATED_SINCE_ERROR = "created_since must be an ISO 8601 timestamp with a timezone"
@@ -140,4 +141,6 @@ def resolve_link_arguments(spec: LinkAliasSpec, provided: dict[str, Any]) -> tup
     cleaned = [tid for tid in dict.fromkeys(targets) if tid != src]
     if not cleaned:
         raise ValueError(spec.self_link)
+    if len(cleaned) > settings.MEMORY_LINKS_MAX_PER_REQUEST:
+        raise ValueError(f"At most {settings.MEMORY_LINKS_MAX_PER_REQUEST} memories can be linked or unlinked in one call")
     return src, cleaned

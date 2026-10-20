@@ -3,10 +3,19 @@
 import re
 from pathlib import Path
 from typing import cast
+from urllib.parse import urlsplit
 
 from platformdirs import user_config_dir, user_data_dir
-from pydantic import Field, SecretStr, ValidationInfo, field_validator, model_validator
+from pydantic import (
+    Field,
+    SecretStr,
+    ValidationError,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings.exceptions import SettingsError
 
 from app.version import get_version
 
@@ -27,12 +36,14 @@ _default_config_dir = Path(user_config_dir("axmem", ensure_exists=False))
 EMBEDDING_PROVIDERS = ("TensorRT", "Azure", "Google", "OpenAI", "Ollama", "gateway")
 RERANKING_PROVIDERS = ("TensorRT", "HTTP")
 LOG_FORMATS = ("console", "json")
+LOG_LEVELS = ("INFO", "DEBUG", "WARNING", "ERROR", "CRITICAL")
 # AUTH_MODE has no default choice: a blank value stays blank and the server refuses to start
 AUTH_MODES = ("none", "jwt", "introspection", "static")
 _CHOICES = {
     "EMBEDDING_PROVIDER": EMBEDDING_PROVIDERS,
     "RERANKING_PROVIDER": RERANKING_PROVIDERS,
     "LOG_FORMAT": LOG_FORMATS,
+    "LOG_LEVEL": LOG_LEVELS,
 }
 
 # The longest tenant name accepted from a credential (a tenant is identified by its name)
@@ -85,6 +96,9 @@ class Settings(BaseSettings):
     SERVER_PORT: int = 8020
     LOG_LEVEL: str = "INFO"
     LOG_FORMAT: str = "console"
+
+    # Largest request body the HTTP transport accepts, in bytes (REST routes and /mcp); a larger one is answered 413
+    REQUEST_BODY_MAX_BYTES: int = Field(default=4_194_304, ge=1024)
 
     # CORS Configuration (HTTP transport only)
     CORS_ENABLED: bool = False
@@ -165,6 +179,11 @@ class Settings(BaseSettings):
     MEMORY_KEYWORD_MAX_LENGTH: int = 100    # Characters per keyword - search terms, not sentences
     MEMORY_TAG_MAX_LENGTH: int = 100        # Characters per tag - short category labels
     MEMORY_SOURCE_FILE_MAX_LENGTH: int = 4096  # Characters per source file path (Linux PATH_MAX)
+    MEMORY_SOURCE_FILES_MAX_COUNT: int = Field(default=50, ge=1)       # Source files per memory
+    MEMORY_QUERY_MAX_LENGTH: int = Field(default=2000, ge=1)           # Characters of a search query
+    MEMORY_QUERY_CONTEXT_MAX_LENGTH: int = Field(default=2000, ge=1)   # Characters of the reason given with a search
+    MEMORY_OBSOLETE_REASON_MAX_LENGTH: int = Field(default=500, ge=1)  # Characters of the reason for marking obsolete
+    MEMORY_LINKS_MAX_PER_REQUEST: int = Field(default=50, ge=1)        # Memories one link request may name
     MEMORY_TOKEN_BUDGET: int = 8000         # token budget for retrieved memories (to protect context window)
     MEMORY_MAX_MEMORIES: int = 20           # maximum number of memories that can be retrieved from a query
     MEMORY_NUM_AUTO_LINK: int = 3           # number of memories to automatically link
@@ -247,6 +266,13 @@ class Settings(BaseSettings):
         for url in urls:
             if not url.startswith(("http://", "https://")):
                 raise ValueError("QDRANT_URL entries must start with http:// or https://")
+            parts = urlsplit(url)
+            try:
+                valid = bool(parts.hostname) and parts.port != 0
+            except ValueError:  # a port that is not a number or beyond 65535
+                valid = False
+            if not valid:
+                raise ValueError("QDRANT_URL entries must name a host and, if they give one, a port from 1 to 65535")
         return ",".join(dict.fromkeys(urls))
 
     @field_validator("QDRANT_COLLECTION_PREFIX")
@@ -282,7 +308,7 @@ class Settings(BaseSettings):
             raise ValueError("OBSOLETE_WARNING_THRESHOLD must be in (0, 1]")
         return value
 
-    @field_validator("EMBEDDING_PROVIDER", "RERANKING_PROVIDER", "LOG_FORMAT")
+    @field_validator("EMBEDDING_PROVIDER", "RERANKING_PROVIDER", "LOG_FORMAT", "LOG_LEVEL")
     @classmethod
     def _validate_choice_setting(cls, value: str, info: ValidationInfo) -> str:
         field_name = _field_name(info)
@@ -351,4 +377,39 @@ class Settings(BaseSettings):
         hide_input_in_errors=True,
     )
 
-settings = Settings()
+
+
+def describe_settings_failure(exc: Exception) -> str:
+    """One line that says why the settings could not be loaded, without repeating any configured value.
+
+    ``hide_input_in_errors`` keeps the values out of pydantic's errors, and only ``loc`` and ``msg`` are used
+    here, so a credential pasted into the wrong setting is never echoed.
+    """
+    if isinstance(exc, ValidationError):
+        problems = []
+        for error in exc.errors(include_url=False, include_context=False, include_input=False):
+            name = ".".join(str(part) for part in error["loc"])
+            message = error["msg"].removeprefix("Value error, ")
+            problems.append(message if name.lower() in message.lower() else f"{name}: {message}")
+        return "; ".join(problems)
+    if isinstance(exc, OSError):
+        return f"a settings file cannot be read: {exc.strerror or exc} ({exc.filename})"
+    if isinstance(exc, UnicodeError):
+        return "a settings file is not valid UTF-8; save it as UTF-8"
+    return str(exc)
+
+
+def load_settings() -> Settings:
+    """The settings of the environment and the dotenv files, or an exit with the one-line cause.
+
+    Every command builds its settings when this module is imported. A bad value (a typo in a provider, a
+    port that is not a number), a dotenv file that cannot be read or a JSON setting that does not parse is an
+    operator mistake, so it ends the process with ``Error: <cause>`` and exit code 1, never a traceback.
+    """
+    try:
+        return Settings()
+    except (ValidationError, SettingsError, OSError, UnicodeError) as exc:
+        raise SystemExit(f"Error: {describe_settings_failure(exc)}") from exc
+
+
+settings = load_settings()

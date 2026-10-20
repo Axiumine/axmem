@@ -17,13 +17,14 @@ from starlette.responses import JSONResponse
 
 from app.bootstrap import (
     build_runtime,
+    check_runtime_start,
     dispose_runtime,
+    get_embedding_adapter,
     get_reranker_adapter,
-    start_tensorrt_embedder,
+    operator_failure,
 )
 from app.config.auth import AuthConfigError, build_auth_provider
 from app.config.settings import settings
-from app.exceptions import QdrantStartupError, TensorRTError
 from app.routes.api import (
     auth,
     health,
@@ -56,6 +57,7 @@ async def lifespan(app):
     runtime = await build_runtime()
     services = runtime.services
 
+    mcp.engine_failures = runtime.engine_failures
     mcp.memory_service = services.memory
     mcp.re_embedding_service = services.re_embedding
 
@@ -102,6 +104,9 @@ def _auth_provider_or_refusal():
         return build_auth_provider(), None
     except AuthConfigError as exc:
         return None, exc
+    except ValueError as exc:
+        # FastMCP's own provider constructors refuse some combinations too (a JWKS URI together with a public key)
+        return None, AuthConfigError(f"AUTH_MODE={settings.AUTH_MODE} cannot be set up: {' '.join(str(exc).split())}")
 
 
 _auth_provider, _auth_refusal = _auth_provider_or_refusal()
@@ -312,8 +317,11 @@ async def _run_reembed(args):
 
     try:
         embeddings_adapter = get_embedding_adapter()
-    except TensorRTError as exc:
-        print(f"Error: the embedder cannot start: {exc}", file=sys.stderr)
+    except Exception as exc:
+        cause = operator_failure(exc)
+        if cause is None:  # a bug keeps its traceback
+            raise
+        print(f"Error: the embedder cannot start: {cause}", file=sys.stderr)
         raise SystemExit(1) from exc
 
     _print_reembed_configuration(args.batch_size)
@@ -321,8 +329,11 @@ async def _run_reembed(args):
     stack = create_qdrant_stack()
     try:
         await _reembed(stack, embeddings_adapter, args)
-    except QdrantStartupError as exc:
-        print(f"\n  ERROR: {exc}", file=sys.stderr)
+    except Exception as exc:
+        cause = operator_failure(exc)
+        if cause is None:  # a bug keeps its traceback
+            raise
+        print(f"\n  ERROR: {cause}", file=sys.stderr)
         raise SystemExit(1) from exc
     finally:
         await stack.close()
@@ -336,8 +347,11 @@ def _http_middleware():
       that ``CORS_ORIGINS`` lists by name pass it too (a ``*`` never does), and so do the hosts that
       ``AXMEM_ALLOWED_HOSTS`` names: naming an origin or a host is the operator's decision.
     - ``CORS_ENABLED``: CORS headers.
+    - The body limit (``REQUEST_BODY_MAX_BYTES``), innermost of these, so that its 413 answer carries the CORS headers.
     """
     from starlette.middleware import Middleware
+
+    from app.middleware.body_limit import BodyLimitMiddleware
 
     middleware = []
     if settings.AUTH_MODE == "none":
@@ -365,6 +379,7 @@ def _http_middleware():
                 expose_headers=["mcp-session-id"],
             ),
         )
+    middleware.append(Middleware(BodyLimitMiddleware, max_bytes=settings.REQUEST_BODY_MAX_BYTES))
     return middleware
 
 
@@ -396,23 +411,35 @@ def _serve(transport, host, port):
     from app.config.logging_config import logging_while_starting
 
     with logging_while_starting(settings.LOG_LEVEL, settings.LOG_FORMAT):
-        for model, start in (("embedder", start_tensorrt_embedder), ("reranker", get_reranker_adapter)):
+        for model, start in (("embedder", get_embedding_adapter), ("reranker", get_reranker_adapter)):
             try:
                 start()
-            except TensorRTError as exc:
-                print(f"Error: the {model} cannot start: {exc}", file=sys.stderr)
+            except Exception as exc:
+                cause = operator_failure(exc)
+                if cause is None:  # a bug keeps its traceback
+                    raise
+                print(f"Error: the {model} cannot start: {cause}", file=sys.stderr)
                 return 1
+        # Qdrant and the scope ceiling are checked here too: inside the lifespan a refusal ends as a traceback
+        try:
+            asyncio.run(check_runtime_start())
+        except Exception as exc:
+            cause = operator_failure(exc)
+            if cause is None:
+                raise
+            print(f"Error: {cause}", file=sys.stderr)
+            return 1
 
     if transport == "stdio":
         import warnings
         warnings.filterwarnings("ignore", category=DeprecationWarning)
         mcp.run(show_banner=False)
-    elif not settings.CORS_ENABLED:
+    else:
         # Serve the app through uvicorn directly instead of mcp.run(): FastMCP would wrap
         # serve() in its own lifespan, deferring dispose_runtime() until uvicorn has already
         # re-raised SIGTERM/SIGINT, so shutdown cleanup never ran. With uvicorn as the only
         # lifespan owner, teardown completes inside its shutdown phase. The uvicorn options
-        # below are the ones mcp.run(transport="http") applied.
+        # below are the ones mcp.run(transport="http") applied, with or without CORS.
         import fastmcp
         import uvicorn
 
@@ -426,11 +453,6 @@ def _serve(transport, host, port):
             ws="websockets-sansio",
             log_level=fastmcp.settings.log_level.lower(),
         )
-    else:
-        # CORS enabled - use http_app with middleware
-        import uvicorn
-        app = mcp.http_app(middleware=_http_middleware())
-        uvicorn.run(app, host=host, port=port)
 
 
 def _legacy_launcher(argv):

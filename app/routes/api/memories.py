@@ -242,6 +242,8 @@ def register(mcp: AxmemMCP):
                 reason=reason,
                 superseded_by=superseded_by,
             )
+        except ValueError as e:  # a reason that is not a bounded, non-blank text
+            return JSONResponse({"error": str(e)}, status_code=400)
         except AssociationNotFoundError as e:
             return JSONResponse({"error": str(e)}, status_code=404)
         except NotFoundError:

@@ -395,6 +395,55 @@ Fixes found by reviewing the feature cuts (no upstream counterpart: the code the
   connectivity guide, the configuration reference and the GPU guide describe what Axmem does now (the
   install route, local mode needing a GPU, the loopback and reverse-proxy warning, the real error messages).
 
+- **Failures an operator can fix end in one line:** every command used to die in a traceback for a setting that does
+  not validate (`LOG_LEVEL` was not validated at all; a port that is not a number; a `QDRANT_URL` without a host or with a
+  port outside 1 to 65535), for a settings file that cannot be read or is not UTF-8, and for most start-up refusals. They
+  now print `Error: <cause>` and exit with code 1, naming the setting and never repeating its value: `LOG_LEVEL` is
+  matched without regard to case like `LOG_FORMAT`; `serve` builds the embeddings adapter of any provider (a remote
+  provider without its key or URL, a package that is not installed, the reranker without its URL) and checks the scope
+  ceiling, Qdrant (reachable, accepting the API key, version, collection layout) before it binds anything or starts the
+  stdio server, instead of failing inside the web server's lifespan; an authentication provider that FastMCP's own
+  constructor refuses (a JWKS URI together with a public key) is a refusal of `serve` only, like an incomplete mode.
+  A wrong or missing Qdrant API key is named (`Qdrant refused the request (HTTP 401): check QDRANT_API_KEY`): Qdrant
+  answers its version without a key, so the first real request found it, as a traceback, and the configuration guide
+  said the version check would. `re-embed` and the operator commands (`backup`, `restore`, `export`, `import`,
+  `qdrant-check`) report an unwritable `BACKUP_DIR`, a full disk, a failed HTTP call, a damaged JSON file, a model that
+  cannot start (`import` on a host without a GPU printed a traceback) and an unavailable embeddings provider the same
+  way; anything that is not such a cause is a bug and keeps its traceback. `axmem auth login` reports a settings file
+  it cannot write. A failed `backup` no longer leaves an empty directory when Qdrant refuses the first question.
+- **Bounds on requests:** a search `query` and its `query_context` (`MEMORY_QUERY_MAX_LENGTH`,
+  `MEMORY_QUERY_CONTEXT_MAX_LENGTH`, 2000 characters each; one request could hold the only embedder worker and the
+  reranker for every tenant), the number of `source_files` of a memory (`MEMORY_SOURCE_FILES_MAX_COUNT`, 50), the
+  number of memories one link or unlink call names (`MEMORY_LINKS_MAX_PER_REQUEST`, 50) and the length of a tool or
+  category name of the meta-tools (100) are bounded, and the body of an HTTP request is limited to
+  `REQUEST_BODY_MAX_BYTES` (4 MiB; `413`, by `Content-Length` or counted while a chunked body is read). The reason of
+  an obsolete mark must be a text that is not blank and at most `MEMORY_OBSOLETE_REASON_MAX_LENGTH` (500) characters:
+  a number or an object was stored as it was and then failed every read of the memory with a `500`, which also stopped
+  `axmem export` and `axmem re-embed` for every tenant, and a multi-megabyte reason was returned with every read. A
+  reason a client stored before this change is read back as text, so such a memory is exported and re-embedded again.
+- **Logs:** a title, a search query and the tags of a filter are no longer written to the INFO log (the length of the
+  query is), and the filter that masks secrets now covers the `extra` fields that the JSON format writes and shortens
+  a text above 32768 characters to its head and tail. Its pattern for credentials in a URL was quadratic, so one
+  tool name of 1 MB made of `://a:` kept the server busy for about a minute; it is bounded, and the legacy-settings
+  warning no longer loses a word of its advice to the pattern for `token:` and `password:`. The console format
+  writes colour codes only to a terminal and not when `NO_COLOR` is set.
+- **Health:** `/health` answers `503` with the reason once a local TensorRT engine met a CUDA error it cannot recover
+  from (every later embedding or rerank call fails until the process restarts, and the route kept answering `200`),
+  and a failed call now records such an error at the call, where the check that followed a successful call was never
+  reached. With `CORS_ENABLED=true` the server starts uvicorn with the same options as without (it lacked the
+  graceful-shutdown limit, so a stream held open could keep `dispose_runtime` from running).
+- **Memory create:** a failure of the automatic linking after the memory was stored (a Qdrant timeout, a read-back that
+  missed) no longer fails the call, which made the client retry and store the memory twice: the call succeeds without
+  links and logs a warning that names the memory id (`rebuild_embeddings` for that id links it).
+- **Backup, export and import:** `restore` reads the manifest as untrusted input and, before it uploads anything,
+  refuses one that is not valid, that names a file other than a `node<N>-memories|links.snapshot` of the set, or a
+  collection that is not this deployment's (`<prefix>_links`, `<prefix>_memories_<generation>`), or that lacks the
+  memories or the links snapshot of node 1; snapshots are checksummed in chunks. `export` writes its `.partial` file
+  through a descriptor it created itself (a stale file or a link at that name is removed, not followed), so a link planted in a
+  shared directory no longer redirects the export onto another file. `import` skips and counts a line that is not
+  UTF-8, is nested too deeply, holds a number of thousands of digits, has an id or a version of the wrong type, no
+  text to embed or text that cannot be encoded, instead of stopping at the first of them.
+
 - **Tests, CI and hooks:** the Qdrant preflight of the suites pulls `qdrant/qdrant:v1.19.2` when the image is not local (a
   clean or pruned runner, or a bumped version) and still ends the run with exit code 2 and the cause when Docker or the
   pull fails. The jobs on the self-hosted GPU runner no longer run for pull requests from forks (the head repository must

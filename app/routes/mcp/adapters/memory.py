@@ -72,7 +72,7 @@ class MemoryToolAdapters:
         agent_model: str | None = None,
     ) -> MemoryCreateResponse:
         """Adapter for create_memory tool"""
-        logger.info("MCP Tool Called -> create memory", extra={"title": title})
+        logger.info("MCP Tool Called -> create memory")
 
         tenant = await get_tenant_from_auth(ctx)
 
@@ -108,7 +108,6 @@ class MemoryToolAdapters:
             extra={
                 "tenant_id": tenant.id,
                 "memory_id": memory.id,
-                "title": memory.title,
                 "linked_memory_ids": memory.linked_memory_ids,
                 "similar_memories_count": len(similar_memories),
             },
@@ -138,7 +137,7 @@ class MemoryToolAdapters:
         """Adapter for query_memory tool"""
         logger.info(
             "MCP Tool -> query_memory",
-            extra={"query": query[:50], "k": k, "include_links": include_links},
+            extra={"k": k, "include_links": include_links},
         )
 
         tenant = await get_tenant_from_auth(ctx)
@@ -479,7 +478,7 @@ class MemoryToolAdapters:
                 "include_obsolete": include_obsolete,
                 "sort_by": sort_by,
                 "sort_order": sort_order,
-                "tags": tags,
+                "tag_count": len(tags) if tags else 0,
                 "importance_min": importance_min,
                 "created_since": created_since,
             },

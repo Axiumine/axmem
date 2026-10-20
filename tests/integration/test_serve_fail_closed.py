@@ -8,11 +8,14 @@ import sys
 
 import pytest
 import uvicorn
+from pydantic import SecretStr
 
 import main
 from app.config import legacy_settings
 from app.config.auth import AuthConfigError
 from app.config.settings import settings
+
+pytestmark = pytest.mark.usefixtures("qdrant_env")  # a server that passes the guard checks Qdrant before it binds
 
 ANYWHERE = "0.0.0.0"  # noqa: S104 - the bind-all address is what the guard must refuse
 
@@ -164,3 +167,86 @@ def test_the_old_scope_ceiling_is_no_obstacle_once_the_new_one_is_set(monkeypatc
     main._serve("http", "127.0.0.1", 8020)
 
     assert runners == ["http"]
+
+
+# ---- what the start-up builds and checks before it binds anything ----------------------------------------
+
+
+@pytest.mark.parametrize("hook", ["get_embedding_adapter", "get_reranker_adapter", "check_runtime_start"])
+def test_a_bug_in_the_start_up_checks_keeps_its_traceback(monkeypatch, runners, hook):
+    """Only the failures an operator can fix become a line: anything else must not be dressed as a configuration error."""
+    monkeypatch.setattr(settings, "AUTH_MODE", "none")
+
+    def bug(*_args):
+        raise KeyError("a bug")
+
+    async def async_bug():
+        bug()
+
+    monkeypatch.setattr(main, hook, async_bug if hook == "check_runtime_start" else bug)
+
+    with pytest.raises(KeyError, match="a bug"):
+        main._serve("http", "127.0.0.1", 8020)
+
+    assert runners == []
+
+
+def test_a_qdrant_that_cannot_serve_ends_the_start_up_with_a_line_before_anything_is_bound(monkeypatch, runners, capsys):
+    monkeypatch.setattr(settings, "AUTH_MODE", "none")
+    monkeypatch.setattr(settings, "QDRANT_URL", "http://127.0.0.1:1")
+
+    code = main._serve("http", "127.0.0.1", 8020)
+
+    assert code == 1
+    assert runners == []
+    err = capsys.readouterr().err
+    assert err.splitlines()[-1].startswith("Error: Qdrant at http://127.0.0.1:1 cannot be reached")
+
+
+def test_a_provider_that_lacks_its_credentials_ends_the_start_up_with_a_line(monkeypatch, runners, capsys):
+    monkeypatch.setattr(settings, "AUTH_MODE", "none")
+    monkeypatch.setattr(settings, "EMBEDDING_PROVIDER", "OpenAI")
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", SecretStr(""))
+
+    code = main._serve("http", "127.0.0.1", 8020)
+
+    assert code == 1
+    assert runners == []
+    assert "Error: the embedder cannot start: OPENAI_API_KEY" in capsys.readouterr().err
+
+
+def test_a_provider_the_sdk_of_which_is_missing_ends_the_start_up_with_a_line(monkeypatch, runners, capsys):
+    monkeypatch.setattr(settings, "AUTH_MODE", "none")
+
+    def missing():
+        raise ModuleNotFoundError("No module named 'ollama'", name="ollama")
+
+    monkeypatch.setattr(main, "get_embedding_adapter", missing)
+
+    assert main._serve("http", "127.0.0.1", 8020) == 1
+    assert "Error: the embedder cannot start: a Python package that this setting needs is not installed (ollama)" in capsys.readouterr().err
+
+
+def test_an_invalid_scope_ceiling_ends_the_start_up_with_a_line(monkeypatch, runners, capsys):
+    monkeypatch.setattr(settings, "AUTH_MODE", "none")
+    monkeypatch.setattr(settings, "AXMEM_SCOPES", "bogus")
+
+    assert main._serve("http", "127.0.0.1", 8020) == 1
+    assert runners == []
+    assert "Error: AXMEM_SCOPES is not valid" in capsys.readouterr().err
+
+
+def test_a_provider_that_fastmcp_refuses_is_kept_as_a_refusal_of_serve(monkeypatch):
+    """Importing ``main`` must not fail for it: the settings the provider is built from can be wrong in a way only it sees."""
+    monkeypatch.setattr(settings, "AUTH_MODE", "jwt")
+    monkeypatch.setattr(settings, "FASTMCP_SERVER_AUTH_JWT_JWKS_URI", "https://auth.example/jwks.json")
+    monkeypatch.setattr(settings, "FASTMCP_SERVER_AUTH_JWT_PUBLIC_KEY", "a-key")
+    monkeypatch.setattr(settings, "FASTMCP_SERVER_AUTH_JWT_ISSUER", "https://auth.example")
+    monkeypatch.setattr(settings, "FASTMCP_SERVER_AUTH_JWT_AUDIENCE", "axmem")
+
+    provider, refusal = main._auth_provider_or_refusal()
+
+    assert provider is None
+    assert isinstance(refusal, AuthConfigError)
+    assert "AUTH_MODE=jwt cannot be set up" in str(refusal)
+    assert "not both" in str(refusal)

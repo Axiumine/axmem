@@ -5,6 +5,7 @@ contracts in pyproject.toml).
 """
 import asyncio
 import itertools
+import json
 import logging
 import math
 import warnings
@@ -39,6 +40,42 @@ def is_ambiguous(exc: BaseException) -> bool:
     if isinstance(exc, UnexpectedResponse):
         return exc.status_code is not None and exc.status_code >= 500
     return isinstance(exc, ResponseHandlingException | TimeoutError)
+
+
+def describe_request_failure(exc: UnexpectedResponse | ResponseHandlingException) -> str:
+    """One line that says why a Qdrant request failed and what to check, for an operator and not for a log.
+
+    An answer of 401 or 403 means the API key is missing or wrong (Qdrant answers the version request without a
+    key, so the key is first tried by the next request). A transport failure means the node cannot be reached.
+    """
+    if isinstance(exc, ResponseHandlingException):
+        return (
+            f"Qdrant cannot be reached or did not answer in time ({type(exc.source).__name__}); "
+            "check QDRANT_URL and that the node runs"
+        )
+    if exc.status_code in (401, 403):
+        return f"Qdrant refused the request (HTTP {exc.status_code}): check QDRANT_API_KEY"
+    try:
+        detail = " ".join(str(json.loads(exc.content)["status"]["error"]).split())[:200]
+    except (ValueError, KeyError, TypeError):  # not JSON, or not the shape Qdrant answers with
+        detail = exc.reason_phrase
+    return f"Qdrant answered HTTP {exc.status_code}: {detail}"
+
+
+def describe_failure(exc: BaseException) -> str | None:
+    """``describe_request_failure`` for a Qdrant client error or a failed HTTP call to a node, else None."""
+    if isinstance(exc, UnexpectedResponse | ResponseHandlingException):
+        return describe_request_failure(exc)
+    if isinstance(exc, httpx.HTTPStatusError):
+        if exc.response.status_code in (401, 403):
+            return f"Qdrant refused the request (HTTP {exc.response.status_code}): check QDRANT_API_KEY"
+        return f"Qdrant answered HTTP {exc.response.status_code} to {exc.request.method} {exc.request.url.path}"
+    if isinstance(exc, httpx.HTTPError):
+        return (
+            f"Qdrant cannot be reached or did not answer in time ({type(exc).__name__}); "
+            "check QDRANT_URL and that the node runs"
+        )
+    return None
 
 
 def parse_version(text: str) -> tuple[int, ...]:

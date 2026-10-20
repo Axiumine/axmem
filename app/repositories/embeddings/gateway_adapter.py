@@ -158,7 +158,8 @@ class GatewayEmbeddingsAdapter(EmbeddingsAdapter):
             raise ValueError("GATEWAY_URL is not a valid URL") from None
         if url.scheme not in ("http", "https") or not url.host or "%" in url.host:
             raise ValueError("GATEWAY_URL must be an http:// or https:// URL with a host")
-        if url.userinfo or url.query or url.fragment:
+        # An empty "?" or "#" has no query or fragment to see, but the path would be appended after it
+        if url.userinfo or url.query or url.fragment or "?" in base or "#" in base:
             raise ValueError(
                 "GATEWAY_URL must not carry credentials, a query or a fragment: "
                 "set GATEWAY_TOKEN and GATEWAY_PATH instead",

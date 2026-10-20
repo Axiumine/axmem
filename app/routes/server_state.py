@@ -11,6 +11,7 @@ exactly as before.
 """
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, cast
 
 from fastmcp import FastMCP
@@ -32,6 +33,8 @@ class AxmemMCP(FastMCP[Any]):
 
     token_cache: TokenCache | None
     registry: ToolRegistry
+    # Why a local model can no longer serve, one line per model (empty while all can): read by /health
+    engine_failures: Callable[[], list[str]]
     _instance_permitted_tools: set[str]
     _instance_scopes: frozenset[str]
 

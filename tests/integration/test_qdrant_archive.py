@@ -203,3 +203,83 @@ async def test_an_import_embeds_each_memory_with_the_configured_provider(donor, 
     )
 
     assert originals[1].id in {memory.id for memory, _score in found}
+
+
+async def test_records_that_are_valid_json_but_cannot_be_stored_are_skipped_and_never_stop_the_import(donor, tmp_path):
+    """Each of these lines used to end the whole import with an exception that no line of the file should be able to raise."""
+    stack, _repo, adapter, *_, lines = donor
+    await empty(stack)
+    good = records(lines, "memory")[0]
+    record = json.loads(good)
+    link = json.loads(records(lines, "link")[0])
+    blank = {**record["memory"], "title": " ", "content": " ", "context": " ", "keywords": [], "tags": []}
+    unreadable = [
+        json.dumps({**record, "tenant_id": 12345}),  # UUID(12345) raises AttributeError
+        json.dumps({**record, "tenant_id": None}),
+        json.dumps({**record, "version": float("inf")}),  # int(inf) raises OverflowError
+        json.dumps({**record, "version": float("nan")}),
+        json.dumps({**record, "version": [1]}),
+        json.dumps({**record, "memory": blank}),  # nothing to embed: the embedder refuses it, and with it the whole batch
+        json.dumps({**record, "memory": {**record["memory"], "title": "lone surrogate \ud800"}}),
+        json.dumps({**link, "a": 1}),
+        json.dumps({**link, "tenant_id": None}),
+        '{"kind": "memory", "version": ' + "9" * 5000 + "}",  # an integer of thousands of digits is refused by json itself
+        '{"kind": "mystery", "nested": ' + "[" * 200_000,  # nesting deeper than the interpreter can parse
+    ]
+    body = b"\n".join([
+        lines[0].encode(),
+        *(line.encode() for line in unreadable),
+        b'{"kind": "memory", "memory": "not UTF-8: \xff\xfe"}',
+        good.encode(),
+    ])
+    path = tmp_path / "hostile.jsonl"
+    path.write_bytes(body + b"\n")
+
+    summary = await adapter.import_memories(path)
+
+    assert (summary.memories, summary.links, summary.skipped) == (1, 0, len(unreadable) + 1)
+    assert {str(point.id) async for point in stack.store.iterate(SYSTEM, stack.schema.names.live)} == {record["memory"]["id"]}
+
+
+async def test_a_header_that_is_not_utf8_is_refused_as_a_file_that_is_not_an_export(donor, tmp_path):
+    _stack, _repo, adapter, *_ = donor
+    path = tmp_path / "binary.jsonl"
+    path.write_bytes(b"\xff\xfe\x00 not an export\n")
+
+    with pytest.raises(ValueError, match="first line is not JSON"):
+        await adapter.import_memories(path)
+
+
+# ---- the file an export writes ---------------------------------------------------------------------------
+
+
+async def test_an_export_does_not_follow_a_link_planted_at_its_partial_name(donor, tmp_path):
+    """In a directory that others can write to, a link at ``<target>.partial`` used to redirect the export onto the file it names."""
+    _stack, _repo, adapter, *_ = donor
+    victim = tmp_path / "victim.txt"
+    victim.write_text("precious", encoding="utf-8")
+    victim.chmod(0o644)
+    target = tmp_path / "export.jsonl"
+    target.with_name("export.jsonl.partial").symlink_to(victim)
+
+    await adapter.export_memories(target)
+
+    assert victim.read_text(encoding="utf-8") == "precious"
+    assert victim.stat().st_mode & 0o777 == 0o644
+    assert not target.is_symlink()
+    assert target.stat().st_mode & 0o777 == 0o600
+    assert json.loads(target.read_text(encoding="utf-8").splitlines()[0])["format"] == FORMAT
+    assert not target.with_name("export.jsonl.partial").exists()
+
+
+async def test_an_export_replaces_a_stale_partial_file_of_a_failed_earlier_run(donor, tmp_path):
+    _stack, _repo, adapter, *_ = donor
+    target = tmp_path / "export.jsonl"
+    stale = target.with_name("export.jsonl.partial")
+    stale.write_text("half of an earlier export", encoding="utf-8")
+    stale.chmod(0o644)
+
+    await adapter.export_memories(target)
+
+    assert "half of an earlier export" not in target.read_text(encoding="utf-8")
+    assert target.stat().st_mode & 0o777 == 0o600

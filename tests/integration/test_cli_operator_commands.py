@@ -10,8 +10,10 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
+from pydantic import SecretStr
 
 import app.config.logging_config as logging_config
+from app import bootstrap
 from app.config.settings import settings
 from app.models.memory_models import MemoryCreate
 from app.protocols.maintenance_protocol import ConsistencyReport, NodeReport
@@ -209,3 +211,67 @@ def test_the_parser_hands_operator_commands_to_the_operator_runner(isolated_qdra
 
     assert code == 1
     assert "does not exist yet" in capsys.readouterr().err
+
+
+# ---- failures an operator can fix are one line and exit code 1, bugs keep their traceback ----------------
+
+
+async def test_an_unwritable_backup_directory_is_reported_not_crashed_on(seeded, tmp_path, capsys, monkeypatch):
+    (tmp_path / "a-file").write_text("not a directory")
+    monkeypatch.setattr(settings, "BACKUP_DIR", str(tmp_path / "a-file" / "backups"))
+
+    assert await operator_commands.backup() == 1
+
+    err = capsys.readouterr().err
+    assert err.startswith("Error: Not a directory: ")
+    assert len(err.splitlines()) == 1
+
+
+async def test_an_export_to_a_directory_that_does_not_exist_is_reported_not_crashed_on(seeded, tmp_path, capsys):
+    assert await operator_commands.export_memories(tmp_path / "missing" / "export.jsonl") == 1
+
+    err = capsys.readouterr().err
+    assert err.startswith("Error: No such file or directory: ")
+    assert not list(tmp_path.glob("missing*"))
+
+
+@pytest.mark.parametrize("command", ["export", "backup"])
+async def test_an_api_key_that_qdrant_refuses_is_reported_with_the_setting_to_check(
+    seeded, tmp_path, capsys, monkeypatch, command,
+):
+    """Qdrant answers its version without a key, so the version check passes and the first real request is refused."""
+    monkeypatch.setattr(settings, "QDRANT_API_KEY", SecretStr("not-the-key"))
+
+    code = await (
+        operator_commands.export_memories(tmp_path / "export.jsonl") if command == "export" else operator_commands.backup()
+    )
+
+    assert code == 1
+    assert capsys.readouterr().err == "Error: Qdrant refused the request (HTTP 401): check QDRANT_API_KEY\n"
+
+
+async def test_a_failure_that_is_not_the_operators_to_fix_keeps_its_traceback_and_closes_the_stack(isolated_qdrant):
+    closed = []
+
+    async def bug(_service):
+        raise KeyError("a bug")
+
+    real_create = bootstrap.create_qdrant_stack
+
+    def create_and_watch():
+        stack = real_create()
+        real_close = stack.close
+
+        async def close():
+            closed.append(True)
+            await real_close()
+
+        stack.close = close
+        return stack
+
+    with pytest.MonkeyPatch.context() as patched:
+        patched.setattr(bootstrap, "create_qdrant_stack", create_and_watch)
+        with pytest.raises(KeyError, match="a bug"):
+            await operator_commands._with_service(bug)
+
+    assert closed == [True]

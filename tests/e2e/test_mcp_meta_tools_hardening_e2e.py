@@ -147,6 +147,8 @@ FORGED_RECORD = (
     "Authentication enabled (JWTVerifier) - extracting user from token"
 )
 FORGED_PREFIX = "2026-10-18 12:00:00 - app.middleware.auth - INFO"
+# Short enough to pass the length limit on a tool or category name, so the name reaches the log and its escaping is tested
+SHORT_FORGED_RECORD = FORGED_PREFIX + " - Authentication enabled"
 HOSTILE_MARKER = "FORGED-LINE-MARKER"
 HOSTILE_NAME = f"x\x1b[2J\x1b[31m\n{HOSTILE_MARKER}\rsecond"
 
@@ -258,13 +260,13 @@ class TestLogInjection:
     @pytest.mark.parametrize(
         ("meta_tool", "arguments", "marker"),
         [
-            ("how_to_use_axmem_tool", {"tool_name": "x\n" + FORGED_RECORD}, "how_to_use"),
+            ("how_to_use_axmem_tool", {"tool_name": "x\n" + SHORT_FORGED_RECORD}, "how_to_use"),
             (
                 "execute_axmem_tool",
-                {"tool_name": "x\n" + FORGED_RECORD, "arguments": {}},
+                {"tool_name": "x\n" + SHORT_FORGED_RECORD, "arguments": {}},
                 "execute_axmem_tool",
             ),
-            ("discover_axmem_tools", {"category": "x\n" + FORGED_RECORD}, "discover"),
+            ("discover_axmem_tools", {"category": "x\n" + SHORT_FORGED_RECORD}, "discover"),
         ],
         ids=["how_to_use", "execute", "discover"],
     )

@@ -61,6 +61,18 @@ the scopes of a token are read is described in the
 A request that carries a body must declare `Content-Type: application/json` (or an `application/*+json` type);
 anything else answers `415` before the body is read. A request without a body needs no content type.
 
+A body is also limited in size: one above `REQUEST_BODY_MAX_BYTES` (4 MiB by default, REST routes and `/mcp` alike) is
+answered `413` with `{"error": "The request body is larger than the limit of <n> bytes"}`. A declared `Content-Length`
+above the limit is refused without reading the body, and a chunked body is refused as soon as it passes the limit.
+
+### Limits of the fields
+
+A field above its limit answers `400` (the settings are in the [Configuration Reference](./configuration.md)):
+`query` and `query_context` of a search (`MEMORY_QUERY_MAX_LENGTH`, `MEMORY_QUERY_CONTEXT_MAX_LENGTH`), the number of
+`source_files` of a memory (`MEMORY_SOURCE_FILES_MAX_COUNT`), the number of `related_ids` of a link request
+(`MEMORY_LINKS_MAX_PER_REQUEST`) and the `reason` of `DELETE /api/v1/memories/{id}`, which must be a text that is not
+blank (`MEMORY_OBSOLETE_REASON_MAX_LENGTH`; a number or an object is refused and the memory stays active).
+
 ### GET /api/v1/auth/info
 
 Public endpoint (no credential) for clients to detect the mode before sending one:
@@ -74,7 +86,7 @@ Public endpoint (no credential) for clients to detect the mode before sending on
 ## Common Response Codes
 
 | Code | Description |
-|------|-------------|
+|---|---|
 | 200 | Success |
 | 201 | Created |
 | 400 | Bad Request (validation error, malformed or non-object JSON body, `NaN`/infinite numbers in a body, invalid query parameter) |
@@ -82,6 +94,7 @@ Public endpoint (no credential) for clients to detect the mode before sending on
 | 403 | Forbidden (the instance ceiling or the token's scopes do not permit the tool the route stands for; on a server without a credential, a request with a foreign `Origin`) |
 | 404 | Not Found (including a path id that is not a UUID, such as `/api/v1/memories/abc`, and a memory that belongs to another tenant) |
 | 409 | Conflict (concurrent changes to the same memory kept an update or an obsolete mark from being applied; the request can be repeated) |
+| 413 | Content Too Large (a request body above `REQUEST_BODY_MAX_BYTES`) |
 | 415 | Unsupported Media Type (a body that is not declared as `application/json`) |
 | 421 | Misdirected Request (on a server without a credential, a `Host` that is not `localhost` or a loopback address) |
 | 422 | Unprocessable Entity (`InvalidStateTransitionError` -- for example marking an already obsolete memory obsolete) |
@@ -104,12 +117,27 @@ Public endpoint (no credential) for clients to detect the mode before sending on
 
 ### GET /health
 
-Health check endpoint (no authentication required).
+Health check endpoint (no authentication required). It answers `200` while the service can serve and `503` otherwise:
+while it starts (`"status": "initialising"`) and after a local TensorRT model met a CUDA error that it cannot recover
+from (`"status": "unhealthy"`: every later embedding or rerank call fails until the process restarts, so a probe or a
+supervisor should restart the server).
 
 **Response:**
 ```json
 {
   "status": "healthy",
+  "timestamp": "2024-12-05T10:00:00Z",
+  "service": "axmem",
+  "version": "0.3.0"
+}
+```
+
+**Response (503, a model can no longer serve):**
+```json
+{
+  "status": "unhealthy",
+  "message": "A model can no longer serve; restart the server",
+  "failures": ["the embedder engine is unusable after an earlier failure (cudaErrorIllegalAddress: ...); restart the server"],
   "timestamp": "2024-12-05T10:00:00Z",
   "service": "axmem",
   "version": "0.3.0"
@@ -202,7 +230,7 @@ created the first time it is used, and each tenant has its own scopes. A blank o
 | Field | Type | Description |
 |-------|------|-------------|
 | `source_repo` | string | Repository source (e.g., 'owner/repo', max 200 chars) |
-| `source_files` | string[] | List of file paths that informed this memory (each max 4096 chars) |
+| `source_files` | string[] | List of file paths that informed this memory (at most 50 paths, each max 4096 chars) |
 | `source_url` | string | URL to original source material (max 2048 chars) |
 | `confidence` | float | Encoding confidence score (0.0-1.0) |
 | `encoding_agent` | string | Agent/process that created this memory (max 100 chars) |
@@ -276,14 +304,14 @@ Mark a memory as obsolete (soft delete).
 ```
 
 **Errors:**
-- `400` when `superseded_by` is not a UUID memory id.
+- `400` when `superseded_by` is not a UUID memory id, or when `reason` is not a text (a number, an object), is blank or is longer than `MEMORY_OBSOLETE_REASON_MAX_LENGTH` (500) characters; the memory stays active.
 - `404` with `Memory not found` when the memory does not exist, or with `Superseding memory {id} not found` when `superseded_by` does not reference one of your memories.
 - `409` when concurrent changes kept the mark from being applied; repeat the request.
 - `422` when the memory is already obsolete (restore it first; the original reason and timestamp are kept) or when `superseded_by` is the memory's own id.
 
 ### POST /api/v1/memories/search
 
-Semantic search across memories. A blank (whitespace-only) `query` is rejected with `400`.
+Semantic search across memories. A blank (whitespace-only) `query` is rejected with `400`, and so is a `query` or `query_context` longer than `MEMORY_QUERY_MAX_LENGTH` or `MEMORY_QUERY_CONTEXT_MAX_LENGTH` (2000 characters each).
 
 **Request Body:**
 ```json

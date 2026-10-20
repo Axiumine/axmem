@@ -7,8 +7,6 @@ import sys
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 
-from app.exceptions import ClusterInconsistentError, QdrantStartupError
-
 REPORT_LIMIT = 50
 
 
@@ -22,12 +20,20 @@ def _start_logging() -> None:
 
 
 async def _with_service(run: Callable, *, create_collections: bool = False) -> int:
-    """Open the Qdrant stack, run ``run(service)`` and close the stack; startup failures become exit code 1.
+    """Open the Qdrant stack, run ``run(service)`` and close the stack; a failure an operator can fix is exit code 1.
 
     ``create_collections`` makes the collections exist, with the layout the settings ask for, before ``run``
     (a command that writes into a Qdrant that may be new, as an import after the loss of a node does).
+
+    The failures an operator really meets (Qdrant down or refusing the key, a model that cannot start, a file
+    that cannot be read or written, a full disk, a JSON file that is damaged) end as ``Error: <cause>`` and
+    exit code 1. Anything else is a bug and keeps its traceback.
     """
-    from app.bootstrap import create_backup_service, create_qdrant_stack
+    from app.bootstrap import (
+        create_backup_service,
+        create_qdrant_stack,
+        operator_failure,
+    )
 
     _start_logging()
     stack = create_qdrant_stack()
@@ -37,8 +43,11 @@ async def _with_service(run: Callable, *, create_collections: bool = False) -> i
         else:
             await stack.pool.require_supported_server()
         return await run(create_backup_service(stack))
-    except (QdrantStartupError, ClusterInconsistentError, FileNotFoundError, ValueError) as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+    except Exception as exc:
+        cause = operator_failure(exc)
+        if cause is None:
+            raise
+        print(f"Error: {cause}", file=sys.stderr)
         return 1
     finally:
         await stack.close()

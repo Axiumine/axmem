@@ -11,10 +11,12 @@ HTTP server to start.
 - Runs by default
 """
 from contextlib import asynccontextmanager
+from functools import partial
 
 import pytest
 from fastmcp import FastMCP
 
+from app.bootstrap import engine_failures
 from app.repositories.qdrant.memory_repository import QdrantStack
 from app.routes.api import (
     auth,
@@ -77,7 +79,8 @@ async def build_app(embedding_adapter, reranker_adapter, auth_provider=None):
         """Application lifecycle with the services attached"""
         memory_service = MemoryService(memory_repository)
 
-        # Store services on FastMCP instance
+        # Store services on FastMCP instance, the models first as in main.lifespan
+        mcp.engine_failures = partial(engine_failures, (embedding_adapter, reranker_adapter))
         mcp.memory_service = memory_service
 
         # Create and attach registry

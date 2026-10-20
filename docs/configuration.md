@@ -55,6 +55,12 @@ uv run main.py --transport http
 - **Note**: If changed, update your MCP client configuration
 - **Example**: `SERVER_PORT=8020`
 
+### `REQUEST_BODY_MAX_BYTES`
+- **Default**: `4194304` (4 MiB), at least `1024`
+- **Description**: The largest request body the HTTP server accepts, for the REST routes and for `/mcp`. A request that declares a larger `Content-Length` is answered `413` without being read; a body that declares none (chunked) is counted as it arrives and answered `413` when it passes the limit. The server used to read any body whole into memory before looking at it
+- **Note**: The default is far above what the limits of a memory allow (a memory with every field at its maximum is well under 1 MiB). Raise it only together with `MEMORY_CONTENT_MAX_LENGTH` or the other limits below if you raise those by a large factor
+- **Example**: `REQUEST_BODY_MAX_BYTES=4194304`
+
 ### `CORS_ENABLED`, `CORS_ORIGINS`
 - **Default**: `false`, `["*"]`
 - **Description**: Adds CORS headers to the HTTP server for browser clients. `CORS_ORIGINS` is a JSON list of the origins that may call it. With `AUTH_MODE=none` and `CORS_ENABLED=true` the origins you name here (a `*` does not count) also pass the `Host`/`Origin` check of a credential-free server, see [Authentication Configuration](#authentication-configuration); any other cross-origin request is refused with `403`
@@ -69,6 +75,7 @@ uv run main.py --transport http
 - **Default**: `INFO`
 - **Description**: Logging verbosity level
 - **Values**: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`
+- **Note**: Matched case-insensitively, like `LOG_FORMAT`. Any other value stops every command with `Error: ...` naming `LOG_LEVEL` and exit code 1; an empty value keeps the default. Log messages and the values of `extra` fields are scanned for secrets (tokens, passwords, API keys, credentials in URLs) before they are written, and a text longer than 32768 characters is shortened to its head and tail first
 - **Example**: `LOG_LEVEL=DEBUG` (for troubleshooting)
 
 ### `LOG_FORMAT`
@@ -77,6 +84,7 @@ uv run main.py --transport http
 - **Values**:
   - `console` - Human-readable format (recommended for development)
   - `json` - Structured JSON format (recommended for production)
+- **Colour**: `console` colours the level name only when stderr is a terminal and `NO_COLOR` is unset or empty (any other value turns colour off, see https://no-color.org); a pipe, a file or a log collector gets plain text
 - **Note**: Matched case-insensitively. Any other value stops startup with an error naming the setting; an empty value keeps the default
 - **Example**: `LOG_FORMAT=json`
 
@@ -527,6 +535,27 @@ one later does not make memories that were stored under the old limit unreadable
 - **Purpose**: Keeps provenance paths bounded; the default matches the Linux `PATH_MAX`
 - **Note**: Applies when memories are created or updated; memories stored earlier stay readable
 - **Example**: `MEMORY_SOURCE_FILE_MAX_LENGTH=4096`
+
+### `MEMORY_SOURCE_FILES_MAX_COUNT`
+- **Default**: `50`
+- **Description**: Maximum number of `source_files` paths per memory (REST and MCP, create and update). The paths count towards the size of the stored memory but not towards the token budget of a search, so without a cap a memory could be arbitrarily large and still look small
+- **Note**: Applies when memories are created or updated; memories stored earlier stay readable
+- **Example**: `MEMORY_SOURCE_FILES_MAX_COUNT=50`
+
+### `MEMORY_QUERY_MAX_LENGTH`, `MEMORY_QUERY_CONTEXT_MAX_LENGTH`
+- **Default**: `2000`, `2000`
+- **Description**: Maximum characters of a search `query` and of its `query_context` (REST and MCP). Both go through the embedder and the reranker, whose time grows with their length and which serve every tenant through one worker each; a text above the limit is refused (`400` over REST, a tool error over MCP) before any model runs
+- **Example**: `MEMORY_QUERY_MAX_LENGTH=2000`
+
+### `MEMORY_OBSOLETE_REASON_MAX_LENGTH`
+- **Default**: `500`
+- **Description**: Maximum characters of the reason given to `mark_memory_obsolete` or `DELETE /api/v1/memories/{id}`. The reason must be a text that is not blank and can be encoded as UTF-8; a number, an object, a blank text or one above the limit is refused (`400` over REST, a tool error over MCP) and the memory stays as it was. The reason is stored and returned with every read of the memory
+- **Example**: `MEMORY_OBSOLETE_REASON_MAX_LENGTH=500`
+
+### `MEMORY_LINKS_MAX_PER_REQUEST`
+- **Default**: `50`
+- **Description**: Most memory ids that one `link_memories` or `unlink_memories` call, or one `POST /api/v1/memories/{id}/links`, may name (duplicates and the memory itself are dropped before counting on MCP)
+- **Example**: `MEMORY_LINKS_MAX_PER_REQUEST=50`
 
 ### `MEMORY_TOKEN_BUDGET`
 - **Default**: `8000`
@@ -1007,7 +1036,7 @@ DENSE_SEARCH_CANDIDATES=100
 ## Troubleshooting
 
 ### Qdrant Connection Issues
-- The server refuses to start with `Qdrant at <url> cannot be reached or did not report its version` when no node answers or the API key is wrong: check `QDRANT_URL` and `QDRANT_API_KEY`. A node that does not answer while another one does is logged (`A Qdrant node did not answer; going on with the others`) and skipped, so a cluster that lost a node still starts; every node that answers must still be version 1.19.0 or later
+- The server refuses to start with `Error: Qdrant at <url> cannot be reached or did not report its version` when no node answers: check `QDRANT_URL` and that the node runs. Qdrant answers its version request without a key, so a wrong or missing API key is found by the first real request and ends the start (and `re-embed`, `backup`, `export` and the other operator commands) with `Error: Qdrant refused the request (HTTP 401): check QDRANT_API_KEY` (HTTP 403 the same). The checks `serve` makes before it binds anything (the scope ceiling parses, the embedder and the reranker build, Qdrant answers and holds the layout the settings describe) all end as one `Error: <cause>` line with exit code 1, never as a traceback. A node that does not answer while another one does is logged (`A Qdrant node did not answer; going on with the others`) and skipped, so a cluster that lost a node still starts; every node that answers must still be version 1.19.0 or later
 - `Settings of an earlier version are ignored (...)` at start: the environment or a dotenv file still names a setting of the SQL store, the OAuth providers, `DEFAULT_USER_*`, the FastEmbed and ONNX providers, a removed feature, or `FORGETFUL_SCOPES`, `FORGETFUL_SERVER` or `FORGETFUL_TOKEN`. Axmem reads none of them; the warning names each one and what replaces it (an old `FORGETFUL_SCOPES` without `AXMEM_SCOPES` stops the start instead, see above). Data held in a SQL database is not read or migrated
 - `Qdrant <version> at <url> is too old: version 1.19.0 or later is required`: upgrade the node
 - `Qdrant collection <name> does not match the settings`: the shard, replica or vector layout of the existing collection differs from `QDRANT_*` or `EMBEDDING_DIMENSIONS`; see above

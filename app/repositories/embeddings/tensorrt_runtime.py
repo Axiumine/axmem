@@ -16,7 +16,7 @@ import logging
 import os
 import queue
 from collections.abc import Iterator, Mapping
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -400,17 +400,34 @@ class TensorRTEngine:
         for _ in range(contexts):
             self._slots.put(_Slot(engine, self.input_names, output, profile))
 
+    @property
+    def failure(self) -> str:
+        """Why the engine refuses all work, or an empty string while it can serve."""
+        return self._failure
+
     def infer(self, arrays: Mapping[str, np.ndarray]) -> np.ndarray:
         """Run the model on ``arrays`` (one per input name) and return its output."""
         self._ensure_usable()
         if set(arrays) != set(self.input_names):
             raise TensorRTError(f"the model takes the inputs {sorted(self.input_names)}, got {sorted(arrays)}")
         with self._borrowed() as slot:
-            return slot.run(arrays)
+            try:
+                return slot.run(arrays)
+            except TensorRTError:
+                # A sticky CUDA error (an illegal address, a hardware fault) fails this call and every later one
+                # at the call itself, so the guard in the callers (``verify``, which runs after a call that
+                # returned) is never reached: note it here, or the health route would report a poisoned engine
+                # as healthy for the life of the process.
+                with suppress(TensorRTError):
+                    self._record_cuda_error()
+                raise
 
     def verify(self) -> None:
         """Cheap guard: raise, and refuse all later work, when CUDA recorded an error for this thread."""
         self._ensure_usable()
+        self._record_cuda_error()
+
+    def _record_cuda_error(self) -> None:
         try:
             cuda_check(cudart.cudaPeekAtLastError())
         except TensorRTError as exc:

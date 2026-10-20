@@ -43,3 +43,7 @@ class QdrantStartupError(RuntimeError):
 
 class ClusterInconsistentError(RuntimeError):
     """The Qdrant nodes do not hold the same data, so a backup taken now could mix states of different instants."""
+
+
+class OperatorCommandError(RuntimeError):
+    """An operator command (backup, restore, export or import) cannot finish; the message says why and what to check."""

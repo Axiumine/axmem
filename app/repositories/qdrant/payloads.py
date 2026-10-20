@@ -4,6 +4,7 @@ Every field a filter, an ordering or a conditional write reads is written on eve
 type (an integer version, a boolean ``is_obsolete``, an RFC 3339 timestamp): a condition on a value of
 another type matches nothing and raises no error.
 """
+import json
 import uuid
 from collections.abc import Iterable
 from datetime import UTC, datetime
@@ -99,6 +100,12 @@ def refreshed_payload(current: dict[str, Any], *, token: str) -> dict[str, Any]:
     return {**current, VERSION_KEY: int(current[VERSION_KEY]) + 1, TOKEN_KEY: token}
 
 
+def _reason_of(stored: Any) -> str | None:
+    """The obsolete reason a point holds as text. An earlier version stored whatever a client sent (a number, an
+    object), and such a point must stay readable, so that a read, an export and a re-embed do not fail on it."""
+    return stored if stored is None or isinstance(stored, str) else json.dumps(stored, ensure_ascii=False)
+
+
 def memory_from_point(point: Point, linked: Iterable[UUID] = ()) -> Memory:
     """The memory a point stores."""
     payload = point.payload
@@ -113,7 +120,7 @@ def memory_from_point(point: Point, linked: Iterable[UUID] = ()) -> Memory:
         updated_at=datetime.fromisoformat(payload["updated_at"]),
         obsoleted_at=datetime.fromisoformat(payload["obsoleted_at"]) if payload.get("obsoleted_at") else None,
         is_obsolete=bool(payload["is_obsolete"]),
-        obsolete_reason=payload.get("obsolete_reason"),
+        obsolete_reason=_reason_of(payload.get("obsolete_reason")),
         **{name: payload[name] for name in PLAIN_FIELDS},
     )
 

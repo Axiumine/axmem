@@ -281,3 +281,97 @@ async def test_a_qdrant_start_up_refusal_ends_the_run_with_status_1_and_closes_t
     assert exit_info.value.code == 1
     assert "ERROR: Qdrant collection axmem_memories does not match the settings" in capsys.readouterr().err
     assert stack.closed
+
+
+class _Stack:
+    closed = False
+
+    async def close(self):
+        self.closed = True
+
+
+@pytest.fixture
+def reembed_run(monkeypatch):
+    """``main._run_reembed`` with the logging set-up and the stack replaced, and ``_reembed`` and the embedder to set."""
+    import app.bootstrap
+    import app.config.logging_config
+
+    stack = _Stack()
+    monkeypatch.setattr(app.config.logging_config, "configure_logging", lambda **_: None)
+    monkeypatch.setattr(main.atexit, "register", lambda *_: None)
+    monkeypatch.setattr(app.bootstrap, "get_embedding_adapter", lambda: object())
+    monkeypatch.setattr(app.bootstrap, "create_qdrant_stack", lambda: stack)
+    return stack, monkeypatch, app.bootstrap
+
+
+@pytest.mark.parametrize(
+    ("error", "shown"),
+    [
+        (PermissionError(13, "Permission denied", "/var/lib/qdrant"), "Permission denied: /var/lib/qdrant"),
+        (ValueError("OPENAI_API_KEY must be configured"), "OPENAI_API_KEY must be configured"),
+    ],
+)
+async def test_any_failure_an_operator_can_fix_ends_the_run_with_a_line_and_closes_the_stack(reembed_run, capsys, error, shown):
+    stack, monkeypatch, _bootstrap = reembed_run
+
+    async def fail(_stack, _adapter, _args):
+        raise error
+
+    monkeypatch.setattr(main, "_reembed", fail)
+
+    with pytest.raises(SystemExit) as exit_info:
+        await main._run_reembed(SimpleNamespace(batch_size=5, dry_run=False))
+
+    assert exit_info.value.code == 1
+    assert f"\n  ERROR: {shown}\n" in capsys.readouterr().err
+    assert stack.closed
+
+
+async def test_a_bug_in_the_run_keeps_its_traceback_and_the_stack_is_closed(reembed_run):
+    stack, monkeypatch, _bootstrap = reembed_run
+
+    async def bug(_stack, _adapter, _args):
+        raise KeyError("a bug")
+
+    monkeypatch.setattr(main, "_reembed", bug)
+
+    with pytest.raises(KeyError, match="a bug"):
+        await main._run_reembed(SimpleNamespace(batch_size=5, dry_run=False))
+
+    assert stack.closed
+
+
+@pytest.mark.parametrize(
+    ("error", "shown"),
+    [
+        (ValueError("OPENAI_API_KEY must be configured for OpenAIEmbeddingsAdapter"), "OPENAI_API_KEY must be configured"),
+        (ModuleNotFoundError("No module named 'ollama'", name="ollama"), "not installed (ollama)"),
+    ],
+)
+async def test_an_embedder_that_cannot_be_built_ends_the_run_with_a_line(reembed_run, capsys, error, shown):
+    _stack, monkeypatch, bootstrap = reembed_run
+
+    def cannot_build():
+        raise error
+
+    monkeypatch.setattr(bootstrap, "get_embedding_adapter", cannot_build)
+
+    with pytest.raises(SystemExit) as exit_info:
+        await main._run_reembed(SimpleNamespace(batch_size=5, dry_run=False))
+
+    assert exit_info.value.code == 1
+    err = capsys.readouterr().err
+    assert err.startswith("Error: the embedder cannot start: ")
+    assert shown in err
+
+
+async def test_a_bug_while_the_embedder_is_built_keeps_its_traceback(reembed_run):
+    _stack, monkeypatch, bootstrap = reembed_run
+
+    def bug():
+        raise KeyError("a bug")
+
+    monkeypatch.setattr(bootstrap, "get_embedding_adapter", bug)
+
+    with pytest.raises(KeyError, match="a bug"):
+        await main._run_reembed(SimpleNamespace(batch_size=5, dry_run=False))

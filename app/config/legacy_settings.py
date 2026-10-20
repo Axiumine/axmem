@@ -162,7 +162,9 @@ def warn_about_legacy_settings(
     found = legacy_setting_names(environ, dotenv_paths)
     if not found:
         return
-    listing = "; ".join(f"{name}: {advice}" for name, advice in found.items())
+    # "NAME (advice)", never "NAME: advice": the log filter masks the word after "token:" or "password:", and the
+    # names of the old settings (POSTGRES_PASSWORD, FORGETFUL_TOKEN, ...) would have it drop a word of the advice
+    listing = "; ".join(f"{name} ({advice})" for name, advice in found.items())
     scopes = ""
     if "FORGETFUL_SCOPES" in found and settings.AXMEM_SCOPES.strip() == "*":
         scopes = f" {SCOPES_NOTE}"

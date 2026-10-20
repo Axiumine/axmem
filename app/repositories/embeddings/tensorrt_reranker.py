@@ -118,6 +118,11 @@ class TensorRTRerankAdapter:
         logits = self._engine.infer({name: features[name] for name in self._engine.input_names if name in features})
         return logits.reshape(len(encodings), -1)[:, 0].astype(np.float32)
 
+    def unusable_reason(self) -> str:
+        """Why this reranker can serve no more (an engine that met a sticky CUDA error), or an empty string."""
+        failure = self._engine.failure
+        return f"the reranker engine is unusable after an earlier failure ({failure}); restart the server" if failure else ""
+
     def close(self) -> None:
         """Wait for running jobs, then release the engine and its device memory."""
         self._executor.shutdown(wait=True)

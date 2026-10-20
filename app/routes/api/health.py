@@ -21,7 +21,9 @@ def register(mcp: AxmemMCP):
         """Health check endpoint for the service.
 
         Returns 503 until lifespan() completes and services are attached to mcp.
-        Returns 200 once fully initialized.
+        Returns 503 again when a local model can no longer serve (a TensorRT engine that met a sticky CUDA error
+        refuses all work until the process restarts), so that a probe or a supervisor restarts the server.
+        Returns 200 once fully initialized and while every model can serve.
         """
         # Check if services have been initialized (set at end of lifespan)
         if not hasattr(mcp, "memory_service") or mcp.memory_service is None:
@@ -30,6 +32,21 @@ def register(mcp: AxmemMCP):
                 {
                     "status": "initialising",
                     "message": "Service starting",
+                    "timestamp": datetime.now(UTC).isoformat(),
+                    "service": settings.SERVICE_NAME,
+                    "version": settings.SERVICE_VERSION,
+                },
+                status_code=503,
+            )
+
+        failures = mcp.engine_failures()
+        if failures:
+            logger.error("Health check failed: %s", "; ".join(failures))
+            return JSONResponse(
+                {
+                    "status": "unhealthy",
+                    "message": "A model can no longer serve; restart the server",
+                    "failures": failures,
                     "timestamp": datetime.now(UTC).isoformat(),
                     "service": settings.SERVICE_NAME,
                     "version": settings.SERVICE_VERSION,
@@ -46,9 +63,3 @@ def register(mcp: AxmemMCP):
         logger.info("Health check completed", extra={"status": health_status.status})
 
         return JSONResponse(health_status.model_dump(mode="json"))
-
-
-
-
-
-

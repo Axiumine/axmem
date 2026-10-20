@@ -65,3 +65,31 @@ async def test_rebuild_embeddings_respects_similarity_cutoff(mcp_client, embeddi
     assert rebuilt.data["rebuilt_ids"] == [anchor.data["id"]]
     assert fetched.data["linked_memory_ids"] == [related.data["id"]]
     assert unrelated.data["id"] not in fetched.data["linked_memory_ids"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failing_step", ["find_similar_memories_scored", "create_links_batch"])
+async def test_create_memory_succeeds_without_links_when_the_linking_after_the_insert_fails(
+    mcp_client, qdrant_app, monkeypatch, caplog, failing_step,
+):
+    """The memory is stored before linking starts: failing the call there made the client retry and store it twice."""
+    await create_through_the_tool(mcp_client, ANCHOR)
+    repository = qdrant_app.memory_service.memory_repo
+
+    async def node_went_away(*_args, **_kwargs):
+        raise RuntimeError("the node went away")
+
+    monkeypatch.setattr(repository, failing_step, node_went_away)
+
+    with caplog.at_level("WARNING"):
+        related = await create_through_the_tool(mcp_client, RELATED)
+
+    assert related.data["similar_memories"] == []
+    assert related.data["linked_memory_ids"] == []
+    assert "Automatic linking failed after memory" in caplog.text
+    assert related.data["id"] in caplog.text
+    stored = await mcp_client.call_tool("execute_axmem_tool", {
+        "tool_name": "get_recent_memories", "arguments": {},
+    })
+    assert related.data["id"] in {memory["id"] for memory in stored.data["memories"]}
+    assert stored.data["total_count"] == 2

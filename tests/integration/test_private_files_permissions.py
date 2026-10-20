@@ -11,6 +11,7 @@ from app.utils import private_files
 from app.utils.private_files import (
     create_private_file,
     make_private_dir,
+    open_new_private_text_file,
     restrict_to_owner,
 )
 
@@ -137,3 +138,57 @@ class TestCreatePrivateFile:
         monkeypatch.undo()
         assert target.read_bytes() == b"written by the other creator"
         assert _mode(target) == 0o600
+
+
+@posix_only
+class TestOpenNewPrivateTextFile:
+    def test_a_new_file_is_owner_only_and_written_as_utf8(self, tmp_path):
+        target = tmp_path / "export.partial"
+
+        with open_new_private_text_file(target) as out:
+            out.write("caf\u00e9\n")
+
+        assert target.read_bytes() == "caf\u00e9\n".encode()
+        assert _mode(target) == 0o600
+
+    def test_a_stale_file_is_replaced_by_an_owner_only_one(self, tmp_path):
+        target = tmp_path / "export.partial"
+        target.write_text("stale")
+        target.chmod(0o644)
+
+        with open_new_private_text_file(target) as out:
+            out.write("fresh")
+
+        assert target.read_text() == "fresh"
+        assert _mode(target) == 0o600
+
+    def test_a_link_is_removed_and_never_written_through(self, tmp_path):
+        victim = tmp_path / "victim.txt"
+        victim.write_text("precious")
+        target = tmp_path / "export.partial"
+        target.symlink_to(victim)
+
+        with open_new_private_text_file(target) as out:
+            out.write("export")
+
+        assert victim.read_text() == "precious"
+        assert not target.is_symlink()
+        assert target.read_text() == "export"
+
+    def test_a_link_planted_between_the_removal_and_the_creation_is_refused(self, tmp_path, monkeypatch):
+        victim = tmp_path / "victim.txt"
+        victim.write_text("precious")
+        target = tmp_path / "export.partial"
+        real_open = os.open
+
+        def open_after_a_link_was_planted(path, flags, mode=0o777):
+            Path(path).symlink_to(victim)
+            return real_open(path, flags, mode)
+
+        monkeypatch.setattr(os, "open", open_after_a_link_was_planted)
+
+        with pytest.raises(FileExistsError):
+            open_new_private_text_file(target)
+
+        monkeypatch.undo()
+        assert victim.read_text() == "precious"

@@ -5,6 +5,8 @@ stub injected through the client-factory seam. Everything else (selection preced
 URL normalization, env file line editing) runs real code.
 """
 
+import errno
+
 import pytest
 
 from app.config.settings import settings
@@ -297,6 +299,28 @@ async def test_auth_login_bad_scheme_exits_one_with_clean_error(monkeypatch, tmp
     err = capsys.readouterr().err
     assert "Unsupported server URL scheme" in err
     assert "Traceback" not in err
+
+
+@pytest.mark.parametrize(
+    ("error", "shown"),
+    [
+        (PermissionError(errno.EACCES, "Permission denied", "/home/user/.config/axmem/env"), "Permission denied: /home/user/.config/axmem/env"),
+        (OSError(errno.ENOSPC, "No space left on device"), "No space left on device"),
+    ],
+    ids=["read-only-settings-file", "full-disk"],
+)
+async def test_auth_login_that_cannot_save_the_server_exits_one_with_clean_error(monkeypatch, capsys, error, shown):
+    """``upsert_env_var`` raises on purpose when the user locked the file: after the connection was checked, not a traceback."""
+    async def cannot_save(server):
+        raise error
+
+    monkeypatch.setattr(auth_commands, "login", cannot_save)
+
+    code = await _run_auth_command(_args(["auth", "login", "--server", "http://remote:8020"]))
+
+    assert code == 1
+    err = capsys.readouterr().err
+    assert err == f"Error: {shown}\n"
 
 
 async def test_auth_status_bad_scheme_exits_one_with_clean_error(monkeypatch, tmp_path, capsys):

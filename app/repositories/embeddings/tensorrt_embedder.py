@@ -150,6 +150,11 @@ class TensorRTEmbeddingsAdapter(EmbeddingsAdapter):
         with np.errstate(all="ignore"):  # a zero vector divides to NaN, which embed() refuses
             return cls / np.linalg.norm(cls, axis=1, keepdims=True)
 
+    def unusable_reason(self) -> str:
+        """Why this embedder can serve no more (an engine that met a sticky CUDA error), or an empty string."""
+        failure = self._engine.failure
+        return f"the embedder engine is unusable after an earlier failure ({failure}); restart the server" if failure else ""
+
     def close(self) -> None:
         """Wait for running jobs, then release the engine and its device memory."""
         self._executor.shutdown(wait=True)

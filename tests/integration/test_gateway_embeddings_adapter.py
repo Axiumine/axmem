@@ -533,6 +533,10 @@ def test_the_url_must_be_http_with_a_host(monkeypatch, url):
     "https://user:pass@gateway.example.test",
     "https://gateway.example.test/?token=abc",
     "https://gateway.example.test/#frag",
+    "https://gateway.example.test/?",  # an empty marker has no query to see, but the path would be appended after it
+    "https://gateway.example.test?",
+    "https://gateway.example.test/#",
+    "https://gateway.example.test/v1?#",
 ])
 def test_the_url_carries_no_credentials_query_or_fragment(monkeypatch, url):
     monkeypatch.setattr(settings, "GATEWAY_URL", url)

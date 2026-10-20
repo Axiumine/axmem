@@ -106,4 +106,4 @@ async def test_memory_tools_via_mcp_with_info_logging(mcp_client, info_logging_m
         r for r in info_logging_mcp.records
         if r.name == "app.services.memory_service" and r.getMessage() == "querying primary memories"
     )
-    assert record.query == "info logging"
+    assert record.query_length == len("info logging")  # the length, not the text of the query
