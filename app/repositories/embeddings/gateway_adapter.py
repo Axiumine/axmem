@@ -5,6 +5,7 @@ comes back before any vector reaches the database: the count, the width and the 
 Every credential, header name and body field comes from settings.
 """
 import asyncio
+import json
 import logging
 import math
 import re
@@ -17,6 +18,7 @@ from itertools import batched
 import httpx
 
 from app.config.settings import settings
+from app.exceptions import EmbeddingUnavailableError
 from app.protocols.embedding_protocol import EMBEDDING_BATCH_LIMIT, EmbeddingsAdapter
 from app.utils.url_helpers import redact_url
 
@@ -25,6 +27,8 @@ logger = logging.getLogger(__name__)
 # Statuses worth another attempt: rate limited, bad gateway, unavailable, gateway timeout.
 # Anything else that is not 200 (403 and 422 included) fails at once.
 _RETRYABLE_STATUSES = frozenset({429, 502, 503, 504})
+# Refusals that concern the call as a whole (credentials, budget, model approval, address), not one of its texts
+_REFUSING_STATUSES = frozenset({401, 403, 404})
 _MAX_ATTEMPTS = 4
 _BACKOFF_BASE_SECONDS = 0.5
 # A longer wait (a large Retry-After) is shortened to this, so one request cannot park a re-embed.
@@ -37,6 +41,10 @@ _REQUIRED_SETTINGS = ("GATEWAY_URL", "GATEWAY_BACKEND", "GATEWAY_MODEL", "GATEWA
 
 class GatewayEmbeddingError(RuntimeError):
     """The gateway refused a request, stayed unavailable, or answered with unusable vectors."""
+
+
+class GatewayUnavailableError(GatewayEmbeddingError, EmbeddingUnavailableError):
+    """A gateway failure that no single text caused: no credential or model, retries used up, a reply of the wrong shape."""
 
 
 def _retry_after_seconds(response: httpx.Response) -> float | None:
@@ -78,7 +86,7 @@ def _vector(raw: object, index: int, width: int) -> list[float]:
     if not isinstance(raw, list) or any(type(value) not in (int, float) for value in raw):
         raise GatewayEmbeddingError(f"Embeddings gateway returned a malformed vector at position {index}")
     if len(raw) != width:
-        raise GatewayEmbeddingError(
+        raise GatewayUnavailableError(
             f"Embeddings gateway returned {len(raw)}-dimensional vectors but EMBEDDING_DIMENSIONS is {width}. "
             "Set EMBEDDING_DIMENSIONS to the width the gateway's model produces (or GATEWAY_SUPPORTS_DIMENSIONS=true "
             "if it can produce the configured width), then run --re-embed.",
@@ -115,7 +123,7 @@ class GatewayEmbeddingsAdapter(EmbeddingsAdapter):
         self.backend = settings.GATEWAY_BACKEND.strip()
         self.model = settings.GATEWAY_MODEL.strip()
         self.agent_id = settings.GATEWAY_AGENT_ID.strip()
-        self.metadata = dict(settings.GATEWAY_METADATA)
+        self.metadata = self._metadata(settings.GATEWAY_METADATA)
         self.supports_dimensions = settings.GATEWAY_SUPPORTS_DIMENSIONS
         self._transport = transport
         self._sleep = sleep
@@ -127,6 +135,20 @@ class GatewayEmbeddingsAdapter(EmbeddingsAdapter):
             "gateway_model": self.model,
             "supports_dimensions": self.supports_dimensions,
         })
+
+    @staticmethod
+    def _metadata(raw: str) -> dict[str, str]:
+        """The metadata object of ``GATEWAY_METADATA``; a blank value means none. Settings load it as plain text so
+        that a bad value stops only the gateway provider, not a server that uses another one."""
+        if not raw.strip():
+            return {}
+        try:
+            value = json.loads(raw)
+        except ValueError:
+            value = None
+        if not isinstance(value, dict) or not all(isinstance(item, str) for item in value.values()):
+            raise ValueError("GATEWAY_METADATA must be a JSON object of string values")
+        return value
 
     @staticmethod
     def _endpoint(base: str, path: str) -> str:
@@ -212,10 +234,11 @@ class GatewayEmbeddingsAdapter(EmbeddingsAdapter):
                     return self._vectors(response, len(texts))
                 failure = f"HTTP {response.status_code}, code {_error_code(response)}"
                 if response.status_code not in _RETRYABLE_STATUSES:
-                    raise GatewayEmbeddingError(f"Embeddings gateway refused the request: {failure}")
+                    refused = GatewayUnavailableError if response.status_code in _REFUSING_STATUSES else GatewayEmbeddingError
+                    raise refused(f"Embeddings gateway refused the request: {failure}")
                 wait = _retry_after_seconds(response)
             if attempt >= self._max_attempts:
-                raise GatewayEmbeddingError(
+                raise GatewayUnavailableError(
                     f"Embeddings gateway failed after {attempt} attempts, last failure: {failure}",
                 )
             delay = min(_BACKOFF_BASE_SECONDS * 2 ** (attempt - 1) if wait is None else wait, _MAX_WAIT_SECONDS)
@@ -234,7 +257,7 @@ class GatewayEmbeddingsAdapter(EmbeddingsAdapter):
         except (ValueError, KeyError, TypeError):
             raise GatewayEmbeddingError("Embeddings gateway answered without an embeddings list") from None
         if not isinstance(embeddings, list) or len(embeddings) != expected:
-            raise GatewayEmbeddingError(
+            raise GatewayUnavailableError(
                 f"Embeddings gateway returned a different number of vectors than the {expected} texts sent",
             )
         width = settings.EMBEDDING_DIMENSIONS

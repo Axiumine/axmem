@@ -216,7 +216,7 @@ class Settings(BaseSettings):
     GATEWAY_BACKEND: str = ""
     GATEWAY_MODEL: str = ""
     GATEWAY_AGENT_ID: str = ""
-    GATEWAY_METADATA: dict[str, str] = {}        # JSON object of string values, sent with every request
+    GATEWAY_METADATA: str = "{}"                 # JSON object of string values, sent with every request; only the gateway adapter parses it
     GATEWAY_SUPPORTS_DIMENSIONS: bool = False    # True sends EMBEDDING_DIMENSIONS as the "dimensions" field
 
     # RERANKING

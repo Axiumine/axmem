@@ -68,6 +68,7 @@ class QdrantArchiveAdapter:
         The file is built next to its target and renamed when complete, so a failed export leaves no half
         file. Writers that run during an export may or may not be included; stop them for an exact copy.
         """
+        live = await self.schema.live_generation()  # a clear error, not a raw 404, when the collections do not exist
         summary = ArchiveSummary()
         tenants: set[str] = set()
         partial = path.with_name(path.name + ".partial")
@@ -77,7 +78,7 @@ class QdrantArchiveAdapter:
                 out.write(_line({
                     "kind": "header", "format": FORMAT, "version": FORMAT_VERSION, "created": stamp(datetime.now(UTC)),
                 }))
-                async for point in self.store.iterate(SYSTEM, self.names.live):
+                async for point in self.store.iterate(SYSTEM, live):
                     stored = memory_from_point(point)
                     out.write(_line({
                         "kind": "memory",

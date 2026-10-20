@@ -7,6 +7,7 @@ live name never changes. The links live in a collection of their own, ``<prefix>
 import contextlib
 import logging
 import uuid
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -132,15 +133,19 @@ class QdrantSchema:
 
     # ---- generations ------------------------------------------------------------------------------
 
+    async def _read[T](self, call: Callable[[AsyncQdrantClient], Awaitable[T]]) -> T:
+        """Run a read on the first node that answers: a cluster with a silent node is still inspectable."""
+        return await self.pool.run(call, attempts=len(self.pool.clients))
+
     async def live_generation(self) -> str:
         """Name of the collection the live alias points at."""
-        generation = await self.pool.run(lambda client: self._generation_behind(client, self.names.live))
+        generation = await self._read(lambda client: self._generation_behind(client, self.names.live))
         if generation is None:
             raise QdrantStartupError(f"The alias {self.names.live} does not exist yet; start the server once to create it")
         return generation
 
     async def live_exists(self) -> bool:
-        return await self.pool.run(lambda client: self._generation_behind(client, self.names.live)) is not None
+        return await self._read(lambda client: self._generation_behind(client, self.names.live)) is not None
 
     async def create_generation(self) -> str:
         """Create an empty memory collection with the configured dimensions and settings; return its name."""
@@ -182,7 +187,7 @@ class QdrantSchema:
 
     async def vector_width(self, generation: str) -> int | None:
         """How many numbers each vector of a generation has."""
-        info = await self.pool.run(lambda client: client.get_collection(generation))
+        info = await self._read(lambda client: client.get_collection(generation))
         vectors = info.config.params.vectors
         return vectors.size if isinstance(vectors, qm.VectorParams) else None
 

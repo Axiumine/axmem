@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -87,14 +88,43 @@ def _download(repository: str, root: Path, names: list[str]) -> None:
             ) from exc
 
 
+def _record(manifest: Path, repository: str, digests: dict[str, str]) -> None:
+    """Write the manifest in one step, so a process that starts at the same moment never reads half of it."""
+    record = {"repository": repository, "revision": PINNED_REVISIONS.get(repository, "main"), "sha256": digests}
+    scratch = manifest.with_name(f"{manifest.name}.{os.getpid()}.tmp")
+    try:
+        scratch.write_text(json.dumps(record, indent=2, sort_keys=True))
+        os.replace(scratch, manifest)
+    except OSError as exc:
+        scratch.unlink(missing_ok=True)
+        raise TensorRTStartupError(
+            "model-unavailable",
+            f"cannot record the model files of {repository} in {manifest} ({type(exc).__name__}: {exc}). "
+            f"Make {manifest.parent} writable.",
+        ) from exc
+    logger.info(f"Recorded the model files of {repository} in {manifest}: {digests}")
+
+
+def _recorded_digests(manifest: Path) -> dict[str, str]:
+    try:
+        recorded = json.loads(manifest.read_text())["sha256"]
+        if isinstance(recorded, dict):
+            return recorded
+        raise ValueError("the sha256 entry is not an object")
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise TensorRTStartupError(
+            "model-unavailable",
+            f"{manifest} cannot be read as a record of the model files ({type(exc).__name__}: {exc}). "
+            f"Delete {manifest.parent} to fetch the model again.",
+        ) from exc
+
+
 def _verify_or_record(root: Path, repository: str, digests: dict[str, str]) -> None:
     manifest = root / MANIFEST_FILE
     if not manifest.is_file():
-        record = {"repository": repository, "revision": PINNED_REVISIONS.get(repository, "main"), "sha256": digests}
-        manifest.write_text(json.dumps(record, indent=2, sort_keys=True))
-        logger.info(f"Recorded the model files of {repository} in {manifest}: {digests}")
+        _record(manifest, repository, digests)
         return
-    recorded = json.loads(manifest.read_text()).get("sha256", {})
+    recorded = _recorded_digests(manifest)
     changed = [name for name, digest in digests.items() if recorded.get(name) != digest]
     if changed:
         raise TensorRTStartupError(
@@ -109,7 +139,12 @@ def fetch_model(repository: str, model_dir: str | Path, setting: str = "EMBEDDIN
     root = Path(model_dir) / model_slug(repository, setting)
     paths = {name: root / name for name in (ONNX_FILE, TOKENIZER_FILE)}
     _download(repository, root, [name for name, path in paths.items() if not path.is_file()])
-    digests = {name: sha256_of(path) for name, path in paths.items()}
+    try:
+        digests = {name: sha256_of(path) for name, path in paths.items()}
+    except OSError as exc:
+        raise TensorRTStartupError(
+            "model-unavailable", f"cannot read the model files in {root} ({type(exc).__name__}: {exc})",
+        ) from exc
     _verify_or_record(root, repository, digests)
     return ModelFiles(paths[ONNX_FILE], paths[TOKENIZER_FILE], digests[ONNX_FILE], root)
 

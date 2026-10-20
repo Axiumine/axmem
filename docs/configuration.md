@@ -84,7 +84,7 @@ uv run main.py --transport http
 ## Qdrant Configuration
 
 Qdrant is the only datastore. It holds the memories, their links and their vectors. Axmem needs Qdrant 1.19.0 or
-newer (the tests pin `qdrant/qdrant:v1.19.2`) and checks the version of every node at start. There is no SQL database
+newer (the tests pin `qdrant/qdrant:v1.19.2`) and checks the version of every node that answers at start. There is no SQL database
 and no migration: the collections are created at start, and a change of the stored layout is a re-embed or an
 export and import.
 
@@ -161,6 +161,11 @@ Axmem fails closed. The server has no default authentication mode: with `AUTH_MO
 hostnames such as `localhost` do not count) or runs on stdio. On any other bind (`0.0.0.0`, a LAN
 address) the server exits with an error instead of serving anonymous requests. The credential modes
 (`jwt`, `introspection`, `static`) need a bearer token, so they are refused on stdio, which carries none.
+
+The loopback check looks at the bind address only. Anything that forwards traffic to that loopback port (a reverse
+proxy on the same host, an SSH port forward, a container port mapping) makes every caller the `DEFAULT_TENANT`
+with no credential, so `AUTH_MODE=none` is safe only while nothing forwards to the port. A proxied or otherwise
+exposed deployment must use `jwt`, `introspection` or `static`.
 
 The GitHub and Google OAuth providers and the browser login of the CLI are removed. Use a token issued
 by your identity provider (`jwt`, `introspection`) or a static token.
@@ -271,14 +276,16 @@ A token the endpoint reports as inactive, or whose `exp` has passed, gets `401`.
 and `DEFAULT_USER_ID`, `DEFAULT_USER_NAME`, `DEFAULT_USER_EMAIL` no longer exist. Replace
 `FASTMCP_SERVER_AUTH=...JWTVerifier` with `AUTH_MODE=jwt` (and `...IntrospectionTokenVerifier` with
 `AUTH_MODE=introspection`), and `DEFAULT_USER_ID` with `DEFAULT_TENANT`. The SQL databases are gone and nothing
-is migrated in place: carry memories over with an export of the old deployment's data and `axmem import`.
+is migrated in place, and `axmem import` reads only the `axmem-export` JSON lines format that `axmem export` writes, which
+no earlier deployment produced: memories held in SQL cannot be carried over by a command and are created again (or
+converted by hand to that format).
 
 ---
 
 ### Security Best Practices
 
 1. **Production deployments**:
-   - Pick a credential mode (`jwt`, `introspection` or `static`); use `none` only on a loopback bind
+   - Pick a credential mode (`jwt`, `introspection` or `static`); use `none` only on a loopback bind that nothing forwards to (a proxy, a tunnel or a port mapping would make every caller the default tenant)
    - Use HTTPS for all endpoints (put a TLS-terminating proxy in front)
    - Rotate client secrets and static tokens regularly
    - Keep tokens out of the configuration: static tokens are stored as hashes only
@@ -573,7 +580,7 @@ ENFORCE_ENV_OVERWRITE=true
   - `TensorRT` - The model runs in the server process on an NVIDIA GPU with TensorRT, in strict fp32 (CLS pooling, unit-length vectors). No other service is needed. There is no CPU path and no fallback: a server that cannot start the engine refuses to start and says why. See [GPU models](gpu-models.md)
   - `Azure`, `Google`, `OpenAI`, `Ollama` - Remote providers, configured below
   - `gateway` - An optional HTTP embeddings gateway, configured below
-- **Note**: Matched case-insensitively. Any other value (including the removed `FastEmbed`) stops startup with an error naming the setting; an empty value keeps the default. Changing the provider needs a re-embed of all existing memories, see the [Embedding Migration Guide](./embedding_migration.md). `gateway` is optional: no `GATEWAY_*` setting is read or required while another provider is selected, and the default configuration needs no network access once the model files are on disk
+- **Note**: Matched case-insensitively. Any other value (including the removed `FastEmbed`) stops startup with an error naming the setting; an empty value keeps the default. Changing the provider needs a re-embed of all existing memories, see the [Embedding Migration Guide](./embedding_migration.md). `gateway` is optional: no `GATEWAY_*` setting is used or required while another provider is selected, and the default configuration needs no network access once the model files and the tiktoken data are on disk
 - **Example**: `EMBEDDING_PROVIDER=TensorRT`
 
 ### `EMBEDDING_MODEL`
@@ -693,7 +700,7 @@ ENFORCE_ENV_OVERWRITE=true
 
 **Note**: These settings only apply when `EMBEDDING_PROVIDER=Ollama`
 
-> Ollama uses native async via the `ollama` Python SDK. No API key required (Ollama runs locally). Install with `pip install axmem[ollama]`.
+> Ollama uses native async via the `ollama` Python SDK. No API key required (Ollama runs locally). Install it with `uv sync --extra ollama` from a checkout (`uv tool install ".[ollama]"` for the CLI).
 
 #### `OLLAMA_BASE_URL`
 - **Default**: `http://localhost:11434`
@@ -702,7 +709,7 @@ ENFORCE_ENV_OVERWRITE=true
 
 ### Gateway Embedding Provider Configuration
 
-**Note**: These settings only apply when `EMBEDDING_PROVIDER=gateway`; they are not read otherwise. `GATEWAY_URL`, `GATEWAY_BACKEND`, `GATEWAY_MODEL` and `GATEWAY_AGENT_ID` are required: startup fails with an error naming the missing ones.
+**Note**: These settings only apply when `EMBEDDING_PROVIDER=gateway`; they are loaded with the other settings but only the gateway provider uses them (a blank or malformed `GATEWAY_METADATA` cannot stop another provider). `GATEWAY_URL`, `GATEWAY_BACKEND`, `GATEWAY_MODEL` and `GATEWAY_AGENT_ID` are required: startup fails with an error naming the missing ones.
 
 The provider posts JSON to an HTTP embeddings gateway: `POST {GATEWAY_URL}{GATEWAY_PATH}` with the fields `request_id`, `agent_id`, `backend`, `model`, `input` (1 to 256 texts, in order), `metadata` and, when enabled, `dimensions`. The reply carries one vector per text in input order. A call with more than 256 texts is split into requests of at most 256. Each request has a fresh `request_id`, an `X-Idempotency-Key` that stays the same when that request is retried, and an `X-Correlation-Id` shared by all requests of one call.
 
@@ -760,7 +767,7 @@ A reply is checked before anything is stored: the number of vectors must equal t
 #### `GATEWAY_METADATA`
 - **Default**: `{}`
 - **Description**: JSON object of string values sent as the request's `metadata` field. Axmem adds no values of its own
-- **Note**: A value that is not a string stops startup
+- **Note**: Read as text, so a blank or malformed value stops only the `gateway` provider (with `GATEWAY_METADATA must be a JSON object of string values`), never a server that uses another provider; a blank value means no metadata
 - **Example**: `GATEWAY_METADATA={"team": "memory"}`
 
 #### `GATEWAY_SUPPORTS_DIMENSIONS`
@@ -934,7 +941,8 @@ DENSE_SEARCH_CANDIDATES=100
 ## Troubleshooting
 
 ### Qdrant Connection Issues
-- The server refuses to start with `Qdrant at <url> cannot be reached or did not report its version` when a node does not answer or the API key is wrong: check `QDRANT_URL` and `QDRANT_API_KEY`
+- The server refuses to start with `Qdrant at <url> cannot be reached or did not report its version` when no node answers or the API key is wrong: check `QDRANT_URL` and `QDRANT_API_KEY`. A node that does not answer while another one does is logged (`A Qdrant node did not answer; going on with the others`) and skipped, so a cluster that lost a node still starts; every node that answers must still be version 1.19.0 or later
+- `Settings of an earlier version are ignored (...)` at start: the environment or a dotenv file still names a setting of the SQL store, the OAuth providers, `DEFAULT_USER_*` or a `FORGETFUL_*` variable. Axmem reads none of them; the warning names each one and what replaces it. Data held in a SQL database is not read or migrated
 - `Qdrant <version> at <url> is too old: version 1.19.0 or later is required`: upgrade the node
 - `Qdrant collection <name> does not match the settings`: the shard, replica or vector layout of the existing collection differs from `QDRANT_*` or `EMBEDDING_DIMENSIONS`; see above
 - A `409` on an update means another writer changed the memory in the same moment; read it again and repeat the change

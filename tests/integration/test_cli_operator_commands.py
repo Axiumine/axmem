@@ -18,6 +18,7 @@ from app.protocols.maintenance_protocol import ConsistencyReport, NodeReport
 from app.routes.cli import operator_commands
 from app.routes.cli.parser import build_parser, dispatch
 from tests.backup_restore_cases import seed_memories
+from tests.qdrant_support import drop_prefix, unique_prefix
 
 
 @pytest.fixture(autouse=True)
@@ -93,6 +94,32 @@ async def test_export_then_import_report_what_they_moved(seeded, tmp_path, capsy
     assert capsys.readouterr().out.strip() == (
         f"Imported 0 memories and 0 links of 1 tenants from {path} (0 lines skipped)"
     )
+
+
+async def test_import_creates_the_collections_of_a_qdrant_that_has_none(seeded, tmp_path, capsys, monkeypatch):
+    """The documented recovery after the loss of a node: a new Qdrant, no server started yet."""
+    path = tmp_path / "export.jsonl"
+    assert await operator_commands.export_memories(path) == 0
+    capsys.readouterr()
+    monkeypatch.setattr(settings, "QDRANT_COLLECTION_PREFIX", unique_prefix())
+    try:
+        assert await operator_commands.import_memories(path) == 0
+        assert capsys.readouterr().out.startswith("Imported 3 memories and 1 links of 1 tenants")
+    finally:
+        drop_prefix(settings.QDRANT_URL, settings.QDRANT_API_KEY.get_secret_value(), settings.QDRANT_COLLECTION_PREFIX)
+
+
+@pytest.mark.parametrize("command", ["export", "backup"])
+async def test_a_qdrant_without_the_collections_is_reported_not_crashed_on(seeded, tmp_path, capsys, monkeypatch, command):
+    monkeypatch.setattr(settings, "QDRANT_COLLECTION_PREFIX", unique_prefix())
+
+    code = await (
+        operator_commands.export_memories(tmp_path / "export.jsonl") if command == "export" else operator_commands.backup()
+    )
+
+    assert code == 1
+    assert "does not exist yet; start the server once to create it" in capsys.readouterr().err
+    assert not (tmp_path / "export.jsonl").exists()
 
 
 async def test_the_export_holds_the_memories_of_every_tenant(seeded, tmp_path, capsys):

@@ -159,8 +159,14 @@ class QdrantMemorySearchMixin(QdrantMemoryBase):
         )
 
     async def _stored_vector(self, scope: Scope, memory_id: UUID) -> list[float] | None:
-        """The stored embedding of a memory the tenant owns, or None."""
-        points = await self.store.get(scope, self.memories, [memory_id], with_payload=False, with_vectors=True)
+        """The stored embedding of a memory the tenant owns, or None.
+
+        The lookups that call this follow the write that created the memory, and a request may reach another node
+        than the write did, so a majority of the replicas answers (a replica that has not caught up cannot hide it).
+        """
+        points = await self.store.get(
+            scope, self.memories, [memory_id], with_payload=False, with_vectors=True, quorum=True,
+        )
         return points[0].vector if points else None
 
     async def _similar_to(

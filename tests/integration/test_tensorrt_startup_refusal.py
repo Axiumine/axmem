@@ -36,7 +36,7 @@ HIDE_AND_RUN = textwrap.dedent(
 )
 
 
-def run_program(code=None, argv=None, **env):
+def run_program(code=None, argv=None, stdin=None, **env):
     environment = {
         **os.environ,
         "AUTH_MODE": "none",
@@ -46,7 +46,9 @@ def run_program(code=None, argv=None, **env):
         **env,
     }
     command = [sys.executable, "-c", code] if code else [sys.executable, "main.py", *argv]
-    return subprocess.run(command, cwd=ROOT, env=environment, capture_output=True, text=True, timeout=120, check=False)  # noqa: S603
+    return subprocess.run(  # noqa: S603
+        command, cwd=ROOT, env=environment, capture_output=True, text=True, timeout=120, check=False, stdin=stdin,
+    )
 
 
 TENSORRT_HIDDEN = ["tensorrt", "tensorrt_bindings", "tensorrt_libs"]
@@ -128,14 +130,18 @@ def test_serve_without_importable_tensorrt_libraries_exits_with_the_cause_of_the
     assert "Traceback" not in result.stderr
 
 
-def test_without_the_local_models_no_gpu_is_needed(qdrant_server):
-    """Another embeddings provider and no reranking: the program starts on a machine with no GPU at all."""
+@pytest.mark.parametrize("reranking", [
+    {"RERANKING_ENABLED": "false"},
+    {"RERANKING_PROVIDER": "HTTP", "RERANKING_URL": "http://127.0.0.1:9/v1/rerank"},
+], ids=["reranking-off", "http-reranker"])
+def test_without_the_local_models_no_gpu_is_needed(qdrant_server, reranking):
+    """Another embeddings provider and no local reranker: the program starts on a machine with no GPU at all."""
     server, prefix = qdrant_server
     result = run_program(
         code=HIDE_AND_RUN.format(hidden={*TENSORRT_HIDDEN, "cuda"}, argv=["tools", "list"]),
         EMBEDDING_PROVIDER="Ollama",
-        RERANKING_ENABLED="false",
         CUDA_VISIBLE_DEVICES="-1",
+        **reranking,
         QDRANT_URL=server.url,
         QDRANT_API_KEY=server.api_key,
         QDRANT_COLLECTION_PREFIX=prefix,
@@ -143,6 +149,36 @@ def test_without_the_local_models_no_gpu_is_needed(qdrant_server):
 
     assert result.returncode == 0
     assert "total_count" in result.stdout
+
+
+def test_serve_shows_what_the_engine_cache_did_while_the_models_started(qdrant_server, tensorrt_embedder, tmp_path):
+    """Logging is configured only inside the server's lifespan, after the models start: their lines must not be lost."""
+    from app.config.settings import settings
+    from app.repositories.embeddings.tensorrt_model import model_slug
+
+    server, prefix = qdrant_server
+    group = tmp_path / "engines" / model_slug(settings.EMBEDDING_MODEL, "EMBEDDING_MODEL")
+    group.mkdir(parents=True)
+    engine = tensorrt_embedder.startup.engine_dir
+    (group / engine.name).symlink_to(engine, target_is_directory=True)  # a cache that holds the engine already
+    stale = group / ("0" * 16)
+    stale.mkdir()
+    (stale / "fingerprint.json").write_text("{}")  # and an engine of another fingerprint, to be pruned
+
+    result = run_program(
+        argv=["serve", "--transport", "stdio"],
+        EMBEDDING_ENGINE_CACHE_DIR=str(tmp_path / "engines"),
+        RERANKING_ENABLED="false",
+        QDRANT_URL=server.url,
+        QDRANT_API_KEY=server.api_key,
+        QDRANT_COLLECTION_PREFIX=prefix,
+        stdin=subprocess.DEVNULL,
+    )
+
+    assert f"Pruned stale TensorRT engine directories: {stale.name}" in result.stderr
+    assert "embedder ready in" in result.stderr
+    assert not stale.exists()
+    assert (group / engine.name).resolve() == engine.resolve()
 
 
 def test_an_embedding_width_the_model_does_not_produce_exits_with_the_cause():

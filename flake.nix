@@ -37,11 +37,10 @@
   outputs =
     inputs@{ flake-parts, ... }:
     flake-parts.lib.mkFlake { inherit inputs; } {
-      # x86_64-darwin intentionally omitted (deprecated upstream)
+      # Linux only: the models run on an NVIDIA GPU with CUDA 13 and TensorRT 11, which macOS does not have
       systems = [
         "x86_64-linux"
         "aarch64-linux"
-        "aarch64-darwin"
       ];
       imports = [ inputs.git-hooks-nix.flakeModule ];
 

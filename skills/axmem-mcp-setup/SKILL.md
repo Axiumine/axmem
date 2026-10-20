@@ -22,10 +22,10 @@ object). Roughly 500 tokens of surface, with everything else disclosed at runtim
 
 ## Pick a transport
 
-- **stdio** — the client spawns the server per session: command `uvx axmem`
-  (equivalently `axmem serve --transport stdio`) with `AUTH_MODE=none`, because the server
-  refuses to start without an auth mode and stdio carries no bearer token. Right for a personal,
-  local setup.
+- **stdio** — the client spawns the server per session: command `axmem serve --transport stdio` with
+  `AUTH_MODE=none`, because the server refuses to start without an auth mode and stdio carries no bearer
+  token. Axmem is not published to PyPI yet: install it from a checkout with `uv tool install .` (after a
+  release, `uvx axmem` does the same). Right for a personal, local setup.
 - **HTTP** — the client connects to a running server at `<server>/mcp`, e.g.
   `http://localhost:8020/mcp`. Right for a shared or deployed instance; send
   `Authorization: Bearer <token>` unless the server runs `AUTH_MODE=none` on a loopback bind.
@@ -33,7 +33,7 @@ object). Roughly 500 tokens of surface, with everything else disclosed at runtim
 Claude Code, as the worked example:
 
 ```bash
-claude mcp add axmem -e AUTH_MODE=none -- uvx axmem      # stdio
+claude mcp add axmem -e AUTH_MODE=none -- axmem serve --transport stdio      # stdio (axmem on the PATH)
 claude mcp add --transport http axmem https://axmem.example.com/mcp \
   --header "Authorization: Bearer $AXMEM_TOKEN"                  # HTTP, token
 ```

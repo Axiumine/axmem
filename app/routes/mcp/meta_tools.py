@@ -65,11 +65,11 @@ _EXECUTE_CORE_EXAMPLES = """\
     - Search: execute_axmem_tool("query_memory", {"query": "search terms", "query_context": "why searching"})
     - Create: execute_axmem_tool("create_memory", {"title": "Short title", "content": "Memory content (<2000 chars)", "context": "Why this matters", "keywords": ["kw1", "kw2"], "tags": ["tag1"], "importance": 7, "project": "my-project"})
     - Create with provenance: execute_axmem_tool("create_memory", {"title": "...", "content": "...", "context": "...", "keywords": [...], "tags": [...], "importance": 7, "source_repo": "owner/repo", "source_files": ["src/main.py"], "confidence": 0.85, "encoding_agent": "claude-sonnet-4"})
-    - Update: execute_axmem_tool("update_memory", {"memory_id": 1, "content": "new content"})
-    - Get: execute_axmem_tool("get_memory", {"memory_id": 1})
-    - Link: execute_axmem_tool("link_memories", {"memory_id": 1, "related_ids": [2, 3]})
-    - Unlink: execute_axmem_tool("unlink_memories", {"source_id": 1, "target_id": 2})
-    - Obsolete: execute_axmem_tool("mark_memory_obsolete", {"memory_id": 42, "reason": "Outdated approach", "superseded_by": 100})
+    - Update: execute_axmem_tool("update_memory", {"memory_id": "018f2c3e-0000-7000-8000-000000000001", "content": "new content"})
+    - Get: execute_axmem_tool("get_memory", {"memory_id": "018f2c3e-0000-7000-8000-000000000001"})
+    - Link: execute_axmem_tool("link_memories", {"memory_id": "018f2c3e-0000-7000-8000-000000000001", "related_ids": ["018f2c3e-0000-7000-8000-000000000002", "018f2c3e-0000-7000-8000-000000000003"]})
+    - Unlink: execute_axmem_tool("unlink_memories", {"source_id": "018f2c3e-0000-7000-8000-000000000001", "target_id": "018f2c3e-0000-7000-8000-000000000002"})
+    - Obsolete: execute_axmem_tool("mark_memory_obsolete", {"memory_id": "018f2c3e-0000-7000-8000-000000000042", "reason": "Outdated approach", "superseded_by": "018f2c3e-0000-7000-8000-000000000100"})
 
     **Project scope:**
     - Query within a scope: execute_axmem_tool("query_memory", {"query": "search terms", "query_context": "why searching", "project": "my-project"})"""
@@ -193,7 +193,7 @@ Execute any registered tool dynamically. Axmem is a semantic memory system for L
 
     ## Linking Best Practices
     **Always link related items for discoverability:**
-    - Link memories to each other: `link_memories(memory_id=1, related_ids=[2, 3])`
+    - Link memories to each other: `link_memories(memory_id="018f2c3e-0000-7000-8000-000000000001", related_ids=["018f2c3e-0000-7000-8000-000000000002", "018f2c3e-0000-7000-8000-000000000003"])`
 
     ## Tool Categories
     {tool_categories}

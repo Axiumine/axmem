@@ -287,6 +287,44 @@ def test_configure_logging_rejects_unknown_format(restored_root_logger):
         logging_config.configure_logging(log_level="INFO", log_format="jsno")
 
 
+def test_logging_while_starting_shows_records_on_stderr_and_leaves_the_root_logger_as_it_was(capsys):
+    root = logging.getLogger()
+    handlers, level = list(root.handlers), root.level
+    root.setLevel(logging.WARNING)  # what an unconfigured process has, so INFO is dropped
+    try:
+        logging.getLogger("startup.test").info("before: dropped")
+        with logging_config.logging_while_starting("INFO", "console"):
+            logging.getLogger("startup.test").info("while starting: shown, password=hunter2")
+        logging.getLogger("startup.test").info("after: dropped")
+
+        assert root.handlers == handlers
+        assert root.level == logging.WARNING
+    finally:
+        root.handlers[:] = handlers
+        root.setLevel(level)
+
+    err = capsys.readouterr().err
+    assert "while starting: shown" in err
+    assert "hunter2" not in err  # the same masking as the configured handler
+    assert "dropped" not in err
+
+
+def test_logging_while_starting_restores_the_root_logger_when_the_block_fails():
+    root = logging.getLogger()
+    handlers, level = list(root.handlers), root.level
+
+    with pytest.raises(RuntimeError, match="boom"), logging_config.logging_while_starting("DEBUG", "json"):
+        raise RuntimeError("boom")
+
+    assert root.handlers == handlers
+    assert root.level == level
+
+
+def test_logging_while_starting_rejects_an_unknown_format():
+    with pytest.raises(ValueError, match="LOG_FORMAT"), logging_config.logging_while_starting("INFO", "jsno"):
+        pytest.fail("the block must not run")
+
+
 # ============================================================================
 # Provenance defaults: validated against the caps of the models they are copied into
 # ============================================================================

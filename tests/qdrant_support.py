@@ -13,6 +13,7 @@ import subprocess  # nosec B404 - runs docker with fixed argument lists, never a
 import time
 import uuid
 from dataclasses import dataclass, field
+from urllib.parse import urlparse
 
 import httpx
 import pytest
@@ -99,6 +100,9 @@ def start_single_node() -> QdrantServer:
     name = f"axmem-test-{uuid.uuid4().hex[:8]}"
     _docker(
         "run", "-d", "--rm", "--name", name, "--label", LABEL,
+        # The data is thrown away with the container, so it lives in memory: payload-index creation fsyncs, and on a
+        # slow Docker storage driver it costs seconds per index and per test.
+        "--tmpfs", "/qdrant/storage", "--tmpfs", "/qdrant/snapshots",
         "-e", f"QDRANT__SERVICE__API_KEY={API_KEY}",
         "-p", "127.0.0.1::6333", IMAGE,
     )
@@ -149,6 +153,19 @@ class QdrantCluster:
         except (httpx.HTTPError, KeyError, ValueError):
             return 0
         return len(reply["peers"]) if reply["raft_info"].get("leader") else 0
+
+    def strong_leader(self) -> int:
+        """Index of the node with the highest peer id, the one ``ordering=strong`` writes are routed through."""
+        peers = httpx.get(
+            f"{self.urls[0]}/cluster", headers={"api-key": self.api_key}, timeout=3,
+        ).json()["result"]["peers"]
+        host = urlparse(peers[max(peers, key=int)]["uri"]).hostname
+        return self.containers.index(str(host))
+
+    def a_follower(self) -> int:
+        """Index of a node that is not the strong-ordering leader: one that can go without stopping writes."""
+        leader = self.strong_leader()
+        return next(index for index in range(NODES) if index != leader)
 
     def wait_formed(self, timeout: float = READY_TIMEOUT_SECONDS) -> None:
         deadline = time.monotonic() + timeout

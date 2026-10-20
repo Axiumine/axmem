@@ -22,10 +22,11 @@ from app.services.re_embedding_service import ReEmbedResult
 class _Service:
     """Blocks until cancelled, raises, or returns a canned result."""
 
-    def __init__(self, result=None, block=False, error=None):
+    def __init__(self, result=None, block=False, error=None, switch_started=None):
         self.result = result
         self.block = block
         self.error = error
+        self.switch_started = switch_started
         self.started = asyncio.Event()
 
     async def re_embed_all(self, progress_callback):
@@ -121,6 +122,8 @@ async def test_cancellation_from_outside_stays_a_cancellation():
 
 async def test_a_stop_signal_reports_that_the_live_collection_was_not_changed(capsys):
     class SignalledService:
+        switch_started = None
+
         async def re_embed_all(self, progress_callback):
             signal.raise_signal(signal.SIGINT)  # the loop's handler cancels the run
             await asyncio.Event().wait()
@@ -142,6 +145,34 @@ async def test_an_error_is_reported_and_raised_again(capsys):
     out = capsys.readouterr().out
     assert "ERROR: provider down" in out
     assert "The new collection was discarded; the live collection was not changed." in out
+
+
+async def test_an_error_after_the_switch_began_does_not_claim_the_collection_was_discarded(capsys):
+    service = _Service(error=RuntimeError("catch-up failed"), switch_started="live_new")
+
+    with pytest.raises(RuntimeError, match="catch-up failed"):
+        await main._rebuild_vectors(service)
+
+    out = capsys.readouterr().out
+    assert "ERROR: catch-up failed" in out
+    assert "The switch to live_new had begun" in out
+    assert "was discarded" not in out
+
+
+async def test_a_stop_signal_after_the_switch_began_says_so(capsys):
+    class SignalledService:
+        switch_started = "live_new"
+
+        async def re_embed_all(self, progress_callback):
+            signal.raise_signal(signal.SIGINT)
+            await asyncio.Event().wait()
+
+    with pytest.raises(SystemExit):
+        await main._rebuild_vectors(SignalledService())
+
+    out = capsys.readouterr().out
+    assert "Interrupted! The switch to live_new had begun" in out
+    assert "was discarded" not in out
 
 
 def test_validation_report_shows_each_check(capsys):

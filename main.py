@@ -216,6 +216,17 @@ def _print_reembed_success(result):
     print("  delete it with the Qdrant API when satisfied with the results.")
 
 
+def _what_became_of_the_new_collection(service) -> str:
+    """The sentence for a run that stopped: the new collection is only discarded while it was not made live yet."""
+    if service.switch_started is None:
+        return "The new collection was discarded; the live collection was not changed."
+    return (
+        f"The switch to {service.switch_started} had begun, so the live collection may now be that one and the edits "
+        "made while it was copied may be missing from it. The previous collection is untouched; run the command "
+        "again to copy what is missing."
+    )
+
+
 async def _rebuild_vectors(service):
     """Step 3: copy every memory, embedded again, into a new collection and make it the live one.
 
@@ -230,13 +241,13 @@ async def _rebuild_vectors(service):
         return result
     except Exception as exc:
         print(f"\n  ERROR: {exc}")
-        print("  The new collection was discarded; the live collection was not changed.")
+        print(f"  {_what_became_of_the_new_collection(service)}")
         raise
     except asyncio.CancelledError:
         if not run.interrupted:
             raise
         run.task.uncancel()  # handled here: report, then exit instead of propagating
-        print("\n\nInterrupted! The new collection was discarded; the live collection was not changed.")
+        print(f"\n\nInterrupted! {_what_became_of_the_new_collection(service)}")
         sys.exit(1)
     finally:
         restore_signal_handlers()
@@ -313,12 +324,15 @@ def _serve(transport, host, port):
 
     # Build or load the TensorRT engines before the server reports ready: a server that cannot
     # embed or rerank refuses to start, and says why, instead of failing inside the lifespan.
-    for model, start in (("embedder", start_tensorrt_embedder), ("reranker", get_reranker_adapter)):
-        try:
-            start()
-        except TensorRTError as exc:
-            print(f"Error: the {model} cannot start: {exc}", file=sys.stderr)
-            return 1
+    from app.config.logging_config import logging_while_starting
+
+    with logging_while_starting(settings.LOG_LEVEL, settings.LOG_FORMAT):
+        for model, start in (("embedder", start_tensorrt_embedder), ("reranker", get_reranker_adapter)):
+            try:
+                start()
+            except TensorRTError as exc:
+                print(f"Error: the {model} cannot start: {exc}", file=sys.stderr)
+                return 1
 
     if transport == "stdio":
         import warnings

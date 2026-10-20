@@ -103,8 +103,9 @@ class QdrantMemoryLinkMixin(QdrantMemoryBase):
     async def _linkable_targets(self, scope: Scope, source_id: UUID, target_ids: list[UUID]) -> list[UUID]:
         """The distinct targets, in the order given, that exist for the tenant; none unless the source exists too."""
         wanted = [target for target in dict.fromkeys(target_ids) if target != source_id]
+        # A majority of the replicas answers: the source was usually written a moment ago, through another node
         owned = {point.id for point in await self.store.get(
-            scope, self.memories, [source_id, *wanted], with_payload=False,
+            scope, self.memories, [source_id, *wanted], with_payload=False, quorum=True,
         )}
         if source_id not in owned:
             return []

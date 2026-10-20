@@ -84,7 +84,10 @@ class QdrantMemoryReadMixin(QdrantMemoryBase):
         scope = Scope.of(user_id)
         where = _listing_filter(project, include_obsolete, importance_min, created_since, tags)
         total = await self.store.count(scope, self.memories, where)
-        if sort_by == "importance":
+        if offset >= total:
+            # Nothing lies beyond the end; a scroll of offset + limit points would read the whole collection
+            page: list[Point] = []
+        elif sort_by == "importance":
             page = await self._by_importance(scope, where, sort_order, offset, limit)
         else:
             # Qdrant orders a scroll by a payload field but cannot skip: read the offset and drop it

@@ -16,6 +16,11 @@ class InvalidStateTransitionError(Exception):
     """Raised when a state machine transition is not allowed"""
 
 
+class EmbeddingUnavailableError(RuntimeError):
+    """The embeddings provider cannot serve this call or the next ones (a refusal for budget, model or credentials,
+    a failure that outlasted its retries, or a reply of the wrong shape), so asking again text by text would repeat it."""
+
+
 class TensorRTError(RuntimeError):
     """A local TensorRT model (the embedder or the reranker) failed; the message names the cause."""
 

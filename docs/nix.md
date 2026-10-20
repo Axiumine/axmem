@@ -8,8 +8,8 @@ Nix builds the locked environment reproducibly.
 
 - Nix with flakes enabled (`experimental-features = nix-command flakes` in
   `~/.config/nix/nix.conf`, or NixOS / nix-installer which set it up for you)
-- Supported systems: `x86_64-linux`, `aarch64-linux`, `aarch64-darwin`
-  (`x86_64-darwin` is intentionally omitted)
+- Supported systems: `x86_64-linux`, `aarch64-linux` (Axmem runs its models on an NVIDIA GPU
+  with CUDA 13 and TensorRT 11, which macOS does not have)
 
 ## Dev shell
 

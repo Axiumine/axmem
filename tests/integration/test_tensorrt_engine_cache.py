@@ -10,6 +10,7 @@ import shutil
 import pytest
 
 from app.config.settings import settings
+from app.exceptions import TensorRTStartupError
 from app.repositories.embeddings.tensorrt_cache import (
     FINGERPRINT_NAME,
     LOCK_NAME,
@@ -194,3 +195,31 @@ def test_a_plan_that_tensorrt_rejects_is_replaced_by_a_fresh_build(model, cache_
     again = open_cached(model, cache_copy)
     again.engine.close()
     assert again.cache_hit
+
+
+def test_a_cache_directory_that_cannot_be_created_is_a_startup_error(model, tmp_path):
+    """The cache setting points below a file: say so, with the cause and the setting to change."""
+    blocker = tmp_path / "not-a-directory"
+    blocker.write_text("a file where the cache directory should be")
+
+    with pytest.raises(TensorRTStartupError, match=r"the engine cache .* cannot be used .*cache\s+directory setting") as raised:
+        open_cached(model, blocker / "engines")
+
+    assert raised.value.cause == "engine-unusable"
+
+
+def test_a_cache_directory_that_cannot_be_written_is_a_startup_error(model, cache_copy, monkeypatch):
+    """A cache that holds the engine reads it, but removing a stale sibling fails: still a cause, not a traceback."""
+    group = cache_copy / GROUP
+    (group / ("0" * 16)).mkdir()
+    (group / ("0" * 16) / FINGERPRINT_NAME).write_text("{}")
+
+    def refuse(path):
+        raise PermissionError(13, "Permission denied")
+
+    monkeypatch.setattr("app.repositories.embeddings.tensorrt_cache.shutil.rmtree", refuse)
+
+    with pytest.raises(TensorRTStartupError, match="cannot be used.*Permission denied") as raised:
+        open_cached(model, cache_copy)
+
+    assert raised.value.cause == "engine-unusable"

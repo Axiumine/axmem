@@ -22,7 +22,7 @@ without the mark, with the commit that landed it, in the commit that lands it.
   unpushed commits that match a term in the clone-local, untracked `.git/info/denylist`; `SKIP` does not bypass it.
 - This changelog and [docs/changes-from-forgetful.md](docs/changes-from-forgetful.md), with a rule in `AGENTS.md`
   that every commit that changes behaviour updates both.
-- Optional `gateway` embeddings provider (`EMBEDDING_PROVIDER=gateway`, `0e50a541`) that posts JSON to an HTTP embeddings gateway. Settings: `GATEWAY_URL`, `GATEWAY_PATH`, `GATEWAY_TOKEN` (a secret value), `GATEWAY_AUTH_HEADER`, `GATEWAY_TENANT_HEADER`, `GATEWAY_TENANT`, `GATEWAY_BACKEND`, `GATEWAY_MODEL`, `GATEWAY_AGENT_ID`, `GATEWAY_METADATA` (a JSON object of strings) and `GATEWAY_SUPPORTS_DIMENSIONS`; none is read or required unless the provider is selected, and the default provider is unchanged. Texts go out in requests of at most 256, each with a fresh `request_id`, an `X-Idempotency-Key` that a retry of the same chunk reuses and an `X-Correlation-Id` shared by one call. Statuses 429 and 503 are retried after `Retry-After` (at most 30 s), 502, 504 and network errors with a growing wait, four attempts in all; 403, 422 and every other status fail at once, with the status and `code` in the error and never the body. A reply is refused unless it has one finite vector per text and each is `EMBEDDING_DIMENSIONS` wide. Tests run against an in-process fake gateway.
+- Optional `gateway` embeddings provider (`EMBEDDING_PROVIDER=gateway`, `0e50a541`) that posts JSON to an HTTP embeddings gateway. Settings: `GATEWAY_URL`, `GATEWAY_PATH`, `GATEWAY_TOKEN` (a secret value), `GATEWAY_AUTH_HEADER`, `GATEWAY_TENANT_HEADER`, `GATEWAY_TENANT`, `GATEWAY_BACKEND`, `GATEWAY_MODEL`, `GATEWAY_AGENT_ID`, `GATEWAY_METADATA` (a JSON object of strings) and `GATEWAY_SUPPORTS_DIMENSIONS`; none is used or required unless the provider is selected (they are loaded with the other settings, and `GATEWAY_METADATA` is parsed by the adapter alone, so a blank or malformed value cannot stop a server that uses another provider). Texts go out in requests of at most 256, each with a fresh `request_id`, an `X-Idempotency-Key` that a retry of the same chunk reuses and an `X-Correlation-Id` shared by one call. Statuses 429 and 503 are retried after `Retry-After` (at most 30 s), 502, 504 and network errors with a growing wait, four attempts in all; 403, 422 and every other status fail at once, with the status and `code` in the error and never the body. A reply is refused unless it has one finite vector per text and each is `EMBEDDING_DIMENSIONS` wide. Tests run against an in-process fake gateway.
 - `generate_embeddings(texts)` on the `EmbeddingsAdapter` contract and on every provider (Azure, Google, OpenAI and Ollama embed one text per request; the FastEmbed provider that embedded a batch natively was removed, see Removed). `ReEmbeddingService` embeds each batch of memories with one call; a failed batch in `rebuild_embeddings` is retried memory by memory, so one rejected memory is still reported as `embedding_failed` alone.
 - Direct TensorRT 11 reranker (`RERANKING_PROVIDER=TensorRT`, the default; `d77aedcb`), strict fp32, run on the NVIDIA GPU with
   the CUDA Python bindings and no ONNX Runtime. It fetches `onnx/model.onnx` and `tokenizer.json` once into
@@ -116,10 +116,11 @@ without the mark, with the commit that landed it, in the commit that lands it.
   The remote embeddings providers, `RERANKING_PROVIDER=HTTP` and `RERANKING_ENABLED=false` are the explicit ways
   to run without one.
 - Embeddings are computed in the server process on the GPU by default (`EMBEDDING_PROVIDER=TensorRT`) instead of
-  coming from a remote embeddings service. The `gateway` provider stays optional and no `GATEWAY_*` setting is read
+  coming from a remote embeddings service. The `gateway` provider stays optional and no `GATEWAY_*` setting is used
   unless it is selected. `EMBEDDING_PROVIDER` defaults to `TensorRT`
-  (it was `FastEmbed`) and an empty value selects it; existing databases need `forgetful --re-embed` only when the
-  provider, model or width changes. `RerankerError` and `RerankerStartupError` are now `TensorRTError` and
+  (it was `FastEmbed`) and an empty value selects it. A database filled by the old default needs `--re-embed`,
+  because TensorRT's vectors come from another runtime and are not identical (`docs/embedding_migration.md`); the
+  command is also needed whenever the provider, model or width changes. `RerankerError` and `RerankerStartupError` are now `TensorRTError` and
   `TensorRTStartupError` (they cover both models), `reranker_model.py` is `tensorrt_model.py` and
   `docs/gpu-reranking.md` is `docs/gpu-models.md`.
 - Users become tenants and projects become an optional scope string created on first use. The stored `users` row is the tenant record (matched by name in `external_id`) and `projects` is the table behind the scope, because the storage layer is replaced later and not migrated; no revision touches either table. A scope belongs to one tenant, so two tenants that use the same label have two scopes. Memory responses carry `project` (a string or null) instead of `project_ids`, and `ObsoleteMatch` does the same. The `AUTH_MODE` setting replaces `FASTMCP_SERVER_AUTH`, `DEFAULT_TENANT` replaces `DEFAULT_USER_ID`, `DEFAULT_USER_NAME` and `DEFAULT_USER_EMAIL`; an existing deployment keeps its memories by setting `DEFAULT_TENANT` to the old `DEFAULT_USER_ID` value. `GET /api/v1/auth/info` reports `authMode` as `disabled`, `jwt`, `introspection` or `static`. The tool scopes `users` and `projects` no longer exist (`read:memories` and `write:memories` remain). `.env.example` now sets `AUTH_MODE=none` and `SERVER_HOST=127.0.0.1`. The stdio and the HTTP examples in the README and the connectivity guide pass `AUTH_MODE=none` or a bearer token. The tool count goes from 17 to 10. The test harness server runs with `AUTH_MODE=none` on its loopback bind.
@@ -200,10 +201,9 @@ without the mark, with the commit that landed it, in the commit that lands it.
     the example values).
   - Docs: README, `architecture.md`, `docs/`, `skills/` and the environment reference use the new names. The word
     Forgetful stays only in the README attribution, `LICENCE.md`, this history, `docs/changes-from-forgetful.md` (and
-    links to it) and the file names `docs/images/Forgetful Architecture.drawio.png` and
-    `docs/images/Forgetful Architecture.drawio_transparent.png`, which are kept because the images cannot be edited
-    (the image text says Forgetful and it shows the upstream architecture; the README says so). `AGENTS.md`
-    describes the Qdrant end-to-end suite instead of the SQLite and PostgreSQL ones, and its GitNexus section no
+    links to it). The architecture image of the upstream project is replaced by a Mermaid diagram in the README
+    (the two `Forgetful Architecture` images are deleted). `AGENTS.md`
+    describes the Qdrant test suites instead of the SQLite and PostgreSQL ones, and its GitNexus section no
     longer names the index.
 - Axmem is documented as a standalone memory server. The README opens with what it needs (Qdrant, an NVIDIA GPU with
   the model files, an `AUTH_MODE`), says that remote embeddings, a remote rerank service and token providers are
@@ -279,7 +279,7 @@ without the mark, with the commit that landed it, in the commit that lands it.
   the dependencies `aiosqlite`, `alembic`, `asyncpg`, `pgvector`, `psycopg2-binary`, `sqlalchemy` and `sqlite-vec`
   (`qdrant-client` is added). The `e2e-postgres` gate, the `forgetful-db` PostgreSQL test fixture and the SQLite
   e2e suite are replaced by the Qdrant fixture and the cluster gate. Data in an existing SQLite or PostgreSQL
-  database is not migrated by this commit: export it with the version that holds it, or re-create the memories.
+  database is not migrated, and no earlier version writes the export format that `forgetful import` reads: re-create the memories.
 - User and project tools, routes and CLI verbs: the MCP tools `get_current_user`, `update_user_notes`, `create_project`, `list_projects`, `get_project`, `update_project` and `delete_project`, the `user` and `project` tool categories, the REST routes `/api/v1/projects`, `ProjectService`, `UserService`, the project and patch models, the user notes and `idp_metadata` handling, the `PROJECT_DESCRIPTION_MAX_LENGTH` and `PROJECT_NOTES_MAX_LENGTH` settings, `project_ids` on the memory tools and routes, the `forgetful project list` command and the CLI project name resolver. The GitHub and Google OAuth providers, the `FASTMCP_SERVER_AUTH`, `FASTMCP_SERVER_AUTH_GITHUB_*`, `FASTMCP_SERVER_AUTH_GOOGLE_*`, `OAUTH_STORAGE_PATH` and `DEFAULT_USER_*` settings, the CLI browser login with its token cache, `forgetful auth logout`, and the `py-key-value-aio` dependency that stored the OAuth state. Agent commands, prompts, the connectivity guide and the files in the `skills/` catalogue that taught these tools are edited; the catalogue stays. No schema change and no migration: the `users` and `projects` tables stay.
 - FastEmbed cross-encoder reranker: `FastEmbedCrossEncoderAdapter`, its DirectML handling, the `RERANKING_THREADS` and
   `RERANKING_ONNX_PROVIDERS` settings and the tests of that adapter and of its worker pool. Older environment files
@@ -318,6 +318,39 @@ Fixes to features that are removed above are moot once those features go.
 - **Startup, CLI and tooling:** configuration wiring and lifecycle (#154), migration runner hardening (#127),
   embedding adapter robustness (#114), CLI fixes (#111, #112, #140 to #142), test harness fixes (#119, #120,
   #144 to #146).
+
+Fixes found by reviewing the feature cuts (no upstream counterpart: the code they touch exists only here):
+
+- **Start-up:** a Qdrant node that does not answer is logged and skipped while another one does, so a cluster that
+  lost a node still starts and can be inspected (the alias and collection reads try each node in turn; every node that
+  answers must still be 1.19.0 or later; with no answering node the start is refused as before). Settings of earlier versions that are ignored now (`DATABASE`, `POSTGRES_*`, `SQLITE_*`,
+  the GitHub and Google OAuth names, `DEFAULT_USER_*`, `FORGETFUL_*`) are named in one warning with what replaces
+  each, read from the environment and from dotenv files; an old `FORGETFUL_SCOPES` also warns that the instance now
+  allows every tool while `AXMEM_SCOPES` is `*`. Log records go to stderr during the TensorRT warm-up, so the
+  engine build and the cause of a refusal are visible before logging is configured.
+- **Operator commands:** `axmem import` creates the collections when they are missing (a new Qdrant), and
+  `axmem export` and `axmem backup` on a store without collections stop with `The alias <name> does not exist yet`
+  instead of a raw 404; an export reads the live generation it resolved first. `--re-embed` that fails or is
+  interrupted after the alias switch had begun says that the live collection may already be the new one, instead of
+  saying it was discarded.
+- **Memory correctness:** the vector read for similar-memory search and the existence check for new links use quorum
+  reads, so a write is visible to the next request on any node of a cluster; a list with an offset at or past the
+  end answers an empty page with the total, without reading the collection; memory ids in the tool examples are
+  UUIDs.
+- **Gateway provider:** `GATEWAY_METADATA` is plain text that the adapter parses (`{}` by default, a blank value is
+  `{}`; anything but a JSON object of string values is refused with a message naming the setting), so a malformed
+  value no longer stops the settings from loading. A refusal that concerns the whole call (status 401, 403 or 404,
+  retries used up, a reply of the wrong count or width) raises `EmbeddingUnavailableError`, and a targeted rebuild
+  records the batch as failed at once instead of retrying every memory against a gateway that is down.
+- **TensorRT:** an ONNX graph with a floating-point tensor that is not fp32 is refused (`build-failed`), because the
+  builder would otherwise run it in a lower precision; NVML failures, an unreadable model manifest or a model
+  directory that cannot be written, and an engine file that cannot be read are start-up errors with a cause
+  (`gpu-error`, `model-unavailable`, `engine-unusable`) and not tracebacks; the model manifest is written
+  atomically.
+- **Platforms and documentation:** the Nix flake no longer lists `aarch64-darwin` (there is no NVIDIA GPU
+  there); the README architecture picture of the upstream project is a Mermaid diagram; the setup skills, the
+  connectivity guide, the configuration reference and the GPU guide describe what Axmem does now (the
+  install route, local mode needing a GPU, the loopback and reverse-proxy warning, the real error messages).
 
 ### Security
 

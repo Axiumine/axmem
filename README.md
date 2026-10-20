@@ -68,9 +68,16 @@ Axmem is complete without any other system. With its defaults it needs an NVIDIA
 Axmem does one job: store, link, rank and retrieve memories. It has no task or plan tracker, document or file store, skills, entity graph or activity stream, and it keeps no user or project registry. A tenant is a name taken from the credential and a project is a label on a memory. Keep the other kinds of information in the tools built for them, and let an agent save the conclusions it draws from them as memories.
 
 
-![Architecture](docs/images/Forgetful%20Architecture.drawio_transparent.png)
+```mermaid
+flowchart TD
+    Client["MCP client, HTTP client or the axmem CLI"] --> Tools["Three meta-tools: discover, how to use, execute"]
+    Tools --> Services["Memory services"]
+    Services --> Repo["Memory repository"]
+    Repo --> Qdrant[("Qdrant: one node or a three-node cluster")]
+    Repo --> Models["TensorRT embedder and reranker on the NVIDIA GPU"]
+```
 
-The diagram is an image that cannot be edited here: its file name and its text still say Forgetful, and it shows the upstream architecture. [architecture.md](architecture.md) describes the current one.
+[architecture.md](architecture.md) describes the layers, the Qdrant store and the optional integrations in detail.
 
 ## Features
 - Configure either **STDIO** or **HTTP** transport mechanism (or stand up two services to support both)
@@ -201,7 +208,8 @@ Every request acts as one tenant. `AUTH_MODE` decides how the tenant is found, a
 | `none` | None | `DEFAULT_TENANT` |
 
 `AUTH_MODE=none` is accepted only on stdio or on a loopback bind (`127.0.0.1`, `::1`); on any other address the server refuses to
-start. The GitHub and Google OAuth providers and the CLI browser login are removed. See the
+start. The check sees the bind address only: if a proxy, a tunnel or a port mapping forwards to the loopback port, every caller
+is the default tenant, so use `jwt`, `introspection` or `static` for anything that is not strictly local. The GitHub and Google OAuth providers and the CLI browser login are removed. See the
 [Configuration Guide](docs/configuration.md#authentication-configuration) for the details and for generating a static token hash.
 
 ### Connecting to an Agent

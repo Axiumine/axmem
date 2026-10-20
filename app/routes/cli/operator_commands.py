@@ -21,14 +21,21 @@ def _start_logging() -> None:
     atexit.register(shutdown_logging)
 
 
-async def _with_service(run: Callable) -> int:
-    """Open the Qdrant stack, run ``run(service)`` and close the stack; startup failures become exit code 1."""
+async def _with_service(run: Callable, *, create_collections: bool = False) -> int:
+    """Open the Qdrant stack, run ``run(service)`` and close the stack; startup failures become exit code 1.
+
+    ``create_collections`` makes the collections exist, with the layout the settings ask for, before ``run``
+    (a command that writes into a Qdrant that may be new, as an import after the loss of a node does).
+    """
     from app.bootstrap import create_backup_service, create_qdrant_stack
 
     _start_logging()
     stack = create_qdrant_stack()
     try:
-        await stack.pool.require_supported_server()
+        if create_collections:
+            await stack.schema.ensure()  # also checks the server version
+        else:
+            await stack.pool.require_supported_server()
         return await run(create_backup_service(stack))
     except (QdrantStartupError, ClusterInconsistentError, FileNotFoundError, ValueError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
@@ -85,7 +92,7 @@ async def import_memories(path: Path) -> int:
         )
         return 0
 
-    return await _with_service(run)
+    return await _with_service(run, create_collections=True)
 
 
 async def check() -> int:

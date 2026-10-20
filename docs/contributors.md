@@ -1,6 +1,6 @@
 # Contributing to Axmem
 
-This guide covers testing and deployment workflows for contributors.
+This guide covers testing and CI workflows for contributors.
 
 ## Architecture
 
@@ -341,15 +341,3 @@ suites combined, 100 % required), `memory` (memray budgets) and `mutation` (week
    git push origin v0.1.0
    ```
 3. Publish a GitHub release for the tag; `publish.yml` then builds the package and publishes it to PyPI
-
----
-
-## Deployment
-
-**Workflow**: `deploy.yml`
-
-**Purpose**: Deploy to staging/production environments
-
-**Method**: Self-hosted runners with sparse checkout
-
-**Environment Selection**: Runners match environment by label (e.g., `staging` runner for staging deployment)

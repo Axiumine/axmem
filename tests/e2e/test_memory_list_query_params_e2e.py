@@ -8,7 +8,8 @@ import pytest
 from fastmcp import Client
 from httpx import ASGITransport, AsyncClient
 
-BEYOND_INT64 = 2**63  # 9223372036854775808, one past the largest SQL integer
+BEYOND_INT64 = 2**63  # 9223372036854775808, one past the largest integer the route accepts
+LARGEST_OFFSET = BEYOND_INT64 - 1
 
 
 @pytest.fixture
@@ -72,3 +73,22 @@ class TestMemoriesListQueryParams:
         response = await client.get(f"/api/v1/memories?offset={value}")
         assert response.status_code == 400, f"offset={value} -> {response.status_code}"
         assert "offset" in response.json()["error"]
+
+    @pytest.mark.parametrize("offset", [3, 100, LARGEST_OFFSET])
+    async def test_an_offset_at_or_past_the_end_is_an_empty_page_that_still_reports_the_total(self, client, offset):
+        await _create_memories(client, 3)
+
+        response = await client.get(f"/api/v1/memories?offset={offset}&limit=5")
+
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert body["memories"] == []
+        assert body["total"] == 3
+
+    async def test_an_offset_inside_the_list_still_returns_the_rest(self, client):
+        await _create_memories(client, 3)
+
+        body = (await client.get("/api/v1/memories?offset=2&limit=5")).json()
+
+        assert len(body["memories"]) == 1
+        assert body["total"] == 3

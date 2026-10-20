@@ -8,6 +8,9 @@ Requires:
 Tests the complete meta-tools pattern:
 HTTP → FastMCP Client → MCP Protocol → Meta-tools → Registry → Adapters → Services
 """
+import re
+from uuid import UUID
+
 import pytest
 
 
@@ -367,3 +370,45 @@ async def test_discover_all_categories_e2e(mcp_client):
 
     # Should have significant number of total tools
     assert result.data["total_count"] >= 10  # At least 10 tools total
+
+
+ID_ARGUMENT = re.compile(r"""["']?(?P<name>memory_id|source_id|target_id|superseded_by|related_ids)["']?\s*[:=]\s*(?P<value>\[[^\]]*\]|"[^"]*"|\w+)""")
+
+
+def _identifiers_in(text):
+    """Every value the text passes for an id argument: a bare number, a quoted string or a list of them."""
+    found = []
+    for match in ID_ARGUMENT.finditer(text):
+        found.extend(re.findall(r'"([^"]*)"|(\w+)', match["value"]))
+    return [quoted or bare for quoted, bare in found]
+
+
+@pytest.mark.asyncio
+async def test_the_ids_in_the_meta_tool_descriptions_are_uuids(mcp_client):
+    """Memory ids are UUIDs and a number is refused, so no example may teach an agent to send one."""
+    tools = {tool.name: tool for tool in await mcp_client.list_tools()}
+    identifiers = _identifiers_in(tools["execute_axmem_tool"].description)
+
+    assert len(identifiers) >= 10  # the examples of update, get, link, unlink and mark obsolete are found at all
+    for identifier in identifiers:
+        UUID(identifier)  # raises ValueError for 1, 42 or 100
+
+
+def _id_examples(tools_by_category):
+    """The examples of every id parameter in the discovery metadata (``agent_id`` names an agent, not a memory)."""
+    for tools in tools_by_category.values():
+        for tool in tools:
+            for name, parameter in tool["parameters"].items():
+                if name.endswith(("_id", "_ids")) and name != "agent_id":
+                    example = parameter.get("example", [])
+                    yield from example if isinstance(example, list) else [example]
+
+
+@pytest.mark.asyncio
+async def test_the_id_examples_of_every_tool_are_uuids(mcp_client):
+    """The discovery metadata shows an id parameter with an example that the tool accepts."""
+    result = await mcp_client.call_tool("discover_axmem_tools", {})
+    examples = list(_id_examples(result.data["tools_by_category"]))
+    for example in examples:
+        UUID(str(example))
+    assert len(examples) >= 5

@@ -313,8 +313,8 @@ execute_axmem_tool("create_memory", {
 
 # 3. Link memories
 execute_axmem_tool("link_memories", {
-    "memory_id": 42,
-    "related_ids": [156]
+    "memory_id": "018f2c3e-0000-7000-8000-000000000042",
+    "related_ids": ["018f2c3e-0000-7000-8000-000000000156"]
 })
 ```
 

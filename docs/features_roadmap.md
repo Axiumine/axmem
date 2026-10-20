@@ -1,18 +1,17 @@
 ## Feature Roadmap (in order of priority)
 - [ ] Resources 
-    - [x] Project 
     - [ ] Audio
     - [ ] Images
     - [ ] Video 
 - [x] Search Enhancements
     - [x] Implement Cross-Encoder reranking
 - [x] Dynamic Tool Discovery 
-- [x] Authentication 
+- [ ] Authentication 
     - [x] Implement Opaque Bearer Token authorisation support [RFC 7662](https://datatracker.ietf.org/doc/html/rfc7662)
-    - [x] Implement Authorisation Code flow support [RFC 6749](https://datatracker.ietf.org/doc/html/rfc6749)
-    - [x] Dynamic Client Registration Authorisation Code Flow [RFC 7591](https://datatracker.ietf.org/doc/html/rfc7591)
-- [x] Repository Adapters
-    - [x] Add SQLLite repository support
+    - [x] JWT verification and static bearer tokens (hashes only), fail-closed `AUTH_MODE`
+    - [ ] Authorisation Code flow and Dynamic Client Registration (the GitHub and Google OAuth providers were removed)
+- [x] Store
+    - [x] Qdrant, the only store (one node or a three-node cluster)
 - [ ] Embedding Adapters
     - [x] TensorRT (in-process on the NVIDIA GPU, the default; replaced the FastEmbed CPU embedder)
     - [x] Google
@@ -28,9 +27,9 @@
     - [x] Remote mode via fastmcp client (AXMEM_TOKEN bearer)
     - [x] auth login / status (the browser OAuth flow and the token cache were removed)
     - [x] Curated verbs (memory search/save/get/recent, with a project scope string)
-- [x] PyPI package
+- [ ] PyPI package (not published yet; install from a checkout with `uv tool install .`)
 - [x] Logging and Telemetry
     - [x] STDIO / JSON log configuration
-    - [x] Open Telemetry forwarding
+    - [ ] Open Telemetry forwarding (no OpenTelemetry code exists)
 - [x] API Routes
 

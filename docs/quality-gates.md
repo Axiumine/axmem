@@ -65,7 +65,9 @@ nodes, all started through Docker from `qdrant/qdrant:v1.19.2` (pull the image f
 starting and removes the containers). A run that cannot start Qdrant ends with exit code 2 and the cause, it never skips.
 Setting `AXMEM_TEST_QDRANT_URL` (and `AXMEM_TEST_QDRANT_API_KEY`) points the integration and end-to-end suites at a server that
 already runs, for example a service container of a CI job; the tests then keep to collections of their own under a
-unique prefix and delete them afterwards. The cluster suite always starts its own three nodes. These gates do not report `SKIP` without a GPU: they fail. See
+unique prefix and delete them afterwards. The single node keeps its data in memory (`--tmpfs`), because payload-index creation fsyncs and a slow Docker storage driver turned
+each test's setup into seconds; the cluster nodes use the container disk, since their tests stop and start nodes with their data.
+The cluster suite always starts its own three nodes. These gates do not report `SKIP` without a GPU: they fail. See
 [GPU models](gpu-models.md) for the host requirements. The static gates (ruff, imports, bandit, semgrep,
 vulture, radon, mypy, pylint) and `tests/architecture` need no GPU.
 

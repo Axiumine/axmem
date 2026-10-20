@@ -10,6 +10,7 @@ from uuid import uuid4
 import pytest
 
 from app.config.settings import settings
+from app.exceptions import EmbeddingUnavailableError
 from app.models.memory_models import MemoryCreate, MemoryUpdate
 from app.protocols.memory_protocol import ValidationResult
 from app.services.re_embedding_service import MAX_CATCH_UP_PASSES, ReEmbeddingService
@@ -135,12 +136,14 @@ async def test_re_embed_adapter_error_propagates_and_leaves_the_live_generation_
     await _seed(isolated_repo, 1)
     live = await isolated_repo.live_generation()
     embedding_spy.generate_embeddings.side_effect = RuntimeError("API rate limit exceeded")
+    service = ReEmbeddingService(isolated_repo, embedding_spy, batch_size=20)
 
     with pytest.raises(RuntimeError, match="API rate limit exceeded"):
-        await ReEmbeddingService(isolated_repo, embedding_spy, batch_size=20).re_embed_all()
+        await service.re_embed_all()
 
     assert await isolated_repo.live_generation() == live
     assert await _generations(isolated_stack) == [live]
+    assert service.switch_started is None  # the caller may say that the new collection was discarded
 
 
 async def test_re_embed_failure_in_a_later_batch_discards_the_partial_generation(
@@ -178,6 +181,30 @@ async def test_generation_is_activated_only_after_validation_passes(isolated_rep
     await ReEmbeddingService(isolated_repo, embedding_spy).re_embed_all()
 
     assert calls == ["validate", "activate"]
+
+
+async def test_a_failure_in_the_catch_up_after_the_switch_is_recorded_as_a_switch(isolated_repo, embedding_spy, monkeypatch):
+    await _seed(isolated_repo, 1)
+    service = ReEmbeddingService(isolated_repo, embedding_spy)
+    activated: list[str] = []
+    activate, original_copy = isolated_repo.activate_generation, service._copy_all
+
+    async def tracked_activate(generation):
+        activated.append(generation)
+        await activate(generation)
+
+    async def copy_all(*args, **kwargs):
+        if activated:
+            raise RuntimeError("provider down")
+        return await original_copy(*args, **kwargs)
+
+    monkeypatch.setattr(isolated_repo, "activate_generation", tracked_activate)
+    monkeypatch.setattr(service, "_copy_all", copy_all)
+
+    with pytest.raises(RuntimeError, match="provider down"):
+        await service.re_embed_all()
+
+    assert service.switch_started == activated[0] == await isolated_repo.live_generation()
 
 
 async def test_failed_validation_discards_the_new_generation(isolated_repo, isolated_stack, embedding_spy, monkeypatch):
@@ -292,6 +319,19 @@ async def test_rebuild_targeted_records_embedding_failures(shared_repo, embeddin
     failed_id = result.failed[0]["memory_id"]
     assert [failure["reason"] for failure in result.failed] == ["embedding_failed"]
     assert sorted(result.rebuilt_ids + [failed_id]) == sorted(memory.id for memory in memories)
+
+
+async def test_rebuild_targeted_does_not_retry_one_by_one_when_the_provider_is_unavailable(shared_repo, embedding_spy):
+    user_id, memories = await _seed(shared_repo, 3)
+    embedding_spy.generate_embeddings.side_effect = EmbeddingUnavailableError("budget exceeded")
+
+    result = await ReEmbeddingService(shared_repo, embedding_spy, batch_size=20).rebuild_targeted(user_id=user_id)
+
+    embedding_spy.generate_embeddings.assert_awaited_once()
+    embedding_spy.generate_embedding.assert_not_called()  # 20 more identical requests would only repeat the refusal
+    assert result.rebuilt_ids == []
+    assert sorted(failure["memory_id"] for failure in result.failed) == sorted(memory.id for memory in memories)
+    assert {failure["reason"] for failure in result.failed} == {"embedding_failed"}
 
 
 async def test_rebuild_targeted_embeds_a_batch_in_one_call(shared_repo, embedding_spy):

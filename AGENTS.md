@@ -44,12 +44,14 @@ production adapters.
 
 ### Integration Tests
 **Location**: `tests/integration/`
-**Purpose**: Test business logic with stubbed I/O (no real database required)
+**Purpose**: Test business logic on the production Qdrant repository (a real Qdrant node in Docker, the real TensorRT
+models); only HTTP I/O to remote providers and servers is stubbed. There is no in-memory repository or embedding stub.
 **Run locally**:
 ```bash
 uv run pytest tests/integration/
 ```
-These tests use in-memory stubs and run fast (~seconds). They form the bulk of our test suite and catch 90% of issues.
+These tests share one Qdrant container per test process and keep apart by a tenant of their own. They form the bulk of
+our test suite and catch 90% of issues.
 
 ### End-to-End Tests
 
@@ -62,6 +64,11 @@ key and removes it at the end of the run, and ends the run at once when it canno
 ```bash
 uv run pytest tests/e2e/
 ```
+#### Cluster E2E Tests
+**Location**: `tests/cluster/` (marker `cluster`, never selected by default)
+**Purpose**: Test a three-node Qdrant cluster (replication, failover, concurrent writers, per-node equality)
+**Run locally**: `uv run python -m scripts.quality gate e2e-qdrant` (or `uv run pytest -m cluster`)
+
 Docker is only a test dependency. The project has no container deployment: it runs natively (`uv run main.py`).
 
 

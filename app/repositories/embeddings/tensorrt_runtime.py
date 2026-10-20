@@ -57,6 +57,9 @@ _SEVERITY_LEVELS = {
 }
 _ERROR_SEVERITIES = (trt.ILogger.Severity.INTERNAL_ERROR, trt.ILogger.Severity.ERROR)
 
+# What NVML raises: its own error, or a failure to find or load the management library.
+_NVML_FAILURES = (nvml.NvmlError, OSError, RuntimeError)
+
 
 class ProfileError(TensorRTError, ValueError):
     """An input shape falls outside the optimisation profile the engine was built for."""
@@ -142,17 +145,33 @@ def probe_gpu() -> GpuInfo:
     major = cuda_check(cudart.cudaDeviceGetAttribute(attribute.cudaDevAttrComputeCapabilityMajor, 0))
     minor = cuda_check(cudart.cudaDeviceGetAttribute(attribute.cudaDevAttrComputeCapabilityMinor, 0))
     _free, total = cuda_check(cudart.cudaMemGetInfo())
-    nvml.init_v2()
-    try:
-        driver = nvml.system_get_driver_version()
-    finally:
-        nvml.shutdown()
     return GpuInfo(
         name=properties.name.decode(errors="replace"),
         compute_capability=f"{major}.{minor}",
-        driver_version=driver,
+        driver_version=_driver_version(),
         total_bytes=int(total),
     )
+
+
+def _driver_version() -> str:
+    """The NVIDIA driver version according to NVML.
+
+    CUDA can work where NVML cannot (a container that mounts only the compute libraries), and the version is part
+    of the engine fingerprint, so a missing NVML ends the start with a cause instead of a traceback.
+    """
+    try:
+        nvml.init_v2()
+        try:
+            return str(nvml.system_get_driver_version())
+        finally:
+            nvml.shutdown()
+    except _NVML_FAILURES as exc:
+        raise TensorRTStartupError(
+            "gpu-error",
+            f"NVML cannot report the NVIDIA driver version ({type(exc).__name__}: {exc}). Check that the driver's "
+            "management library (libnvidia-ml.so.1) is available to the process; a container needs the 'utility' "
+            "driver capability next to 'compute'.",
+        ) from exc
 
 
 def cuda_context_handle() -> int:
@@ -192,7 +211,7 @@ def process_gpu_bytes() -> int | None:
                         held += int(process.used_gpu_memory)
         finally:
             nvml.shutdown()
-    except nvml.NvmlError as exc:
+    except _NVML_FAILURES as exc:
         logger.debug(f"NVML cannot report the GPU memory of this process: {exc}")
         return None
     return held or None
@@ -234,6 +253,20 @@ def tensorrt_version() -> str:
     return str(trt.__version__)
 
 
+# The element types a strict fp32 BERT model uses: floats for the numbers, integers and booleans for ids and masks.
+_STRICT_TYPES = frozenset({trt.DataType.FLOAT, trt.DataType.INT64, trt.DataType.INT32, trt.DataType.BOOL})
+
+
+def _not_strict_fp32(network: Any) -> list[str]:
+    """The inputs, outputs and layer outputs of a parsed network whose type is neither fp32 nor an integer or boolean."""
+    tensors = [network.get_input(index) for index in range(network.num_inputs)]
+    tensors += [network.get_output(index) for index in range(network.num_outputs)]
+    for index in range(network.num_layers):
+        layer = network.get_layer(index)
+        tensors += [layer.get_output(output) for output in range(layer.num_outputs)]
+    return sorted({f"{tensor.name}: {tensor.dtype.name}" for tensor in tensors if tensor.dtype not in _STRICT_TYPES})
+
+
 def build_plan(onnx_path: Path, profile: OptimizationProfile, *, tf32: bool) -> bytes:
     """Build a serialized TensorRT plan from an ONNX file. The network keeps the types of the file.
 
@@ -247,6 +280,14 @@ def build_plan(onnx_path: Path, profile: OptimizationProfile, *, tf32: bool) -> 
         problems = "; ".join(str(parser.get_error(i)) for i in range(parser.num_errors))
         raise TensorRTStartupError(
             "build-failed", f"TensorRT cannot parse {onnx_path} as an ONNX model: {problems or 'no network outputs'}",
+        )
+    reduced = _not_strict_fp32(network)
+    if reduced:
+        raise TensorRTStartupError(
+            "build-failed",
+            f"{onnx_path} holds tensors that are not fp32 or integer ({', '.join(reduced)}). The engines are built "
+            "in strict fp32 and the network keeps the types of the file, so a half-precision or quantised model is "
+            "refused instead of silently running at lower precision.",
         )
     config = builder.create_builder_config()
     if not tf32:

@@ -13,6 +13,7 @@ from tokenizers.models import WordLevel
 
 from app.config.settings import settings
 from app.exceptions import TensorRTStartupError
+from app.repositories.embeddings import tensorrt_model
 from app.repositories.embeddings.tensorrt_model import (
     MANIFEST_FILE,
     MAX_SEQUENCE,
@@ -112,6 +113,59 @@ def test_a_missing_file_is_downloaded_and_checked_against_the_record(copied_mode
     files = fetch_model(REPOSITORY, model_dir)
 
     assert sha256_of(files.tokenizer) == sha256_of(session_model.tokenizer)
+
+
+@pytest.mark.parametrize("content", ["{not json", "[]", '{"sha256": []}', '{"repository": "x"}', ""])
+def test_a_manifest_that_cannot_be_read_is_refused_with_the_directory_to_delete(copied_model, content):
+    model_dir, root = copied_model
+    fetch_model(REPOSITORY, model_dir)
+    (root / MANIFEST_FILE).write_text(content)
+
+    with pytest.raises(TensorRTStartupError, match=r"cannot be read as a record of the model files") as raised:
+        fetch_model(REPOSITORY, model_dir)
+
+    assert raised.value.cause == "model-unavailable"
+    assert f"Delete {root}" in str(raised.value)
+
+
+def test_the_manifest_is_written_in_one_step_and_leaves_nothing_else_behind(copied_model):
+    model_dir, root = copied_model
+
+    fetch_model(REPOSITORY, model_dir)
+
+    assert sorted(path.name for path in root.iterdir()) == [MANIFEST_FILE, "onnx", TOKENIZER_FILE]
+    assert json.loads((root / MANIFEST_FILE).read_text())["repository"] == REPOSITORY
+
+
+def test_a_model_directory_that_cannot_be_written_is_reported_not_crashed_on(copied_model, monkeypatch):
+    """Files copied onto a host whose model directory is read-only: say what to change."""
+    model_dir, root = copied_model
+
+    def refuse(source, target):
+        raise PermissionError(13, "Read-only file system")
+
+    monkeypatch.setattr(tensorrt_model.os, "replace", refuse)
+
+    with pytest.raises(TensorRTStartupError, match=r"cannot record the model files of .*Make .* writable") as raised:
+        fetch_model(REPOSITORY, model_dir)
+
+    assert raised.value.cause == "model-unavailable"
+    assert not (root / MANIFEST_FILE).exists()
+    assert [path.name for path in root.iterdir() if path.name.endswith(".tmp")] == []
+
+
+def test_a_file_that_cannot_be_read_is_reported_not_crashed_on(copied_model, monkeypatch):
+    model_dir, _root = copied_model
+
+    def unreadable(path):
+        raise OSError(5, "Input/output error")
+
+    monkeypatch.setattr(tensorrt_model, "sha256_of", unreadable)
+
+    with pytest.raises(TensorRTStartupError, match=r"cannot read the model files in .*Input/output error") as raised:
+        fetch_model(REPOSITORY, model_dir)
+
+    assert raised.value.cause == "model-unavailable"
 
 
 def test_an_unknown_repository_cannot_be_fetched(tmp_path):

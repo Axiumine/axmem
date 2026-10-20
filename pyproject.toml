@@ -323,6 +323,7 @@ pytest_add_cli_args = [
     "--ignore=tests/architecture/test_contracts.py",
     "--ignore=tests/integration/test_cli_env_file_writer.py",
     "--ignore=tests/integration/test_config_precedence.py",
+    "--ignore=tests/integration/test_gpu_preflight.py",
     "--ignore=tests/integration/test_harness_config_cli.py",
     "--ignore=tests/integration/test_harness_container_image_and_mounts.py",
     "--ignore=tests/integration/test_harness_fixture_and_report.py",
@@ -332,4 +333,5 @@ pytest_add_cli_args = [
     "--ignore=tests/integration/test_main_lifespan_and_routes.py",
     "--ignore=tests/integration/test_quality_runner.py",
     "--ignore=tests/integration/test_startup_config_wiring.py",
+    "--ignore=tests/integration/test_tensorrt_startup_refusal.py",
 ]

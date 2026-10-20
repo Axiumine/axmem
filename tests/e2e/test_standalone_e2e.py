@@ -8,7 +8,8 @@ The real server (``main.py serve --transport http``) runs in a subprocess with:
 - ``HF_HUB_OFFLINE=1``, and a guard that records and refuses every connection to an address that is
   not loopback and every lookup of a name that is not ``localhost``. The only network use the test
   allows is the client talking to the server, and the server talking to the Qdrant node, both on the
-  loopback interface, and the model files come from the model directories that the session fixtures filled.
+  loopback interface, and the model files come from the model directories that the session fixtures filled
+  (the token counter's vocabulary too: the test loads it before the server starts and shares its directory).
 
 The scenario: create memories, query with reranking, link, mark obsolete and see the obsolete warning.
 """
@@ -18,12 +19,14 @@ import os
 import socket
 import subprocess
 import sys
+import tempfile
 import textwrap
 import time
 from pathlib import Path
 
 import httpx
 import pytest
+import tiktoken
 from fastmcp import Client
 
 from app.config.settings import settings
@@ -101,6 +104,27 @@ def free_port() -> int:
         return sock.getsockname()[1]
 
 
+def tiktoken_cache_dir() -> str:
+    """The directory holding the tiktoken vocabulary, which the guarded server cannot download.
+
+    The vocabulary of the token counter comes from the network the first time it is used. The test process
+    may reach the network, the server may not, so the test loads it here and points the server at the same
+    directory. Without it a cold cache would make the server's lookup show up as outbound traffic.
+    """
+    try:
+        tiktoken.encoding_for_model("gpt-4")
+    except Exception as error:
+        pytest.fail(
+            f"the tiktoken vocabulary is not on disk and could not be downloaded ({error}): "
+            "this test lets the server make no outbound connection, so it must be available beforehand",
+        )
+    return (
+        os.environ.get("TIKTOKEN_CACHE_DIR")
+        or os.environ.get("DATA_GYM_CACHE_DIR")
+        or os.path.join(tempfile.gettempdir(), "data-gym-cache")
+    )
+
+
 def standalone_environment(tmp_path: Path, qdrant_url: str, qdrant_api_key: str, prefix: str) -> dict[str, str]:
     """Only what the standalone setup names: the variables below, and the host's ordinary ones."""
     environment = {name: value for name, value in os.environ.items() if not name.startswith(REMOVED_FROM_THE_ENVIRONMENT)}
@@ -124,6 +148,7 @@ def standalone_environment(tmp_path: Path, qdrant_url: str, qdrant_api_key: str,
         "RERANKING_MODEL_DIR": settings.RERANKING_MODEL_DIR,
         "RERANKING_ENGINE_CACHE_DIR": settings.RERANKING_ENGINE_CACHE_DIR,
         "HF_HUB_OFFLINE": "1",
+        "TIKTOKEN_CACHE_DIR": tiktoken_cache_dir(),
         "LOG_LEVEL": "INFO",
     })
     return environment

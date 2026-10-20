@@ -487,7 +487,7 @@ class MemoryQueryRequest(BaseModel):
         1,
         ge=0,
         le=5,
-        description="Graph traversal depth (0=no links, 1=direct neighbors, 2+=exponential context bloat). Recommended: 0-1.",
+        description="Include the memories linked to each match, one hop away (0 = none, any other value = on). Recommended: 0-1.",
     )
     token_context_threshold: int | None = Field(
         None,

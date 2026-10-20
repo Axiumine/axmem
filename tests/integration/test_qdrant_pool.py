@@ -189,3 +189,57 @@ async def test_a_node_that_cannot_be_reached_stops_the_start_with_its_address():
             await pool.require_supported_server()
     finally:
         await pool.close()
+
+
+async def test_a_silent_node_is_skipped_while_another_answers(qdrant_env, caplog):
+    caplog.set_level(logging.WARNING, logger=client_module.logger.name)
+    pool = NodePool(urls=["http://127.0.0.1:9", qdrant_env.QDRANT_URL], api_key=qdrant_env.QDRANT_API_KEY.get_secret_value(), timeout=1)
+    try:
+        await pool.require_supported_server()
+
+        assert [record.node for record in caplog.records if "did not answer" in record.getMessage()] == ["http://127.0.0.1:9"]
+        with pytest.raises(QdrantStartupError, match=r"Qdrant at http://127\.0\.0\.1:9 cannot be reached"):
+            await pool.server_versions()  # the strict listing still names the node that is down
+    finally:
+        await pool.close()
+
+
+async def test_a_node_that_answers_is_still_checked_for_its_version(qdrant_env, monkeypatch):
+    monkeypatch.setattr(client_module, "MINIMUM_SERVER_VERSION", (99, 0, 0))
+    pool = NodePool(urls=["http://127.0.0.1:9", qdrant_env.QDRANT_URL], api_key=qdrant_env.QDRANT_API_KEY.get_secret_value(), timeout=1)
+    try:
+        with pytest.raises(QdrantStartupError, match=r"is too old"):
+            await pool.require_supported_server()
+    finally:
+        await pool.close()
+
+
+async def test_start_up_fails_with_the_first_failure_when_no_node_answers():
+    pool = NodePool(urls=["http://127.0.0.1:9", "http://127.0.0.1:10"], api_key="key", timeout=1)
+    try:
+        with pytest.raises(QdrantStartupError, match=r"Qdrant at http://127\.0\.0\.1:9 cannot be reached"):
+            await pool.require_supported_server()
+    finally:
+        await pool.close()
+
+
+async def test_the_schema_reads_move_past_a_node_that_does_not_answer():
+    from types import SimpleNamespace
+
+    from app.repositories.qdrant.schema import CollectionNames, QdrantSchema
+
+    class Silent:
+        async def get_aliases(self) -> Any:
+            raise ResponseHandlingException(OSError("All connection attempts failed"))
+
+    class Answering:
+        async def get_aliases(self) -> Any:
+            alias = SimpleNamespace(alias_name="p_memories", collection_name="p_memories_gen1")
+            return SimpleNamespace(aliases=[alias])
+
+    for clients in ([Silent(), Answering()], [Answering(), Silent()]):  # whichever node the rotation starts with
+        pool = pool_of(*clients)
+        schema = QdrantSchema(pool, CollectionNames("p"), dimensions=384)
+
+        assert await schema.live_generation() == "p_memories_gen1"
+        assert await schema.live_exists() is True

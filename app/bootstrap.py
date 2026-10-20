@@ -10,6 +10,7 @@ import atexit
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from app.config.legacy_settings import warn_about_legacy_settings
 from app.config.logging_config import logging
 from app.config.settings import (
     EMBEDDING_PROVIDERS,
@@ -196,6 +197,7 @@ class Runtime:
 
 async def build_runtime() -> Runtime:
     """Build the full runtime stack: adapters -> Qdrant -> repository -> services -> registry -> scopes."""
+    warn_about_legacy_settings()
     embeddings_adapter = get_embedding_adapter()
     reranker_adapter = get_reranker_adapter()
     logger.info("Embedding adapters initialized")

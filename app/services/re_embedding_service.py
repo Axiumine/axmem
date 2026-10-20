@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from uuid import UUID
 
 from app.config.settings import settings
+from app.exceptions import EmbeddingUnavailableError
 from app.models.memory_models import clean_scope
 from app.protocols.embedding_protocol import EmbeddingsAdapter
 from app.protocols.memory_protocol import (
@@ -67,6 +68,9 @@ class ReEmbeddingService:
         self.memory_repository = memory_repository
         self.embedding_adapter = embedding_adapter
         self.batch_size = batch_size
+        # The generation whose activation the current ``re_embed_all`` has begun. Once set, a failure no longer
+        # leaves the live collection as it was (the alias may already point at it), so the caller must not say so.
+        self.switch_started: str | None = None
 
     async def re_embed_all(
         self,
@@ -86,6 +90,7 @@ class ReEmbeddingService:
         Returns:
             ReEmbedResult with counts, the validation outcome and the names of the generations
         """
+        self.switch_started = None
         total = await self.memory_repository.count_all_memories()
         source = await self.memory_repository.live_generation()
         target = await self.memory_repository.create_generation()
@@ -109,6 +114,7 @@ class ReEmbeddingService:
             await self.memory_repository.discard_generation(target)
             return ReEmbedResult(total_processed=processed, total_memories=total, validation=validation)
 
+        self.switch_started = target
         await self.memory_repository.activate_generation(target)
         for _ in range(MAX_CATCH_UP_PASSES):
             if await self._copy_all(source, target) == 0:
@@ -311,13 +317,22 @@ class ReEmbeddingService:
         """Generate embeddings for one batch; a memory that fails is recorded in `result.failed`.
 
         The batch goes to the provider in one call. When that call fails, each memory is
-        retried on its own, so one memory the provider rejects does not fail the others.
+        retried on its own, so one memory the provider rejects does not fail the others. A
+        provider that says it cannot serve any call (``EmbeddingUnavailableError``) is not asked again
+        for every memory: the whole batch is recorded as failed.
         """
         try:
             embeddings = await self.embedding_adapter.generate_embeddings(
                 [build_embedding_text(stored.memory) for stored in batch],
             )
             return list(zip(batch, embeddings, strict=True))
+        except EmbeddingUnavailableError:
+            logger.exception("rebuild_embeddings: the embeddings provider is unavailable, not retrying", extra={
+                "user_id": str(user_id),
+                "batch_size": len(batch),
+            })
+            result.failed.extend({"memory_id": stored.memory.id, "reason": "embedding_failed"} for stored in batch)
+            return []
         except Exception:  # noqa: BLE001 - intentional broad capture
             logger.exception("rebuild_embeddings: batch embedding failed, retrying one memory at a time", extra={
                 "user_id": str(user_id),

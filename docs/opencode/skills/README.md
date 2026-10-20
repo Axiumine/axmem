@@ -2,7 +2,7 @@
 
 The OpenCode-specific skill copies that lived here have been retired. Skills are now
 maintained once, in the canonical [`skills/`](../../../skills/) directory at the repository
-root — single-file, surface-neutral (MCP and CLI), and importable into Axmem itself.
+root — single-file and surface-neutral (MCP and CLI).
 
 | Was here | Now covered by |
 |----------|----------------|

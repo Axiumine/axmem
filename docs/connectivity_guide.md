@@ -1,4 +1,10 @@
 This section provides more detailed instructions on how to connect axmem to various AI Agent applications.
+
+> **Install first.** Axmem is not published to PyPI yet, so the `uvx axmem` commands below only work once a release
+> exists. Until then, install it from a checkout with `uv tool install .` (see the README) and replace `uvx axmem` with
+> `axmem serve --transport stdio` (or just `axmem` for the CLI) in every example. `uvx axmem[ollama]` becomes
+> `uv tool install ".[ollama]"`.
+
 - [Claude Code](#claude-code)
 - [VS Code](#vs-code)
 - [Copilot CLI](#copilot-cli)
@@ -389,8 +395,8 @@ Local mode uses the same Qdrant and settings as a locally launched server
 
 ### From a source checkout (before a PyPI release)
 
-`uv tool install axmem` pulls from PyPI. To exercise the CLI from a clone,
-run the console script through the project venv - no install, and edits apply
+`uv tool install axmem` needs a PyPI release, which does not exist yet; from a clone, `uv tool install .` installs
+the checkout. To exercise the CLI without installing, run the console script through the project venv - edits apply
 immediately:
 
 ```bash

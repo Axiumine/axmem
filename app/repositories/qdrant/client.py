@@ -124,28 +124,58 @@ class NodePool:
         headers = {"api-key": self._api_key} if self._api_key else {}
         return httpx.AsyncClient(base_url=url, headers=headers, timeout=self._timeout)
 
-    async def server_versions(self) -> list[tuple[str, str]]:
-        """``(url, version)`` of every node.
+    async def _version_of(self, url: str) -> str:
+        """The version a node reports.
 
         Raises:
-            QdrantStartupError: If a node cannot be reached or answers without a version
+            QdrantStartupError: If the node cannot be reached or answers without a version
         """
-        found: list[tuple[str, str]] = []
+        try:
+            async with self.http(url) as http:
+                response = await http.get("/")
+                response.raise_for_status()
+                return str(response.json()["version"])
+        except (httpx.HTTPError, KeyError, ValueError) as exc:
+            raise QdrantStartupError(
+                f"Qdrant at {url} cannot be reached or did not report its version ({type(exc).__name__})",
+            ) from exc
+
+    async def server_versions(self, *, skip_silent: bool = False) -> list[tuple[str, str]]:
+        """``(url, version)`` of the nodes.
+
+        By default every node must answer. With ``skip_silent`` a node that does not answer is logged and left out
+        while another one does.
+
+        Raises:
+            QdrantStartupError: If a node cannot be reached or answers without a version (with ``skip_silent``:
+                only if no node does)
+        """
+        versions: list[tuple[str, str]] = []
+        failures: list[QdrantStartupError] = []
         for url in self.urls:
             try:
-                async with self.http(url) as http:
-                    response = await http.get("/")
-                    response.raise_for_status()
-                    found.append((url, str(response.json()["version"])))
-            except (httpx.HTTPError, KeyError, ValueError) as exc:
-                raise QdrantStartupError(
-                    f"Qdrant at {url} cannot be reached or did not report its version ({type(exc).__name__})",
-                ) from exc
-        return found
+                versions.append((url, await self._version_of(url)))
+            except QdrantStartupError as exc:
+                if not skip_silent:
+                    raise
+                failures.append(exc)
+                logger.warning("A Qdrant node did not answer; going on with the others", extra={"node": url})
+        if not versions:
+            raise failures[0]
+        return versions
 
     async def require_supported_server(self) -> None:
-        """Refuse a node older than ``MINIMUM_SERVER_VERSION``: conditional writes are not safe on it."""
-        for url, version in await self.server_versions():
+        """Refuse a node older than ``MINIMUM_SERVER_VERSION``: conditional writes are not safe on it.
+
+        A node that does not answer is logged and skipped while another one does, so a cluster that lost a node
+        can still start and be inspected (requests fail over to the nodes that answer, and ``qdrant-check``
+        reports the silent one). Only when no node answers does it raise.
+
+        Raises:
+            QdrantStartupError: If no node can be reached, or a node that answers is too old
+        """
+        versions = await self.server_versions(skip_silent=True)
+        for url, version in versions:
             if parse_version(version) < MINIMUM_SERVER_VERSION:
                 minimum = ".".join(map(str, MINIMUM_SERVER_VERSION))
                 raise QdrantStartupError(

@@ -47,7 +47,8 @@ async def test_a_cluster_with_one_node_gone_keeps_serving_and_the_node_catches_u
 ):
     tenant = uuid4()
     before = await repo.create_memory(tenant, a_memory(0))
-    getattr(nodes_come_back, f"{how}_node")(2)
+    victim = nodes_come_back.a_follower()  # the leader's loss is its own case, see below
+    getattr(nodes_come_back, f"{how}_node")(victim)
 
     during = await repo.create_memory(tenant, a_memory(1))
     changed = await repo.update_memory(tenant, before.id, MemoryUpdate(title="Changed while a node is down"))
@@ -64,7 +65,7 @@ async def test_a_cluster_with_one_node_gone_keeps_serving_and_the_node_catches_u
     )
     assert during.id in {memory.id for memory, _score in found}
 
-    nodes_come_back.start_node(2)
+    nodes_come_back.start_node(victim)
     for name in (cluster_stack.schema.names.live, cluster_stack.schema.names.links):
         wait_for_active_replicas(nodes_come_back, name)
     report = await wait_until_the_nodes_agree(cluster_stack)
@@ -86,3 +87,52 @@ async def test_a_backup_is_refused_while_a_node_cannot_be_read(nodes_come_back, 
 
     with pytest.raises(ClusterInconsistentError, match="1 unreadable nodes"):
         await service.create_backup()
+
+
+async def test_start_up_and_the_check_go_on_while_a_node_is_gone(nodes_come_back, cluster_stack, capsys):
+    from app.routes.cli import operator_commands
+
+    victim = nodes_come_back.a_follower()
+    nodes_come_back.stop_node(victim)
+
+    await cluster_stack.schema.ensure()  # a restart with one node down must not be refused
+
+    assert await operator_commands.check() == 1  # the check reports the silent node instead of failing before it
+    assert f"{nodes_come_back.urls[victim]}: unreadable" in capsys.readouterr().out
+
+
+async def test_creating_memories_through_the_service_finds_what_it_just_wrote(repo):
+    """Every call goes to another node; the write is read back (vector, link targets) without a stale answer."""
+    from app.services.memory_service import MemoryService
+
+    service = MemoryService(repo)
+    tenant = uuid4()
+    created = [await service.create_memory(tenant, a_memory(index)) for index in range(6)]
+
+    for index, (memory, similar) in enumerate(created):
+        assert memory.id
+        if index:
+            assert {summary.id for summary in similar} <= {earlier.id for earlier, _ in created[:index]}
+            assert set(memory.linked_memory_ids) == {summary.id for summary in similar}
+
+
+async def test_losing_the_strong_ordering_leader_stops_writes_until_it_is_back_and_loses_none(
+    nodes_come_back, cluster_stack, repo,
+):
+    """``ordering=strong`` routes every write through the node with the highest peer id and has no failover."""
+    tenant = uuid4()
+    before = await repo.create_memory(tenant, a_memory(0))
+    nodes_come_back.stop_node(nodes_come_back.strong_leader())
+
+    with pytest.raises(Exception, match=r"(?s).+"):
+        await repo.create_memory(tenant, a_memory(1))
+
+    for index in range(NODES):
+        nodes_come_back.start_node(index)
+    for name in (cluster_stack.schema.names.live, cluster_stack.schema.names.links):
+        wait_for_active_replicas(nodes_come_back, name)
+    after = await repo.create_memory(tenant, a_memory(2))
+    report = await wait_until_the_nodes_agree(cluster_stack)
+
+    assert report.consistent, report
+    assert await held_by_every_node(cluster_stack, repo, tenant, [before.id, after.id]) == [True, True, True]

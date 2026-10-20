@@ -11,9 +11,10 @@ from email.utils import format_datetime
 
 import httpx
 import pytest
-from pydantic import SecretStr, ValidationError
+from pydantic import SecretStr
 
 from app.config.settings import Settings, settings
+from app.exceptions import EmbeddingUnavailableError
 from app.models.memory_models import MemoryCreate
 from app.protocols.embedding_protocol import EMBEDDING_BATCH_LIMIT
 from app.repositories.embeddings.gateway_adapter import (
@@ -88,7 +89,7 @@ def gateway_settings(monkeypatch):
         "GATEWAY_BACKEND": "local",
         "GATEWAY_MODEL": "embed-small",
         "GATEWAY_AGENT_ID": "axmem",
-        "GATEWAY_METADATA": {},
+        "GATEWAY_METADATA": "{}",
         "GATEWAY_SUPPORTS_DIMENSIONS": False,
         "EMBEDDING_DIMENSIONS": WIDTH,
         "EMBEDDING_REQUEST_TIMEOUT_SECONDS": 5.0,
@@ -179,7 +180,7 @@ async def test_each_call_has_its_own_correlation_id():
 
 
 async def test_metadata_and_dimensions_are_sent_when_configured(monkeypatch):
-    monkeypatch.setattr(settings, "GATEWAY_METADATA", {"team": "memory", "env": "test"})
+    monkeypatch.setattr(settings, "GATEWAY_METADATA", '{"team": "memory", "env": "test"}')
     monkeypatch.setattr(settings, "GATEWAY_SUPPORTS_DIMENSIONS", True)
     gateway = FakeGateway()
     adapter, _ = build(gateway)
@@ -354,6 +355,31 @@ async def test_403_and_422_are_never_retried(status, code):
 
     assert len(gateway.requests) == 1
     assert sleeps.waits == []
+
+
+@pytest.mark.parametrize(("response", "unavailable"), [
+    (error_response(403, "BUDGET_EXCEEDED"), True),
+    (error_response(401, "UNAUTHORIZED"), True),
+    (error_response(404, "NOT_FOUND"), True),
+    (error_response(503, "BACKEND_UNAVAILABLE"), True),  # retries used up
+    (error_response(422, "EMBEDDINGS_UNSUPPORTED"), False),  # may be about one text: the caller may try the texts apart
+    (error_response(400, "BAD_REQUEST"), False),
+    (httpx.Response(200, json={"embeddings": [[1.0, 2.0, 3.0, 4.0]]}), True),  # two texts sent, one vector back
+])
+async def test_a_failure_no_single_text_caused_is_told_apart(response, unavailable):
+    adapter, _ = build(FakeGateway(script=[response] * 10))
+
+    with pytest.raises(GatewayEmbeddingError) as failure:
+        await adapter.generate_embeddings(["a", "b"])
+
+    assert isinstance(failure.value, EmbeddingUnavailableError) is unavailable
+
+
+async def test_a_vector_of_the_wrong_width_is_a_failure_of_the_whole_gateway():
+    adapter, _ = build(FakeGateway(width=8))
+
+    with pytest.raises(EmbeddingUnavailableError, match="8-dimensional vectors"):
+        await adapter.generate_embedding("hello")
 
 
 @pytest.mark.parametrize("response", [
@@ -615,7 +641,7 @@ def test_gateway_settings_default_to_empty_and_nothing_requires_them(clean_envir
     assert (loaded.GATEWAY_PATH, loaded.GATEWAY_AUTH_HEADER, loaded.GATEWAY_TENANT_HEADER) == (
         "/api/v1/embeddings", "Authorization", "X-Tenant-Id",
     )
-    assert (loaded.GATEWAY_TENANT, loaded.GATEWAY_METADATA, loaded.GATEWAY_SUPPORTS_DIMENSIONS) == ("", {}, False)
+    assert (loaded.GATEWAY_TENANT, loaded.GATEWAY_METADATA, loaded.GATEWAY_SUPPORTS_DIMENSIONS) == ("", "{}", False)
     assert loaded.GATEWAY_TOKEN.get_secret_value() == ""
 
 
@@ -629,17 +655,31 @@ def test_gateway_settings_come_from_the_environment_and_the_token_stays_secret(m
 
     assert loaded.EMBEDDING_PROVIDER == "gateway"
     assert loaded.GATEWAY_TOKEN.get_secret_value() == TOKEN
-    assert loaded.GATEWAY_METADATA == {"team": "memory"}
+    assert loaded.GATEWAY_METADATA == '{"team": "memory"}'
     assert loaded.GATEWAY_SUPPORTS_DIMENSIONS is True
     assert TOKEN not in repr(loaded)
     assert TOKEN not in str(loaded.model_dump())
 
 
-def test_gateway_metadata_values_must_be_strings(monkeypatch):
-    monkeypatch.setenv("GATEWAY_METADATA", '{"retries": 3}')
+@pytest.mark.parametrize("raw", ["", "  ", "{}"])
+def test_a_blank_gateway_metadata_means_none_and_never_stops_another_provider(monkeypatch, raw):
+    monkeypatch.setenv("GATEWAY_METADATA", raw)
 
-    with pytest.raises(ValidationError, match="GATEWAY_METADATA"):
-        Settings(_env_file=None)
+    loaded = Settings(_env_file=None)  # no gateway in use: this must load whatever the variable holds
+
+    assert loaded.EMBEDDING_PROVIDER == "TensorRT"
+    monkeypatch.setattr(settings, "GATEWAY_METADATA", raw)
+    assert build(FakeGateway())[0].metadata == {}
+
+
+@pytest.mark.parametrize("raw", ['{"retries": 3}', "not json", "[]", '{"team": null}', '"text"'])
+def test_gateway_metadata_must_be_a_json_object_of_strings_but_only_the_gateway_checks(monkeypatch, raw):
+    monkeypatch.setenv("GATEWAY_METADATA", raw)
+
+    assert Settings(_env_file=None).GATEWAY_METADATA == raw  # another provider is not stopped by it
+    monkeypatch.setattr(settings, "GATEWAY_METADATA", raw)
+    with pytest.raises(ValueError, match="GATEWAY_METADATA must be a JSON object of string values"):
+        build(FakeGateway())
 
 
 def test_the_bootstrap_builds_the_gateway_adapter(monkeypatch):

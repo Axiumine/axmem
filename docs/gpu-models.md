@@ -188,8 +188,8 @@ network is available; `uv run --no-sync main.py` then contacts neither PyPI nor 
 - the reranking model directory (`RERANKING_MODEL_DIR`)
 - the token-counting data of tiktoken (below)
 
-On a connected host, after one successful start (or `axmem --re-embed --dry-run`, which starts
-the embedder):
+On a connected host, after one successful `axmem serve` start (which fetches both models;
+`axmem --re-embed --dry-run` starts only the embedder, so it leaves `reranker/` out):
 
 ```bash
 cd ~/.local/share/axmem/models/
@@ -204,8 +204,8 @@ tar -xzf axmem-models.tar.gz -C ~/.local/share/axmem/models/
 ```
 
 Then set `HF_HUB_OFFLINE=1` so that nothing tries the network. A file that is missing is reported
-at start as `Error: the embedder cannot start: model-unavailable` (or `the reranker`) naming the
-model directory, instead of waiting for a connection that never comes:
+at start as `Error: the embedder cannot start: cannot fetch onnx/model.onnx of <repository> ... copy the file
+to <path>` (or `the reranker`) naming the file to copy, instead of waiting for a connection that never comes:
 
 ```bash
 HF_HUB_OFFLINE=1 AUTH_MODE=none uv run --no-sync main.py serve
@@ -239,8 +239,9 @@ TIKTOKEN_CACHE_DIR=/opt/models/tiktoken
 ```
 
 Fully offline operation also needs a locally reachable Qdrant and authentication service, as
-applicable. The embeddings provider and the reranker are local in the default setup, so the server
-makes no call to any other host.
+applicable. The embeddings provider and the reranker are local in the default setup, so with the model
+files and the tiktoken data on disk the server makes no call to any other host. Without the tiktoken
+data the first query tries to download it, and falls back to the estimate when that fails.
 
 ### Verifying the files
 
@@ -291,12 +292,13 @@ defaults or name the repositories you placed.
 | `driver` | The driver does not support CUDA 13 | Install driver R580 or newer, reload the kernel modules |
 | `gpu-error` | CUDA or NVML failed while probing the device | Check `nvidia-smi` and the kernel log |
 | `tensorrt-missing` | TensorRT or the CUDA Python bindings cannot be imported | Run `uv sync`; see the hint in the message |
-| `model-unavailable` | Model files cannot be fetched or fail their SHA-256 record | Restore network access, or delete the model directory named in the message |
-| `build-failed` | TensorRT could not build the engine | Read the TensorRT error in the message |
-| `engine-unusable` | TensorRT built an engine but cannot create an execution context or run it | Delete the engine cache directory; if it repeats, report the TensorRT version and GPU |
+| `model-unavailable` | Model files cannot be fetched, read or recorded, or fail their SHA-256 record | Restore network access, or delete the model directory named in the message |
+| `build-failed` | TensorRT could not build the engine, or the model holds half-precision or quantised tensors (only fp32 and integer ones are accepted) | Read the TensorRT error in the message |
+| `engine-unusable` | TensorRT built an engine but cannot create an execution context or run it, or the engine cache directory cannot be written | Delete the engine cache directory, or point the `*_ENGINE_CACHE_DIR` setting at a writable one; if it repeats, report the TensorRT version and GPU |
 | `dimensions` | The embedder produces vectors of another width than `EMBEDDING_DIMENSIONS` | Set `EMBEDDING_DIMENSIONS` to the width in the message, or choose a model of the configured width |
 
-The message is printed as `Error: the embedder cannot start: <cause>` or
-`Error: the reranker cannot start: <cause>` and the exit code is 1. The server does this before it
+The message is printed as `Error: the embedder cannot start: <message>` or
+`Error: the reranker cannot start: <message>` and the exit code is 1; the message explains the cause in the
+table but does not print its name. The server does this before it
 binds a port, the embedder first; the `axmem` CLI in local mode and `axmem --re-embed`
 report the same error.

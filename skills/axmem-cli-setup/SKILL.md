@@ -3,8 +3,8 @@ name: axmem-cli-setup
 description: >-
   Set up the Axmem CLI and connect from a terminal — install, local or remote mode,
   auth, and verification. Use when connecting a human or headless agent via shell, wiring
-  CI with token auth, or operating a local server (serve, Qdrant selection, feature
-  flags, re-embedding). Also covers the machine contract: --json output, exit codes, and
+  CI with token auth, or operating a local server (serve, Qdrant connection, auth mode,
+  re-embedding, backup). Also covers the machine contract: --json output, exit codes, and
   the discovery ladder.
 license: MIT
 disable-model-invocation: true
@@ -21,18 +21,23 @@ can run a command. Setup ends with a verified round-trip, not an installed binar
 ## Install
 
 ```bash
-uvx axmem --version     # ephemeral, no install
-pip install axmem       # or: uv tool install axmem
+uv tool install .       # from a checkout of the repository: puts `axmem` on the PATH
+axmem --version
 ```
 
-Both `axmem` and `axmem` invoke the same CLI.
+Axmem is not published to PyPI yet, so `uvx axmem` and `pip install axmem` do not work until a release exists.
+`axmem` is the only console script.
 
 ## Choose a mode
 
 Connection precedence: `--local` > `--server URL` > `AXMEM_SERVER` env > local default.
 
-- **Local** (default): runs in-process against the locally configured Qdrant — zero
-  config, no server needed. Right for a personal knowledge base on one machine.
+- **Local** (default): runs in-process against the locally configured Qdrant, with no server
+  to start. It builds the same runtime as the server, so the machine needs an NVIDIA GPU
+  (driver R580 or newer) and the model files, and the command exits with the cause when they
+  are missing (see `docs/gpu-models.md`; `EMBEDDING_PROVIDER` and `RERANKING_PROVIDER=HTTP` or
+  `RERANKING_ENABLED=false` are the explicit ways to run without one). Right for a personal
+  knowledge base on one machine.
 - **Remote**: drives a deployed server. Set `AXMEM_TOKEN` (a bearer token: JWT,
   introspected or static, as the server is configured) in the environment, then
   `axmem auth login --server <url>` checks the connection and saves the server to the
@@ -73,6 +78,9 @@ same operations.
 
 ## Operating a local server
 
+- The server and local CLI mode start the TensorRT embedder and reranker first and refuse to start, printing
+  `Error: the embedder cannot start: ...` or `the reranker`, when the GPU, the driver or the model files are
+  unusable (`docs/gpu-models.md` lists each cause).
 - The server refuses to start without `AUTH_MODE`. `AUTH_MODE=none` serves one local tenant and is
   accepted only on stdio or on a loopback bind: `AUTH_MODE=none axmem serve --transport http
   --host 127.0.0.1 --port 8020` (or `--transport stdio` for MCP clients that spawn a process). A

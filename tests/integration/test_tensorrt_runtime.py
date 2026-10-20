@@ -13,6 +13,7 @@ from cuda.bindings import runtime as cudart
 
 from app.config.settings import settings
 from app.exceptions import TensorRTError, TensorRTStartupError
+from app.repositories.embeddings import tensorrt_runtime
 from app.repositories.embeddings.tensorrt_model import fetch_model
 from app.repositories.embeddings.tensorrt_reranker import PROFILE
 from app.repositories.embeddings.tensorrt_runtime import (
@@ -93,6 +94,100 @@ def test_probe_gpu_describes_the_device():
     assert re.fullmatch(r"\d+(\.\d+)*", gpu.driver_version)
     assert gpu.driver_major == int(gpu.driver_version.split(".")[0]) > 0
     assert gpu.total_bytes > 1024**3
+
+
+class _BrokenNvml:
+    """The slice of ``cuda.bindings.nvml`` that ``probe_gpu`` uses, with one call that fails."""
+
+    def __init__(self, failing_call, error):
+        self.failing_call, self.error = failing_call, error
+        self.shut_down = False
+
+    def init_v2(self):
+        if self.failing_call == "init_v2":
+            raise self.error
+
+    def system_get_driver_version(self):
+        raise self.error
+
+    def shutdown(self):
+        self.shut_down = True
+
+
+@pytest.mark.parametrize(("failing_call", "error"), [
+    ("init_v2", RuntimeError("Unable to load libnvidia-ml.so.1")),
+    ("init_v2", OSError("libnvidia-ml.so.1: cannot open shared object file")),
+    ("system_get_driver_version", tensorrt_runtime.nvml.NvmlError(1)),
+])
+def test_probe_gpu_reports_an_nvml_that_cannot_be_used_as_a_startup_error(monkeypatch, failing_call, error):
+    nvml = _BrokenNvml(failing_call, error)
+    monkeypatch.setattr(tensorrt_runtime, "nvml", nvml)
+
+    with pytest.raises(TensorRTStartupError, match="NVML cannot report the NVIDIA driver version") as raised:
+        probe_gpu()
+
+    assert raised.value.cause == "gpu-error"
+    assert "libnvidia-ml.so.1" in str(raised.value)
+    assert nvml.shut_down is (failing_call != "init_v2")  # an NVML that was opened is closed again
+
+
+def test_gpu_memory_still_answers_when_nvml_cannot_say(monkeypatch):
+    monkeypatch.setattr(tensorrt_runtime, "nvml", _BrokenNvml("init_v2", RuntimeError("no library")))
+
+    assert gpu_memory().process_bytes is None
+
+
+def _field(number, wire_type, payload):
+    return _varint(number << 3 | wire_type) + payload
+
+
+def _varint(value):
+    out = b""
+    while value > 0x7F:
+        out += bytes([value & 0x7F | 0x80])
+        value >>= 7
+    return out + bytes([value])
+
+
+def _text(number, text):
+    return _field(number, 2, _varint(len(text)) + text.encode())
+
+
+def _message(number, body):
+    return _field(number, 2, _varint(len(body)) + body)
+
+
+def identity_model(element_type):
+    """A real ONNX file with one Identity node on a tensor of the given ONNX element type (1 float, 10 float16)."""
+    def tensor(name):
+        shape = _message(2, _message(1, _text(2, "batch")) + _message(1, _text(2, "sequence")))
+        kind = _message(1, _field(1, 0, _varint(element_type)) + shape)
+        return _text(1, name) + _message(2, kind)
+
+    node = _text(1, "x") + _text(2, "y") + _text(4, "Identity")
+    graph = _message(1, node) + _text(2, "graph") + _message(11, tensor("x")) + _message(12, tensor("y"))
+    return _field(1, 0, _varint(8)) + _message(7, graph) + _message(8, _field(2, 0, _varint(17)))
+
+
+@pytest.mark.parametrize(("element_type", "dtype"), [(10, "HALF"), (16, "BF16"), (3, "INT8")])
+def test_build_refuses_a_model_that_is_not_fp32(tmp_path, element_type, dtype):
+    """The network keeps the types of the file, so a half-precision or quantised model would build a lower-precision engine."""
+    path = tmp_path / "model.onnx"
+    path.write_bytes(identity_model(element_type))
+    profile = OptimizationProfile(min_shape=(1, 4), opt_shape=(1, 4), max_shape=(1, 4))
+
+    with pytest.raises(TensorRTStartupError, match=rf"not fp32 or integer.*x: {dtype}") as raised:
+        build_plan(path, profile, tf32=False)
+
+    assert raised.value.cause == "build-failed"
+
+
+def test_build_accepts_an_fp32_model_of_the_same_shape(tmp_path):
+    path = tmp_path / "model.onnx"
+    path.write_bytes(identity_model(1))
+    profile = OptimizationProfile(min_shape=(1, 4), opt_shape=(1, 4), max_shape=(1, 4))
+
+    assert len(build_plan(path, profile, tf32=False)) > 0
 
 
 def test_engine_reads_the_input_names_of_the_model(engine):

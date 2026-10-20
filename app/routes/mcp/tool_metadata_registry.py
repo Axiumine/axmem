@@ -505,7 +505,7 @@ def register_memory_tools_metadata(
                     "type": "str",
                     "description": "Target memory ID(s) to unlink (aliases: target_ids, related_id, related_ids, to_id)",
                     "required": True,
-                    "example": 57,
+                    "example": "018f2c3e-0000-7000-8000-000000000057",
                 },
                 {
                     "name": "ctx",

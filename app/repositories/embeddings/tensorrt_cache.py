@@ -25,6 +25,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
+from app.exceptions import TensorRTStartupError
 from app.repositories.embeddings.tensorrt_runtime import (
     GpuInfo,
     OptimizationProfile,
@@ -164,16 +165,23 @@ def open_engine(
     current = fingerprint(model_sha256=model_sha256, gpu=gpu, tf32=tf32, profile=profile)
     key = fingerprint_key(current)
     group = cache_dir / group_name
-    group.mkdir(parents=True, exist_ok=True)
-    with _locked(group / LOCK_NAME):
-        directory = group / key
-        engine, reason = _cached_engine(directory, current, profile, contexts)
-        cache_hit = engine is not None
-        if engine is None:
-            reason = reason or _describe_change(group, current)
-            logger.info(f"Building the TensorRT engine ({reason}); this takes several seconds")
-            plan = build_plan(onnx_path, profile, tf32=tf32)
-            directory = _store(group, key, current, plan)
-            engine = TensorRTEngine(plan, profile, contexts=contexts)
-        _prune(group, keep=key)
+    try:
+        group.mkdir(parents=True, exist_ok=True)
+        with _locked(group / LOCK_NAME):
+            directory = group / key
+            engine, reason = _cached_engine(directory, current, profile, contexts)
+            cache_hit = engine is not None
+            if engine is None:
+                reason = reason or _describe_change(group, current)
+                logger.info(f"Building the TensorRT engine ({reason}); this takes several seconds")
+                plan = build_plan(onnx_path, profile, tf32=tf32)
+                directory = _store(group, key, current, plan)
+                engine = TensorRTEngine(plan, profile, contexts=contexts)
+            _prune(group, keep=key)
+    except OSError as exc:
+        raise TensorRTStartupError(
+            "engine-unusable",
+            f"the engine cache {group} cannot be used ({type(exc).__name__}: {exc}). Point the engine cache "
+            "directory setting of this model at a directory the process can write.",
+        ) from exc
     return OpenedEngine(engine, directory, cache_hit, reason or "cache hit", time.perf_counter() - started)

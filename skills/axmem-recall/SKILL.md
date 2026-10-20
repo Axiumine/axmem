@@ -87,6 +87,6 @@ Done when: the user knows what memory contributed, even when the answer is "noth
 
 ## Session-start catch-up
 
-Re-entering a project after time away: `get_recent_memories` scoped to that project's ID is
+Re-entering a project after time away: `get_recent_memories` with `project` set to that scope's label is
 the catch-up move — recent decisions and milestones without guessing queries. Run it as a
 deliberate step, then continue into normal recall as the task demands.

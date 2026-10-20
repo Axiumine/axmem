@@ -15,6 +15,8 @@ import logging.config
 import logging.handlers
 import re
 import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, date, datetime
 from queue import Queue
 from uuid import UUID
@@ -235,6 +237,43 @@ def _serialise_log_value(obj):
 _queue_listener: logging.handlers.QueueListener | None = None
 
 
+def _stderr_handler(log_format: str) -> logging.StreamHandler:
+    """A handler that writes masked records to stderr, which never interferes with the stdio transport."""
+    formatter: logging.Formatter
+    if log_format == "json":
+        formatter = JSONFormatter()
+    else:
+        formatter = ConsoleFormatter(
+            fmt="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
+    handler = logging.StreamHandler(sys.stderr)
+    handler.setFormatter(formatter)
+    handler.addFilter(SensitiveDataFilter())
+    return handler
+
+
+@contextmanager
+def logging_while_starting(log_level: str, log_format: str) -> Iterator[None]:
+    """Show log records on stderr while the block runs, for work that happens before ``configure_logging``.
+
+    The server configures its queued logging inside the lifespan, after the TensorRT models have started, so
+    without this their start-up lines (a model fetch, an engine build, the pruned engine directories) would be
+    dropped. Every other handler and the root level are left as they were.
+    """
+    log_format = canonical_choice("LOG_FORMAT", log_format, LOG_FORMATS)
+    root = logging.getLogger()
+    handler = _stderr_handler(log_format)
+    previous_level = root.level
+    root.addHandler(handler)
+    root.setLevel(log_level.upper())
+    try:
+        yield
+    finally:
+        root.removeHandler(handler)
+        root.setLevel(previous_level)
+
+
 def configure_logging(
     log_level: str = "INFO",
     log_format: str = "console",
@@ -268,20 +307,8 @@ def configure_logging(
     # Create queue for log records
     log_queue: Queue = Queue(-1)  # Unlimited size
 
-    # Create the appropriate formatter
-    formatter: logging.Formatter
-    if log_format == "json":
-        formatter = JSONFormatter()
-    else:
-        formatter = ConsoleFormatter(
-            fmt="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S",
-        )
-
     # Create console handler (writes to stderr to avoid interfering with stdio transport)
-    console_handler = logging.StreamHandler(sys.stderr)
-    console_handler.setFormatter(formatter)
-    console_handler.addFilter(SensitiveDataFilter())
+    console_handler = _stderr_handler(log_format)
 
     # Create QueueListener with the real handler
     # respect_handler_level=True means handler's level is checked
