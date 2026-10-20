@@ -15,16 +15,13 @@ data.
 ## Isolation pattern
 
 - Create every record the test needs, and use the IDs returned by those create operations.
-- All application rows are deleted before each test, including users and activity history.
+- All application rows are deleted before each test, including users.
   Deletion is faster than truncation for these small datasets; sequences keep advancing.
   Add new tables to `ALL_TABLES` in `conftest.py` before their parents when extending the schema.
-- Each test gets a fresh app, services, event bus, and clients. The PostgreSQL container,
+- Each test gets a fresh app, services, and clients. The PostgreSQL container,
   migrations, connection pool, embedding model, and reranker stay shared for speed.
 - Use `SETTINGS_OVERRIDE` for module defaults and `monkeypatch` for individual test overrides.
   The app fixture restores its overrides after each test, including when setup fails.
-- Request `wait_for_events` and call `await wait_for_events()` before checking background activity
-  or access tracking through the API. App teardown also waits for pending handlers before the next
-  test can clear the tables. Use explicit readiness signals for streaming tests.
 - Assert exact counts where the test controls the complete result set. Reranking tests must create
   more candidates than the requested `k` and assert non-null, ordered `rerank_score` values from the
   response; returning memories alone does not prove reranking ran.

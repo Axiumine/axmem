@@ -68,7 +68,6 @@ class Runtime:
     services: Services          # small dataclass: user, memory, project, ... (None if flagged off)
     registry: ToolRegistry
     permitted_tools: set[str]   # instance-level FORGETFUL_SCOPES ceiling
-    event_bus: EventBus | None
 
 async def build_runtime() -> Runtime: ...
 async def dispose_runtime(runtime: Runtime) -> None: ...

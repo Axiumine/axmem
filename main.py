@@ -20,7 +20,6 @@ from app.bootstrap import build_runtime, dispose_runtime
 from app.config.auth import build_auth_provider
 from app.config.settings import settings
 from app.routes.api import (
-    activity,
     auth,
     health,
     memories,
@@ -58,8 +57,6 @@ async def lifespan(app):
     mcp.memory_service = services.memory
     mcp.re_embedding_service = services.re_embedding
     mcp.project_service = services.project
-    mcp.activity_service = services.activity
-    mcp.event_bus = runtime.event_bus
 
     logger.info("Services initialized and attached to FastMCP instance")
 
@@ -109,7 +106,6 @@ health.register(mcp)
 auth.register(mcp)
 memories.register(mcp)
 projects.register(mcp)
-activity.register(mcp)
 
 meta_tools.register(mcp)
 

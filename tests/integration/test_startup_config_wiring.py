@@ -5,15 +5,12 @@ silently ignored or fail later with an opaque error:
 
 - EMBEDDING_PROVIDER / RERANKING_PROVIDER / LOG_FORMAT match case-insensitively and an
   unknown value fails fast (like DATABASE) instead of selecting a different provider.
-- ACTIVITY_RETENTION_DAYS accepts the documented empty / null spellings for "keep forever".
-- SSE_MAX_QUEUE_SIZE reaches the EventBus built by the composition root.
 - ENCODING_* / AGENT_* provenance defaults are length-checked against the model caps.
 - The root service-info document only advertises endpoints that exist.
 
 Settings are built from environment variables with Settings(_env_file=None), which is what
 startup does, so no database or network is needed.
 """
-import asyncio
 import importlib
 import inspect
 import logging
@@ -26,15 +23,12 @@ from pydantic import BaseModel, ValidationError
 import app.models as models_package
 import main
 from app import bootstrap
-from app.bootstrap import build_runtime, dispose_runtime
 from app.config import logging_config
 from app.config.settings import (
     PROVENANCE_MAX_LENGTHS,
     Settings,
     settings,
 )
-from app.models.activity_models import ActionType, ActivityEvent, EntityType
-from app.models.user_models import UserCreate
 from app.repositories.embeddings import embedding_adapter as embedding_module
 from app.repositories.embeddings import reranker_adapter as reranker_module
 from app.utils.provenance import PROVENANCE_ENV_MAP
@@ -195,79 +189,6 @@ def test_configure_logging_format_is_case_insensitive(restored_root_logger, log_
 def test_configure_logging_rejects_unknown_format(restored_root_logger):
     with pytest.raises(ValueError, match="LOG_FORMAT"):
         logging_config.configure_logging(log_level="INFO", log_format="jsno")
-
-
-# ============================================================================
-# ACTIVITY_RETENTION_DAYS: documented "empty / null = keep forever"
-# ============================================================================
-
-@pytest.mark.parametrize("raw", ["", "  ", "null", "NULL", "None", "none"])
-def test_activity_retention_blank_or_null_means_keep_forever(monkeypatch, raw):
-    assert _settings(monkeypatch, ACTIVITY_RETENTION_DAYS=raw).ACTIVITY_RETENTION_DAYS is None
-
-
-def test_activity_retention_days_still_parses_numbers(monkeypatch):
-    assert _settings(monkeypatch, ACTIVITY_RETENTION_DAYS="90").ACTIVITY_RETENTION_DAYS == 90
-
-
-def test_activity_retention_days_still_rejects_garbage(monkeypatch):
-    with pytest.raises(ValidationError, match="ACTIVITY_RETENTION_DAYS"):
-        _settings(monkeypatch, ACTIVITY_RETENTION_DAYS="soon")
-
-
-# ============================================================================
-# SSE_MAX_QUEUE_SIZE reaches the EventBus built by the composition root
-# ============================================================================
-
-async def test_sse_max_queue_size_bounds_each_stream_queue(sqlite_runtime_settings, monkeypatch):
-    """A slow SSE client may buffer at most SSE_MAX_QUEUE_SIZE events; the rest are dropped."""
-    queue_limit = 3
-    emitted = 12
-    monkeypatch.setattr(settings, "ACTIVITY_ENABLED", True)
-    monkeypatch.setattr(settings, "SSE_MAX_QUEUE_SIZE", queue_limit)
-    runtime = await build_runtime()
-
-    try:
-        bus = runtime.event_bus
-        assert bus is not None
-        user = await runtime.services.user.get_or_create_user(
-            user=UserCreate(
-                external_id=settings.DEFAULT_USER_ID,
-                name=settings.DEFAULT_USER_NAME,
-                email=settings.DEFAULT_USER_EMAIL,
-            ),
-        )
-        user_id = user.id
-        stream = bus.subscribe_stream(user_id)
-
-        async def emit(index):
-            await bus.emit(ActivityEvent(
-                entity_type=EntityType.MEMORY,
-                entity_id=index,
-                action=ActionType.CREATED,
-                snapshot={},
-                user_id=str(user_id),
-            ))
-
-        # The client consumes one event, then stalls while the rest pile up.
-        first_read = asyncio.ensure_future(stream.__anext__())
-        await asyncio.sleep(0)
-        await emit(0)
-        await first_read
-        for index in range(1, emitted):
-            await emit(index)
-
-        buffered = 0
-        while True:
-            try:
-                await asyncio.wait_for(stream.__anext__(), timeout=0.1)
-            except (TimeoutError, StopAsyncIteration):
-                break
-            buffered += 1
-    finally:
-        await dispose_runtime(runtime)
-
-    assert buffered == queue_limit
 
 
 # ============================================================================

@@ -1,9 +1,8 @@
 """E2E: REST routes of the resource families reject requests that carry no credentials.
 
-With an auth provider attached to the server, every route of the activity,
-and project families must answer ``401`` with the
-authentication failure message, before reading the request body or touching a
-service. Runs against the in-process SQLite app.
+With an auth provider attached to the server, every route of the project family must
+answer ``401`` with the authentication failure message, before reading the request body or
+touching a service. Runs against the in-process SQLite app.
 """
 import pytest
 from fastmcp import Client
@@ -11,13 +10,6 @@ from fastmcp.server.auth.providers.jwt import StaticTokenVerifier
 from httpx import ASGITransport, AsyncClient
 
 MISSING_CREDENTIALS_MESSAGE = "Missing or invalid Authorization header"
-
-ACTIVITY_ROUTES = [
-    ("GET", "/api/v1/activity"),
-    ("GET", "/api/v1/activity/memory/1"),
-    ("GET", "/api/v1/activity/stream"),
-]
-
 
 def _crud_routes(collection: str) -> list[tuple[str, str]]:
     """The five CRUD routes of a REST collection."""
@@ -31,10 +23,7 @@ def _crud_routes(collection: str) -> list[tuple[str, str]]:
     ]
 
 
-PROTECTED_ROUTES = [
-    *ACTIVITY_ROUTES,
-    *_crud_routes("projects"),
-]
+PROTECTED_ROUTES = _crud_routes("projects")
 
 
 @pytest.fixture

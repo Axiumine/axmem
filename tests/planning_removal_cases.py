@@ -12,9 +12,11 @@ from tests.migration_helpers import (
     run_migration,
     stored_event_types,
     table_shapes,
+    upgraded_to,
 )
 
 LAST_REVISION_WITH_PLANNING = "20261018_skill_unique_name"
+PLANNING_DROP_REVISION = "20261019_drop_planning"
 REVISION_BEFORE_PLANNING = "20260106_activity"
 PLANNING_TABLES = ("plans", "tasks", "criteria", "task_dependencies")
 PLANNING_EVENT_TYPES = ("plan", "task", "criterion", "task_dependency")
@@ -65,15 +67,14 @@ class TestPlanningRemoval:
         assert all(await planning_shapes(planning_db)), "downgrade must bring the tables back"
         owner = await store_planning_rows_and_events(planning_db)
 
-        await run_migration(planning_db, config, "upgrade", "head")
-
-        assert_planning_tables_absent(await planning_shapes(planning_db))
-        assert await stored_event_types(planning_db) == sorted(KEPT_EVENT_TYPES)
-        async with planning_db.system_session() as session:
-            kept = await session.execute(
-                text("SELECT name FROM projects WHERE user_id = :owner"), {"owner": owner},
-            )
-            assert [row[0] for row in kept] == ["Kept"]
+        async with upgraded_to(planning_db, config, PLANNING_DROP_REVISION):
+            assert_planning_tables_absent(await planning_shapes(planning_db))
+            assert await stored_event_types(planning_db) == sorted(KEPT_EVENT_TYPES)
+            async with planning_db.system_session() as session:
+                kept = await session.execute(
+                    text("SELECT name FROM projects WHERE user_id = :owner"), {"owner": owner},
+                )
+                assert [row[0] for row in kept] == ["Kept"]
 
     async def test_downgrade_recreates_the_schema_the_earlier_revisions_produce(self, planning_db):
         config = alembic_config()

@@ -66,5 +66,9 @@
   "20261019_drop_skills_tables.py": {
     "down_revision": "20261019_drop_planning",
     "revision": "20261019_drop_skills"
+  },
+  "20261020_drop_activity_tables.py": {
+    "down_revision": "20261019_drop_entities",
+    "revision": "20261020_drop_activity"
   }
 }

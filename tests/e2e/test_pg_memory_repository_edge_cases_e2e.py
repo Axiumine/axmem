@@ -122,13 +122,6 @@ async def test_batch_linking_to_no_targets_creates_nothing(memories, owner):
     assert await memories.create_links_batch(owner, source.id, []) == []
 
 
-# ---- usage ----
-
-
-async def test_recording_access_for_no_memories_updates_nothing(memories, owner):
-    assert await memories.record_memory_access(owner, []) == 0
-
-
 # ---- obsolescence ----
 
 

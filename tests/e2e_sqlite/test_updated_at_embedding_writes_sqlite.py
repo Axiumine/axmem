@@ -1,7 +1,6 @@
-"""Real-SQL regression tests (in-memory SQLite) for read telemetry and embedding writes.
+"""Real-SQL regression tests (in-memory SQLite) for embedding writes.
 
 Covers:
-- `record_memory_access` must not advance `updated_at` (column `onupdate` used to fire).
 - A targeted rebuild must not overwrite a vector regenerated for newer content.
 - `rebuild_embeddings` failures return stable reason codes and blame only the failing memory.
 - `rebuild_embeddings(project_id=...)` rejects unknown or foreign projects.
@@ -175,23 +174,8 @@ def _tool_adapters(repo, embedder, user_id):
 
 
 # ---------------------------------------------------------------------------
-# updated_at must not move on telemetry or derived-data writes
+# updated_at must not move on derived-data writes
 # ---------------------------------------------------------------------------
-
-
-async def test_record_memory_access_does_not_change_updated_at(stack):
-    repo, _db, _embedder, user_id = stack
-    memory = await repo.create_memory(user_id, _memory("content"))
-    before = await repo.get_memory_by_id(user_id, memory.id)
-    assert before.access_count == 0
-
-    await asyncio.sleep(0.05)
-    assert await repo.record_memory_access(user_id, [memory.id]) == 1
-
-    after = await repo.get_memory_by_id(user_id, memory.id)
-    assert after.access_count == 1
-    assert after.last_accessed_at is not None
-    assert after.updated_at == before.updated_at
 
 
 async def test_targeted_rebuild_does_not_change_updated_at(stack):

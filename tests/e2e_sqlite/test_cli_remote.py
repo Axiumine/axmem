@@ -25,7 +25,6 @@ _PATCHED_FIELDS = [
     "RERANKING_ENABLED",
     "FORGETFUL_SCOPES",
     "FORGETFUL_SERVER",
-    "ACTIVITY_ENABLED",
 ]
 
 
@@ -40,7 +39,6 @@ def cli_remote_env(tmp_path, monkeypatch):
     settings.RERANKING_ENABLED = False
     settings.FORGETFUL_SCOPES = "*"
     settings.FORGETFUL_SERVER = ""
-    settings.ACTIVITY_ENABLED = False
     # Keep the OAuth token cache away from the real ~/.config/forgetful
     monkeypatch.setattr(paths, "config_dir", lambda: tmp_path / "config")
     monkeypatch.delenv("FORGETFUL_TOKEN", raising=False)

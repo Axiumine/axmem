@@ -23,7 +23,6 @@ _PATCHED_FIELDS = [
     "RERANKING_ENABLED",
     "FORGETFUL_SCOPES",
     "FORGETFUL_SERVER",
-    "ACTIVITY_ENABLED",
 ]
 
 
@@ -38,7 +37,6 @@ def cli_sqlite_env(tmp_path):
     settings.EMBEDDING_PROVIDER = "FastEmbed"
     settings.RERANKING_ENABLED = False
     settings.FORGETFUL_SCOPES = "*"
-    settings.ACTIVITY_ENABLED = False
     yield settings
     for name, value in original.items():
         setattr(settings, name, value)

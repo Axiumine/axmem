@@ -114,14 +114,6 @@ async def test_marking_an_unknown_memory_obsolete_raises_not_found(repo, user_id
         await repo.mark_obsolete(user_id, UNKNOWN_ID, reason="stale")
 
 
-async def test_recording_access_for_no_memories_updates_nothing(repo, user_id, memories):
-    assert await repo.record_memory_access(user_id, []) == 0
-
-    reloaded = await repo.get_memory_by_id(user_id, memories[0].id)
-    assert reloaded.access_count == 0
-    assert reloaded.last_accessed_at is None
-
-
 async def test_targeted_embedding_upsert_with_no_updates_writes_nothing(repo, user_id):
     assert await repo.upsert_targeted_embeddings(user_id, []) == []
 

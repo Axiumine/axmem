@@ -18,9 +18,11 @@ from tests.migration_helpers import (
     run_migration,
     stored_event_types,
     table_shapes,
+    upgraded_to,
 )
 
 LAST_REVISION_WITH_DOCS = "20261019_drop_files"
+DOCS_DROP_REVISION = "20261019_drop_docs_artifacts"
 REMOVED_TABLES = (
     "documents",
     "code_artifacts",
@@ -166,17 +168,16 @@ class TestDocumentsAndCodeArtifactsRemoval:
         assert all(await removed_shapes(docs_db)), "downgrade must bring the tables back"
         kept = await store_removed_rows_and_events(docs_db)
 
-        await run_migration(docs_db, config, "upgrade", "head")
-
-        assert_removed_tables_absent(await removed_shapes(docs_db))
-        assert await stored_event_types(docs_db) == sorted(KEPT_EVENT_TYPES)
-        async with docs_db.system_session() as session:
-            projects = await session.execute(
-                text("SELECT name FROM projects WHERE user_id = :owner"), {"owner": kept["owner"]},
-            )
-            memories = await session.execute(text("SELECT id FROM memories WHERE id = :id"), {"id": kept["memory"]})
-            assert [row[0] for row in projects] == ["Kept"]
-            assert [row[0] for row in memories] == [kept["memory"]]
+        async with upgraded_to(docs_db, config, DOCS_DROP_REVISION):
+            assert_removed_tables_absent(await removed_shapes(docs_db))
+            assert await stored_event_types(docs_db) == sorted(KEPT_EVENT_TYPES)
+            async with docs_db.system_session() as session:
+                projects = await session.execute(
+                    text("SELECT name FROM projects WHERE user_id = :owner"), {"owner": kept["owner"]},
+                )
+                memories = await session.execute(text("SELECT id FROM memories WHERE id = :id"), {"id": kept["memory"]})
+                assert [row[0] for row in projects] == ["Kept"]
+                assert [row[0] for row in memories] == [kept["memory"]]
 
     async def test_downgrade_recreates_the_schema_the_earlier_revisions_produce(self, docs_db):
         config = alembic_config()

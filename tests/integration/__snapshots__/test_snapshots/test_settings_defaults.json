@@ -1,7 +1,4 @@
 {
-  "ACTIVITY_ENABLED": false,
-  "ACTIVITY_RETENTION_DAYS": null,
-  "ACTIVITY_TRACK_READS": false,
   "AGENT_ID": "",
   "AGENT_MODEL": "",
   "AGENT_VERSION": "",
@@ -95,7 +92,6 @@
   "SERVICE_VERSION": "<varies per build>",
   "SQLITE_MEMORY": false,
   "SQLITE_PATH": "<absolute path>",
-  "SSE_MAX_QUEUE_SIZE": 1000,
   "TOKEN_CACHE_ENABLED": "<set>",
   "TOKEN_CACHE_MAX_SIZE": "<set>",
   "TOKEN_CACHE_TTL_SECONDS": "<set>"

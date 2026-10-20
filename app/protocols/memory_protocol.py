@@ -285,22 +285,3 @@ class MemoryRepository(Protocol):
     async def validate_search_works(self) -> bool:
         """Smoke-test vector storage, including obsolete memories."""
         ...
-
-    # ------------------------------------------------------------------
-    # Usage tracking (forgetful-hulkito fork)
-    # ------------------------------------------------------------------
-
-    async def record_memory_access(
-        self,
-        user_id: UUID,
-        memory_ids: list[int],
-        accessed_at: datetime | None = None,
-    ) -> int:
-        """Increment `access_count` and update `last_accessed_at` for the given
-        memory ids, scoped to `user_id`.
-
-        MUST NOT mutate `updated_at` — usage tracking is an internal read-side
-        concern and must not distort normal memory recency. Returns the number
-        of rows actually updated (owned + non-obsolete).
-        """
-        ...

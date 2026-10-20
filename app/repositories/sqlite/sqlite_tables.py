@@ -143,11 +143,6 @@ class MemoryTable(Base):
     superseded_by: Mapped[int] = mapped_column(Integer, ForeignKey("memories.id", ondelete="SET NULL"), nullable=True)
     obsoleted_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=True)
 
-    # Usage tracking (read-access telemetry). Mutated only by the internal
-    # `record_memory_access` repository method so `updated_at` is not distorted.
-    access_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    last_accessed_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=True)
-
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
         UTCDateTime(), default=lambda: datetime.now(UTC), nullable=False,
@@ -234,7 +229,6 @@ class MemoryTable(Base):
         Index("ix_memories_is_obsolete", "is_obsolete"),
         Index("ix_memories_superseded_by", "superseded_by"),
         Index("ix_memories_confidence", "confidence"),
-        Index("ix_memories_last_accessed_at", "last_accessed_at"),
     )
 
 
@@ -320,60 +314,4 @@ class ProjectsTable(Base):
     __table_args__ = (
         Index("ix_projects_user_id", "user_id"),
         Index("ix_projects_status", "status"),
-    )
-
-
-
-class ActivityLogTable(Base):
-    """Table for storing activity events (Issue #7: Event-driven Architecture).
-
-    Tracks all entity lifecycle events (created, updated, deleted) and optionally
-    read/query operations when ACTIVITY_TRACK_READS is enabled.
-
-    Events include:
-    - Full entity snapshots at event time
-    - Change diffs for updates (old vs new values)
-    - Actor tracking (user, system, llm-maintenance)
-    """
-
-    __tablename__ = "activity_log"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    user_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False,
-    )
-
-    # Event identification
-    entity_type: Mapped[str] = mapped_column(String(50), nullable=False)  # memory, project, etc.
-    entity_id: Mapped[int] = mapped_column(Integer, nullable=False, default=0)  # 0 for links
-    action: Mapped[str] = mapped_column(String(20), nullable=False)  # created, updated, deleted, read, queried
-
-    # Event payload (JSON columns)
-    changes: Mapped[dict] = mapped_column(JSON, nullable=True)  # {field: {old: x, new: y}} for updates
-    snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)  # Full entity state at event time
-
-    # Actor tracking
-    actor: Mapped[str] = mapped_column(String(50), nullable=False, default="user")
-    actor_id: Mapped[str] = mapped_column(String(255), nullable=True)
-
-    # Additional context (named event_metadata to avoid SQLAlchemy reserved 'metadata')
-    event_metadata: Mapped[dict] = mapped_column("metadata", JSON, nullable=True)
-
-    # Timestamp
-    created_at: Mapped[datetime] = mapped_column(
-        UTCDateTime(),
-        default=lambda: datetime.now(UTC),
-        nullable=False,
-    )
-
-    __table_args__ = (
-        Index("ix_activity_log_user_id", "user_id"),
-        Index("ix_activity_log_entity_type", "entity_type"),
-        Index("ix_activity_log_action", "action"),
-        Index("ix_activity_log_entity_id", "entity_id"),
-        Index("ix_activity_log_created_at", "created_at"),
-        Index("ix_activity_log_actor", "actor"),
-        # Composite indexes for common query patterns
-        Index("ix_activity_log_user_entity", "user_id", "entity_type", "entity_id"),
-        Index("ix_activity_log_user_created", "user_id", "created_at"),
     )

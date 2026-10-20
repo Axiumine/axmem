@@ -10,7 +10,6 @@ from app.services.memory_service import MemoryService
 from app.services.project_service import ProjectService
 from app.services.user_service import UserService
 from tests.integration.stubs import (
-    CollectingEventBus,
     InMemoryMemoryRepository,
     InMemoryProjectRepository,
     InMemoryUserRepository,
@@ -59,23 +58,6 @@ def test_memory_service(mock_memory_repository):
     return MemoryService(mock_memory_repository)
 
 
-@pytest.fixture
-def test_memory_service_with_event_bus(mock_memory_repository):
-    """Provides a MemoryService with event bus for testing event emission."""
-    event_bus = CollectingEventBus()
-    service = MemoryService(mock_memory_repository, event_bus=event_bus)
-    return service, event_bus
-
-
-@pytest.fixture
-def test_memory_service_with_access_tracking(mock_memory_repository):
-    """MemoryService + EventBus with access-tracking handler subscribed."""
-    event_bus = CollectingEventBus()
-    service = MemoryService(mock_memory_repository, event_bus=event_bus)
-    service.register_access_tracking_handlers(event_bus)
-    return service, event_bus
-
-
 # ============ Project Testing Fixtures ============
 
 
@@ -91,14 +73,6 @@ def test_project_service(mock_project_repository):
     return ProjectService(mock_project_repository)
 
 
-@pytest.fixture
-def test_project_service_with_event_bus(mock_project_repository):
-    """Provides a ProjectService with event bus for testing event emission."""
-    event_bus = CollectingEventBus()
-    service = ProjectService(mock_project_repository, event_bus=event_bus)
-    return service, event_bus
-
-
 # =============================================================================
 # Real-runtime settings fixture (bootstrap factory / CLI executor tests)
 # =============================================================================
@@ -109,7 +83,6 @@ _SQLITE_RUNTIME_FIELDS = [
     "EMBEDDING_PROVIDER",
     "RERANKING_ENABLED",
     "FORGETFUL_SCOPES",
-    "ACTIVITY_ENABLED",
 ]
 
 
@@ -128,7 +101,6 @@ def sqlite_runtime_settings():
     settings.EMBEDDING_PROVIDER = "FastEmbed"
     settings.RERANKING_ENABLED = False
     settings.FORGETFUL_SCOPES = "*"
-    settings.ACTIVITY_ENABLED = False
     yield settings
     for name, value in original.items():
         setattr(settings, name, value)

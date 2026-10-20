@@ -18,9 +18,11 @@ from tests.migration_helpers import (
     run_migration,
     stored_event_types,
     table_shapes,
+    upgraded_to,
 )
 
 LAST_REVISION_WITH_ENTITIES = "20261019_drop_docs_artifacts"
+ENTITIES_DROP_REVISION = "20261019_drop_entities"
 REMOVED_TABLES = (
     "entities",
     "entity_relationships",
@@ -159,21 +161,20 @@ class TestEntitiesRemoval:
         assert all(await removed_shapes(entities_db)), "downgrade must bring the tables back"
         kept = await store_removed_rows_and_events(entities_db)
 
-        await run_migration(entities_db, config, "upgrade", "head")
-
-        assert_removed_tables_absent(await removed_shapes(entities_db))
-        assert await stored_event_types(entities_db) == sorted(KEPT_EVENT_TYPES)
-        async with entities_db.system_session() as session:
-            projects = await session.execute(
-                text("SELECT name FROM projects WHERE user_id = :owner"), {"owner": kept["owner"]},
-            )
-            memories = await session.execute(
-                text("SELECT id FROM memories WHERE user_id = :owner ORDER BY id"), {"owner": kept["owner"]},
-            )
-            links = await session.execute(text("SELECT source_id, target_id FROM memory_links"))
-            assert [row[0] for row in projects] == ["Kept"]
-            assert [row[0] for row in memories] == [kept["memory"], kept["linked"]]
-            assert {frozenset(row) for row in links} == {frozenset({kept["memory"], kept["linked"]})}
+        async with upgraded_to(entities_db, config, ENTITIES_DROP_REVISION):
+            assert_removed_tables_absent(await removed_shapes(entities_db))
+            assert await stored_event_types(entities_db) == sorted(KEPT_EVENT_TYPES)
+            async with entities_db.system_session() as session:
+                projects = await session.execute(
+                    text("SELECT name FROM projects WHERE user_id = :owner"), {"owner": kept["owner"]},
+                )
+                memories = await session.execute(
+                    text("SELECT id FROM memories WHERE user_id = :owner ORDER BY id"), {"owner": kept["owner"]},
+                )
+                links = await session.execute(text("SELECT source_id, target_id FROM memory_links"))
+                assert [row[0] for row in projects] == ["Kept"]
+                assert [row[0] for row in memories] == [kept["memory"], kept["linked"]]
+                assert {frozenset(row) for row in links} == {frozenset({kept["memory"], kept["linked"]})}
 
     async def test_downgrade_recreates_the_schema_the_earlier_revisions_produce(self, entities_db):
         config = alembic_config()

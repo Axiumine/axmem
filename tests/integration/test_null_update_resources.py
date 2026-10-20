@@ -16,7 +16,6 @@ from typing import Any
 
 import pytest
 
-from app.models.activity_models import ActionType, EntityType
 from app.models.project_models import ProjectCreate, ProjectType, ProjectUpdate
 from app.models.user_models import User
 
@@ -42,7 +41,6 @@ class Case:
     change: dict[str, Any]
     # A payload that repeats what is already stored (a no-op).
     same: dict[str, Any]
-    entity_type: EntityType
 
     def nulls_besides_change(self) -> dict[str, None]:
         """Null payload for every field the real change does not set."""
@@ -52,7 +50,7 @@ class Case:
 CASES = [
     Case(
         name="project",
-        fixture="test_project_service_with_event_bus",
+        fixture="test_project_service",
         model=ProjectUpdate,
         create=lambda s, u: s.create_project(
             u,
@@ -75,7 +73,6 @@ CASES = [
         },
         change={"name": "Renamed"},
         same={"name": "Proj", "notes": "keep me"},
-        entity_type=EntityType.PROJECT,
     ),
 ]
 
@@ -122,16 +119,15 @@ def test_empty_string_still_clears_optional_fields(model, field):
 
 
 # ---------------------------------------------------------------------------
-# Services: nothing is written, nothing is emitted
+# Services: nothing is written
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("case", CASES, ids=_ids(CASES))
 async def test_service_update_with_only_nulls_leaves_record_untouched(case, test_user, request):
-    service, bus = request.getfixturevalue(case.fixture)
+    service = request.getfixturevalue(case.fixture)
     created = await case.create(service, test_user.id)
     before = (await case.get(service, test_user.id, created.id)).model_dump(mode="json")
-    bus.collected_events.clear()
     await asyncio.sleep(0.002)
 
     result = await case.update(service, test_user.id, created.id, case.model(**case.null_fields))
@@ -139,15 +135,13 @@ async def test_service_update_with_only_nulls_leaves_record_untouched(case, test
     after = (await case.get(service, test_user.id, created.id)).model_dump(mode="json")
     assert after == before
     assert result.model_dump(mode="json") == before
-    assert bus.collected_events == []
 
 
 @pytest.mark.parametrize("case", CASES, ids=_ids(CASES))
 async def test_service_update_applies_value_and_ignores_null_sibling(case, test_user, request):
-    service, bus = request.getfixturevalue(case.fixture)
+    service = request.getfixturevalue(case.fixture)
     created = await case.create(service, test_user.id)
     before = (await case.get(service, test_user.id, created.id)).model_dump(mode="json")
-    bus.collected_events.clear()
 
     await case.update(service, test_user.id, created.id, case.model(**case.nulls_besides_change(), **case.change))
 
@@ -157,11 +151,6 @@ async def test_service_update_applies_value_and_ignores_null_sibling(case, test_
             assert value == case.change[field]
         elif field != "updated_at":
             assert value == before[field], f"{field} changed"
-    assert len(bus.collected_events) == 1
-    event = bus.collected_events[0]
-    assert event.entity_type == case.entity_type
-    assert event.action == ActionType.UPDATED
-    assert set(event.changes) == set(case.change)
 
 
 # ---------------------------------------------------------------------------
@@ -170,23 +159,21 @@ async def test_service_update_applies_value_and_ignores_null_sibling(case, test_
 
 
 @pytest.mark.parametrize("case", CASES, ids=_ids(CASES))
-async def test_service_noop_update_keeps_updated_at_and_emits_nothing(case, test_user, request):
-    service, bus = request.getfixturevalue(case.fixture)
+async def test_service_noop_update_keeps_updated_at(case, test_user, request):
+    service = request.getfixturevalue(case.fixture)
     created = await case.create(service, test_user.id)
     updated_at = created.updated_at
-    bus.collected_events.clear()
     await asyncio.sleep(0.002)
 
     result = await case.update(service, test_user.id, created.id, case.model(**case.same))
 
     assert result.updated_at == updated_at
     assert (await case.get(service, test_user.id, created.id)).updated_at == updated_at
-    assert bus.collected_events == []
 
 
 @pytest.mark.parametrize("case", CASES, ids=_ids(CASES))
 async def test_service_empty_update_keeps_updated_at(case, test_user, request):
-    service, _ = request.getfixturevalue(case.fixture)
+    service = request.getfixturevalue(case.fixture)
     created = await case.create(service, test_user.id)
     updated_at = created.updated_at
     await asyncio.sleep(0.002)

@@ -18,10 +18,8 @@ from fastmcp import FastMCP
 if TYPE_CHECKING:
     from fastmcp import Context
 
-    from app.events import EventBus
     from app.middleware.auth import TokenCache
     from app.routes.mcp.tool_registry import ToolRegistry
-    from app.services.activity_service import ActivityService
     from app.services.memory_service import MemoryService
     from app.services.project_service import ProjectService
     from app.services.re_embedding_service import ReEmbeddingService
@@ -35,8 +33,6 @@ class ForgetfulMCP(FastMCP[Any]):
     memory_service: MemoryService
     re_embedding_service: ReEmbeddingService
     project_service: ProjectService
-    activity_service: ActivityService
-    event_bus: EventBus | None
 
     token_cache: TokenCache | None
     registry: ToolRegistry

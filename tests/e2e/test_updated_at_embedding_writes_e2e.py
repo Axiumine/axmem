@@ -1,4 +1,4 @@
-"""PostgreSQL regression tests: read telemetry and embedding writes keep `updated_at` intact.
+"""PostgreSQL regression tests: embedding writes keep `updated_at` intact.
 
 On PostgreSQL the vector lives in `memories.embedding`, so a Core `UPDATE memories SET embedding=...`
 fires the `updated_at` column `onupdate` default unless the statement pins the column. These tests
@@ -96,19 +96,6 @@ async def _embedding_text(db_adapter, memory_id):
                 {"id": memory_id},
             )
         ).scalar_one()
-
-
-@pytest.mark.e2e
-async def test_record_memory_access_keeps_updated_at(memory_repo, db_adapter):
-    user_id, backdated = await _seed(memory_repo, db_adapter)
-
-    assert await memory_repo.record_memory_access(user_id=user_id, memory_ids=list(backdated)) == len(backdated)
-
-    for memory_id in backdated:
-        memory = await memory_repo.get_memory_by_id(user_id=user_id, memory_id=memory_id)
-        assert memory.access_count == 1
-        assert memory.last_accessed_at is not None
-    assert await _updated_at(memory_repo, user_id, backdated) == backdated
 
 
 @pytest.mark.e2e

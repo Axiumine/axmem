@@ -14,9 +14,11 @@ from tests.migration_helpers import (
     run_migration,
     stored_event_types,
     table_shapes,
+    upgraded_to,
 )
 
 LAST_REVISION_WITH_FILES = "20261019_drop_skills"
+FILES_DROP_REVISION = "20261019_drop_files"
 REVISION_BEFORE_FILES = "20260312_planning"
 FILE_TABLES = (
     "files",
@@ -105,17 +107,16 @@ class TestFilesRemoval:
         assert all(await file_shapes(files_db)), "downgrade must bring the tables back"
         kept = await store_file_rows_and_events(files_db)
 
-        await run_migration(files_db, config, "upgrade", "head")
-
-        assert_file_tables_absent(await file_shapes(files_db))
-        assert await stored_event_types(files_db) == sorted(KEPT_EVENT_TYPES)
-        async with files_db.system_session() as session:
-            projects = await session.execute(
-                text("SELECT name FROM projects WHERE user_id = :owner"), {"owner": kept["owner"]},
-            )
-            memories = await session.execute(text("SELECT id FROM memories WHERE id = :id"), {"id": kept["memory"]})
-            assert [row[0] for row in projects] == ["Kept"]
-            assert [row[0] for row in memories] == [kept["memory"]]
+        async with upgraded_to(files_db, config, FILES_DROP_REVISION):
+            assert_file_tables_absent(await file_shapes(files_db))
+            assert await stored_event_types(files_db) == sorted(KEPT_EVENT_TYPES)
+            async with files_db.system_session() as session:
+                projects = await session.execute(
+                    text("SELECT name FROM projects WHERE user_id = :owner"), {"owner": kept["owner"]},
+                )
+                memories = await session.execute(text("SELECT id FROM memories WHERE id = :id"), {"id": kept["memory"]})
+                assert [row[0] for row in projects] == ["Kept"]
+                assert [row[0] for row in memories] == [kept["memory"]]
 
     async def test_downgrade_recreates_the_schema_the_earlier_revisions_produce(self, files_db):
         config = alembic_config()

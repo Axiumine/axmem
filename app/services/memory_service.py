@@ -6,17 +6,14 @@ This service implements the primary functionality for the Forgetful Memory Syste
     - Memory updates
     - Manual linking between memories
     - Retrieval with project associations
-    - Usage tracking on read paths (forgetful-hulkito fork)
 """
 import asyncio
 from datetime import datetime
-from typing import TYPE_CHECKING
 from uuid import UUID
 
 from app.config.logging_config import logging
 from app.config.settings import settings
 from app.exceptions import InvalidStateTransitionError, NotFoundError
-from app.models.activity_models import ActionType, ActivityEvent, ActorType, EntityType
 from app.models.memory_models import (
     VALID_SORT_BY,
     VALID_SORT_ORDER,
@@ -36,9 +33,6 @@ from app.utils.provenance import (
 )
 from app.utils.pydantic_helper import get_changed_fields
 from app.utils.token_counter import get_token_counter
-
-if TYPE_CHECKING:
-    from app.events import EventBus
 
 logger = logging.getLogger(__name__)
 
@@ -64,19 +58,11 @@ class MemoryService:
 
     Handles business logic for creating, updating, querying and linking memories.
     Uses repository protocol for data access.
-
-    Optionally emits activity events via event bus for tracking.
     """
 
-    def __init__(self, memory_repo: MemoryRepository, event_bus: EventBus | None = None):
+    def __init__(self, memory_repo: MemoryRepository):
         self.memory_repo = memory_repo
-        self._event_bus = event_bus
         logger.info("Memory service initialised")
-
-    def register_access_tracking_handlers(self, event_bus: EventBus) -> None:
-        """Subscribe memory access tracking handlers on the given event bus."""
-        event_bus.subscribe("memory.read", self.handle_memory_access_event)
-        event_bus.subscribe("memory.queried", self.handle_memory_access_event)
 
     async def query_memory(
             self,
@@ -128,17 +114,6 @@ class MemoryService:
         )
         logger.info("token budget applied")
 
-        # Emit queried event (opt-in via ACTIVITY_TRACK_READS)
-        if settings.ACTIVITY_TRACK_READS and self._event_bus:
-            await self._emit_queried_event(
-                user_id=user_id,
-                memory_query=memory_query,
-                final_primaries=final_primaries,
-                final_linked=final_linked,
-                token_count=token_count,
-                truncated=truncated,
-            )
-
         logger.info(
             "returning memories",
             extra={
@@ -183,38 +158,6 @@ class MemoryService:
         )
         logger.info("linked memory query completed", extra={"number of linked memories": len(linked_memories)})
         return linked_memories
-
-    async def _emit_queried_event(
-            self,
-            user_id: UUID,
-            memory_query: MemoryQueryRequest,
-            final_primaries: list[Memory],
-            final_linked: list[LinkedMemory],
-            token_count: int,
-            truncated: bool,
-    ) -> None:
-        """Announce a completed query, describing the request and the budgeted result."""
-        await self._emit_event(
-            user_id=user_id,
-            entity_type=EntityType.MEMORY,
-            entity_id=0,  # Query spans multiple memories
-            action=ActionType.QUERIED,
-            snapshot={
-                "result_ids": [m.id for m in final_primaries],
-                "linked_ids": [lm.memory.id for lm in final_linked],
-                "total_count": len(final_primaries) + len(final_linked),
-                "token_count": token_count,
-                "truncated": truncated,
-            },
-            metadata={
-                "query": memory_query.query,
-                "query_context": memory_query.query_context,
-                "k": memory_query.k,
-                "project_ids": memory_query.project_ids,
-                "importance_threshold": memory_query.importance_threshold,
-                "include_links": memory_query.include_links,
-            },
-        )
 
     async def create_memory(
             self,
@@ -272,15 +215,6 @@ class MemoryService:
                     "number linked": len(target_ids),
                 })
 
-        # Emit created event
-        await self._emit_event(
-            user_id=user_id,
-            entity_type=EntityType.MEMORY,
-            entity_id=memory.id,
-            action=ActionType.CREATED,
-            snapshot=memory.model_dump(mode="json"),
-        )
-
         return memory, similar_memories
 
     async def update_memory(
@@ -328,21 +262,6 @@ class MemoryService:
             search_fields_changed=search_fields_changed,
         )
 
-        # Emit updated event with changes
-        if modified_memory:
-            changes_dict = {
-                field: {"old": old, "new": new}
-                for field, (old, new) in changed_fields.items()
-            }
-            await self._emit_event(
-                user_id=user_id,
-                entity_type=EntityType.MEMORY,
-                entity_id=memory_id,
-                action=ActionType.UPDATED,
-                snapshot=modified_memory.model_dump(mode="json"),
-                changes=changes_dict,
-            )
-
         return modified_memory
 
     async def mark_memory_obsolete(
@@ -373,7 +292,7 @@ class MemoryService:
             "user_id": user_id,
         })
 
-        # Get memory before marking obsolete for snapshot
+        # Get the memory first to reject an already obsolete one or a self-supersession
         memory = await self.memory_repo.get_memory_by_id(
             memory_id=memory_id,
             user_id=user_id,
@@ -392,19 +311,6 @@ class MemoryService:
             reason=reason,
             superseded_by=superseded_by,
         )
-
-        # Emit deleted event with snapshot
-        if success and memory:
-            snapshot = memory.model_dump(mode="json")
-            snapshot["obsolete_reason"] = reason
-            snapshot["superseded_by"] = superseded_by
-            await self._emit_event(
-                user_id=user_id,
-                entity_type=EntityType.MEMORY,
-                entity_id=memory_id,
-                action=ActionType.DELETED,
-                snapshot=snapshot,
-            )
 
         return success
 
@@ -426,18 +332,6 @@ class MemoryService:
             if memory is None:
                 raise NotFoundError(f"Memory {memory_id} not found")
             raise InvalidStateTransitionError(f"Memory {memory_id} is not obsolete")
-        restored = await self.memory_repo.get_memory_by_id(
-            memory_id=memory_id,
-            user_id=user_id,
-        )
-        if restored:
-            await self._emit_event(
-                user_id=user_id,
-                entity_type=EntityType.MEMORY,
-                entity_id=memory_id,
-                action=ActionType.UPDATED,
-                snapshot=restored.model_dump(mode="json"),
-            )
         return True
 
     async def get_memory(
@@ -454,22 +348,10 @@ class MemoryService:
         Returns:
             Memory object or None if not found
         """
-        memory = await self.memory_repo.get_memory_by_id(
+        return await self.memory_repo.get_memory_by_id(
             memory_id=memory_id,
             user_id=user_id,
         )
-
-        # Emit read event (opt-in via ACTIVITY_TRACK_READS)
-        if settings.ACTIVITY_TRACK_READS and self._event_bus and memory:
-            await self._emit_event(
-                user_id=user_id,
-                entity_type=EntityType.MEMORY,
-                entity_id=memory_id,
-                action=ActionType.READ,
-                snapshot=memory.model_dump(mode="json"),
-            )
-
-        return memory
 
     async def find_obsolete_matches(
             self,
@@ -585,17 +467,6 @@ class MemoryService:
             target_ids=related_ids,
         )
 
-        # Emit link.created events for each link
-        for target_id in links_created:
-            await self._emit_event(
-                user_id=user_id,
-                entity_type=EntityType.LINK,
-                entity_id=0,  # Links use metadata for source/target
-                action=ActionType.CREATED,
-                snapshot={"source_id": memory_id, "target_id": target_id},
-                metadata={"source_id": memory_id, "target_id": target_id},
-            )
-
         return links_created
 
     async def unlink_memories(
@@ -618,28 +489,13 @@ class MemoryService:
             NotFoundError: If source memory doesn't exist
         """
         # Verify source memory exists (the repository raises NotFoundError if not).
-        # Go through the repository, not get_memory(): unlinking is not a read of the
-        # memory and must not emit a read event or bump access_count.
         await self.memory_repo.get_memory_by_id(memory_id=memory_id, user_id=user_id)
 
-        success = await self.memory_repo.unlink_memories(
+        return await self.memory_repo.unlink_memories(
             user_id=user_id,
             source_id=memory_id,
             target_id=target_id,
         )
-
-        # Emit link.deleted event
-        if success:
-            await self._emit_event(
-                user_id=user_id,
-                entity_type=EntityType.LINK,
-                entity_id=0,
-                action=ActionType.DELETED,
-                snapshot={"source_id": memory_id, "target_id": target_id},
-                metadata={"source_id": memory_id, "target_id": target_id},
-            )
-
-        return success
 
     async def _fetch_linked_memories(
             self,
@@ -830,75 +686,3 @@ class MemoryService:
             running_total += memory_tokens
 
         return selected, running_total, count_truncated
-
-    async def handle_memory_access_event(self, event: ActivityEvent) -> None:
-        """Record memory access from memory.read / memory.queried events."""
-        if not event.user_id:
-            return
-        try:
-            user_id = UUID(event.user_id)
-        except (ValueError, TypeError):
-            logger.warning(
-                "handle_memory_access_event: invalid user_id",
-                extra={"user_id": event.user_id},
-            )
-            return
-
-        memory_ids: list[int] = []
-        if event.action == ActionType.READ:
-            memory_ids = [event.entity_id]
-        elif event.action == ActionType.QUERIED:
-            snapshot = event.snapshot or {}
-            memory_ids = list(snapshot.get("result_ids") or [])
-            memory_ids.extend(snapshot.get("linked_ids") or [])
-        else:
-            return
-
-        if not memory_ids:
-            return
-        try:
-            await self.memory_repo.record_memory_access(user_id=user_id, memory_ids=memory_ids)
-        except Exception as exc:  # noqa: BLE001 - intentional broad guard
-            logger.warning(
-                "record_memory_access failed in handle_memory_access_event",
-                extra={"user_id": str(user_id), "count": len(memory_ids), "error": str(exc)},
-            )
-
-    async def _emit_event(
-            self,
-            user_id: UUID,
-            entity_type: EntityType,
-            entity_id: int,
-            action: ActionType,
-            snapshot: dict,
-            changes: dict | None = None,
-            metadata: dict | None = None,
-    ) -> None:
-        """Emit an activity event to the event bus.
-
-        This is a no-op if no event bus is configured.
-
-        Args:
-            user_id: User ID for the event
-            entity_type: Type of entity (memory, link, etc.)
-            entity_id: ID of the entity
-            action: Action that occurred (created, updated, deleted)
-            snapshot: Full entity state at event time
-            changes: Field changes for updates
-            metadata: Additional context
-        """
-        if self._event_bus is None:
-            return
-
-        event = ActivityEvent(
-            entity_type=entity_type,
-            entity_id=entity_id,
-            action=action,
-            changes=changes,
-            snapshot=snapshot,
-            actor=ActorType.USER,
-            metadata=metadata,
-            user_id=str(user_id),
-        )
-
-        await self._event_bus.emit(event)

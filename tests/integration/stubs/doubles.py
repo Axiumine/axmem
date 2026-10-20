@@ -1,10 +1,7 @@
-"""Non-repository test doubles: deterministic embeddings and a recording bus."""
+"""Non-repository test doubles: deterministic embeddings."""
 
 import hashlib
 import random
-
-from app.events import EventBus
-from app.models.activity_models import ActivityEvent
 
 
 class MockEmbeddingsAdapter:
@@ -29,14 +26,3 @@ class MockEmbeddingsAdapter:
 
         return normalized
 
-
-class CollectingEventBus(EventBus):
-    """EventBus that collects emitted events for testing."""
-
-    def __init__(self):
-        super().__init__()
-        self.collected_events: list[ActivityEvent] = []
-
-    async def emit(self, event: ActivityEvent) -> None:
-        self.collected_events.append(event)
-        await super().emit(event)

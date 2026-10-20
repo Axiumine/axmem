@@ -10,10 +10,8 @@ This file is only parsed by vulture and never imported or executed (pydantic fie
 not class attributes at runtime); the real imports keep each entry tied to its owner.
 """
 from app.config.settings import Settings
-from app.events.event_bus import EventBus
 from app.middleware.auth import TokenCache
-from app.models.activity_models import ActorType
-from app.models.memory_models import Memory, MemoryScore, MemorySummary, ObsoleteMatch
+from app.models.memory_models import MemoryScore, MemorySummary, ObsoleteMatch
 from app.models.project_models import ProjectStatus, ProjectType
 from app.models.user_models import UserCreate, UserUpdate
 from app.repositories.embeddings.embedding_adapter import _EmbeddingsCreateKwargs
@@ -39,8 +37,6 @@ Settings.AGENT_MODEL
 # --- StrEnum members: the stored / API vocabulary (a value domain, not code paths) ----
 # Members are persisted in the database and accepted or returned by the REST and MCP
 # interfaces, so removing an unreferenced one would change what clients may send.
-ActorType.SYSTEM
-ActorType.LLM_MAINTENANCE
 ProjectStatus.ARCHIVED
 ProjectStatus.COMPLETED
 ProjectType.PERSONAL
@@ -59,7 +55,6 @@ ProjectType.OPEN_SOURCE
 
 # --- pydantic model fields, serialised in REST / MCP responses and report files -------
 # The test_harness report models are validated from the agent-written report.json.
-Memory.last_accessed_at
 MemorySummary.similarity
 MemoryScore.similarity
 MemoryScore.rerank_score
@@ -84,15 +79,10 @@ FastEmbedKwargs.local_files_only
 # values are written through mapped keyword arguments and read by the mapper. The
 # relationship names are the back_populates targets of the other side of the mapping.
 sqlite_tables.UsersTable.idp_metadata
-sqlite_tables.MemoryTable.last_accessed_at
 postgres_tables.UsersTable.idp_metadata
-postgres_tables.MemoryTable.last_accessed_at
 
 # --- Read-only observation accessors that the tests of live behaviour assert on -------
 # Nothing in production calls these; they expose state that tests/ read to prove the
-# cache hit/miss counts, the SSE subscriber clean-up, the per-user sequence counter and
-# which bearer token the CLI selected. vulture does not scan tests/.
+# cache hit/miss counts and which bearer token the CLI selected. vulture does not scan tests/.
 TokenCache.stats
-EventBus.stream_subscriber_count
-EventBus.get_current_seq
 RemoteExecutor._token

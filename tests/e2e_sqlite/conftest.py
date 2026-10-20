@@ -15,7 +15,6 @@ import pytest
 from fastmcp import FastMCP
 
 from app.bootstrap import get_reranker_adapter
-from app.events import EventBus
 
 # Shared imports
 from app.repositories.embeddings.embedding_adapter import (
@@ -25,7 +24,6 @@ from app.repositories.embeddings.embedding_adapter import (
     OllamaEmbeddingsAdapter,
     OpenAIEmbeddingsAdapter,
 )
-from app.repositories.sqlite.activity_repository import SqliteActivityRepository
 from app.repositories.sqlite.memory_repository import SqliteMemoryRepository
 from app.repositories.sqlite.project_repository import SqliteProjectRepository
 
@@ -33,7 +31,6 @@ from app.repositories.sqlite.project_repository import SqliteProjectRepository
 from app.repositories.sqlite.sqlite_adapter import SqliteDatabaseAdapter
 from app.repositories.sqlite.user_repository import SqliteUserRepository
 from app.routes.api import (
-    activity,
     auth,
     health,
     memories,
@@ -43,7 +40,6 @@ from app.routes.mcp import meta_tools
 from app.routes.mcp.scope_resolver import parse_scopes, resolve_permitted_tools
 from app.routes.mcp.tool_metadata_registry import register_all_tools_metadata
 from app.routes.mcp.tool_registry import ToolRegistry
-from app.services.activity_service import ActivityService
 from app.services.memory_service import MemoryService
 from app.services.project_service import ProjectService
 from app.services.re_embedding_service import ReEmbeddingService
@@ -119,26 +115,19 @@ async def build_sqlite_app(embedding_adapter, reranker_adapter):
             rerank_adapter=reranker_adapter,
         )
         project_repository = SqliteProjectRepository(db_adapter=db_adapter)
-        activity_repository = SqliteActivityRepository(db_adapter=db_adapter)
 
         @asynccontextmanager
         async def lifespan(app):
             """Application lifecycle with SQLite initialization"""
-            event_bus = EventBus()
-
-            activity_service = ActivityService(activity_repository)
-
             # Services
             user_service = UserService(user_repository)
-            memory_service = MemoryService(memory_repository, event_bus=None)
-            project_service = ProjectService(project_repository, event_bus=None)
+            memory_service = MemoryService(memory_repository)
+            project_service = ProjectService(project_repository)
 
             # Store services on FastMCP instance
             mcp.user_service = user_service
             mcp.memory_service = memory_service
             mcp.project_service = project_service
-            mcp.activity_service = activity_service
-            mcp.event_bus = event_bus
 
             # Create and attach registry
             registry = ToolRegistry()
@@ -168,7 +157,6 @@ async def build_sqlite_app(embedding_adapter, reranker_adapter):
         auth.register(mcp)
         memories.register(mcp)
         projects.register(mcp)
-        activity.register(mcp)
 
         meta_tools.register(mcp)
 

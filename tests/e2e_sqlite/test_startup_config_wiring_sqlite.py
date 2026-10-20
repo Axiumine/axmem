@@ -1,8 +1,8 @@
 """E2E tests for startup configuration wiring on the in-memory SQLite stack
 
-- The default HTTP serve path must run the shutdown teardown (dispose_runtime: drain
-  pending activity handlers, dispose the database engine) when the process receives
-  SIGTERM (what `docker stop` sends) or SIGINT, exactly like the CORS-enabled path.
+- The default HTTP serve path must run the shutdown teardown (dispose_runtime: dispose the
+  database engine) when the process receives SIGTERM (what `docker stop` sends) or SIGINT,
+  exactly like the CORS-enabled path.
 - The default HTTP serve path must keep uvicorn's lifecycle log lines (where it listens, that it
   shut down); the startup migrations must not disable uvicorn's loggers.
 - Provenance defaults that the settings validator accepts must never break a create.
@@ -68,7 +68,6 @@ def _child_env(tmp_path: Path) -> dict[str, str]:
         "SQLITE_MEMORY": "true",
         "EMBEDDING_PROVIDER": "FastEmbed",
         "RERANKING_ENABLED": "false",
-        "ACTIVITY_ENABLED": "true",
         "CORS_ENABLED": "false",
         "FASTMCP_SERVER_AUTH": "",
         "FORGETFUL_SERVER": "",

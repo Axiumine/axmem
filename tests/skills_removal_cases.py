@@ -16,9 +16,11 @@ from tests.migration_helpers import (
     run_migration,
     stored_event_types,
     table_shapes,
+    upgraded_to,
 )
 
 LAST_REVISION_WITH_SKILLS = "20261019_drop_planning"
+SKILLS_DROP_REVISION = "20261019_drop_skills"
 REVISION_BEFORE_SKILLS = "20260315_files"
 SKILL_TABLES = (
     "skills",
@@ -140,19 +142,18 @@ class TestSkillsRemoval:
             await create_vec_skills(skills_db)
             assert await vec_skills_tables(skills_db) == ["vec_skills"]
 
-        await run_migration(skills_db, config, "upgrade", "head")
-
-        assert_skill_tables_absent(await skill_shapes(skills_db))
-        assert await stored_event_types(skills_db) == sorted(KEPT_EVENT_TYPES)
-        if not is_postgres(skills_db):
-            assert await vec_skills_tables(skills_db) == []
-        async with skills_db.system_session() as session:
-            projects = await session.execute(
-                text("SELECT name FROM projects WHERE user_id = :owner"), {"owner": kept["owner"]},
-            )
-            memories = await session.execute(text("SELECT id FROM memories WHERE id = :id"), {"id": kept["memory"]})
-            assert [row[0] for row in projects] == ["Kept"]
-            assert [row[0] for row in memories] == [kept["memory"]]
+        async with upgraded_to(skills_db, config, SKILLS_DROP_REVISION):
+            assert_skill_tables_absent(await skill_shapes(skills_db))
+            assert await stored_event_types(skills_db) == sorted(KEPT_EVENT_TYPES)
+            if not is_postgres(skills_db):
+                assert await vec_skills_tables(skills_db) == []
+            async with skills_db.system_session() as session:
+                projects = await session.execute(
+                    text("SELECT name FROM projects WHERE user_id = :owner"), {"owner": kept["owner"]},
+                )
+                memories = await session.execute(text("SELECT id FROM memories WHERE id = :id"), {"id": kept["memory"]})
+                assert [row[0] for row in projects] == ["Kept"]
+                assert [row[0] for row in memories] == [kept["memory"]]
 
     async def test_downgrade_recreates_the_schema_the_earlier_revisions_produce(self, skills_db):
         config = alembic_config()

@@ -172,14 +172,6 @@ async def test_restoring_another_users_obsolete_memory_returns_false_and_keeps_i
     assert (await world.memories.get_memory_by_id(world.stranger, strangers.id)).is_obsolete is True
 
 
-async def test_recording_access_for_no_memories_updates_nothing(world):
-    memory = await new_memory(world, world.owner, "Never read")
-
-    assert await world.memories.record_memory_access(world.owner, []) == 0
-
-    assert (await world.memories.get_memory_by_id(world.owner, memory.id)).access_count == 0
-
-
 async def test_linked_memories_can_be_limited_to_projects(world):
     owner = world.owner
     project = await new_project(world, owner)

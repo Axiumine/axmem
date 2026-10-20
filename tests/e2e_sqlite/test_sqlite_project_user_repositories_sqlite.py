@@ -1,23 +1,15 @@
-"""Project, user and activity repositories on a real SQLite database.
+"""Project and user repositories on a real SQLite database.
 
 Services look a row up before they update or delete it, so these tests call the repositories
-directly to pin their own answers for unknown ids, empty patches and retention clean-up.
+directly to pin their own answers for unknown ids and empty patches.
 """
-from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
 
 from app.exceptions import NotFoundError
-from app.models.activity_models import (
-    ActionType,
-    ActivityEvent,
-    ActorType,
-    EntityType,
-)
 from app.models.project_models import ProjectCreate, ProjectType, ProjectUpdate
 from app.models.user_models import UserUpdate
-from app.repositories.sqlite.activity_repository import SqliteActivityRepository
 from app.repositories.sqlite.project_repository import SqliteProjectRepository
 from app.repositories.sqlite.user_repository import SqliteUserRepository
 from tests.e2e_sqlite.sqlite_repository_helpers import (
@@ -113,59 +105,3 @@ async def test_updating_an_unknown_user_raises_not_found(adapter):
 
     with pytest.raises(NotFoundError, match=f"^User with id {missing} not found$"):
         await SqliteUserRepository(adapter).update_user(missing, UserUpdate(name="Ghost"))
-
-
-# --- activity ------------------------------------------------------------------------------
-
-
-def _event(actor=ActorType.USER, created_at=None, entity_id=1):
-    fields = {"created_at": created_at} if created_at else {}
-    return ActivityEvent(
-        entity_type=EntityType.MEMORY,
-        entity_id=entity_id,
-        action=ActionType.CREATED,
-        snapshot={"id": entity_id},
-        actor=actor,
-        **fields,
-    )
-
-
-async def test_events_can_be_filtered_by_actor(adapter, user_id):
-    activity = SqliteActivityRepository(adapter)
-    await activity.save_event(user_id, _event(ActorType.USER, entity_id=1))
-    await activity.save_event(user_id, _event(ActorType.SYSTEM, entity_id=2))
-    await activity.save_event(user_id, _event(ActorType.SYSTEM, entity_id=3))
-
-    events, total = await activity.query_events(user_id, actor=ActorType.SYSTEM)
-
-    assert total == 2
-    assert sorted(entry.entity_id for entry in events) == [2, 3]
-    assert {entry.actor for entry in events} == {ActorType.SYSTEM}
-
-
-async def test_cleanup_deletes_only_this_users_events_older_than_the_retention_period(adapter, user_id):
-    activity = SqliteActivityRepository(adapter)
-    other_user = await create_user(adapter, name="Other")
-    now = datetime.now(UTC)
-    await activity.save_event(user_id, _event(created_at=now - timedelta(days=90), entity_id=1))
-    await activity.save_event(user_id, _event(created_at=now - timedelta(days=45), entity_id=2))
-    await activity.save_event(user_id, _event(created_at=now - timedelta(days=5), entity_id=3))
-    await activity.save_event(other_user, _event(created_at=now - timedelta(days=90), entity_id=4))
-
-    deleted = await activity.cleanup_expired(user_id, retention_days=30)
-
-    assert deleted == 2
-    remaining, _ = await activity.query_events(user_id)
-    assert [entry.entity_id for entry in remaining] == [3]
-    others, _ = await activity.query_events(other_user)
-    assert [entry.entity_id for entry in others] == [4]
-
-
-async def test_cleanup_with_nothing_expired_deletes_nothing(adapter, user_id):
-    activity = SqliteActivityRepository(adapter)
-    await activity.save_event(user_id, _event(entity_id=1))
-
-    assert await activity.cleanup_expired(user_id, retention_days=30) == 0
-
-    _, total = await activity.query_events(user_id)
-    assert total == 1

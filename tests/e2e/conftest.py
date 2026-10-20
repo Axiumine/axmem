@@ -31,7 +31,6 @@ from httpx import ASGITransport, AsyncByteStream, AsyncClient, Request, Response
 
 from app.bootstrap import create_repositories
 from app.config.settings import settings
-from app.events import EventBus
 from app.repositories.embeddings.embedding_adapter import (
     AzureOpenAIAdapter,
     FastEmbeddingAdapter,
@@ -42,7 +41,6 @@ from app.repositories.embeddings.embedding_adapter import (
 from app.repositories.postgres.postgres_adapter import PostgresDatabaseAdapter
 from app.repositories.postgres.postgres_tables import Base
 from app.routes.api import (
-    activity,
     auth,
     health,
     memories,
@@ -51,7 +49,6 @@ from app.routes.api import (
 from app.routes.mcp import meta_tools
 from app.routes.mcp.tool_metadata_registry import register_all_tools_metadata
 from app.routes.mcp.tool_registry import ToolRegistry
-from app.services.activity_service import ActivityService
 from app.services.memory_service import MemoryService
 from app.services.project_service import ProjectService
 from app.services.re_embedding_service import ReEmbeddingService
@@ -181,7 +178,6 @@ class StreamingASGITransport(ASGITransport):
 
 # Clear child/association tables before their parents, leaving migration history intact.
 ALL_TABLES = [
-    "activity_log",
     "memory_links",
     "memory_project_association",
     "memories",
@@ -328,7 +324,7 @@ def reranker_adapter():
 @pytest_asyncio.fixture(loop_scope="session", autouse=True)
 async def clean_database(db_adapter):
     """Clean all application tables before each test, including repeated runs."""
-    # Small test datasets are much cheaper to DELETE than to TRUNCATE 22 tables and
+    # Small test datasets are much cheaper to DELETE than to TRUNCATE the tables and
     # restart their sequences. Tests must use returned IDs, not assume they start at 1.
     async with db_adapter.system_session() as session:
         for table in ALL_TABLES:
@@ -358,24 +354,13 @@ async def postgres_app(
     @asynccontextmanager
     async def lifespan(app):
         """Application lifecycle — creates services, attaches to FastMCP instance."""
-        activity_service = ActivityService(repos["activity"])
-        event_bus = None
-
-        if settings.ACTIVITY_ENABLED:
-            event_bus = EventBus()
-            event_bus.subscribe("*.*", activity_service.handle_event)
-
         user_service = UserService(repos["user"])
-        memory_service = MemoryService(repos["memory"], event_bus=event_bus)
-        if event_bus is not None:
-            memory_service.register_access_tracking_handlers(event_bus)
-        project_service = ProjectService(repos["project"], event_bus=event_bus)
+        memory_service = MemoryService(repos["memory"])
+        project_service = ProjectService(repos["project"])
 
         mcp.user_service = user_service
         mcp.memory_service = memory_service
         mcp.project_service = project_service
-        mcp.activity_service = activity_service
-        mcp.event_bus = event_bus
 
         registry = ToolRegistry()
         mcp.registry = registry
@@ -388,11 +373,7 @@ async def postgres_app(
             project_service=project_service,
         )
 
-        try:
-            yield
-        finally:
-            if event_bus is not None:
-                await event_bus.wait_for_pending(timeout=5.0)
+        yield
 
     mcp = FastMCP("Forgetful-Postgres-E2E", lifespan=lifespan)
 
@@ -401,20 +382,9 @@ async def postgres_app(
     auth.register(mcp)
     memories.register(mcp)
     projects.register(mcp)
-    activity.register(mcp)
     meta_tools.register(mcp)
 
     yield mcp
-
-
-@pytest.fixture
-def wait_for_events(postgres_app):
-    """Wait for event handlers instead of sleeping before API assertions."""
-    async def wait():
-        assert postgres_app.event_bus is not None, "Enable ACTIVITY_ENABLED for this test"
-        await postgres_app.event_bus.wait_for_pending(timeout=5.0)
-
-    return wait
 
 
 @pytest_asyncio.fixture(loop_scope="session")

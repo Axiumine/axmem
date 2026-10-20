@@ -4,19 +4,14 @@ Uses in-memory SQLite for test isolation.
 
 - Timestamps read back from SQLite must carry a UTC offset, exactly like the value
   returned by the create call and like PostgreSQL `timestamptz`.
-- `since` / `until` on /api/v1/activity must compare instants, not wall-clock digits,
-  when the caller passes a non-UTC offset.
 """
-from datetime import UTC, datetime, timedelta, timezone
+from datetime import datetime, timedelta
 
 import pytest
 
 from app.config.settings import settings
-from app.models.activity_models import ActionType, ActivityEvent, EntityType
 from app.models.project_models import ProjectCreate, ProjectType, ProjectUpdate
 from app.models.user_models import UserCreate
-
-EVENT_TIME = datetime(2026, 1, 1, 8, 30, 0, tzinfo=UTC)
 
 RESOURCES = {
     "projects": {
@@ -112,86 +107,3 @@ class TestTimestampsAreAwareUtc:
             assert value.utcoffset() == timedelta(0)
         assert fetched.created_at == created.created_at
         assert updated.model_dump(mode="json")["updated_at"].endswith(("Z", "+00:00"))
-
-
-class TestActivityWindowHonoursOffsets:
-    """GET /api/v1/activity since/until compare instants, whatever the offset."""
-
-    @pytest.fixture(autouse=True)
-    def keep_events_forever(self, monkeypatch):
-        # The fixed 2026-01-01 event must survive the lazy retention cleanup of a
-        # configured ACTIVITY_RETENTION_DAYS (for example from a local env file)
-        monkeypatch.setattr(settings, "ACTIVITY_RETENTION_DAYS", None)
-
-    @staticmethod
-    async def _seed(app):
-        user = await app.user_service.get_or_create_user(
-            user=UserCreate(
-                external_id=settings.DEFAULT_USER_ID,
-                name=settings.DEFAULT_USER_NAME,
-                email=settings.DEFAULT_USER_EMAIL,
-            ),
-        )
-        event = ActivityEvent(
-            entity_type=EntityType.MEMORY,
-            entity_id=1,
-            action=ActionType.CREATED,
-            snapshot={"title": "x"},
-            created_at=EVENT_TIME,
-        )
-        await app.activity_service.activity_repo.save_event(user.id, event)
-        return user
-
-    @pytest.mark.asyncio
-    @pytest.mark.parametrize(
-        ("param", "value", "expected_total"),
-        [
-            # 08:00Z: the 08:30Z event is after it
-            ("since", "2026-01-01T08:00:00Z", 1),
-            ("until", "2026-01-01T08:00:00Z", 0),
-            ("since", "2026-01-01T10:00:00+02:00", 1),
-            ("until", "2026-01-01T10:00:00+02:00", 0),
-            # 09:00Z: the 08:30Z event is before it
-            ("until", "2026-01-01T04:00:00-05:00", 1),
-            ("since", "2026-01-01T04:00:00-05:00", 0),
-        ],
-    )
-    async def test_http_offsets(self, http_client, app, param, value, expected_total):
-        await self._seed(app)
-
-        response = await http_client.get("/api/v1/activity", params={param: value})
-
-        assert response.status_code == 200
-        assert response.json()["total"] == expected_total
-
-    @pytest.mark.asyncio
-    async def test_repository_aware_non_utc_and_naive_bounds(self, app):
-        user = await self._seed(app)
-        repo = app.activity_service.activity_repo
-        plus_two = timezone(timedelta(hours=2))
-
-        _, since_total = await repo.query_events(
-            user_id=user.id, since=datetime(2026, 1, 1, 10, 0, tzinfo=plus_two),
-        )
-        _, until_total = await repo.query_events(
-            user_id=user.id, until=datetime(2026, 1, 1, 10, 0, tzinfo=plus_two),
-        )
-        # Naive bounds keep meaning "UTC wall clock".
-        _, naive_since_total = await repo.query_events(
-            user_id=user.id, since=datetime(2026, 1, 1, 8, 0),
-        )
-        _, naive_until_total = await repo.query_events(
-            user_id=user.id, until=datetime(2026, 1, 1, 8, 0),
-        )
-
-        assert (since_total, until_total) == (1, 0)
-        assert (naive_since_total, naive_until_total) == (1, 0)
-
-    @pytest.mark.asyncio
-    async def test_stored_events_come_back_aware(self, app):
-        user = await self._seed(app)
-
-        events, _ = await app.activity_service.activity_repo.query_events(user_id=user.id)
-
-        assert events[0].created_at == EVENT_TIME
-        assert events[0].created_at.utcoffset() == timedelta(0)

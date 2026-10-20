@@ -175,7 +175,7 @@ async def two_user_stack():
         repo = SqliteMemoryRepository(
             db_adapter=db_adapter, embedding_adapter=StubEmbedding(), rerank_adapter=None,
         )
-        service = MemoryService(repo, event_bus=None)
+        service = MemoryService(repo)
         user_a, user_b = uuid4(), uuid4()
         await _create_user(db_adapter, user_a)
         await _create_user(db_adapter, user_b)

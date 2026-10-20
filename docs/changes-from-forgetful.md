@@ -45,8 +45,8 @@ cross-encoder reranking.
 | Skills | Skills removed, with import/export and `skill_ids` on memories; revision `20261019_drop_skills` | Skills are files a host system already keeps | Done (`e77b50e0`) |
 | Files | Files removed, with `file_ids` on memories; revision `20261019_drop_files` | A host system keeps its artefacts in its own repository and tracks their state itself | Done (`c2cbf05a`) |
 | Documents, code artifacts | Documents and code artifacts removed, with `document_ids` and `code_artifact_ids` on memories; revision `20261019_drop_docs_artifacts` | The knowledge layer ingests ADRs, epics and stories with chunking; GitNexus indexes code | Done (`611e76d5`) |
-| Entities | Entities and relationships removed; revision `20261019_drop_entities` | A second free-form graph would drift from the Neo4j one | Done |
-| Activity | Event bus and SSE stream removed | Metrics and tracing belong to the host's observability stack | Planned |
+| Entities | Entities and relationships removed; revision `20261019_drop_entities` | A second free-form graph would drift from the Neo4j one | Done (`5f7f1bd1`) |
+| Activity | Event bus, activity log, SSE stream and the memory access counters removed; revision `20261020_drop_activity` | Metrics and tracing belong to the host's observability stack, and nothing in Axmem reads the log or the counters | Done |
 | Deployment | Container deployment removed (Docker stays for tests) | Axmem is deployed natively on hosts with an NVIDIA GPU | Planned |
 | Hardware | NVIDIA GPU required, no CPU path, no skip | One hardware target; the reranker needs the GPU to meet the latency budget | Planned |
 | Embeddings | In-process TensorRT by default, optional HTTP `gateway`; FastEmbed, ONNX Runtime and the local CPU embedder removed | One GPU path instead of a CPU path; remote embeddings stay optional | Planned |

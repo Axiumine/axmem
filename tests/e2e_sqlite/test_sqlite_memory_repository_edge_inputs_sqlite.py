@@ -142,13 +142,3 @@ async def test_mark_obsolete_reports_unseen_memory_as_not_found(stack, case):
     if case == "foreign":
         untouched = await stack.memories.get_memory_by_id(stack.other_user_id, memory_id)
         assert untouched.is_obsolete is False
-
-
-async def test_recording_access_for_no_memories_counts_nothing(stack):
-    memory_id = await _memory(stack, "quiet")
-
-    updated = await stack.memories.record_memory_access(stack.user_id, [])
-
-    assert updated == 0
-    unchanged = await stack.memories.get_memory_by_id(stack.user_id, memory_id)
-    assert unchanged.access_count == 0

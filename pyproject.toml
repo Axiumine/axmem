@@ -105,7 +105,7 @@ id = "foundation"
 name = "Models, contracts and shared support stay independent"
 type = "forbidden"
 source_modules = [
-    "app.models", "app.protocols", "app.events", "app.utils",
+    "app.models", "app.protocols", "app.utils",
     "app.config.settings", "app.config.logging_config",
     "app.middleware.logging_middleware", "app.exceptions", "app.version",
 ]
@@ -139,7 +139,7 @@ id = "external"
 name = "Core code stays independent of database, provider and backup integrations"
 type = "forbidden"
 source_modules = [
-    "app.models", "app.protocols", "app.services", "app.events", "app.utils",
+    "app.models", "app.protocols", "app.services", "app.utils",
     "app.config.settings", "app.config.logging_config",
     "app.middleware.logging_middleware", "app.exceptions", "app.version",
 ]

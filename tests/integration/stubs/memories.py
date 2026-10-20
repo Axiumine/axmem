@@ -175,25 +175,3 @@ class InMemoryMemoryRepository(MemorySearchMixin, MemoryLinkMixin, MemoryReposit
 
     async def validate_search_works(self) -> bool:
         return True
-
-    # ------------------------------------------------------------------
-    # Usage tracking (forgetful-hulkito fork)
-    # ------------------------------------------------------------------
-
-    async def record_memory_access(
-        self,
-        user_id: UUID,
-        memory_ids: list[int],
-        accessed_at: datetime | None = None,
-    ) -> int:
-        """In-memory access tracking. Does NOT mutate `updated_at`."""
-        ts = accessed_at or datetime.now(UTC)
-        tracked = [
-            mem
-            for mem in (find_item(self._memories, user_id, mid) for mid in memory_ids)
-            if mem is not None and not mem.is_obsolete
-        ]
-        for mem in tracked:
-            mem.access_count = (mem.access_count or 0) + 1
-            mem.last_accessed_at = ts
-        return len(tracked)

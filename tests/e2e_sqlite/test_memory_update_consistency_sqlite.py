@@ -290,7 +290,7 @@ async def embedding_stack(tmp_path, monkeypatch):
     embedder.open_sessions = lambda: open_sessions
 
     repo = SqliteMemoryRepository(db_adapter=db, embedding_adapter=embedder, rerank_adapter=None)
-    service = MemoryService(repo, event_bus=None)
+    service = MemoryService(repo)
     user = await SqliteUserRepository(db).create_user(
         UserCreate(external_id=f"ext-{uuid4()}", name="Embedding Tester", email="embed@example.com"),
     )

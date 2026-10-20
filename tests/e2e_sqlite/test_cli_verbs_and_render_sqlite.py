@@ -22,7 +22,6 @@ _PATCHED_FIELDS = [
     "RERANKING_ENABLED",
     "FORGETFUL_SCOPES",
     "FORGETFUL_SERVER",
-    "ACTIVITY_ENABLED",
 ]
 
 RAW_CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f\u2028\u2029]")
@@ -39,7 +38,6 @@ def cli_env(tmp_path, monkeypatch):
     settings.RERANKING_ENABLED = False
     settings.FORGETFUL_SCOPES = "*"
     settings.FORGETFUL_SERVER = ""
-    settings.ACTIVITY_ENABLED = False
     monkeypatch.delenv("FORGETFUL_TOKEN", raising=False)
     yield settings
     for name, value in original.items():

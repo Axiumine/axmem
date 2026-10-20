@@ -191,14 +191,6 @@ class Settings(BaseSettings):
     AGENT_MODEL: str = ""           # LLM model (e.g., "claude-sonnet-4-6")
     ENFORCE_ENV_OVERWRITE: bool = False  # When True, env values override agent-provided values
 
-    # Activity Tracking Configuration
-    ACTIVITY_ENABLED: bool = False               # Enable activity event tracking
-    ACTIVITY_RETENTION_DAYS: int | None = None   # Days to keep activity events (None = forever)
-    ACTIVITY_TRACK_READS: bool = False           # Track read/query operations (opt-in)
-
-    # SSE Streaming Configuration
-    SSE_MAX_QUEUE_SIZE: int = 1000               # Max events per SSE subscriber queue (backpressure)
-
     # Search Configuration
     EMBEDDING_PROVIDER: str = "FastEmbed" # FastEmbed | Azure | Google | OpenAI | Ollama
     EMBEDDING_MODEL: str = "BAAI/bge-small-en-v1.5"
@@ -255,14 +247,6 @@ class Settings(BaseSettings):
     def _validate_choice_setting(cls, value: str, info: ValidationInfo) -> str:
         field_name = _field_name(info)
         return canonical_choice(field_name, value, _CHOICES[field_name])
-
-    @field_validator("ACTIVITY_RETENTION_DAYS", mode="before")
-    @classmethod
-    def _blank_retention_means_keep_forever(cls, value):
-        # Documented spellings of "keep events forever" that env sources deliver as strings.
-        if isinstance(value, str) and value.strip().lower() in ("", "null", "none"):
-            return None
-        return value
 
     @field_validator(*PROVENANCE_MAX_LENGTHS)
     @classmethod

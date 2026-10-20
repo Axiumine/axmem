@@ -1,23 +1,11 @@
 {
-  "activity_log": [
-    "CREATE TABLE activity_log (\n\tid SERIAL NOT NULL, \n\tuser_id UUID NOT NULL, \n\tentity_type VARCHAR(50) NOT NULL, \n\tentity_id INTEGER NOT NULL, \n\taction VARCHAR(20) NOT NULL, \n\tchanges JSONB, \n\tsnapshot JSONB NOT NULL, \n\tactor VARCHAR(50) NOT NULL, \n\tactor_id VARCHAR(255), \n\tmetadata JSONB, \n\tcreated_at TIMESTAMP WITH TIME ZONE NOT NULL, \n\tPRIMARY KEY (id), \n\tFOREIGN KEY(user_id) REFERENCES users (id) ON DELETE CASCADE\n)",
-    "CREATE INDEX ix_activity_log_action ON activity_log (action)",
-    "CREATE INDEX ix_activity_log_actor ON activity_log (actor)",
-    "CREATE INDEX ix_activity_log_created_at ON activity_log (created_at)",
-    "CREATE INDEX ix_activity_log_entity_id ON activity_log (entity_id)",
-    "CREATE INDEX ix_activity_log_entity_type ON activity_log (entity_type)",
-    "CREATE INDEX ix_activity_log_user_created ON activity_log (user_id, created_at)",
-    "CREATE INDEX ix_activity_log_user_entity ON activity_log (user_id, entity_type, entity_id)",
-    "CREATE INDEX ix_activity_log_user_id ON activity_log (user_id)"
-  ],
   "memories": [
-    "CREATE TABLE memories (\n\tid SERIAL NOT NULL, \n\tuser_id UUID NOT NULL, \n\ttitle TEXT NOT NULL, \n\tcontent TEXT NOT NULL, \n\tcontext TEXT NOT NULL, \n\tkeywords VARCHAR[] NOT NULL, \n\ttags VARCHAR[] NOT NULL, \n\timportance INTEGER NOT NULL, \n\tembedding VECTOR(384) NOT NULL, \n\tsource_repo TEXT, \n\tsource_files VARCHAR[], \n\tsource_url TEXT, \n\tconfidence FLOAT, \n\tencoding_agent TEXT, \n\tencoding_version TEXT, \n\tagent_id TEXT, \n\tagent_version TEXT, \n\tagent_model TEXT, \n\tis_obsolete BOOLEAN NOT NULL, \n\tobsolete_reason TEXT, \n\tsuperseded_by INTEGER, \n\tobsoleted_at TIMESTAMP WITH TIME ZONE, \n\taccess_count INTEGER NOT NULL, \n\tlast_accessed_at TIMESTAMP WITH TIME ZONE, \n\tcreated_at TIMESTAMP WITH TIME ZONE NOT NULL, \n\tupdated_at TIMESTAMP WITH TIME ZONE NOT NULL, \n\tPRIMARY KEY (id), \n\tFOREIGN KEY(user_id) REFERENCES users (id) ON DELETE CASCADE, \n\tFOREIGN KEY(superseded_by) REFERENCES memories (id) ON DELETE SET NULL\n)",
+    "CREATE TABLE memories (\n\tid SERIAL NOT NULL, \n\tuser_id UUID NOT NULL, \n\ttitle TEXT NOT NULL, \n\tcontent TEXT NOT NULL, \n\tcontext TEXT NOT NULL, \n\tkeywords VARCHAR[] NOT NULL, \n\ttags VARCHAR[] NOT NULL, \n\timportance INTEGER NOT NULL, \n\tembedding VECTOR(384) NOT NULL, \n\tsource_repo TEXT, \n\tsource_files VARCHAR[], \n\tsource_url TEXT, \n\tconfidence FLOAT, \n\tencoding_agent TEXT, \n\tencoding_version TEXT, \n\tagent_id TEXT, \n\tagent_version TEXT, \n\tagent_model TEXT, \n\tis_obsolete BOOLEAN NOT NULL, \n\tobsolete_reason TEXT, \n\tsuperseded_by INTEGER, \n\tobsoleted_at TIMESTAMP WITH TIME ZONE, \n\tcreated_at TIMESTAMP WITH TIME ZONE NOT NULL, \n\tupdated_at TIMESTAMP WITH TIME ZONE NOT NULL, \n\tPRIMARY KEY (id), \n\tFOREIGN KEY(user_id) REFERENCES users (id) ON DELETE CASCADE, \n\tFOREIGN KEY(superseded_by) REFERENCES memories (id) ON DELETE SET NULL\n)",
     "CREATE INDEX ix_memories_confidence ON memories (confidence)",
     "CREATE INDEX ix_memories_embedding ON memories USING hnsw (embedding vector_cosine_ops)",
     "CREATE INDEX ix_memories_importance ON memories (importance)",
     "CREATE INDEX ix_memories_is_obsolete ON memories (is_obsolete)",
     "CREATE INDEX ix_memories_keywords ON memories USING gin (keywords)",
-    "CREATE INDEX ix_memories_last_accessed_at ON memories (last_accessed_at)",
     "CREATE INDEX ix_memories_superseded_by ON memories (superseded_by)",
     "CREATE INDEX ix_memories_tags ON memories USING gin (tags)",
     "CREATE INDEX ix_memories_user_id ON memories (user_id)"

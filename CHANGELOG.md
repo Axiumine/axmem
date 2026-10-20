@@ -75,7 +75,7 @@ without the mark, with the commit that landed it, in the commit that lands it.
   and `memory_code_artifact_association` (the stored content included) and the document and code artifact activity
   rows; the downgrade recreates the empty tables. The memory tool docs no longer point long text at documents.
   Agent skill files and prompts in `docs/` that taught these tools are edited; the `skills/` catalogue stays.
-- Entities and relationships: service, repositories, models, REST routes (`/api/v1/entities`), 16 MCP tools, the
+- Entities and relationships (`5f7f1bd1`): service, repositories, models, REST routes (`/api/v1/entities`), 16 MCP tools, the
   `entity` tool category and scope, the `ENTITY_*` settings, the `entity`, `entity_memory_link`,
   `entity_relationship` and `entity_project_link` activity entity types, and the PostgreSQL column-width clamp that
   only guarded entity columns. The `linking` tool filter now selects the memory link tools only. Revision
@@ -83,7 +83,18 @@ without the mark, with the commit that landed it, in the commit that lands it.
   `memory_entity_association` and deletes the entity activity rows; the downgrade recreates the empty tables. The
   `forgetful-entities` agent skill file is deleted and the other files in the `skills/` catalogue, the prompts and
   the agent commands in `docs/` are edited; the catalogue stays. The tool count goes from 33 to 17.
-- **(planned)** The activity bus with its SSE stream.
+- Activity: `EventBus` with its SSE stream, `ActivityService`, both activity repositories and the `activity_log`
+  table, the REST routes `GET /api/v1/activity`, `/api/v1/activity/{entity_type}/{entity_id}` and
+  `/api/v1/activity/stream`, the `ACTIVITY_ENABLED`, `ACTIVITY_RETENTION_DAYS`, `ACTIVITY_TRACK_READS` and
+  `SSE_MAX_QUEUE_SIZE` settings, the event emission in the memory and project services, and the one-shot CLI wait for
+  pending event handlers before the database closes. The memory access handler is gone with the bus, so
+  `access_count` and `last_accessed_at` have no writer or reader; they are removed from the memory objects that the
+  REST routes and tools return. The unused `parse_datetime_param` query helper is deleted. Revision
+  `20261020_drop_activity` drops `activity_log`, `memories.access_count`, `memories.last_accessed_at` and the
+  `ix_memories_last_accessed_at` index; the downgrade recreates the empty table and the two columns (every memory
+  reads as never accessed). Older environment files that still set the removed settings keep working, because
+  unknown settings are ignored. The removal tests of the earlier cuts now check their own revision instead of the
+  head, because the log no longer exists there.
 - **(planned)** Container deployment (`docker/`, image jobs, Nix OCI image); Docker stays as a test dependency.
 - **(planned)** SQLite, PostgreSQL, pgvector and Alembic.
 - **(planned)** FastEmbed, ONNX Runtime and the local CPU embedder; GitHub and Google OAuth and the CLI browser
