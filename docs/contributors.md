@@ -1,4 +1,4 @@
-# Contributing to Forgetful
+# Contributing to Axmem
 
 This guide covers testing and deployment workflows for contributors.
 
@@ -78,8 +78,8 @@ All of this, including the gate list, scoping rules and the cost of the mutation
 Clone the repository and install the locked dependencies (Python 3.14 and [uv](https://docs.astral.sh/uv/)):
 
 ```bash
-git clone https://github.com/ScottRBK/forgetful.git
-cd forgetful
+git clone https://github.com/Axiumine/axmem.git
+cd axmem
 uv sync --locked --all-extras --dev
 AUTH_MODE=none uv run main.py   # the server refuses to start without AUTH_MODE, and needs a Qdrant node (QDRANT_URL)
 ```
@@ -251,7 +251,7 @@ code only the cluster run reaches is left untested.
 #### Backup and recovery tests
 
 These tests use the real Qdrant node. They check that a snapshot backup restores memories, metadata, links, obsolete state and
-searchable vectors, that an export imports into an empty instance and can be imported twice, and that `forgetful re-embed` leaves the
+searchable vectors, that an export imports into an empty instance and can be imported twice, and that `axmem re-embed` leaves the
 live generation untouched when the embedding provider fails after a saved batch or during the final search check.
 
 The embedding provider is the real TensorRT embedder; a wrapper around it makes the provider fail on cue in the child process.
@@ -284,7 +284,7 @@ uv tool run ruff check .
    TensorRT libraries are left out of its environment (`--no-install-package tensorrt-cu13-libs`).
 2. `test` (self-hosted GPU runner, `runs-on: [self-hosted, linux, gpu]`): run integration tests (real Qdrant,
    real embedder and reranker) and E2E tests (full stack on real Qdrant).
-3. `smoke-test` (hosted runner): build the wheel and check that `forgetful --help` works.
+3. `smoke-test` (hosted runner): build the wheel and check that `axmem --help` works.
 
 The GPU runner is a machine you provide and register with those labels; see
 [quality-gates.md](quality-gates.md#pipeline) for what it needs. The Windows leg was removed because the

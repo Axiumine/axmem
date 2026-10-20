@@ -42,7 +42,7 @@ async def _create(http_client, **overrides) -> str:
 
 async def _call(mcp_client, tool_name: str, arguments: dict):
     return await mcp_client.call_tool(
-        "execute_forgetful_tool",
+        "execute_axmem_tool",
         {"tool_name": tool_name, "arguments": arguments},
     )
 

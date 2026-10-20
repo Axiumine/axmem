@@ -25,7 +25,7 @@ TRIVY_IMAGE = "aquasec/trivy:latest"
 
 def trivy_cmd() -> list[str]:
     # A dedicated, user-owned cache: the default one is often root-owned after docker runs.
-    cache = Path.home() / ".cache" / "forgetful-trivy"
+    cache = Path.home() / ".cache" / "axmem-trivy"
     cache.mkdir(parents=True, exist_ok=True)
     explicit = os.environ.get("TRIVY_BIN")
     found = explicit or shutil.which("trivy") or str(Path.home() / ".local/bin/trivy-bin/trivy")

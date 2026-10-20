@@ -103,7 +103,7 @@ def _fake_uv_build(repo_root: Path):
         assert cmd[:2] == ["uv", "build"], cmd
         out = Path(cwd or os.getcwd()) / cmd[cmd.index("-o") + 1]
         out.mkdir(parents=True, exist_ok=True)
-        (out / "forgetful-0.0.0-py3-none-any.whl").write_text("wheel")
+        (out / "axmem-0.0.0-py3-none-any.whl").write_text("wheel")
         return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
     return fake_run
@@ -164,10 +164,10 @@ def test_run_with_relative_output_mounts_absolute_dirs_holding_the_wheel(
         def stop(self):
             pass
 
-    monkeypatch.setattr(harness_main, "ThrowawayForgetful", _FakeServer)
+    monkeypatch.setattr(harness_main, "ThrowawayAxmem", _FakeServer)
     monkeypatch.setattr(container_mod.subprocess, "run", _fake_uv_build(fake_repo))
     fake_docker.run_error = _StopRun()
-    config = config_from_argv(["--output", "runs", "--skills", "forgetful-remember"])
+    config = config_from_argv(["--output", "runs", "--skills", "axmem-remember"])
 
     # Act
     with pytest.raises(_StopRun):
@@ -343,7 +343,7 @@ def test_run_checks_the_sdk_before_creating_the_run_dir_or_building(
         raise AssertionError("work was started before the SDK was verified")
 
     monkeypatch.setattr(harness_main, "ensure_image", unexpected)
-    monkeypatch.setattr(harness_main, "ThrowawayForgetful", unexpected)
+    monkeypatch.setattr(harness_main, "ThrowawayAxmem", unexpected)
     config = config_from_argv(["--output", str(tmp_path / "runs")])
 
     # Act / Assert

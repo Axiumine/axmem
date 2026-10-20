@@ -13,12 +13,12 @@ from test_harness.report import (
 )
 
 VALID_REPORT = {
-    "skill": "forgetful-recall",
+    "skill": "axmem-recall",
     "verdict": "issues",
     "steps": [
         {
             "step": "Query shaping",
-            "commands": ["forgetful call query_memory --args '{\"query\": \"x\"}' --json"],
+            "commands": ["axmem call query_memory --args '{\"query\": \"x\"}' --json"],
             "observed": "Returned primary_memories with 3 hits",
             "verdict": "ok",
         },
@@ -45,7 +45,7 @@ def test_valid_report_parses(tmp_path):
     # Assert
     assert outcome.status == "ok"
     assert outcome.report is not None
-    assert outcome.report.skill == "forgetful-recall"
+    assert outcome.report.skill == "axmem-recall"
     assert outcome.report.verdict == "issues"
     assert outcome.report.steps[0].verdict == "ok"
     assert outcome.report.issues[0].severity == "minor"
@@ -93,7 +93,7 @@ def test_invalid_json_is_recorded_finding(tmp_path):
 def test_schema_violation_is_recorded_finding(tmp_path):
     # Arrange: verdict missing entirely
     path = tmp_path / "report.json"
-    path.write_text(json.dumps({"skill": "forgetful-recall", "issues": []}))
+    path.write_text(json.dumps({"skill": "axmem-recall", "issues": []}))
 
     # Act
     outcome = load_report(path)

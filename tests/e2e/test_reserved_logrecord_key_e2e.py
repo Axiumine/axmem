@@ -88,18 +88,18 @@ async def test_memory_requests_via_api_with_info_logging(http_client, info_loggi
 @pytest.mark.asyncio
 async def test_memory_tools_via_mcp_with_info_logging(mcp_client, info_logging_mcp):
     await mcp_client.call_tool(
-        "execute_forgetful_tool", {"tool_name": "create_memory", "arguments": MEMORY},
+        "execute_axmem_tool", {"tool_name": "create_memory", "arguments": MEMORY},
     )
 
     result = await mcp_client.call_tool(
-        "execute_forgetful_tool",
+        "execute_axmem_tool",
         {"tool_name": "get_recent_memories", "arguments": {"project": MEMORY["project"]}},
     )
 
     assert [m["title"] for m in result.data["memories"]] == [MEMORY["title"]]
 
     await mcp_client.call_tool(
-        "execute_forgetful_tool",
+        "execute_axmem_tool",
         {"tool_name": "query_memory", "arguments": {"query": "info logging", "query_context": "logging", "k": 3}},
     )
     record = next(

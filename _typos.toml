@@ -1,5 +1,0 @@
-[files]
-extend-exclude = ["org_knowledge_proposal.md"]
-
-[default]
-extend-ignore-re = ["FoRgEtFuL"]

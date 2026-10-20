@@ -1,6 +1,6 @@
 """End-to-end tests for scoped permissions via meta-tools.
 
-Tests that FORGETFUL_SCOPES correctly restricts tool discovery and execution.
+Tests that AXMEM_SCOPES correctly restricts tool discovery and execution.
 Uses the scoped_mcp_client fixture from conftest.py which parameterizes over
 different scope configurations.
 """
@@ -18,7 +18,7 @@ ALL_TOOLS_COUNT = 10
 @pytest.mark.asyncio
 async def test_default_wildcard_all_tools_discoverable(mcp_client):
     """With default * scope, all tools should be discoverable (regression test)."""
-    result = await mcp_client.call_tool("discover_forgetful_tools", {})
+    result = await mcp_client.call_tool("discover_axmem_tools", {})
     assert result.data is not None
     assert result.data["total_count"] >= ALL_TOOLS_COUNT
 
@@ -27,7 +27,7 @@ async def test_default_wildcard_all_tools_discoverable(mcp_client):
 async def test_default_wildcard_execute_read_tool(mcp_client):
     """With default * scope, read tools should work."""
     result = await mcp_client.call_tool(
-        "execute_forgetful_tool",
+        "execute_axmem_tool",
         {"tool_name": "get_recent_memories", "arguments": {}},
     )
     assert result.data is not None
@@ -37,7 +37,7 @@ async def test_default_wildcard_execute_read_tool(mcp_client):
 async def test_default_wildcard_execute_write_tool(mcp_client):
     """With default * scope, write tools should work."""
     result = await mcp_client.call_tool(
-        "execute_forgetful_tool",
+        "execute_axmem_tool",
         {
             "tool_name": "create_memory",
             "arguments": {
@@ -65,7 +65,7 @@ async def test_read_only_scope_discover_only_reads(mcp_client, qdrant_app):
     qdrant_app._instance_permitted_tools = resolve_permitted_tools(instance_scopes, qdrant_app.registry)
     qdrant_app._instance_scopes = instance_scopes
 
-    result = await mcp_client.call_tool("discover_forgetful_tools", {})
+    result = await mcp_client.call_tool("discover_axmem_tools", {})
     assert result.data is not None
 
     # All discovered tools should be non-mutating
@@ -85,7 +85,7 @@ async def test_read_only_scope_execute_read_succeeds(mcp_client, qdrant_app):
     qdrant_app._instance_scopes = instance_scopes
 
     result = await mcp_client.call_tool(
-        "execute_forgetful_tool",
+        "execute_axmem_tool",
         {"tool_name": "get_recent_memories", "arguments": {}},
     )
     assert result.data is not None
@@ -100,7 +100,7 @@ async def test_read_only_scope_execute_write_denied(mcp_client, qdrant_app):
 
     with pytest.raises(Exception) as exc_info:
         await mcp_client.call_tool(
-            "execute_forgetful_tool",
+            "execute_axmem_tool",
             {
                 "tool_name": "create_memory",
                 "arguments": {
@@ -125,7 +125,7 @@ async def test_read_only_scope_how_to_use_write_denied(mcp_client, qdrant_app):
 
     with pytest.raises(Exception) as exc_info:
         await mcp_client.call_tool(
-            "how_to_use_forgetful_tool",
+            "how_to_use_axmem_tool",
             {"tool_name": "create_memory"},
         )
     assert "not permitted" in str(exc_info.value).lower()
@@ -142,7 +142,7 @@ async def test_read_memories_scope_discover(mcp_client, qdrant_app):
     qdrant_app._instance_permitted_tools = resolve_permitted_tools(instance_scopes, qdrant_app.registry)
     qdrant_app._instance_scopes = instance_scopes
 
-    result = await mcp_client.call_tool("discover_forgetful_tools", {})
+    result = await mcp_client.call_tool("discover_axmem_tools", {})
     assert result.data is not None
 
     # Only the memory category exists, and it is present
@@ -168,7 +168,7 @@ async def test_read_memories_scope_execute_memory_read(mcp_client, qdrant_app):
     # get_recent_memories should succeed (no permission error)
     # Result may be an empty envelope (no memories exist), so we just check no exception
     result = await mcp_client.call_tool(
-        "execute_forgetful_tool",
+        "execute_axmem_tool",
         {"tool_name": "get_recent_memories", "arguments": {"limit": 5}},
     )
     assert result.is_error is False
@@ -183,7 +183,7 @@ async def test_read_memories_scope_execute_memory_write_denied(mcp_client, qdran
 
     with pytest.raises(Exception) as exc_info:
         await mcp_client.call_tool(
-            "execute_forgetful_tool",
+            "execute_axmem_tool",
             {"tool_name": "mark_memory_obsolete", "arguments": {"memory_id": 1, "reason": "r"}},
         )
     assert "not permitted" in str(exc_info.value).lower()
@@ -200,14 +200,14 @@ async def test_mixed_scopes_all_reads_plus_memory_writes(mcp_client, qdrant_app)
     qdrant_app._instance_permitted_tools = resolve_permitted_tools(instance_scopes, qdrant_app.registry)
     qdrant_app._instance_scopes = instance_scopes
 
-    result = await mcp_client.call_tool("discover_forgetful_tools", {})
+    result = await mcp_client.call_tool("discover_axmem_tools", {})
     assert result.data is not None
 
     assert result.data["categories_available"] == ["memory"]
 
     # Check that memory category has both reads and writes
     memory_result = await mcp_client.call_tool(
-        "discover_forgetful_tools", {"category": "memory"},
+        "discover_axmem_tools", {"category": "memory"},
     )
     memory_tools = memory_result.data["tools_by_category"]["memory"]
     memory_names = {t["name"] for t in memory_tools}
@@ -228,7 +228,7 @@ async def test_mixed_scopes_execute_memory_write(mcp_client, qdrant_app):
     qdrant_app._instance_scopes = instance_scopes
 
     result = await mcp_client.call_tool(
-        "execute_forgetful_tool",
+        "execute_axmem_tool",
         {
             "tool_name": "create_memory",
             "arguments": {
@@ -253,7 +253,7 @@ async def test_write_only_scope_denies_reads(mcp_client, qdrant_app):
 
     with pytest.raises(Exception) as exc_info:
         await mcp_client.call_tool(
-            "execute_forgetful_tool",
+            "execute_axmem_tool",
             {"tool_name": "get_recent_memories", "arguments": {}},
         )
     assert "not permitted" in str(exc_info.value).lower()
@@ -267,7 +267,7 @@ async def test_write_only_scope_denies_reads(mcp_client, qdrant_app):
 async def test_discovery_includes_mutates_field(mcp_client):
     """Verify that tool discovery output includes the mutates field."""
     result = await mcp_client.call_tool(
-        "discover_forgetful_tools",
+        "discover_axmem_tools",
         {"category": "memory"},
     )
     assert result.data is not None

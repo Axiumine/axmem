@@ -73,7 +73,7 @@ def _describe(parser: argparse.ArgumentParser, name: str, out: dict[str, list[di
 
 def test_cli_argument_tree(pristine_settings, json_snapshot):
     tree: dict[str, list[dict]] = {}
-    _describe(build_parser(), "forgetful", tree)
+    _describe(build_parser(), "axmem", tree)
     assert tree == json_snapshot
 
 

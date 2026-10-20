@@ -1,1 +1,1 @@
-"""Forgetful CLI - the fourth front door over the transport-agnostic core."""
+"""Axmem CLI - the fourth front door over the transport-agnostic core."""

@@ -1,4 +1,4 @@
-"""Composition root for the Forgetful runtime.
+"""Composition root for the Axmem runtime.
 
 Extracted from main.lifespan() (docs/dev/cli_plan.md phase 1) so every front door —
 MCP server, REST API, and CLI — builds the identical adapter/repo/service/registry
@@ -230,7 +230,7 @@ async def build_runtime() -> Runtime:
 
     # Resolve instance-level scope ceiling
     from app.routes.mcp.scope_resolver import parse_scopes, resolve_permitted_tools
-    instance_scopes = parse_scopes(settings.FORGETFUL_SCOPES)
+    instance_scopes = parse_scopes(settings.AXMEM_SCOPES)
     permitted_tools = resolve_permitted_tools(instance_scopes, registry)
     logger.info(f"Scoped permissions: scopes={list(instance_scopes)}, permitted_tools={len(permitted_tools)}")
 

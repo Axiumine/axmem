@@ -4,8 +4,8 @@ docs/configuration.md ("CLI Configuration" > "Configuration precedence") documen
 highest wins:
 
     1. Per-invocation flags (--server / --local)
-    2. Shell environment (a real FORGETFUL_SERVER env var)
-    3. User config file (~/.config/forgetful/.env, written by `forgetful auth login`)
+    2. Shell environment (a real AXMEM_SERVER env var)
+    3. User config file (~/.config/axmem/.env, written by `axmem auth login`)
     4. Defaults
 
 A stray `.env` in whatever directory the CLI happens to run from is NOT on that list,
@@ -13,7 +13,7 @@ so it must never outrank the user config the user saved with `auth login`.
 
 settings.py resolves this at import time, so each case runs in a throwaway subprocess:
 a fresh interpreter imports app.config.settings under a controlled CWD, user-config
-home, and shell env, then prints the resolved FORGETFUL_SERVER. The subprocess keeps
+home, and shell env, then prints the resolved AXMEM_SERVER. The subprocess keeps
 the import-time load_dotenv() side effects out of the shared test session.
 """
 import os
@@ -25,31 +25,31 @@ from pathlib import Path
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
-def _resolve_forgetful_server(tmp_path, *, cwd_env, user_config_env, shell_env=None):
+def _resolve_axmem_server(tmp_path, *, cwd_env, user_config_env, shell_env=None):
     """Import settings.py in a fresh interpreter and return the resolved
-    FORGETFUL_SERVER for the given CWD .env / user-config .env / shell env."""
+    AXMEM_SERVER for the given CWD .env / user-config .env / shell env."""
     checkout = tmp_path / "checkout"
     checkout.mkdir()
     cwd_env_file = checkout / ".env"
     if cwd_env is not None:
-        cwd_env_file.write_text(f"FORGETFUL_SERVER={cwd_env}\n")
+        cwd_env_file.write_text(f"AXMEM_SERVER={cwd_env}\n")
 
     config_home = tmp_path / "config"
-    user_config_dir = config_home / "forgetful"
+    user_config_dir = config_home / "axmem"
     user_env_path = user_config_dir / ".env"
     if user_config_env is not None:
         user_env_path.parent.mkdir(parents=True, exist_ok=True)
         user_env_path.write_text(
-            f"FORGETFUL_SERVER={user_config_env}\n",
+            f"AXMEM_SERVER={user_config_env}\n",
         )
 
     env = dict(os.environ)
     env["PYTHONPATH"] = str(_PROJECT_ROOT)
     env["HOME"] = str(tmp_path / "home")
     env["XDG_CONFIG_HOME"] = str(config_home)
-    env.pop("FORGETFUL_SERVER", None)
+    env.pop("AXMEM_SERVER", None)
     if shell_env is not None:
-        env["FORGETFUL_SERVER"] = shell_env
+        env["AXMEM_SERVER"] = shell_env
 
     # load_dotenv() discovers a .env by walking up from the settings.py file, not the
     # CWD; pin discovery to the run directory so the promotion bug (if present)
@@ -64,7 +64,7 @@ def _resolve_forgetful_server(tmp_path, *, cwd_env, user_config_env, shell_env=N
         _user_config_dir = Path({str(user_config_dir)!r})
         platformdirs.user_config_dir = lambda *a, **k: str(_user_config_dir)
         from app.config.settings import settings
-        print(settings.FORGETFUL_SERVER)
+        print(settings.AXMEM_SERVER)
         """,
     )
     result = subprocess.run(
@@ -82,7 +82,7 @@ def test_cwd_env_does_not_override_user_config(tmp_path):
     # Arrange: a stray .env in the run directory and the user config disagree; no real
     # shell env var is set.
     # Act
-    resolved = _resolve_forgetful_server(
+    resolved = _resolve_axmem_server(
         tmp_path,
         cwd_env="http://cwd-checkout:9/mcp",
         user_config_env="http://user-config:8/mcp",
@@ -93,9 +93,9 @@ def test_cwd_env_does_not_override_user_config(tmp_path):
 
 
 def test_shell_env_overrides_user_config(tmp_path):
-    # Arrange: a real shell FORGETFUL_SERVER outranks the user config file.
+    # Arrange: a real shell AXMEM_SERVER outranks the user config file.
     # Act
-    resolved = _resolve_forgetful_server(
+    resolved = _resolve_axmem_server(
         tmp_path,
         cwd_env=None,
         user_config_env="http://user-config:8/mcp",

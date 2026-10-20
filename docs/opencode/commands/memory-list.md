@@ -1,13 +1,13 @@
 ---
-description: List recent memories from Forgetful
+description: List recent memories from Axmem
 ---
 # List Recent Memories
 
-Show the most recently created memories from Forgetful.
+Show the most recently created memories from Axmem.
 
 ## Your Task
 
-Retrieve recent memories using `execute_forgetful_tool("get_recent_memories", {...})`.
+Retrieve recent memories using `execute_axmem_tool("get_recent_memories", {...})`.
 
 **Arguments**: $ARGUMENTS
 
@@ -41,7 +41,7 @@ If the user asks for more detail on any memory, use `get_memory` to retrieve ful
 
 To filter by project, pass the project scope label as `project`:
 ```
-execute_forgetful_tool("get_recent_memories", {"limit": 10, "project": "<project scope>"})
+execute_axmem_tool("get_recent_memories", {"limit": 10, "project": "<project scope>"})
 ```
 Infer the label from context or ask the user; a project is just a label, so there is no list to look it up in.
 
@@ -61,6 +61,6 @@ Returns last 5 memories.
 
 **With project filter:**
 ```
-/memory-list forgetful project
+/memory-list axmem project
 ```
-Returns recent memories in the "forgetful" project scope.
+Returns recent memories in the "axmem" project scope.

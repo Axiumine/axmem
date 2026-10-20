@@ -1,4 +1,4 @@
-"""Throwaway Forgetful server: a real `forgetful serve` subprocess the agent can reach.
+"""Throwaway Axmem server: a real `axmem serve` subprocess the agent can reach.
 
 The Qdrant node the harness itself is configured for, in collections under a prefix made for the run
 and deleted at teardown, no auth, the TensorRT embedder with the default (warm) model and engine
@@ -6,8 +6,8 @@ directories. Env is injected at launch because
 settings freeze at import time in the child. The instance must not depend on whoever
 runs the harness: cwd is the run directory so no repo-local dotenv file leaks in, but
 the absolute user-config dotenv file (and the shell) still reach the child, so every
-Forgetful setting is pinned to its declared default (a real env var outranks every
-dotenv file). The server is the `forgetful` of the interpreter running the harness, and
+Axmem setting is pinned to its declared default (a real env var outranks every
+dotenv file). The server is the `axmem` of the interpreter running the harness, and
 harness-to-server traffic is direct (loopback must never go through HTTP(S)_PROXY).
 Readiness = GET /health -> 200 (503 while initialising).
 
@@ -76,26 +76,26 @@ def _plain_client_factory(url: str, token: str | None):
 
 
 def _server_executable() -> str:
-    """The `forgetful` console script of the environment running the harness.
+    """The `axmem` console script of the environment running the harness.
 
-    PATH is only the fallback (a system python with a globally installed forgetful):
-    a different venv's `forgetful` earlier on PATH must not silently stand in for the
+    PATH is only the fallback (a system python with a globally installed axmem):
+    a different venv's `axmem` earlier on PATH must not silently stand in for the
     interpreter under test, and the harness must also work from an un-activated venv.
     """
-    own = Path(sys.executable).with_name("forgetful" + (".exe" if os.name == "nt" else ""))
+    own = Path(sys.executable).with_name("axmem" + (".exe" if os.name == "nt" else ""))
     if own.is_file():
         return str(own)
-    on_path = shutil.which("forgetful")
+    on_path = shutil.which("axmem")
     if on_path is None:
         raise HarnessInfraError(
-            f"forgetful console script is neither next to {sys.executable} nor on PATH "
+            f"axmem console script is neither next to {sys.executable} nor on PATH "
             "- run the harness via `uv run`",
         )
     return on_path
 
 
 def _host_env_with_default_settings() -> dict[str, str]:
-    """The host env with every Forgetful setting reset to its declared default.
+    """The host env with every Axmem setting reset to its declared default.
 
     Settings also reads the absolute user-config dotenv file whatever the cwd, but a
     real env var outranks every dotenv file, so each setting is pinned here. Host
@@ -126,7 +126,7 @@ def _ephemeral_port() -> int:
         return sock.getsockname()[1]
 
 
-class ThrowawayForgetful:
+class ThrowawayAxmem:
     def __init__(self, run_dir: Path, boot_timeout: float = 120):
         self.run_dir = run_dir
         self.boot_timeout = boot_timeout
@@ -158,11 +158,11 @@ class ThrowawayForgetful:
             # The server refuses to start without an auth mode; the throwaway instance only
             # listens on 127.0.0.1, the one bind where AUTH_MODE=none is accepted.
             "AUTH_MODE": "none",
-            "FORGETFUL_SERVER": "",
+            "AXMEM_SERVER": "",
             "CORS_ENABLED": "false",
             "LOG_LEVEL": "INFO",
         })
-        env.pop("FORGETFUL_TOKEN", None)
+        env.pop("AXMEM_TOKEN", None)
         # Loopback never goes through a proxy: not the harness's calls to the server, and not the
         # server's calls to a Qdrant node on this host. A remote node still follows the host's proxy.
         loopback = "127.0.0.1,localhost,::1"

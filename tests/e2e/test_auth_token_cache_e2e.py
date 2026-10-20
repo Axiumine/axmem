@@ -21,7 +21,7 @@ from app.middleware.auth import TokenCache
 from app.models.tenant_models import Tenant
 
 ISSUER = "https://idp.example.test"
-AUDIENCE = "forgetful-test"
+AUDIENCE = "axmem-test"
 
 
 @pytest.fixture
@@ -129,7 +129,7 @@ def fake_async_client(idp: FakeIdP):
             if not idp.active:
                 return {"active": False}
             return {
-                "active": True, "sub": "introspected-user", "client_id": "forgetful",
+                "active": True, "sub": "introspected-user", "client_id": "axmem",
                 "name": "Introspected", "email": "introspected@example.test", "scope": "api:read",
             }
 
@@ -155,7 +155,7 @@ def build_introspection_verifier(idp: FakeIdP, cache_enabled: bool):
     with (
         patch.object(settings, "AUTH_MODE", "introspection"),
         patch.object(settings, "FASTMCP_SERVER_AUTH_INTROSPECTION_URL", "https://idp.example.test/introspect"),
-        patch.object(settings, "FASTMCP_SERVER_AUTH_INTROSPECTION_CLIENT_ID", "forgetful"),
+        patch.object(settings, "FASTMCP_SERVER_AUTH_INTROSPECTION_CLIENT_ID", "axmem"),
         patch.object(settings, "FASTMCP_SERVER_AUTH_INTROSPECTION_CLIENT_SECRET", "secret"),
         patch.object(settings, "FASTMCP_SERVER_AUTH_INTROSPECTION_REQUIRED_SCOPES", ""),
         patch.object(settings, "TOKEN_CACHE_ENABLED", cache_enabled),

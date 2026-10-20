@@ -1,8 +1,8 @@
 """Integration tests for the throwaway server's independence from its host.
 
-The harness boots a real `forgetful serve` for an agent to walk through, so the
+The harness boots a real `axmem serve` for an agent to walk through, so the
 instance under test must not depend on who runs the harness: not on settings exported
-in the shell or kept in the user-config dotenv file, not on which `forgetful` happens to
+in the shell or kept in the user-config dotenv file, not on which `axmem` happens to
 be first on PATH, and not on proxy variables. Everything here is host-side mechanics
 exercised without booting a server (the real boot lives in
 tests/e2e/test_harness_throwaway_server_e2e.py).
@@ -24,7 +24,7 @@ import pytest
 from test_harness import server as server_mod
 from test_harness.server import (
     HarnessInfraError,
-    ThrowawayForgetful,
+    ThrowawayAxmem,
     _plain_client_factory,
 )
 
@@ -32,7 +32,7 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
 # ---------------------------------------------------------------------------
-# Which forgetful is launched
+# Which axmem is launched
 # ---------------------------------------------------------------------------
 
 class _FakeProcess:
@@ -52,12 +52,12 @@ class _FakeProcess:
 
 
 def _fake_env(root: Path, name: str, *, with_script: bool) -> Path:
-    """A venv-shaped dir: <root>/<name>/bin/python (+ forgetful). Returns its bin dir."""
+    """A venv-shaped dir: <root>/<name>/bin/python (+ axmem). Returns its bin dir."""
     bin_dir = root / name / "bin"
     bin_dir.mkdir(parents=True)
     (bin_dir / "python").write_text("")
     if with_script:
-        (bin_dir / "forgetful").write_text("")
+        (bin_dir / "axmem").write_text("")
     return bin_dir
 
 
@@ -71,12 +71,12 @@ def launched(monkeypatch):
         return _FakeProcess()
 
     monkeypatch.setattr(server_mod.subprocess, "Popen", fake_popen)
-    monkeypatch.setattr(ThrowawayForgetful, "_wait_until_healthy", lambda self: None)
+    monkeypatch.setattr(ThrowawayAxmem, "_wait_until_healthy", lambda self: None)
     return argvs
 
 
 def _start(run_dir: Path) -> None:
-    server = ThrowawayForgetful(run_dir)
+    server = ThrowawayAxmem(run_dir)
     server.start()
     server.stop()
 
@@ -85,7 +85,7 @@ def test_server_comes_from_the_running_interpreter_not_a_path_shadow(
     tmp_path, monkeypatch, launched,
 ):
     # Arrange: the harness runs in one environment while another environment's
-    # forgetful (a uv tool install, another venv) comes first on PATH
+    # axmem (a uv tool install, another venv) comes first on PATH
     own_bin = _fake_env(tmp_path, "own", with_script=True)
     foreign_bin = _fake_env(tmp_path, "foreign", with_script=True)
     monkeypatch.setattr(sys, "executable", str(own_bin / "python"))
@@ -97,7 +97,7 @@ def test_server_comes_from_the_running_interpreter_not_a_path_shadow(
     _start(run_dir)
 
     # Assert
-    assert launched[0][0] == str(own_bin / "forgetful")
+    assert launched[0][0] == str(own_bin / "axmem")
 
 
 def test_server_starts_from_an_unactivated_environment(tmp_path, monkeypatch, launched):
@@ -112,16 +112,16 @@ def test_server_starts_from_an_unactivated_environment(tmp_path, monkeypatch, la
     _start(run_dir)
 
     # Assert
-    assert launched[0][0] == str(own_bin / "forgetful")
+    assert launched[0][0] == str(own_bin / "axmem")
 
 
 def test_interpreter_without_its_own_script_falls_back_to_path(
     tmp_path, monkeypatch, launched,
 ):
-    # Arrange: a bare system python with a globally installed forgetful on PATH
+    # Arrange: a bare system python with a globally installed axmem on PATH
     bare_bin = _fake_env(tmp_path, "bare", with_script=False)
     global_bin = _fake_env(tmp_path, "global", with_script=True)
-    (global_bin / "forgetful").chmod(0o755)
+    (global_bin / "axmem").chmod(0o755)
     monkeypatch.setattr(sys, "executable", str(bare_bin / "python"))
     monkeypatch.setenv("PATH", str(global_bin))
     run_dir = tmp_path / "run"
@@ -131,7 +131,7 @@ def test_interpreter_without_its_own_script_falls_back_to_path(
     _start(run_dir)
 
     # Assert
-    assert Path(launched[0][0]) == global_bin / "forgetful"
+    assert Path(launched[0][0]) == global_bin / "axmem"
 
 
 def test_missing_console_script_is_a_harness_infra_error(
@@ -145,8 +145,8 @@ def test_missing_console_script_is_a_harness_infra_error(
     run_dir.mkdir()
 
     # Act / Assert
-    with pytest.raises(HarnessInfraError, match="forgetful console script"):
-        ThrowawayForgetful(run_dir).start()
+    with pytest.raises(HarnessInfraError, match="axmem console script"):
+        ThrowawayAxmem(run_dir).start()
     assert launched == []
 
 
@@ -209,7 +209,7 @@ def test_health_probe_ignores_proxy_env(proxy_requests, tmp_path):
     # Arrange: a perfectly healthy loopback server
     backend = _serve(_HealthyBackend)
     try:
-        server = ThrowawayForgetful(run_dir=tmp_path, boot_timeout=3)
+        server = ThrowawayAxmem(run_dir=tmp_path, boot_timeout=3)
         server.port = backend.server_address[1]
         server.process = _FakeProcess()
 
@@ -288,7 +288,7 @@ def _resolved_settings(tmp_path: Path, name: str, user_config: str | None) -> di
     run_dir = tmp_path / "run"
     run_dir.mkdir(exist_ok=True)
 
-    env = ThrowawayForgetful(run_dir)._child_env()
+    env = ThrowawayAxmem(run_dir)._child_env()
     env["PYTHONPATH"] = str(_PROJECT_ROOT)
     result = subprocess.run(  # noqa: S603
         [sys.executable, "-c", _RESOLVE_SETTINGS, str(config_dir)],
@@ -299,19 +299,19 @@ def _resolved_settings(tmp_path: Path, name: str, user_config: str | None) -> di
 
 def test_child_settings_ignore_host_shell_and_user_config(tmp_path, monkeypatch):
     # Arrange: a neutral baseline first - what the server resolves on a clean host
-    for name in ("FORGETFUL_SCOPES", "MCP_DESCRIPTOR_MODE", "MEMORY_NUM_AUTO_LINK",
+    for name in ("AXMEM_SCOPES", "MCP_DESCRIPTOR_MODE", "MEMORY_NUM_AUTO_LINK",
                  "EMBEDDING_MODEL_DIR"):
         monkeypatch.delenv(name, raising=False)
     baseline = _resolved_settings(tmp_path, "clean", user_config=None)
 
     # ... then a developer who restricted the instance in the shell (in two spellings)
     # and in the user-config dotenv file the Settings class always reads
-    monkeypatch.setenv("FORGETFUL_SCOPES", "read")
+    monkeypatch.setenv("AXMEM_SCOPES", "read")
     monkeypatch.setenv("mcp_descriptor_mode", "compact")
     monkeypatch.setenv("MEMORY_NUM_AUTO_LINK", "0")
     monkeypatch.setenv("EMBEDDING_MODEL_DIR", str(tmp_path / "warm-cache"))
     user_config = (
-        "FORGETFUL_SCOPES=read:memories\n"
+        "AXMEM_SCOPES=read:memories\n"
         "LOG_FORMAT=json\n"
         "MEMORY_TITLE_MAX_LENGTH=5\n"
         "OBSOLETE_WARNING_ENABLED=false\n"
@@ -328,7 +328,7 @@ def test_child_settings_ignore_host_shell_and_user_config(tmp_path, monkeypatch)
         k: v for k, v in baseline.items() if k not in machine_plumbing
     }
     # ... and that is the unrestricted, default-configured one
-    assert baseline["FORGETFUL_SCOPES"] == "*"
+    assert baseline["AXMEM_SCOPES"] == "*"
     assert baseline["MCP_DESCRIPTOR_MODE"] == "verbose"
     assert baseline["MEMORY_NUM_AUTO_LINK"] == 3
     assert baseline["MEMORY_TITLE_MAX_LENGTH"] == 200
@@ -349,7 +349,7 @@ def test_a_failed_collection_cleanup_does_not_hide_the_run(tmp_path, monkeypatch
         raise httpx.ConnectError("no Qdrant")
 
     monkeypatch.setattr(httpx.Client, "get", unreachable)
-    server = ThrowawayForgetful(tmp_path)
+    server = ThrowawayAxmem(tmp_path)
 
     with caplog.at_level("WARNING", logger="test_harness.server"):
         server.stop()
@@ -358,7 +358,7 @@ def test_a_failed_collection_cleanup_does_not_hide_the_run(tmp_path, monkeypatch
 
 
 def test_each_run_has_a_collection_prefix_of_its_own(tmp_path):
-    prefixes = {ThrowawayForgetful(tmp_path).collection_prefix for _ in range(5)}
+    prefixes = {ThrowawayAxmem(tmp_path).collection_prefix for _ in range(5)}
 
     assert len(prefixes) == 5
     assert all(prefix.startswith("harness") for prefix in prefixes)

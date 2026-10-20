@@ -222,7 +222,7 @@ class TestObsoleteStateValidationViaMcpTool:
 
     @staticmethod
     async def _create(mcp_client, title: str) -> int:
-        result = await mcp_client.call_tool("execute_forgetful_tool", {
+        result = await mcp_client.call_tool("execute_axmem_tool", {
             "tool_name": "create_memory",
             "arguments": {**MEMORY, "title": title},
         })
@@ -233,24 +233,24 @@ class TestObsoleteStateValidationViaMcpTool:
         memory_id = await self._create(mcp_client, "MCP obsolete rules")
 
         with pytest.raises(ToolError, match="cannot be superseded by itself"):
-            await mcp_client.call_tool("execute_forgetful_tool", {
+            await mcp_client.call_tool("execute_axmem_tool", {
                 "tool_name": "mark_memory_obsolete",
                 "arguments": {"memory_id": memory_id, "reason": "r", "superseded_by": memory_id},
             })
 
-        first = await mcp_client.call_tool("execute_forgetful_tool", {
+        first = await mcp_client.call_tool("execute_axmem_tool", {
             "tool_name": "mark_memory_obsolete",
             "arguments": {"memory_id": memory_id, "reason": "first reason"},
         })
         assert first.data["success"] is True
 
         with pytest.raises(ToolError, match="already obsolete"):
-            await mcp_client.call_tool("execute_forgetful_tool", {
+            await mcp_client.call_tool("execute_axmem_tool", {
                 "tool_name": "mark_memory_obsolete",
                 "arguments": {"memory_id": memory_id, "reason": "second reason"},
             })
 
-        stored = await mcp_client.call_tool("execute_forgetful_tool", {
+        stored = await mcp_client.call_tool("execute_axmem_tool", {
             "tool_name": "get_memory",
             "arguments": {"memory_id": memory_id},
         })

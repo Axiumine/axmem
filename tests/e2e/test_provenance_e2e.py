@@ -41,7 +41,7 @@ def assert_provenance_fields(data: dict, expected: dict):
 async def test_memory_provenance_roundtrip(mcp_client):
     """Create memory with all provenance fields, retrieve, verify persistence."""
     result = await mcp_client.call_tool(
-        "execute_forgetful_tool",
+        "execute_axmem_tool",
         {
             "tool_name": "create_memory",
             "arguments": {
@@ -60,7 +60,7 @@ async def test_memory_provenance_roundtrip(mcp_client):
 
     # Retrieve and verify
     get_result = await mcp_client.call_tool(
-        "execute_forgetful_tool",
+        "execute_axmem_tool",
         {"tool_name": "get_memory", "arguments": {"memory_id": memory_id}},
     )
     assert_provenance_fields(get_result.data, PROVENANCE_FIELDS_9)
@@ -73,7 +73,7 @@ async def test_memory_provenance_roundtrip(mcp_client):
 
 async def _create_plain_memory(mcp_client, title, **extra):
     return await mcp_client.call_tool(
-        "execute_forgetful_tool",
+        "execute_axmem_tool",
         {
             "tool_name": "create_memory",
             "arguments": {
@@ -91,7 +91,7 @@ async def _create_plain_memory(mcp_client, title, **extra):
 
 async def _stored(mcp_client, memory_id):
     result = await mcp_client.call_tool(
-        "execute_forgetful_tool",
+        "execute_axmem_tool",
         {"tool_name": "get_memory", "arguments": {"memory_id": memory_id}},
     )
     return result.data
@@ -99,7 +99,7 @@ async def _stored(mcp_client, memory_id):
 
 async def _update_memory(mcp_client, memory_id, **fields):
     return await mcp_client.call_tool(
-        "execute_forgetful_tool",
+        "execute_axmem_tool",
         {"tool_name": "update_memory", "arguments": {"memory_id": memory_id, **fields}},
     )
 

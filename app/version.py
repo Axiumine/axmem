@@ -1,4 +1,4 @@
-"""Version retrieval for Forgetful."""
+"""Version retrieval for Axmem."""
 
 from importlib.metadata import PackageNotFoundError, version
 
@@ -6,7 +6,7 @@ from importlib.metadata import PackageNotFoundError, version
 def get_version() -> str:
     """Get version from installed package or fallback to _version.py."""
     try:
-        return version("forgetful-ai")
+        return version("axmem")
     except PackageNotFoundError:
         try:
             from app._version import __version__

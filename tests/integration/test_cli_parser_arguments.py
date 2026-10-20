@@ -1,6 +1,6 @@
 """Integration tests for how the CLI parser validates the ``call --args`` option.
 
-``forgetful call <tool> --args <json>`` takes the tool arguments as one JSON object;
+``axmem call <tool> --args <json>`` takes the tool arguments as one JSON object;
 anything else is a usage error (exit code 2, message on stderr) before any tool runs.
 """
 import pytest

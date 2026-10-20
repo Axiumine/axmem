@@ -1,6 +1,6 @@
 """Integration tests for the typed server state and the guards around the tenant.
 
-``ForgetfulMCP`` (app/routes/server_state.py) is the one type routes, middleware and MCP
+``AxmemMCP`` (app/routes/server_state.py) is the one type routes, middleware and MCP
 tools see the lifespan-attached services through. These tests cover the places where
 narrowing to that typing matters: the tenant the middleware hands on is derived from the request's
 credential alone (a tenant has no stored record), and a request that carries no credential is refused
@@ -13,11 +13,11 @@ import pytest
 from app.config.settings import settings
 from app.middleware.auth import get_tenant_from_auth, get_tenant_from_request
 from app.models.tenant_models import Tenant
-from app.routes.server_state import ForgetfulMCP, server_of
+from app.routes.server_state import AxmemMCP, server_of
 
 
 def test_server_of_returns_the_server_the_context_belongs_to():
-    mcp = ForgetfulMCP("server-state-guards")
+    mcp = AxmemMCP("server-state-guards")
     ctx = SimpleNamespace(fastmcp=mcp)
 
     assert server_of(ctx) is mcp

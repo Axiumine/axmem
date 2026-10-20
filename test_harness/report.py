@@ -15,7 +15,7 @@ from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
 from test_harness.safe_io import UnsafePathError, read_bytes
 
 _CONTRACT_EXAMPLE = {
-    "skill": "forgetful-example",
+    "skill": "axmem-example",
     "verdict": "issues",
     "steps": [
         {

@@ -1,7 +1,7 @@
 # Knowledge Base Bootstrap Protocol
 
 ## Purpose
-A systematic approach to populate the Forgetful knowledge base with comprehensive project context. This protocol helps you transform an undocumented or lightly-documented codebase into a rich, searchable knowledge repository.
+A systematic approach to populate the Axmem knowledge base with comprehensive project context. This protocol helps you transform an undocumented or lightly-documented codebase into a rich, searchable knowledge repository.
 
 **Use this when:**
 - Starting to use a knowledge base system for an existing project
@@ -527,7 +527,7 @@ link_memories({
 ```
 
 #### Auto-Linking:
-Forgetful automatically creates semantic links between memories (similarity ≥0.7 by default).
+Axmem automatically creates semantic links between memories (similarity ≥0.7 by default).
 Verify link quality during validation.
 
 ---
@@ -773,7 +773,7 @@ For monorepos, consider bootstrapping in layers:
 Invoke this protocol with:
 
 ```
-Bootstrap the [PROJECT_NAME] knowledge base using Forgetful MCP.
+Bootstrap the [PROJECT_NAME] knowledge base using Axmem MCP.
 
 Project: [owner/repo-name]
 Type: [web app / library / CLI / service / etc.]

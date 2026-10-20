@@ -1,6 +1,6 @@
 """E2E tests (real Qdrant node) for the argument errors of the memory tools.
 
-Drives ``execute_forgetful_tool`` through the real stack and checks the message an
+Drives ``execute_axmem_tool`` through the real stack and checks the message an
 agent gets back when it omits an id, passes ids in a shape the alias resolution cannot
 use, or sends a ``created_since`` that is not a timestamp string.
 """
@@ -15,7 +15,7 @@ SECOND = "01a157bf-5d1e-7536-bac1-4b5ea6f5f392"
 
 async def _exec(client, tool_name, arguments):
     return await client.call_tool(
-        "execute_forgetful_tool",
+        "execute_axmem_tool",
         {"tool_name": tool_name, "arguments": arguments},
     )
 

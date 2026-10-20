@@ -1,18 +1,18 @@
 ---
-name: forgetful-encode-repo
+name: axmem-encode-repo
 description: >-
-  Encode a repository into the Forgetful knowledge base — bootstrap the project and its
+  Encode a repository into the Axmem knowledge base — bootstrap the project and its
   memories from the codebase itself. Use when bringing a new repo
-  under Forgetful or refreshing a stale encoding. Re-encoding is an update pass:
+  under Axmem or refreshing a stale encoding. Re-encoding is an update pass:
   query-before-create makes it supersession, not duplication.
 license: MIT
 disable-model-invocation: true
 tags: [bootstrap, encoding, repository, knowledge-base]
 allowed-tools:
-  - mcp__forgetful__discover_forgetful_tools
-  - mcp__forgetful__how_to_use_forgetful_tool
-  - mcp__forgetful__execute_forgetful_tool
-  - Bash(forgetful:*)
+  - mcp__axmem__discover_axmem_tools
+  - mcp__axmem__how_to_use_axmem_tool
+  - mcp__axmem__execute_axmem_tool
+  - Bash(axmem:*)
 ---
 
 # Encoding a repository
@@ -26,11 +26,11 @@ twice and the second pass updates — never duplicates.
 Operations are named by registry name (`query_memory`, `create_memory`, ...). Invoke via
 whichever surface this agent has:
 
-- **MCP**: `execute_forgetful_tool(tool_name="create_memory", arguments={...})`
-- **CLI**: `forgetful call create_memory --args '{"title": "..."}' --json`
+- **MCP**: `execute_axmem_tool(tool_name="create_memory", arguments={...})`
+- **CLI**: `axmem call create_memory --args '{"title": "..."}' --json`
 
-Get any operation's schema at runtime: `how_to_use_forgetful_tool` (MCP) or
-`forgetful tools info <operation>` (CLI) — schemas are deliberately not repeated here.
+Get any operation's schema at runtime: `how_to_use_axmem_tool` (MCP) or
+`axmem tools info <operation>` (CLI) — schemas are deliberately not repeated here.
 
 ## Step 1 — Resolve the project scope
 
@@ -50,7 +50,7 @@ Done when: there is a source list of what will be encoded, ordered by signal.
 
 ## Step 3 — Store the knowledge
 
-Atomic memories, per `forgetful-remember` (its routing, atomicity test, and importance rubric
+Atomic memories, per `axmem-remember` (its routing, atomicity test, and importance rubric
 govern every write here):
 
 - **Long-form understanding** (architecture overviews, subsystem guides, design analyses)
@@ -72,7 +72,7 @@ Close with a coverage report, in place of "done": project ID,
 memories created/updated/obsoleted, source areas skipped and why, and
 the areas where knowledge is thin. Note repo-level gaps the survey turned up too — missing
 docs, absent CI, and the like — not only gaps in the encoding itself. Deliver the report in
-the final response to the user; it is not written anywhere in Forgetful. The report is the
+the final response to the user; it is not written anywhere in Axmem. The report is the
 encode's acceptance surface — a reader should be able to spot a gap from it alone.
 
 Done when: the report is delivered and honest about gaps.

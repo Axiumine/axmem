@@ -9,11 +9,11 @@ from starlette.responses import JSONResponse
 
 from app.config.settings import settings
 from app.models.models import HealthStatus
-from app.routes.server_state import ForgetfulMCP
+from app.routes.server_state import AxmemMCP
 
 logger = logging.getLogger(__name__)
 
-def register(mcp: ForgetfulMCP):
+def register(mcp: AxmemMCP):
     """Register health check routes with FastMCP"""
 
     @mcp.custom_route("/health", methods=["GET"])

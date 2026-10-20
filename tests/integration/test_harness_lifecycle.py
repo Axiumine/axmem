@@ -26,7 +26,7 @@ import test_harness.container as container_mod
 import test_harness.server as server_mod
 from test_harness.config import HarnessConfig
 from test_harness.container import AgentContainer
-from test_harness.server import HarnessInfraError, ThrowawayForgetful
+from test_harness.server import HarnessInfraError, ThrowawayAxmem
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 THROWAWAY_PORT = 59999
@@ -159,11 +159,11 @@ def env(tmp_path, monkeypatch):
     stage_root = tmp_path / "stage"
     stage_root.mkdir()
     skills_dir = tmp_path / "skills"
-    (skills_dir / "forgetful-recall").mkdir(parents=True)
-    (skills_dir / "forgetful-recall" / "SKILL.md").write_text("# recall\n")
+    (skills_dir / "axmem-recall").mkdir(parents=True)
+    (skills_dir / "axmem-recall" / "SKILL.md").write_text("# recall\n")
     (tmp_path / "runs").mkdir()
     config = HarnessConfig(
-        skills=["forgetful-recall"], skills_dir=skills_dir, output_dir=tmp_path / "runs",
+        skills=["axmem-recall"], skills_dir=skills_dir, output_dir=tmp_path / "runs",
     )
     lifecycle = LifecycleEnv(daemon, config, stage_root)
     real_provision = container_mod.provision_agent
@@ -205,7 +205,7 @@ def env(tmp_path, monkeypatch):
     )
     monkeypatch.setattr(container_mod, "_prepare_harness_mount", prepare_mount)
     monkeypatch.setattr(harness_main, "ensure_image", lambda rebuild=False: None)
-    monkeypatch.setattr(harness_main, "ThrowawayForgetful", FakeServer)
+    monkeypatch.setattr(harness_main, "ThrowawayAxmem", FakeServer)
     monkeypatch.setattr(harness_main, "Walkthrough", RecordingWalkthrough)
     monkeypatch.setattr(harness_main, "_print_summary", lambda results, run_dir: None)
     return lifecycle
@@ -245,11 +245,11 @@ async def test_unexpected_container_teardown_error_still_stops_the_server(
 
 
 async def test_failed_server_boot_is_torn_down_and_closes_its_log(env, monkeypatch):
-    # Arrange: the real ThrowawayForgetful whose child exits straight away
-    servers: list[ThrowawayForgetful] = []
+    # Arrange: the real ThrowawayAxmem whose child exits straight away
+    servers: list[ThrowawayAxmem] = []
     real_popen = subprocess.Popen
 
-    class BootsBadly(ThrowawayForgetful):
+    class BootsBadly(ThrowawayAxmem):
         def __init__(self, run_dir):
             super().__init__(run_dir)
             servers.append(self)
@@ -257,7 +257,7 @@ async def test_failed_server_boot_is_torn_down_and_closes_its_log(env, monkeypat
     def exits_immediately(args, **kwargs):
         return real_popen([sys.executable, "-c", "raise SystemExit(3)"], **kwargs)
 
-    monkeypatch.setattr(harness_main, "ThrowawayForgetful", BootsBadly)
+    monkeypatch.setattr(harness_main, "ThrowawayAxmem", BootsBadly)
     monkeypatch.setattr(server_mod.shutil, "which", lambda name: name)
     monkeypatch.setattr(server_mod.subprocess, "Popen", exits_immediately)
 
@@ -402,11 +402,11 @@ DRIVER = textwrap.dedent(
 
     hm.docker_sdk = lambda: None  # the container is faked, so the SDK is not needed
     hm.ensure_image = lambda rebuild=False: None
-    hm.ThrowawayForgetful = FakeServer
+    hm.ThrowawayAxmem = FakeServer
     hm.AgentContainer = FakeContainer
     hm.Walkthrough = FakeWalkthrough
 
-    sys.exit(hm.main(["--skills", "forgetful-cli-setup", "--output", os.environ["LIFECYCLE_OUT"]]))
+    sys.exit(hm.main(["--skills", "axmem-cli-setup", "--output", os.environ["LIFECYCLE_OUT"]]))
     """,
 ).replace("__REPO__", repr(str(REPO_ROOT)))
 
@@ -503,7 +503,7 @@ async def test_unreachable_server_fails_fast_as_infra_error_before_any_session(
     # owns its own event loop)
     exit_code = await asyncio.to_thread(
         harness_main.main,
-        ["--skills", "forgetful-recall", "--output", str(env.config.output_dir)],
+        ["--skills", "axmem-recall", "--output", str(env.config.output_dir)],
     )
 
     # Assert
@@ -524,7 +524,7 @@ async def test_reachable_server_is_probed_from_inside_before_the_agent_health_ch
 
     # Assert: a cheap /health GET goes first, so a bad route never costs a model call
     assert exit_code == 0
-    assert env.walked == ["forgetful-recall"]
+    assert env.walked == ["axmem-recall"]
     probe_url = f"http://host.docker.internal:{THROWAWAY_PORT}/health"
     probes = [i for i, cmd in enumerate(env.daemon.commands) if cmd[-1] == probe_url]
     checks = [i for i, cmd in enumerate(env.daemon.commands) if "--health" in cmd]

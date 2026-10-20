@@ -1,4 +1,4 @@
-"""E2E tests for how ``discover_forgetful_tools`` reports a failure.
+"""E2E tests for how ``discover_axmem_tools`` reports a failure.
 
 A domain or validation error keeps its own message for the agent; anything else is
 reduced to a generic sentence, and the full detail goes to the server log.
@@ -32,9 +32,9 @@ async def test_unexpected_failure_while_discovering_tools_becomes_a_tool_error(
 
     with caplog.at_level(logging.ERROR, logger=meta_tools.logger.name):
         with pytest.raises(ToolError) as caught:
-            await mcp_client.call_tool("discover_forgetful_tools", {})
+            await mcp_client.call_tool("discover_axmem_tools", {})
 
     assert str(caught.value) == f"Failed to discover tools: {expected_detail}"
-    logged = [r for r in caplog.records if r.getMessage().startswith("discover_forgetful_tools failed")]
+    logged = [r for r in caplog.records if r.getMessage().startswith("discover_axmem_tools failed")]
     assert len(logged) == 1
     assert repr(failure) in logged[0].getMessage()

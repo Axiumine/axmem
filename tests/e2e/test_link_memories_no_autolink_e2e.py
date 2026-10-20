@@ -25,8 +25,8 @@ def disable_auto_linking():
 # ---------------------------------------------------------------------------
 
 async def _call_tool(mcp_client, tool_name, arguments):
-    """Invoke a Forgetful tool through the execute_forgetful_tool meta-tool."""
-    return await mcp_client.call_tool("execute_forgetful_tool", {
+    """Invoke an Axmem tool through the execute_axmem_tool meta-tool."""
+    return await mcp_client.call_tool("execute_axmem_tool", {
         "tool_name": tool_name,
         "arguments": arguments,
     })
@@ -526,7 +526,7 @@ async def test_link_memories_duplicate_prevention_e2e(mcp_client):
 @pytest.mark.asyncio
 async def test_link_memories_invalid_source_id_e2e(mcp_client):
     """Test error handling when source memory doesn't exist"""
-    target_result = await mcp_client.call_tool("execute_forgetful_tool", {
+    target_result = await mcp_client.call_tool("execute_axmem_tool", {
         "tool_name": "create_memory", "arguments": {"title":
         "Test Target Memory", "content":
         "This is a valid target memory for error testing", "context":
@@ -535,7 +535,7 @@ async def test_link_memories_invalid_source_id_e2e(mcp_client):
     assert target_result.data is not None
     target_id = target_result.data["id"]
     try:
-        await mcp_client.call_tool("execute_forgetful_tool", {"tool_name":
+        await mcp_client.call_tool("execute_axmem_tool", {"tool_name":
             "link_memories", "arguments": {"memory_id": MISSING_ID,
             "related_ids": [target_id]}})
         assert False, "Expected ToolError for invalid source memory_id"
@@ -558,7 +558,7 @@ async def test_link_memories_aliases_e2e(mcp_client):
 async def test_reject_numeric_and_non_uuid_ids_e2e(mcp_client):
     """Regression test: numbers (whole or fractional) and booleans are not memory ids and must be rejected."""
     # Create an initial memory that should NOT be modified by fractional IDs
-    create_res = await mcp_client.call_tool("execute_forgetful_tool", {
+    create_res = await mcp_client.call_tool("execute_axmem_tool", {
         "tool_name": "create_memory",
         "arguments": {
             "title": "Immutable Target Memory",
@@ -574,14 +574,14 @@ async def test_reject_numeric_and_non_uuid_ids_e2e(mcp_client):
 
     # 1. update_memory with a numeric ID (e.g. 1.9) must fail and NOT modify target_id
     with pytest.raises(Exception) as exc_info:
-        await mcp_client.call_tool("execute_forgetful_tool", {
+        await mcp_client.call_tool("execute_axmem_tool", {
             "tool_name": "update_memory",
             "arguments": {"memory_id": fractional_id, "content": "Tampered content"},
         })
     assert "uuid" in str(exc_info.value).lower()
 
     # Verify content was not modified
-    get_res = await mcp_client.call_tool("execute_forgetful_tool", {
+    get_res = await mcp_client.call_tool("execute_axmem_tool", {
         "tool_name": "get_memory",
         "arguments": {"memory_id": target_id},
     })
@@ -589,45 +589,45 @@ async def test_reject_numeric_and_non_uuid_ids_e2e(mcp_client):
 
     # 2. update_memory with boolean ID (True) must fail
     with pytest.raises(Exception):
-        await mcp_client.call_tool("execute_forgetful_tool", {
+        await mcp_client.call_tool("execute_axmem_tool", {
             "tool_name": "update_memory",
             "arguments": {"memory_id": True, "content": "Tampered via bool"},
         })
 
     # 3. get_memory with fractional ID must fail
     with pytest.raises(Exception):
-        await mcp_client.call_tool("execute_forgetful_tool", {
+        await mcp_client.call_tool("execute_axmem_tool", {
             "tool_name": "get_memory",
             "arguments": {"memory_id": fractional_id},
         })
 
     # 4. mark_memory_obsolete with fractional ID must fail
     with pytest.raises(Exception):
-        await mcp_client.call_tool("execute_forgetful_tool", {
+        await mcp_client.call_tool("execute_axmem_tool", {
             "tool_name": "mark_memory_obsolete",
             "arguments": {"memory_id": fractional_id, "reason": "Testing rejection"},
         })
 
     # 5. link_memories with fractional source ID or target ID must fail
     with pytest.raises(Exception):
-        await mcp_client.call_tool("execute_forgetful_tool", {
+        await mcp_client.call_tool("execute_axmem_tool", {
             "tool_name": "link_memories",
             "arguments": {"source_id": fractional_id, "target_id": target_id},
         })
     with pytest.raises(Exception):
-        await mcp_client.call_tool("execute_forgetful_tool", {
+        await mcp_client.call_tool("execute_axmem_tool", {
             "tool_name": "link_memories",
             "arguments": {"source_id": target_id, "related_ids": [fractional_id]},
         })
 
     # 6. unlink_memories with fractional source ID or target ID must fail
     with pytest.raises(Exception):
-        await mcp_client.call_tool("execute_forgetful_tool", {
+        await mcp_client.call_tool("execute_axmem_tool", {
             "tool_name": "unlink_memories",
             "arguments": {"source_id": fractional_id, "target_id": target_id},
         })
     with pytest.raises(Exception):
-        await mcp_client.call_tool("execute_forgetful_tool", {
+        await mcp_client.call_tool("execute_axmem_tool", {
             "tool_name": "unlink_memories",
             "arguments": {"source_id": target_id, "target_id": fractional_id},
         })

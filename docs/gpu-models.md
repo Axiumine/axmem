@@ -78,7 +78,7 @@ repositories `BAAI/bge-small-en-v1.5` and `Xenova/bge-small-en-v1.5` hold byte-i
 
 `EMBEDDING_DIMENSIONS` (default `384`) is checked at start: the warm-up embeds one text and compares
 the width of the vector with the setting. A mismatch refuses to start with the cause `dimensions`
-and releases the engine again. Memories that are already stored need `forgetful --re-embed` after a
+and releases the engine again. Memories that are already stored need `axmem --re-embed` after a
 model or width change ([embedding migration](embedding_migration.md)).
 
 ## The reranker
@@ -99,7 +99,7 @@ tensor-core math. TF32 keeps the 8-bit exponent of fp32 but computes the multipl
 10-bit mantissa (fp32 has 23). It is faster on recent NVIDIA GPUs and no longer bit-exact fp32, so
 both are off by default and the TensorRT TF32 builder flag is cleared explicitly when it is off
 (TensorRT enables it by default otherwise). Turning `EMBEDDING_TF32` on changes the stored vector
-space slightly; run `forgetful --re-embed` after changing it.
+space slightly; run `axmem --re-embed` after changing it.
 
 On the reference host (RTX PRO 4000 Blackwell) the strict fp32 embedder differs from the CPU fp32
 vectors of the same model by about 2e-7 per component, and the strict fp32 reranker differs from the
@@ -170,7 +170,7 @@ needs no network at all.
 
 | Setting | Default | Holds |
 |---|---|---|
-| `EMBEDDING_MODEL_DIR` | `models/embedder` in the platform user data directory (Linux: `~/.local/share/forgetful/models/embedder`) | `BAAI--bge-small-en-v1.5/onnx/model.onnx`, `tokenizer.json`, `manifest.json` |
+| `EMBEDDING_MODEL_DIR` | `models/embedder` in the platform user data directory (Linux: `~/.local/share/axmem/models/embedder`) | `BAAI--bge-small-en-v1.5/onnx/model.onnx`, `tokenizer.json`, `manifest.json` |
 | `RERANKING_MODEL_DIR` | `models/reranker` in the same place | `Xenova--ms-marco-MiniLM-L-12-v2/onnx/model.onnx`, `tokenizer.json`, `manifest.json` |
 | `EMBEDDING_ENGINE_CACHE_DIR`, `RERANKING_ENGINE_CACHE_DIR` | `models/tensorrt` in the same place | TensorRT engines, rebuilt on the host in a few seconds |
 
@@ -188,19 +188,19 @@ network is available; `uv run --no-sync main.py` then contacts neither PyPI nor 
 - the reranking model directory (`RERANKING_MODEL_DIR`)
 - the token-counting data of tiktoken (below)
 
-On a connected host, after one successful start (or `forgetful --re-embed --dry-run`, which starts
+On a connected host, after one successful start (or `axmem --re-embed --dry-run`, which starts
 the embedder):
 
 ```bash
-cd ~/.local/share/forgetful/models/
+cd ~/.local/share/axmem/models/
 tar -czf axmem-models.tar.gz embedder/ reranker/
 ```
 
 Transfer the archive (USB, network share, ...) and on the offline host:
 
 ```bash
-mkdir -p ~/.local/share/forgetful/models/
-tar -xzf axmem-models.tar.gz -C ~/.local/share/forgetful/models/
+mkdir -p ~/.local/share/axmem/models/
+tar -xzf axmem-models.tar.gz -C ~/.local/share/axmem/models/
 ```
 
 Then set `HF_HUB_OFFLINE=1` so that nothing tries the network. A file that is missing is reported
@@ -213,7 +213,7 @@ HF_HUB_OFFLINE=1 AUTH_MODE=none uv run --no-sync main.py serve
 
 The server refuses to start without `AUTH_MODE`; `AUTH_MODE=none` serves one local tenant on stdio
 or a loopback bind. Set it in the environment or in the user settings file
-(`~/.config/forgetful/` on Linux).
+(`~/.config/axmem/` on Linux).
 
 To keep the models somewhere else, set the directories explicitly (changing a path does not move
 existing files; copy them first):
@@ -245,7 +245,7 @@ makes no call to any other host.
 ### Verifying the files
 
 ```bash
-find ~/.local/share/forgetful/models/embedder ~/.local/share/forgetful/models/reranker -name "*.onnx" -o -name tokenizer.json
+find ~/.local/share/axmem/models/embedder ~/.local/share/axmem/models/reranker -name "*.onnx" -o -name tokenizer.json
 # .../embedder/BAAI--bge-small-en-v1.5/onnx/model.onnx
 # .../embedder/BAAI--bge-small-en-v1.5/tokenizer.json
 # .../reranker/Xenova--ms-marco-MiniLM-L-12-v2/onnx/model.onnx
@@ -267,7 +267,7 @@ RERANKING_MODEL=cross-encoder/ms-marco-MiniLM-L-6-v2
 ```
 
 Other models are fetched from Hugging Face on first use (or must be placed in their model
-directory by hand), and a different embedding model or width needs `forgetful --re-embed`
+directory by hand), and a different embedding model or width needs `axmem --re-embed`
 ([embedding migration](embedding_migration.md)).
 
 ### Troubleshooting
@@ -298,5 +298,5 @@ defaults or name the repositories you placed.
 
 The message is printed as `Error: the embedder cannot start: <cause>` or
 `Error: the reranker cannot start: <cause>` and the exit code is 1. The server does this before it
-binds a port, the embedder first; the `forgetful` CLI in local mode and `forgetful --re-embed`
+binds a port, the embedder first; the `axmem` CLI in local mode and `axmem --re-embed`
 report the same error.

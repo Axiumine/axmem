@@ -30,7 +30,7 @@ from app.routes.api import (
     memories,
 )
 from app.routes.mcp import meta_tools
-from app.routes.server_state import ForgetfulMCP
+from app.routes.server_state import AxmemMCP
 from app.version import get_version
 
 # Global references - initialized in lifespan()
@@ -86,7 +86,7 @@ async def lifespan(app):
     logger.info("Session shutdown complete")
 
 
-mcp = ForgetfulMCP(settings.SERVICE_NAME, lifespan=lifespan, auth=build_auth_provider())
+mcp = AxmemMCP(settings.SERVICE_NAME, lifespan=lifespan, auth=build_auth_provider())
 
 
 @mcp.custom_route("/", methods=["GET"])
@@ -374,18 +374,18 @@ def _legacy_launcher(argv):
     from app.routes.cli.parser import positive_int
 
     # cli()'s KNOWN-gate sends a bare `--help` here, so this epilog is the only place
-    # a top-level `forgetful --help` can surface the subcommands. Canonical per-verb
+    # a top-level `axmem --help` can surface the subcommands. Canonical per-verb
     # help lives in app/routes/cli/parser.py; this is just a discoverability pointer.
     parser = argparse.ArgumentParser(
-        description="Forgetful - MCP Server for AI Agent Memory",
+        description="Axmem - MCP Server for AI Agent Memory",
         epilog=(
-            "Subcommands (run 'forgetful <command> --help' for details):\n"
+            "Subcommands (run 'axmem <command> --help' for details):\n"
             "  memory    Curated memory commands (search, save, get, recent)\n"
-            "  tools     Inspect the available Forgetful tools (list, info)\n"
-            "  call      Execute any Forgetful tool by name\n"
+            "  tools     Inspect the available Axmem tools (list, info)\n"
+            "  call      Execute any Axmem tool by name\n"
             "  auth      Connect to a remote deployment "
             "(login, status)\n"
-            "  serve     Run the Forgetful MCP server\n"
+            "  serve     Run the Axmem MCP server\n"
             "  re-embed  Re-embed all memories with the configured provider\n"
             "  backup    Snapshot the Qdrant collections of every node\n"
             "  restore   Restore a snapshot set made by 'backup'\n"
@@ -447,7 +447,7 @@ def _legacy_launcher(argv):
         return None
 
     # Re-embed-only flags: without --re-embed they would be silently ignored and the
-    # real server started instead, unlike `forgetful serve`, which rejects them.
+    # real server started instead, unlike `axmem serve`, which rejects them.
     stray = [
         flag
         for flag, given in (

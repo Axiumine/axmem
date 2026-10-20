@@ -1,8 +1,8 @@
-# Forgetful Prompts
+# Axmem Prompts
 
 ## Overview
 
-AI-agent optimized prompts for understanding codebases and managing project knowledge through Forgetful MCP. Each prompt provides direct, executable instructions with concrete tool calls—ready to paste into an AI agent's system prompt or context.
+AI-agent optimized prompts for understanding codebases and managing project knowledge through Axmem MCP. Each prompt provides direct, executable instructions with concrete tool calls—ready to paste into an AI agent's system prompt or context.
 
 ---
 
@@ -10,8 +10,8 @@ AI-agent optimized prompts for understanding codebases and managing project know
 
 | Prompt | Depth | Use When | Output |
 |--------|-------|----------|--------|
-| **[Custom Agent Integration](custom_agent_integration.md)** | Comprehensive | Building custom agents, system prompts, deep knowledge graph coverage | Agent with full Forgetful capability |
-| **[Example System Prompt](example_system_prompt.md)** | Reference | Adding Forgetful context to CLAUDE.md or system prompts | Ready-to-copy prompt |
+| **[Custom Agent Integration](custom_agent_integration.md)** | Comprehensive | Building custom agents, system prompts, deep knowledge graph coverage | Agent with full Axmem capability |
+| **[Example System Prompt](example_system_prompt.md)** | Reference | Adding Axmem context to CLAUDE.md or system prompts | Ready-to-copy prompt |
 | **[Rapid Scan](rapid_project_scan_prompt.md)** | Surface | Bug fixes, quick features, evaluation, initial orientation | Quick orientation map |
 | **[Comprehensive Understanding](comprehensive_project_understanding_prompt.md)** | Deep | Major refactoring, architectural changes, deep debugging | Understanding document |
 | **[KB Bootstrap](knowledge_base_bootstrap_prompt.md)** | KB Population | Documenting projects, enabling AI agents, institutional knowledge | Populated knowledge base |
@@ -22,7 +22,7 @@ AI-agent optimized prompts for understanding codebases and managing project know
 
 | Your Goal | Use This |
 |-----------|----------|
-| Build a custom agent with Forgetful | Custom Agent Integration |
+| Build a custom agent with Axmem | Custom Agent Integration |
 | Understand knowledge graphs | Custom Agent Integration |
 | Fix a bug | Rapid Scan |
 | Add small feature | Rapid Scan |
@@ -34,8 +34,8 @@ AI-agent optimized prompts for understanding codebases and managing project know
 | Build institutional knowledge | KB Bootstrap |
 | Quick orientation | Rapid Scan |
 | Evaluate project fit | Rapid Scan |
-| Add Forgetful to CLAUDE.md | Example System Prompt |
-| Configure AI agent for Forgetful | Example System Prompt |
+| Add Axmem to CLAUDE.md | Example System Prompt |
+| Configure AI agent for Axmem | Example System Prompt |
 
 ---
 
@@ -68,14 +68,14 @@ Goal: [major refactor / architectural change / deep debugging]
 
 **KB Bootstrap:**
 ```
-Bootstrap the [PROJECT_NAME] knowledge base using Forgetful MCP.
+Bootstrap the [PROJECT_NAME] knowledge base using Axmem MCP.
 Project: [owner/repo-name]
 Type: [web app / library / CLI / service]
 Size: [small / medium / large]
 ```
 
 **Example System Prompt:**
-Copy the contents directly into your CLAUDE.md file or system prompt configuration. No parameters needed—it provides behavioral guidance for AI agents using Forgetful.
+Copy the contents directly into your CLAUDE.md file or system prompt configuration. No parameters needed—it provides behavioral guidance for AI agents using Axmem.
 
 ---
 
@@ -105,9 +105,9 @@ KB Bootstrap includes Phase 0 that checks existing coverage—prevents duplicate
 - No human time estimates
 - Copy-paste ready
 
-**Forgetful MCP Integration:**
+**Axmem MCP Integration:**
 - Specific `query_memory`, `create_memory`, `update_memory` calls
-- `discover_forgetful_tools` usage
+- `discover_axmem_tools` usage
 - Auto-linking mechanics (similarity ≥0.7 by default)
 - Project/memory patterns
 

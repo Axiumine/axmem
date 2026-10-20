@@ -1,5 +1,5 @@
 ---
-name: forgetful-context-gather
+name: axmem-context-gather
 description: >-
   Gather deep context before planning or implementing — one pass that turns a task
   description into a cited context pack: relevant decisions, patterns, constraints, code
@@ -9,10 +9,10 @@ license: MIT
 disable-model-invocation: true
 tags: [context, retrieval, workflow, pre-work]
 allowed-tools:
-  - mcp__forgetful__discover_forgetful_tools
-  - mcp__forgetful__how_to_use_forgetful_tool
-  - mcp__forgetful__execute_forgetful_tool
-  - Bash(forgetful:*)
+  - mcp__axmem__discover_axmem_tools
+  - mcp__axmem__how_to_use_axmem_tool
+  - mcp__axmem__execute_axmem_tool
+  - Bash(axmem:*)
 ---
 
 # Gathering context before work
@@ -26,11 +26,11 @@ silence is never ambiguous.
 Operations are named by registry name (`query_memory`, `get_memory`, ...). Invoke via
 whichever surface this agent has:
 
-- **MCP**: `execute_forgetful_tool(tool_name="query_memory", arguments={...})`
-- **CLI**: `forgetful call query_memory --args '{"query": "..."}' --json`
+- **MCP**: `execute_axmem_tool(tool_name="query_memory", arguments={...})`
+- **CLI**: `axmem call query_memory --args '{"query": "..."}' --json`
 
-Get any operation's schema at runtime: `how_to_use_forgetful_tool` (MCP) or
-`forgetful tools info <operation>` (CLI) — schemas are deliberately not repeated here.
+Get any operation's schema at runtime: `how_to_use_axmem_tool` (MCP) or
+`axmem tools info <operation>` (CLI) — schemas are deliberately not repeated here.
 
 Delegating this workflow to a subagent: hand it the CLI flavor — `Bash` travels into
 subagents, MCP tool access does not. Run MCP-flavored gathers in the main conversation.
@@ -46,7 +46,7 @@ Done when: the angles are listed before any query runs.
 ## Step 2 — Recall per angle
 
 `query_memory` per angle — `query` and `query_context` are both required, and
-`query_context` should carry the task's intent (per `forgetful-recall`: reads cross-project
+`query_context` should carry the task's intent (per `axmem-recall`: reads cross-project
 by default, identifiers verbatim, `truncated` handled). Track which angles hit and which
 came up dry.
 
@@ -54,7 +54,7 @@ Done when: every angle has run and its outcome is recorded.
 
 ## Step 3 — Explore around the strongest hits
 
-Where hits cluster into a topic, walk the graph (per `forgetful-explore`, medium depth):
+Where hits cluster into a topic, walk the graph (per `axmem-explore`, medium depth):
 expand the memories and follow their links outward.
 
 Done when: the strongest hits have their neighbourhood mapped, not just their own text.

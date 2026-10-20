@@ -1,6 +1,6 @@
-"""E2E test for the harness's throwaway Forgetful server (test_harness/server.py).
+"""E2E test for the harness's throwaway Axmem server (test_harness/server.py).
 
-Boots the real `forgetful serve` console script as an OS subprocess (the harness's agent
+Boots the real `axmem serve` console script as an OS subprocess (the harness's agent
 is a separate process, so in-process shortcuts prove nothing here), the test Qdrant node under a prefix
 of its own, AUTH_MODE=none on the loopback bind. Readiness is /health -> 200; harness-side calls go
 through the CLI's own RemoteExecutor against the meta-tool path.
@@ -9,7 +9,7 @@ import httpx
 import pytest
 
 from app.config.settings import settings
-from test_harness.server import ThrowawayForgetful
+from test_harness.server import ThrowawayAxmem
 
 MEMORY = {
     "title": "harness-probe",
@@ -27,7 +27,7 @@ async def test_throwaway_server_boots_serves_tool_calls_and_tears_down(tmp_path)
     run_dir = tmp_path / "run"
     run_dir.mkdir()
 
-    server = ThrowawayForgetful(run_dir=run_dir)
+    server = ThrowawayAxmem(run_dir=run_dir)
 
     # Act
     server.start()

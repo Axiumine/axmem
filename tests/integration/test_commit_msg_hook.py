@@ -32,7 +32,7 @@ def _run(tmp_path, message, skip=None):
     "feat(memory): add the Qdrant search path\n",
     "fix!: drop the SQLite backend\n",
     "test(cli): bound in-process server shutdown\n",
-    "🤖 docs(readme): credit Forgetful (MIT)\n",
+    "🤖 docs(readme): credit the upstream project (MIT)\n",
     "docs: connectivity guide for Claude Code\n\nCovers Claude Desktop too.\n",
     "Merge branch 'main' into axmem\n",
     'Revert "fix: x"\n',

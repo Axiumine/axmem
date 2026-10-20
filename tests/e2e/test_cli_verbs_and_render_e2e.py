@@ -17,8 +17,8 @@ from app.config.settings import settings
 _PATCHED_FIELDS = [
     "EMBEDDING_PROVIDER",
     "RERANKING_ENABLED",
-    "FORGETFUL_SCOPES",
-    "FORGETFUL_SERVER",
+    "AXMEM_SCOPES",
+    "AXMEM_SERVER",
 ]
 
 RAW_CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f\u2028\u2029]")
@@ -30,16 +30,16 @@ def cli_env(qdrant_env, tmp_path, monkeypatch, tensorrt_reranker, tensorrt_embed
     original = {name: getattr(settings, name) for name in _PATCHED_FIELDS}
     settings.EMBEDDING_PROVIDER = "TensorRT"
     settings.RERANKING_ENABLED = True  # the runtime shares the session's real TensorRT reranker
-    settings.FORGETFUL_SCOPES = "*"
-    settings.FORGETFUL_SERVER = ""
-    monkeypatch.delenv("FORGETFUL_TOKEN", raising=False)
+    settings.AXMEM_SCOPES = "*"
+    settings.AXMEM_SERVER = ""
+    monkeypatch.delenv("AXMEM_TOKEN", raising=False)
     yield settings
     for name, value in original.items():
         setattr(settings, name, value)
 
 
 def invoke_cli(monkeypatch, capsys, argv):
-    monkeypatch.setattr(sys, "argv", ["forgetful", *argv])
+    monkeypatch.setattr(sys, "argv", ["axmem", *argv])
     exit_code = main.cli()
     captured = capsys.readouterr()
     return exit_code or 0, captured.out, captured.err
@@ -108,7 +108,7 @@ def test_save_with_unencodable_title_succeeds_on_a_cp1252_stdout(cli_env, monkey
     monkeypatch.setattr(sys, "stdout", strict_stdout)
     monkeypatch.setattr(sys, "stderr", err_stream)
     monkeypatch.setattr(
-        sys, "argv", ["forgetful", "memory", "save", "body text for the arrow memory", "--title", title],
+        sys, "argv", ["axmem", "memory", "save", "body text for the arrow memory", "--title", title],
     )
 
     code = main.cli() or 0

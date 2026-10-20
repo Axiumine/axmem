@@ -20,7 +20,7 @@ from pydantic_settings import SettingsError
 
 from test_harness.config import HarnessConfig
 from test_harness.container import HOST_ALIAS, AgentContainer, docker_sdk, ensure_image
-from test_harness.server import HarnessInfraError, ThrowawayForgetful
+from test_harness.server import HarnessInfraError, ThrowawayAxmem
 from test_harness.walkthrough import (
     FIXTURE_SKILL,
     SkillRunResult,
@@ -33,7 +33,7 @@ def config_from_argv(argv: list[str]) -> HarnessConfig:
     parser = argparse.ArgumentParser(
         prog="test_harness",
         description="Walk a real agent through the canonical skills against a "
-        "throwaway local Forgetful, inside a sandbox container.",
+        "throwaway local Axmem, inside a sandbox container.",
     )
     parser.add_argument("--agent", help="agent-shell agent type (default: opencode)")
     parser.add_argument("--model", help="model to pin (default: opencode-go/deepseek-v4-flash)")
@@ -104,13 +104,13 @@ async def _run(config: HarnessConfig) -> int:
 
     ensure_image(rebuild=config.rebuild_image)
 
-    server = ThrowawayForgetful(run_dir=run_dir)
+    server = ThrowawayAxmem(run_dir=run_dir)
     # Teardown callbacks run last-in first-out and every one runs even when an earlier
     # one raises, so a docker failure can never orphan the server process.
     with ExitStack() as teardown:
         _cancel_on_sigterm(teardown)
         teardown.callback(server.stop)
-        print("booting throwaway Forgetful ...")
+        print("booting throwaway Axmem ...")
         server.start()
         # From inside the container 127.0.0.1 is the container itself; Docker Desktop
         # routes host.docker.internal back to the WSL host (verified empirically).

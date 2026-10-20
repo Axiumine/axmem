@@ -667,9 +667,9 @@ async def test_create_memory_with_provenance(test_memory_service):
         keywords=["ai-generated", "code-analysis"],
         tags=["provenance-test"],
         importance=7,
-        source_repo="scottrbk/forgetful",
+        source_repo="axiumine/axmem",
         source_files=["src/main.py", "tests/test_main.py"],
-        source_url="https://github.com/scottrbk/forgetful/blob/main/src/main.py",
+        source_url="https://github.com/Axiumine/axmem/blob/main/src/main.py",
         confidence=0.85,
         encoding_agent="claude-sonnet-4-20250514",
         encoding_version="0.1.0",
@@ -681,9 +681,9 @@ async def test_create_memory_with_provenance(test_memory_service):
     )
 
     assert memory is not None
-    assert memory.source_repo == "scottrbk/forgetful"
+    assert memory.source_repo == "axiumine/axmem"
     assert memory.source_files == ["src/main.py", "tests/test_main.py"]
-    assert memory.source_url == "https://github.com/scottrbk/forgetful/blob/main/src/main.py"
+    assert memory.source_url == "https://github.com/Axiumine/axmem/blob/main/src/main.py"
     assert memory.confidence == 0.85
     assert memory.encoding_agent == "claude-sonnet-4-20250514"
     assert memory.encoding_version == "0.1.0"

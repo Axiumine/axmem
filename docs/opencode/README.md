@@ -1,6 +1,6 @@
-# OpenCode Integration for Forgetful
+# OpenCode Integration for Axmem
 
-Custom commands and skills for using Forgetful with [OpenCode](https://opencode.ai).
+Custom commands and skills for using Axmem with [OpenCode](https://opencode.ai).
 
 ## Prerequisites
 
@@ -10,7 +10,7 @@ Ensure you have:
 
 ## MCP Server Configuration
 
-Add Forgetful to your OpenCode configuration file (`opencode.json` or `opencode.jsonc`):
+Add Axmem to your OpenCode configuration file (`opencode.json` or `opencode.jsonc`):
 
 ### Standard Setup (Recommended)
 
@@ -21,9 +21,9 @@ Setup against a Qdrant on its default address (`http://127.0.0.1:6333`; see the
 {
   "$schema": "https://opencode.ai/config.json",
   "mcp": {
-    "forgetful": {
+    "axmem": {
       "type": "local",
-      "command": ["uvx", "forgetful-ai"],
+      "command": ["uvx", "axmem"],
       "enabled": true
     }
   }
@@ -40,9 +40,9 @@ For another Qdrant, custom embeddings, or remote servers:
 {
   "$schema": "https://opencode.ai/config.json",
   "mcp": {
-    "forgetful": {
+    "axmem": {
       "type": "local",
-      "command": ["uvx", "forgetful-ai"],
+      "command": ["uvx", "axmem"],
       "enabled": true,
       "environment": {
         "QDRANT_URL": "http://qdrant.internal:6333",
@@ -57,13 +57,13 @@ For another Qdrant, custom embeddings, or remote servers:
 
 ### Remote HTTP Server
 
-For connecting to a Forgetful instance running elsewhere:
+For connecting to an Axmem instance running elsewhere:
 
 ```jsonc
 {
   "$schema": "https://opencode.ai/config.json",
   "mcp": {
-    "forgetful": {
+    "axmem": {
       "type": "remote",
       "url": "http://localhost:8020/mcp",
       "enabled": true,
@@ -95,22 +95,22 @@ repository root. Copy them to your OpenCode skills directory:
 
 ```bash
 # Global installation
-cp -r skills/forgetful-* ~/.config/opencode/skill/
+cp -r skills/axmem-* ~/.config/opencode/skill/
 
 # Or project-specific
-cp -r skills/forgetful-* .opencode/skill/
+cp -r skills/axmem-* .opencode/skill/
 ```
 
 ## Available Commands
 
 | Command | Description |
 |---------|-------------|
-| `/forgetful-setup` | Configure the Forgetful MCP server |
+| `/axmem-setup` | Configure the Axmem MCP server |
 | `/memory-search` | Search memories semantically |
 | `/memory-save` | Save current context as an atomic memory with curation workflow |
-| `/memory-list` | List recent memories from Forgetful |
-| `/memory-explore` | Deep exploration of the Forgetful knowledge graph |
-| `/encode-repo` | Bootstrap a repository into Forgetful's knowledge base |
+| `/memory-list` | List recent memories from Axmem |
+| `/memory-explore` | Deep exploration of the Axmem knowledge graph |
+| `/encode-repo` | Bootstrap a repository into Axmem's knowledge base |
 
 ## Available Skills
 
@@ -157,7 +157,7 @@ Deep traversal of related memories:
 
 ### Encode a Repository
 
-Bootstrap a new project into Forgetful:
+Bootstrap a new project into Axmem:
 
 ```
 /encode-repo my-project
@@ -214,9 +214,9 @@ Increase the timeout in your configuration:
 ```jsonc
 {
   "mcp": {
-    "forgetful": {
+    "axmem": {
       "type": "local",
-      "command": ["uvx", "forgetful-ai"],
+      "command": ["uvx", "axmem"],
       "timeout": 60000
     }
   }
@@ -232,4 +232,4 @@ curl http://localhost:8020/health
 
 ### View Logs
 
-Check Forgetful logs at `~/.forgetful/forgetful.log` (if logging is enabled).
+Check Axmem logs at `~/.axmem/axmem.log` (if logging is enabled).

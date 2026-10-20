@@ -4,7 +4,7 @@ When you switch embedding providers or models (e.g., from the default `TensorRT`
 
 The default provider, `TensorRT`, embeds on the NVIDIA GPU of the machine that runs Axmem with `BAAI/bge-small-en-v1.5` (384 dimensions). Axmem refuses to start when `EMBEDDING_DIMENSIONS` is not the width the model produces, and the message points here. Moving to another provider, or to a model of another width, is done with the steps below.
 
-Forgetful includes a built-in CLI tool to handle this migration safely.
+Axmem includes a built-in CLI tool to handle this migration safely.
 
 ---
 
@@ -34,10 +34,10 @@ EMBEDDING_DIMENSIONS=1536
 OPENAI_API_KEY=sk-...
 
 # 2. Preview what will happen (no changes made)
-forgetful --re-embed --dry-run
+axmem --re-embed --dry-run
 
 # 3. Run the migration
-forgetful --re-embed
+axmem --re-embed
 ```
 
 If running from source:
@@ -61,7 +61,7 @@ collection that serves searches changes only when the copy is complete and valid
 the live collection still holds vectors of another width, and when it holds no memories yet.
 
 ```bash
-forgetful --re-embed [--batch-size N] [--dry-run]
+axmem --re-embed [--batch-size N] [--dry-run]
 ```
 
 `--batch-size` and `--dry-run` only apply together with `--re-embed`; used alone they are rejected with a usage error instead of starting the server.
@@ -73,8 +73,8 @@ Number of memories to process per batch. Must be a whole number of at least `1`;
 Lower values use less memory and are safer for rate-limited APIs. Higher values are faster for local providers like TensorRT. Each batch is handed to the provider as one list of texts: TensorRT embeds it natively (in chunks of 64 texts, one GPU call per chunk) and the `gateway` provider sends it as one request (split into requests of at most 256 texts when the batch is larger); the other remote providers still embed the texts of a batch one at a time.
 
 ```bash
-forgetful --re-embed --batch-size 50    # faster for local providers
-forgetful --re-embed --batch-size 5     # conservative for rate-limited APIs
+axmem --re-embed --batch-size 50    # faster for local providers
+axmem --re-embed --batch-size 5     # conservative for rate-limited APIs
 ```
 
 ### `--dry-run`
@@ -84,7 +84,7 @@ The preview is read-only: it creates no collection and writes no point. A Qdrant
 Axmem collections yet is reported as empty.
 
 ```bash
-forgetful --re-embed --dry-run
+axmem --re-embed --dry-run
 ```
 
 Output:
@@ -168,7 +168,7 @@ Only when all three pass does the live name move to the new collection. The prev
 ## Recovering Obsolete-Memory Warnings
 
 Older full rebuilds removed vectors for obsolete memories. This prevented `create_memory` from
-warning when new content closely matched them. After upgrading, run `forgetful --re-embed` once,
+warning when new content closely matched them. After upgrading, run `axmem --re-embed` once,
 even if your embedding settings have not changed. The rebuild regenerates missing vectors from the
 stored memory content using the current model and dimensions. It also works when every memory is
 obsolete.
@@ -217,7 +217,7 @@ and you can delete it with the Qdrant API.
 If you notice search quality issues after a successful migration, the previous collection still holds the old
 vectors. Point the live name back to it with the Qdrant API (alias `<prefix>_memories`, see
 [Qdrant Configuration](./configuration.md#qdrant-configuration)), or restore a snapshot made with
-`forgetful backup` before the migration. Set the embedding settings back to what that collection was built with
+`axmem backup` before the migration. Set the embedding settings back to what that collection was built with
 before you start the server again, since startup refuses a collection whose width differs from
 `EMBEDDING_DIMENSIONS`.
 
@@ -244,14 +244,14 @@ EMBEDDING_MODEL=BAAI/bge-small-en-v1.5
 EMBEDDING_DIMENSIONS=384
 
 # Migrate
-forgetful --re-embed --batch-size 50
+axmem --re-embed --batch-size 50
 ```
 
 The first start downloads the model files once into `EMBEDDING_MODEL_DIR` and builds the engine (a few seconds); see [GPU models](./gpu-models.md) and [offline hosts](./gpu-models.md#model-files-and-offline-hosts). If the GPU, the TensorRT libraries or the model files are missing, `--re-embed` stops before anything is created in Qdrant with `Error: the embedder cannot start: ...`.
 
 ### Wrong width at start-up
 
-`EMBEDDING_DIMENSIONS` must equal the width the model produces. With the TensorRT provider the check runs at every start (and before `--re-embed` changes anything) and refuses with a `dimensions` cause that names both widths. Change `EMBEDDING_DIMENSIONS` to the width of the model, or choose a model of the width you configured; when the width of existing memories changes, `forgetful --re-embed` copies them into a collection of the new width with fresh vectors.
+`EMBEDDING_DIMENSIONS` must equal the width the model produces. With the TensorRT provider the check runs at every start (and before `--re-embed` changes anything) and refuses with a `dimensions` cause that names both widths. Change `EMBEDDING_DIMENSIONS` to the width of the model, or choose a model of the width you configured; when the width of existing memories changes, `axmem --re-embed` copies them into a collection of the new width with fresh vectors.
 
 ### TensorRT (local GPU) to OpenAI (cloud)
 
@@ -263,7 +263,7 @@ EMBEDDING_DIMENSIONS=1536
 OPENAI_API_KEY=sk-...
 
 # Migrate
-forgetful --re-embed --batch-size 20
+axmem --re-embed --batch-size 20
 ```
 
 ### TensorRT to Ollama (local)
@@ -276,7 +276,7 @@ EMBEDDING_MODEL=nomic-embed-text
 EMBEDDING_DIMENSIONS=768
 
 # Migrate
-forgetful --re-embed --batch-size 50
+axmem --re-embed --batch-size 50
 ```
 
 ### OpenAI to Azure OpenAI
@@ -294,7 +294,7 @@ AZURE_API_KEY=...
 AZURE_SUPPORTS_DIMENSIONS=false
 
 # Migrate (same dimensions, but different provider = different vector space)
-forgetful --re-embed
+axmem --re-embed
 ```
 
 ### Any provider to an HTTP embeddings gateway
@@ -310,7 +310,7 @@ GATEWAY_AGENT_ID=axmem
 GATEWAY_TOKEN=...
 
 # Migrate (a new provider is a new vector space, even at the same width)
-forgetful --re-embed --batch-size 100
+axmem --re-embed --batch-size 100
 ```
 
 The gateway answers with vectors of its model's width. If that differs from `EMBEDDING_DIMENSIONS`, the run stops at the first batch with an error that names both widths, and the new collection is discarded. A budget or model refusal (HTTP 403) and a rejected request (422) stop the run at once; a rate limit or an unavailable backend is retried a few times first. See [the gateway settings](./configuration.md#gateway-embedding-provider-configuration).
@@ -327,7 +327,7 @@ EMBEDDING_DIMENSIONS=3072
 OPENAI_API_KEY=sk-...
 
 # Migrate
-forgetful --re-embed
+axmem --re-embed
 ```
 
 ### OpenAI-Compatible Local Server (llama.cpp, vLLM)
@@ -343,7 +343,7 @@ OPENAI_BASE_URL=http://localhost:8080/v1
 OPENAI_SUPPORTS_DIMENSIONS=false
 
 # Migrate
-forgetful --re-embed
+axmem --re-embed
 ```
 
 **Server-side batch size**: Local inference servers (llama.cpp, vLLM) have an internal processing batch size that limits the maximum input token count per request. llama.cpp defaults to `512` tokens, which may be too small for longer memories. If you see errors like `input (N tokens) is too large to process`, increase the server's batch size:
@@ -356,14 +356,14 @@ llama-server -m model.gguf --embedding --batch-size 2048
 vllm serve model-name --max-model-len 2048
 ```
 
-A batch size of `2048` is recommended as a starting point. This is a server-side setting, not a Forgetful setting — Forgetful's `--batch-size` flag controls how many memories are processed per Qdrant write, not the token limit.
+A batch size of `2048` is recommended as a starting point. This is a server-side setting, not an Axmem setting — Axmem's `--batch-size` flag controls how many memories are processed per Qdrant write, not the token limit.
 
 ---
 
 ## Snapshots Before a Migration
 
 The migration needs no backup of its own. To keep a copy of the old vectors independent of the previous collection
-(for example on another machine), take a snapshot first with `forgetful backup` (see
+(for example on another machine), take a snapshot first with `axmem backup` (see
 [Qdrant Configuration](./configuration.md#qdrant-configuration)); the snapshot files are written to `BACKUP_DIR` and
 are readable by their owner only.
 

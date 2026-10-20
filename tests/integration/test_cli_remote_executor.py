@@ -61,7 +61,7 @@ async def test_execute_calls_meta_tool_and_unwraps_payload():
     result = await executor.execute("create_memory", {"title": "hi"})
 
     assert stub.calls == [
-        ("execute_forgetful_tool", {"tool_name": "create_memory", "arguments": {"title": "hi"}}),
+        ("execute_axmem_tool", {"tool_name": "create_memory", "arguments": {"title": "hi"}}),
     ]
     assert result == {"id": 42, "title": "hi"}
 
@@ -78,8 +78,8 @@ async def test_list_tools_and_tool_info_proxy_discovery_meta_tools():
     await executor.list_tools(category="memory")
     await executor.tool_info("query_memory")
 
-    assert stub.calls[0] == ("discover_forgetful_tools", {"category": "memory"})
-    assert stub.calls[1] == ("how_to_use_forgetful_tool", {"tool_name": "query_memory"})
+    assert stub.calls[0] == ("discover_axmem_tools", {"category": "memory"})
+    assert stub.calls[1] == ("how_to_use_axmem_tool", {"tool_name": "query_memory"})
 
 
 async def test_close_closes_client():
@@ -127,7 +127,7 @@ def test_normalize_server_url_defaults_scheme_for_bare_hosts():
     assert normalize_server_url("127.0.0.1:8020") == "http://127.0.0.1:8020/mcp"
     assert normalize_server_url("[::1]:8020") == "http://[::1]:8020/mcp"
     # Remote hosts default to https:// (secure by default).
-    assert normalize_server_url("forgetful.example.com") == "https://forgetful.example.com/mcp"
+    assert normalize_server_url("axmem.example.com") == "https://axmem.example.com/mcp"
 
 
 def test_normalize_server_url_preserves_explicit_scheme_path_and_slash():
@@ -137,8 +137,8 @@ def test_normalize_server_url_preserves_explicit_scheme_path_and_slash():
     # Explicit paths survive; only the empty path gets /mcp appended.
     assert normalize_server_url("https://example.com/custom") == "https://example.com/custom"
     assert (
-        normalize_server_url("forgetful.example.com/custom")
-        == "https://forgetful.example.com/custom"
+        normalize_server_url("axmem.example.com/custom")
+        == "https://axmem.example.com/custom"
     )
     # Trailing slashes are trimmed before the /mcp rule is applied.
     assert normalize_server_url("localhost:8020/") == "http://localhost:8020/mcp"
@@ -150,13 +150,13 @@ def test_normalize_server_url_rejects_non_http_scheme():
 
 
 # =============================================================================
-# Executor selection precedence: --local > --server > FORGETFUL_SERVER > local default
+# Executor selection precedence: --local > --server > AXMEM_SERVER > local default
 # =============================================================================
 
 
-async def test_server_flag_beats_forgetful_server_setting(monkeypatch):
-    monkeypatch.setattr(settings, "FORGETFUL_SERVER", "http://from-settings:1")
-    monkeypatch.delenv("FORGETFUL_TOKEN", raising=False)
+async def test_server_flag_beats_axmem_server_setting(monkeypatch):
+    monkeypatch.setattr(settings, "AXMEM_SERVER", "http://from-settings:1")
+    monkeypatch.delenv("AXMEM_TOKEN", raising=False)
 
     executor = await _build_executor(_args(["tools", "list", "--server", "http://from-flag:2"]))
 
@@ -167,9 +167,9 @@ async def test_server_flag_beats_forgetful_server_setting(monkeypatch):
         await executor.close()
 
 
-async def test_forgetful_server_setting_selects_remote(monkeypatch):
-    monkeypatch.setattr(settings, "FORGETFUL_SERVER", "http://from-settings:1")
-    monkeypatch.delenv("FORGETFUL_TOKEN", raising=False)
+async def test_axmem_server_setting_selects_remote(monkeypatch):
+    monkeypatch.setattr(settings, "AXMEM_SERVER", "http://from-settings:1")
+    monkeypatch.delenv("AXMEM_TOKEN", raising=False)
 
     executor = await _build_executor(_args(["tools", "list"]))
 
@@ -183,7 +183,7 @@ async def test_forgetful_server_setting_selects_remote(monkeypatch):
 async def test_local_flag_forces_local_even_with_server_configured(
     monkeypatch, runtime_settings,
 ):
-    monkeypatch.setattr(settings, "FORGETFUL_SERVER", "http://from-settings:1")
+    monkeypatch.setattr(settings, "AXMEM_SERVER", "http://from-settings:1")
 
     executor = await _build_executor(_args(["tools", "list", "--local"]))
 
@@ -194,8 +194,8 @@ async def test_local_flag_forces_local_even_with_server_configured(
 
 
 async def test_default_is_local_mode(monkeypatch, runtime_settings):
-    monkeypatch.setattr(settings, "FORGETFUL_SERVER", "")
-    monkeypatch.delenv("FORGETFUL_TOKEN", raising=False)
+    monkeypatch.setattr(settings, "AXMEM_SERVER", "")
+    monkeypatch.delenv("AXMEM_TOKEN", raising=False)
 
     executor = await _build_executor(_args(["tools", "list"]))
 
@@ -205,9 +205,9 @@ async def test_default_is_local_mode(monkeypatch, runtime_settings):
         await executor.close()
 
 
-async def test_forgetful_token_env_selects_bearer_auth(monkeypatch):
-    monkeypatch.setattr(settings, "FORGETFUL_SERVER", "http://remote:8020")
-    monkeypatch.setenv("FORGETFUL_TOKEN", "secret-token")
+async def test_axmem_token_env_selects_bearer_auth(monkeypatch):
+    monkeypatch.setattr(settings, "AXMEM_SERVER", "http://remote:8020")
+    monkeypatch.setenv("AXMEM_TOKEN", "secret-token")
 
     executor = await _build_executor(_args(["tools", "list"]))
 
@@ -227,15 +227,15 @@ def test_upsert_env_var_updates_only_target_line(tmp_path):
     env_file = tmp_path / ".env"
     env_file.write_text(
         "EMBEDDING_PROVIDER=Ollama\n"
-        "FORGETFUL_SERVER=http://old:1/mcp\n"
+        "AXMEM_SERVER=http://old:1/mcp\n"
         "LOG_LEVEL=DEBUG\n",
     )
 
-    auth_commands.upsert_env_var(env_file, "FORGETFUL_SERVER", "http://new:2/mcp")
+    auth_commands.upsert_env_var(env_file, "AXMEM_SERVER", "http://new:2/mcp")
 
     assert env_file.read_text().splitlines() == [
         "EMBEDDING_PROVIDER=Ollama",
-        "FORGETFUL_SERVER=http://new:2/mcp",
+        "AXMEM_SERVER=http://new:2/mcp",
         "LOG_LEVEL=DEBUG",
     ]
 
@@ -243,9 +243,9 @@ def test_upsert_env_var_updates_only_target_line(tmp_path):
 def test_upsert_env_var_appends_and_creates_file_when_missing(tmp_path):
     env_file = tmp_path / "config" / ".env"
 
-    auth_commands.upsert_env_var(env_file, "FORGETFUL_SERVER", "http://new:2/mcp")
+    auth_commands.upsert_env_var(env_file, "AXMEM_SERVER", "http://new:2/mcp")
 
-    assert env_file.read_text().splitlines() == ["FORGETFUL_SERVER=http://new:2/mcp"]
+    assert env_file.read_text().splitlines() == ["AXMEM_SERVER=http://new:2/mcp"]
 
 
 async def test_login_checks_the_server_and_saves_server_url(tmp_path, capsys):
@@ -260,10 +260,10 @@ async def test_login_checks_the_server_and_saves_server_url(tmp_path, capsys):
     )
 
     assert code == 0
-    assert [name for name, _ in stub.calls] == ["discover_forgetful_tools"]
+    assert [name for name, _ in stub.calls] == ["discover_axmem_tools"]
     assert env_file.read_text().splitlines() == [
         "LOG_LEVEL=DEBUG",
-        "FORGETFUL_SERVER=http://remote:8020/mcp",
+        "AXMEM_SERVER=http://remote:8020/mcp",
     ]
 
 
@@ -300,9 +300,9 @@ async def test_auth_login_bad_scheme_exits_one_with_clean_error(monkeypatch, tmp
 
 
 async def test_auth_status_bad_scheme_exits_one_with_clean_error(monkeypatch, tmp_path, capsys):
-    """A bad FORGETFUL_SERVER scheme reaches status via RemoteExecutor construction."""
-    monkeypatch.setattr(settings, "FORGETFUL_SERVER", "ftp://example.com")
-    monkeypatch.delenv("FORGETFUL_TOKEN", raising=False)
+    """A bad AXMEM_SERVER scheme reaches status via RemoteExecutor construction."""
+    monkeypatch.setattr(settings, "AXMEM_SERVER", "ftp://example.com")
+    monkeypatch.delenv("AXMEM_TOKEN", raising=False)
 
     code = await _run_auth_command(_args(["auth", "status"]))
 
@@ -313,7 +313,7 @@ async def test_auth_status_bad_scheme_exits_one_with_clean_error(monkeypatch, tm
 
 
 async def test_auth_status_local_mode_reports_local(monkeypatch, capsys):
-    monkeypatch.setattr(settings, "FORGETFUL_SERVER", "")
+    monkeypatch.setattr(settings, "AXMEM_SERVER", "")
 
     code = await auth_commands.status()
 

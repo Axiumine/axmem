@@ -1,7 +1,7 @@
 """E2E tests for MCP tool-surface argument validation on a real Qdrant node
 
 Covers the memory id and project scope arguments reached through
-``execute_forgetful_tool``.
+``execute_axmem_tool``.
 """
 from uuid import UUID, uuid4
 
@@ -11,7 +11,7 @@ from fastmcp.exceptions import ToolError
 
 async def call(client, tool_name, **arguments):
     return await client.call_tool(
-        "execute_forgetful_tool", {"tool_name": tool_name, "arguments": arguments},
+        "execute_axmem_tool", {"tool_name": tool_name, "arguments": arguments},
     )
 
 

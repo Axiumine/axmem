@@ -19,7 +19,7 @@ from tests.e2e.memory_tools_helpers_e2e import create_memory
 
 async def _recent(client):
     return await client.call_tool(
-        "execute_forgetful_tool",
+        "execute_axmem_tool",
         {"tool_name": "get_recent_memories", "arguments": {}},
     )
 

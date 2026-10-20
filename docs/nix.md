@@ -1,6 +1,6 @@
 # Nix Guide
 
-Run and develop Forgetful with [Nix flakes](https://nixos.wiki/wiki/Flakes).
+Run and develop Axmem with [Nix flakes](https://nixos.wiki/wiki/Flakes).
 `uv.lock` stays the single source of truth for exact dependency versions —
 Nix builds the locked environment reproducibly.
 
@@ -32,17 +32,17 @@ pytest tests/integration/ -q
 ## Run
 
 ```bash
-AUTH_MODE=none nix run .#forgetful-ai -- --transport http --host 127.0.0.1 --port 8020
+AUTH_MODE=none nix run .#axmem -- --transport http --host 127.0.0.1 --port 8020
 ```
 
-(`nix run .` works too — `forgetful-ai` is the default app.) Anything after
-`--` is passed to Forgetful; see `forgetful --help` for transports and flags.
-For MCP clients, point a stdio server at `nix run .#forgetful-ai` with `AUTH_MODE=none` in its environment. The server refuses to start without `AUTH_MODE`, and accepts `none` only on stdio or a loopback bind.
+(`nix run .` works too — `axmem` is the default app.) Anything after
+`--` is passed to Axmem; see `axmem --help` for transports and flags.
+For MCP clients, point a stdio server at `nix run .#axmem` with `AUTH_MODE=none` in its environment. The server refuses to start without `AUTH_MODE`, and accepts `none` only on stdio or a loopback bind.
 
 ## Build
 
 ```bash
-nix build .#forgetful-ai -o result-forgetful   # wrapped app package
+nix build .#axmem -o result-axmem   # wrapped app package
 ```
 
 ## Versions
@@ -51,7 +51,7 @@ Hatch-vcs has no `.git` inside Nix builds, so the version defaults to
 `0.0.0+dev`. For a real tag, inject it release-side:
 
 ```bash
-FORGETFUL_VERSION=$(git describe --tags) nix build --impure .#forgetful-ai
+AXMEM_VERSION=$(git describe --tags) nix build --impure .#axmem
 ```
 
 ## Hooks, format, checks
@@ -61,8 +61,7 @@ FORGETFUL_VERSION=$(git describe --tags) nix build --impure .#forgetful-ai
 - `nix fmt` rewrites the tree with the same hook set
 - `nix flake check` runs the sandboxed pre-commit check (fast, hermetic)
 
-Spelling allowlist lives in `_typos.toml` (e.g. the intentional `"FoRgEtFuL"`
-in tests, personal notes in `org_knowledge_proposal.md` which is excluded).
+`typos` runs with its default dictionary; an allowlist would go in a `_typos.toml` at the repository root.
 
 ## Tests
 

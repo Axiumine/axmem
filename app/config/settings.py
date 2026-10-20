@@ -13,13 +13,13 @@ from app.version import get_version
 # NOTE: We deliberately do NOT call dotenv.load_dotenv() here. It promotes a
 # discovered .env into os.environ, which pydantic-settings ranks above every
 # env_file entry - letting a stray .env in the run directory outrank the user
-# config that `forgetful auth login` writes to ~/.config/forgetful/.env. The
+# config that `axmem auth login` writes to ~/.config/axmem/.env. The
 # env_file list below already encodes the documented precedence (user config
 # last => highest, since DotEnvSettingsSource merges files in order).
 
 # Platform-specific default paths
-_default_data_dir = Path(user_data_dir("forgetful", ensure_exists=False))
-_default_config_dir = Path(user_config_dir("forgetful", ensure_exists=False))
+_default_data_dir = Path(user_data_dir("axmem", ensure_exists=False))
+_default_config_dir = Path(user_config_dir("axmem", ensure_exists=False))
 
 
 # Accepted values of the enumerated settings; the first entry is the default. Matching is
@@ -76,9 +76,9 @@ def _field_name(info: ValidationInfo) -> str:
 
 class Settings(BaseSettings):
     # Application Info
-    SERVICE_NAME: str = "Forgetful"
+    SERVICE_NAME: str = "Axmem"
     SERVICE_VERSION: str = get_version()
-    SERVICE_DESCRIPTION: str = "Forgetful Memory Service"
+    SERVICE_DESCRIPTION: str = "Axmem Memory Service"
 
     # Server Configuration
     SERVER_HOST: str = "0.0.0.0"  # nosec B104 - documented default; set SERVER_HOST to narrow it
@@ -143,10 +143,10 @@ class Settings(BaseSettings):
     TOKEN_CACHE_MAX_SIZE: int = 1000           # Maximum cached tokens
 
     # Scoped Permissions Configuration
-    FORGETFUL_SCOPES: str = "*"               # Comma-separated scopes (e.g. "read", "write:memories", "read:memories,write:memories")
+    AXMEM_SCOPES: str = "*"               # Comma-separated scopes (e.g. "read", "write:memories", "read:memories,write:memories")
 
     # CLI Remote Mode Configuration
-    FORGETFUL_SERVER: str = ""                # Remote deployment URL for the CLI (empty = local mode)
+    AXMEM_SERVER: str = ""                # Remote deployment URL for the CLI (empty = local mode)
 
     # MCP descriptor presentation
     MCP_DESCRIPTOR_MODE: str = "verbose"       # "verbose" (default) or "compact" meta-tool docstrings

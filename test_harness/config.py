@@ -14,12 +14,12 @@ from pydantic import field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 SKILL_ORDER: tuple[str, ...] = (
-    "forgetful-cli-setup",
-    "forgetful-remember",
-    "forgetful-recall",
-    "forgetful-explore",
-    "forgetful-context-gather",
-    "forgetful-encode-repo",
+    "axmem-cli-setup",
+    "axmem-remember",
+    "axmem-recall",
+    "axmem-explore",
+    "axmem-context-gather",
+    "axmem-encode-repo",
 )
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -42,7 +42,7 @@ class HarnessConfig(BaseSettings):
     surface: Literal["cli"] = "cli"
     skills: Annotated[list[str], NoDecode] = list(SKILL_ORDER)
     skill_timeout: float = 900
-    skill_timeouts: dict[str, float] = {"forgetful-encode-repo": 1800}
+    skill_timeouts: dict[str, float] = {"axmem-encode-repo": 1800}
     skills_dir: Path = _REPO_ROOT / "skills"
     output_dir: Path = _REPO_ROOT / "test_harness" / "runs"
     rebuild_image: bool = False

@@ -63,7 +63,7 @@ def _child_env(tmp_path: Path, server, prefix: str) -> dict[str, str]:
     env = dict(os.environ)
     env.update({
         "PYTHONPATH": str(_PROJECT_ROOT),
-        # Keep the developer's ~/.config/forgetful/.env out of the child's settings.
+        # Keep the developer's ~/.config/axmem/.env out of the child's settings.
         "XDG_CONFIG_HOME": str(tmp_path / "config"),
         "QDRANT_URL": server.url,
         "QDRANT_API_KEY": server.api_key,
@@ -72,7 +72,7 @@ def _child_env(tmp_path: Path, server, prefix: str) -> dict[str, str]:
         "RERANKING_ENABLED": "false",
         "CORS_ENABLED": "false",
         "FASTMCP_SERVER_AUTH": "",
-        "FORGETFUL_SERVER": "",
+        "AXMEM_SERVER": "",
         "LOG_LEVEL": "INFO",
         # No auth mode means no start; AUTH_MODE=none is accepted on this loopback bind.
         "AUTH_MODE": "none",

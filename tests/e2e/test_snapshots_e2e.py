@@ -25,7 +25,7 @@ async def test_meta_tool_signatures(mcp_client, json_snapshot):
 
 
 async def test_discovered_tool_catalogue(mcp_client, json_snapshot):
-    result = await mcp_client.call_tool("discover_forgetful_tools", {})
+    result = await mcp_client.call_tool("discover_axmem_tools", {})
     assert result.data == json_snapshot
 
 

@@ -72,7 +72,7 @@ if ! printf '%s\n' "$SUBJECT" | grep -qE "^(🤖 )?($TYPES)(\([^)]+\))?!?: .+"; 
     "Examples:" \
     "  feat(memory): add the Qdrant search path" \
     "  fix(graph): bound subgraph traversal cost" \
-    "  🤖 docs(readme): credit Forgetful (MIT)"
+    "  🤖 docs(readme): credit the upstream project (MIT)"
 fi
 
 if [ "${#SUBJECT}" -gt "$MAX_LEN" ]; then

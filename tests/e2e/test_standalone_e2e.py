@@ -82,7 +82,7 @@ GUARDED_SERVER = textwrap.dedent(
 
     socket.socket.connect, socket.socket.connect_ex, socket.getaddrinfo = connect, connect_ex, getaddrinfo
 
-    sys.argv = ["forgetful", "serve", "--transport", "http", "--host", "127.0.0.1", "--port", sys.argv[1]]
+    sys.argv = ["axmem", "serve", "--transport", "http", "--host", "127.0.0.1", "--port", sys.argv[1]]
     import main
 
     raise SystemExit(main.cli())
@@ -91,7 +91,7 @@ GUARDED_SERVER = textwrap.dedent(
 
 REMOVED_FROM_THE_ENVIRONMENT = (
     "GATEWAY_", "EMBEDDING_", "RERANKING_", "AUTH_", "QDRANT", "BACKUP", "HF_",
-    "FASTMCP", "FORGETFUL", "OPENAI", "AZURE", "GOOGLE", "OLLAMA", "DEFAULT_TENANT", "CORS", "MEMORY_",
+    "FASTMCP", "AXMEM", "OPENAI", "AZURE", "GOOGLE", "OLLAMA", "DEFAULT_TENANT", "CORS", "MEMORY_",
 )
 
 
@@ -107,7 +107,7 @@ def standalone_environment(tmp_path: Path, qdrant_url: str, qdrant_api_key: str,
     environment.update({
         "PYTHONPATH": str(ROOT),
         "PYTHONUNBUFFERED": "1",
-        "XDG_CONFIG_HOME": str(tmp_path / "config"),  # keep a developer's ~/.config/forgetful/.env out
+        "XDG_CONFIG_HOME": str(tmp_path / "config"),  # keep a developer's ~/.config/axmem/.env out
         GUARD_LOG_VARIABLE: str(tmp_path / "outbound.log"),
         "AUTH_MODE": "static",
         "AUTH_STATIC_TOKEN_HASHES": json.dumps({TENANT: hashlib.sha256(TOKEN.encode()).hexdigest()}),
@@ -170,7 +170,7 @@ def standalone_server(tmp_path_factory, qdrant_server, tensorrt_embedder, tensor
 
 
 async def call(client, tool, **arguments):
-    result = await client.call_tool("execute_forgetful_tool", {"tool_name": tool, "arguments": arguments})
+    result = await client.call_tool("execute_axmem_tool", {"tool_name": tool, "arguments": arguments})
     return result.data
 
 

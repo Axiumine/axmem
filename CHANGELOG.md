@@ -97,7 +97,7 @@ without the mark, with the commit that landed it, in the commit that lands it.
 ### Changed
 
 - Project renamed to Axmem under the Axiumine organisation; README rewritten, Forgetful credited, MIT notice
-  kept (`b121d350`). The package, CLI and environment variables still say `forgetful`.
+  kept (`b121d350`). The package, CLI and environment variables were renamed afterwards, see the rename entry below.
 - Python 3.14 is the only supported version: `requires-python`, classifiers, tool targets, CI, Dockerfiles and Nix
   (`1eea81a5`); the `compat` gate is gone; 142 ruff findings from the new target were auto-fixed (`c78d3f98`).
 - The environment reference moved from `docker/.env.example` to `.env.example` in the repository root, where the
@@ -171,7 +171,40 @@ without the mark, with the commit that landed it, in the commit that lands it.
   `docs/contributors.md`, `docs/quality-gates.md`, `.env.example`, `README.md` and `architecture.md` describe the new
   reranker; the reranker model no longer lives in the FastEmbed cache and `FASTEMBED_LOCAL_FILES_ONLY` does not
   affect it.
-- **(planned)** The package, CLI, environment variables and docs are renamed from `forgetful` to `axmem`.
+- Renamed from `forgetful` to `axmem` everywhere except attribution and history, so Axmem no longer shares a name with
+  the project it is derived from:
+  - Package and console script: the distribution is `axmem` and `axmem` is the only console script (`forgetful` and
+    `forgetful-ai` are gone); the CLI program name, help texts and messages say `axmem`; the project URLs point at
+    `https://github.com/Axiumine/axmem`; `uv.lock` is regenerated for the new name.
+  - Environment variables: `FORGETFUL_SERVER`, `FORGETFUL_TOKEN` and `FORGETFUL_SCOPES` become `AXMEM_SERVER`,
+    `AXMEM_TOKEN` and `AXMEM_SCOPES`, and the Nix build variable `FORGETFUL_VERSION` becomes `AXMEM_VERSION`. The old
+    names are not read, so a deployment that sets them runs with the defaults (local mode, no token, scope `*`)
+    until it is changed: an instance that limited its tools with `FORGETFUL_SCOPES` permits every tool until
+    `AXMEM_SCOPES` is set, so set it before the upgrade.
+  - Directories: the user config directory is `~/.config/axmem` and the data directory `~/.local/share/axmem`
+    (models and engine caches under `models/`); nothing is read from or moved out of the `forgetful` directories, so
+    an existing config file has to be moved and the models are downloaded and built again. The git-ignored local
+    state directory is `.axmem/`.
+  - MCP: the server name (`SERVICE_NAME`, default `Axmem`; `SERVICE_DESCRIPTION` likewise) and the three
+    meta-tools `discover_axmem_tools`, `how_to_use_axmem_tool` and `execute_axmem_tool` (were `discover_forgetful_tools`,
+    `how_to_use_forgetful_tool` and `execute_forgetful_tool`); clients that registered the server as `forgetful`
+    must register it as `axmem` (the tool prefix a client shows becomes `mcp__axmem__`). The example project and
+    repository names in the tool catalogue are `axmem` and `axiumine/axmem`.
+  - Code and tooling: `ForgetfulMCP` is `AxmemMCP`, `ThrowawayForgetful` is `ThrowawayAxmem`; the agent skill
+    directories are `skills/axmem-*` and the harness image, container prefix and label are `axmem-test-harness`,
+    `axmem-uat-` and `axmem.harness.requirements-hash`; the semgrep rules are in `.semgrep/axmem.yml` with `axmem-`
+    ids; the trivy cache is `~/.cache/axmem-trivy`; the Nix package, app and wrapper are `axmem` (the `forgetful`
+    symlink is dropped); the agent files for Copilot CLI, Gemini CLI and OpenCode are named `axmem-*`.
+  - Tests and snapshots: names follow the code; four snapshots were refreshed and the diff holds only the renamed
+    names (`SERVICE_NAME`, `SERVICE_DESCRIPTION`, the `AXMEM_*` settings, the CLI program name, the meta-tool names and
+    the example values).
+  - Docs: README, `architecture.md`, `docs/`, `skills/` and the environment reference use the new names. The word
+    Forgetful stays only in the README attribution, `LICENCE.md`, this history, `docs/changes-from-forgetful.md` (and
+    links to it) and the file names `docs/images/Forgetful Architecture.drawio.png` and
+    `docs/images/Forgetful Architecture.drawio_transparent.png`, which are kept because the images cannot be edited
+    (the image text says Forgetful and it shows the upstream architecture; the README says so). `AGENTS.md`
+    describes the Qdrant end-to-end suite instead of the SQLite and PostgreSQL ones, and its GitNexus section no
+    longer names the index.
 
 ### Removed
 
@@ -255,6 +288,10 @@ without the mark, with the commit that landed it, in the commit that lands it.
   deleted and its offline guidance is the "Model files and offline hosts" section of
   [docs/gpu-models.md](docs/gpu-models.md); the FastEmbed cache steps of the three workflows are gone. No schema
   change.
+- `org_knowledge_proposal.md` (a first-person product note by the upstream author, about a different project),
+  `_typos.toml` (it only excluded that note and allowed a string of a test that no longer exists) and the upstream
+  Claude Code plugin section of `docs/connectivity_guide.md` (the plugin belongs to the upstream project and is
+  installed under its name).
 
 ### Fixed
 

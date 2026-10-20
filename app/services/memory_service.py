@@ -1,6 +1,6 @@
 """Memory Service - Core business logic for memory operations
 
-This service implements the primary functionality for the Forgetful Memory System:
+This service implements the primary functionality for the Axmem Memory System:
     - Semantic search with token budget management
     - Memory creation with auto-linking
     - Memory updates

@@ -1,8 +1,8 @@
-"""The typed FastMCP server that carries the Forgetful runtime.
+"""The typed FastMCP server that carries the Axmem runtime.
 
 ``main.lifespan`` builds the runtime (``app.bootstrap.build_runtime``) and attaches its
 services, tool registry and scope ceiling to the server instance; HTTP routes and MCP
-tools read them back from it. ``ForgetfulMCP`` declares every attribute that is attached,
+tools read them back from it. ``AxmemMCP`` declares every attribute that is attached,
 so ``mypy`` can check both sides instead of seeing a plain ``FastMCP`` with no such
 attributes.
 
@@ -24,7 +24,7 @@ if TYPE_CHECKING:
     from app.services.re_embedding_service import ReEmbeddingService
 
 
-class ForgetfulMCP(FastMCP[Any]):
+class AxmemMCP(FastMCP[Any]):
     """FastMCP server with the services and registry that ``main.lifespan`` attaches."""
 
     memory_service: MemoryService
@@ -36,11 +36,11 @@ class ForgetfulMCP(FastMCP[Any]):
     _instance_scopes: frozenset[str]
 
 
-def server_of(ctx: Context) -> ForgetfulMCP:
-    """The ``ForgetfulMCP`` that a request context belongs to.
+def server_of(ctx: Context) -> AxmemMCP:
+    """The ``AxmemMCP`` that a request context belongs to.
 
-    ``ctx.fastmcp`` is typed as a plain ``FastMCP``. It is the ``ForgetfulMCP`` that
+    ``ctx.fastmcp`` is typed as a plain ``FastMCP``. It is the ``AxmemMCP`` that
     ``main.py`` creates, and the in-process CLI hands adapters a duck-typed shim that
     carries the attributes they read. This is a typing-only narrowing, with no runtime check.
     """
-    return cast("ForgetfulMCP", ctx.fastmcp)
+    return cast("AxmemMCP", ctx.fastmcp)

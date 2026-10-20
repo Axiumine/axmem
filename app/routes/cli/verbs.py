@@ -15,7 +15,7 @@ from app.routes.cli.render import (
     to_jsonable,
 )
 
-DEFAULT_SAVE_CONTEXT = "Saved from the Forgetful CLI"
+DEFAULT_SAVE_CONTEXT = "Saved from the Axmem CLI"
 
 
 async def run(executor: ToolExecutor, args) -> tuple[Any, str]:

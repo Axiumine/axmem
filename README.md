@@ -23,8 +23,7 @@
 > memory ids are UUIDs). Every change, its reason and its status are listed in
 > [docs/changes-from-forgetful.md](docs/changes-from-forgetful.md) and [CHANGELOG.md](CHANGELOG.md).
 >
-> Until the rename lands, the commands, package names and environment variables below still say
-> `forgetful`. See [License](#license) for attribution.
+> See [License](#license) for attribution.
 
 ---
 
@@ -64,6 +63,8 @@ Memories belong to a **tenant**, the owner of a set of memories, and a tenant ne
 
 
 ![Architecture](docs/images/Forgetful%20Architecture.drawio_transparent.png)
+
+The diagram is an image that cannot be edited here: its file name and its text still say Forgetful, and it shows the upstream architecture. [architecture.md](architecture.md) describes the current one.
 
 ## Features
 - Configure either **STDIO** or **HTTP** transport mechanism (or stand up two services to support both)
@@ -107,9 +108,9 @@ uv sync
 # when the HTTP server binds a loopback address (127.0.0.1 or ::1)
 QDRANT_URL=http://127.0.0.1:6333 AUTH_MODE=none uv run main.py
 ```
-The memories live in Qdrant. The models and engines are kept in platform-appropriate locations (`~/.local/share/forgetful/models` on Linux).
+The memories live in Qdrant. The models and engines are kept in platform-appropriate locations (`~/.local/share/axmem/models` on Linux).
 
-The server starts with stdio transport, which is what MCP clients expect. For HTTP on this machine: `AUTH_MODE=none uv run main.py --transport http --host 127.0.0.1 --port 8020`. To keep `AUTH_MODE=none` out of every command, put it in `~/.config/forgetful/.env`.
+The server starts with stdio transport, which is what MCP clients expect. For HTTP on this machine: `AUTH_MODE=none uv run main.py --transport http --host 127.0.0.1 --port 8020`. To keep `AUTH_MODE=none` out of every command, put it in `~/.config/axmem/.env`.
 
 **Standalone HTTP server with a static bearer token**, using nothing but the GPU, the model files and Qdrant:
 
@@ -125,7 +126,7 @@ uv run main.py --transport http --host 0.0.0.0 --port 8020
 No `EMBEDDING_PROVIDER`, `EMBEDDING_*` or `GATEWAY_*` setting is needed: the defaults are the TensorRT embedder
 and the TensorRT reranker. The `/health` route answers without a token once both engines are loaded.
 
-> **Note**: Axmem is not published to PyPI. `uvx forgetful-ai` installs the upstream Forgetful package, not Axmem.
+> **Note**: Axmem is not published to PyPI yet. The `uvx axmem` commands in the client guides need the package to be installed first: from a checkout, `uv tool install .` puts the `axmem` command on the `PATH`, and `axmem` then replaces `uvx axmem` in those examples.
 
 ### Option 2: Native setup for a shared server
 
@@ -171,14 +172,14 @@ instance, so tenant isolation is Axmem's job: use one Qdrant per trust domain.
 commas, and set `QDRANT_SHARD_NUMBER=3`, `QDRANT_REPLICATION_FACTOR=3`, `QDRANT_WRITE_CONSISTENCY_FACTOR=2` before the
 first start. Run the nodes with `QDRANT__CLUSTER__ENABLED=true`, the same API key on every node and
 `QDRANT__SERVICE__ENFORCE_INTERNAL_AUTH=true`, so the nodes also authenticate to each other. Axmem sends every write
-with strong ordering, waits for it, and reads back at quorum consistency. `forgetful qdrant-check` reads each node on
+with strong ordering, waits for it, and reads back at quorum consistency. `axmem qdrant-check` reads each node on
 its own and reports any node whose points differ; it only reports, repair is the operator's decision.
 
-**Backups** have two lines. Qdrant snapshots (`forgetful backup`) are the fast restore. The JSONL export
-(`forgetful export`, restored with `forgetful import`) is the second line: it holds the memories and links without
+**Backups** have two lines. Qdrant snapshots (`axmem backup`) are the fast restore. The JSONL export
+(`axmem export`, restored with `axmem import`) is the second line: it holds the memories and links without
 vectors, and an import computes the vectors again with the configured model, so it also moves memories between
 embedding models and between Qdrant versions. On a cluster a snapshot is per node and per shard: stop the writers,
-check that the nodes agree (`forgetful qdrant-check`), snapshot every node, and restore on one node with the snapshot
+check that the nodes agree (`axmem qdrant-check`), snapshot every node, and restore on one node with the snapshot
 as the source of truth, then check for leftover partial replicas. Aliases are not part of a snapshot. Details:
 [Configuration Guide](docs/configuration.md#qdrant-configuration).
 
@@ -245,51 +246,51 @@ A local HTTP server started with `AUTH_MODE=none` needs no header (`http://local
 
 ## CLI
 
-The `forgetful` command is also a full terminal client over the same tool registry the
+The `axmem` command is also a full terminal client over the same tool registry the
 MCP meta-tools use - against your local Qdrant by default (as the `DEFAULT_TENANT` tenant), or a remote
-deployment after `auth login`, as the tenant that `FORGETFUL_TOKEN` names.
+deployment after `auth login`, as the tenant that `AXMEM_TOKEN` names.
 
 ```bash
-# From the repository root (the command is still named forgetful)
+# From the repository root (this installs the `axmem` command)
 uv tool install .
 
 # Curated verbs for daily use
-forgetful memory save "Set generateResolvConf false to fix WSL2 DNS" \
+axmem memory save "Set generateResolvConf false to fix WSL2 DNS" \
     --title "WSL2 DNS fix" --importance 7
-forgetful memory search "wsl dns" -c "wsl networking" -n 5
-forgetful memory get 018f2c3e-0000-7000-8000-000000000042
-forgetful memory recent -n 10 -p my-project
+axmem memory search "wsl dns" -c "wsl networking" -n 5
+axmem memory get 018f2c3e-0000-7000-8000-000000000042
+axmem memory recent -n 10 -p my-project
 
 # Generic passthrough to any available tool
-forgetful tools list --category memory
-forgetful tools info query_memory
-forgetful call get_recent_memories --args '{"limit": 5, "project": "homelab"}'
+axmem tools list --category memory
+axmem tools info query_memory
+axmem call get_recent_memories --args '{"limit": 5, "project": "homelab"}'
 
-# Remote deployment (bearer token from the environment; saves FORGETFUL_SERVER to ~/.config/forgetful/.env)
-export FORGETFUL_TOKEN="<token>"
-forgetful auth login --server https://forgetful.example.com
-forgetful auth status
-forgetful memory search "wsl dns" -c "wsl networking"          # now runs remotely
-forgetful memory search "wsl dns" -c "wsl networking" --local  # force local mode per invocation
+# Remote deployment (bearer token from the environment; saves AXMEM_SERVER to ~/.config/axmem/.env)
+export AXMEM_TOKEN="<token>"
+axmem auth login --server https://axmem.example.com
+axmem auth status
+axmem memory search "wsl dns" -c "wsl networking"          # now runs remotely
+axmem memory search "wsl dns" -c "wsl networking" --local  # force local mode per invocation
 
 # Scripting: --json emits machine-readable output
-forgetful memory search "wsl dns" -c "wsl networking" --json | jq '.primary_memories[0].id'
+axmem memory search "wsl dns" -c "wsl networking" --json | jq '.primary_memories[0].id'
 
 # Operator commands, run against Qdrant itself (see "Qdrant" above)
-forgetful backup                     # snapshot every node into the backup directory
-forgetful restore <backup-dir> --yes # stop the server first
-forgetful export memories.jsonl      # portable, without vectors
-forgetful import memories.jsonl      # embeds each memory again
-forgetful qdrant-check               # compare the nodes of a cluster, report only
+axmem backup                     # snapshot every node into the backup directory
+axmem restore <backup-dir> --yes # stop the server first
+axmem export memories.jsonl      # portable, without vectors
+axmem import memories.jsonl      # embeds each memory again
+axmem qdrant-check               # compare the nodes of a cluster, report only
 ```
 
-`forgetful serve` is the canonical way to run the MCP server (`forgetful serve
---transport http --port 8020`); the bare `forgetful` invocation and
+`axmem serve` is the canonical way to run the MCP server (`axmem serve
+--transport http --port 8020`); the bare `axmem` invocation and
 the legacy `--transport`/`--re-embed` flags keep working indefinitely, so existing MCP
 client configurations are unaffected. A remote deployment is reached with the bearer token in
-`FORGETFUL_TOKEN`; there is no browser login. See the
+`AXMEM_TOKEN`; there is no browser login. See the
 [Configuration Guide](docs/configuration.md#cli-configuration) for precedence rules, or walk
-through the [`forgetful-cli-setup`](skills/forgetful-cli-setup/SKILL.md) skill for install,
+through the [`axmem-cli-setup`](skills/axmem-cli-setup/SKILL.md) skill for install,
 auth, and verification steps end-to-end.
 
 
@@ -298,8 +299,8 @@ auth, and verification steps end-to-end.
 ## Usage Examples
 
 Axmem exposes only three meta-tools to MCP clients. The tools available through
-`execute_forgetful_tool` depend on the permitted scopes. Use
-`discover_forgetful_tools` for the current runtime catalog.
+`execute_axmem_tool` depend on the permitted scopes. Use
+`discover_axmem_tools` for the current runtime catalog.
 
 ### Example 1: Project-Scoped Memory
 
@@ -308,7 +309,7 @@ it is created the first time it is used, so there is nothing to set up first.
 
 ```python
 # Create a memory in the "ecommerce-redesign" project scope
-memory = execute_forgetful_tool(
+memory = execute_axmem_tool(
     "create_memory",
     {
         "title": "Payment gateway: Stripe chosen over PayPal",
@@ -322,7 +323,7 @@ memory = execute_forgetful_tool(
 )
 
 # Later, query within project scope
-results = execute_forgetful_tool(
+results = execute_axmem_tool(
     "query_memory",
     {
         "query": "payment processing implementation",

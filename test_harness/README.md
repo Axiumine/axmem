@@ -1,8 +1,8 @@
 # UAT Walkthrough Harness
 
-Pre-release user-acceptance testing for Forgetful's agent-facing contract. A real agent
+Pre-release user-acceptance testing for Axmem's agent-facing contract. A real agent
 (driven headlessly via [agent-shell](https://pypi.org/project/agent-shell-py/)) works
-through each canonical skill in `skills/` against a throwaway local Forgetful — does the
+through each canonical skill in `skills/` against a throwaway local Axmem — does the
 doc make sense, do the commands behave as documented — and reports issues. The harness
 captures the agent's report *and* the full event transcript; acceptance is decided by a
 supervising review of both, never by the agent's self-report alone.
@@ -30,7 +30,7 @@ TensorRT model directory is warm.
 
 ```bash
 uv run python -m test_harness                                  # full 8-skill walkthrough
-uv run python -m test_harness --skills forgetful-recall        # subset (canonical order)
+uv run python -m test_harness --skills axmem-recall        # subset (canonical order)
 uv run python -m test_harness --timeout 600 --output /tmp/uat
 uv run python -m test_harness --rebuild-image                  # force image rebuild
 ```
@@ -44,7 +44,7 @@ ignored; an empty value is an error, never "all skills"). `--timeout` /
 The walkthrough order
 is fixed by data dependencies — write-skills populate the store the read-skills then
 query: `cli-setup → remember → recall → explore →
-context-gather → encode-repo`. `forgetful-mcp-setup` is not walked: the MCP
+context-gather → encode-repo`. `axmem-mcp-setup` is not walked: the MCP
 surface pass is a reserved axis (`--surface` accepts only `cli` in v1). `--agent` accepts
 only `opencode` in v1 — other agents need provisioning ported in `container.py`.
 
@@ -54,8 +54,8 @@ or invalid usage/configuration (a one-line `usage error: ...` on stderr, nothing
 
 ## The image
 
-`forgetful-test-harness:latest`, built from `test_harness/docker/Dockerfile`: opencode,
-uv-managed Python 3.14, agent-shell, and Forgetful's **locked dependency tree** baked as
+`axmem-test-harness:latest`, built from `test_harness/docker/Dockerfile`: opencode,
+uv-managed Python 3.14, agent-shell, and Axmem's **locked dependency tree** baked as
 cached layers. The working tree itself is built as a wheel on the host and installed
 `--no-deps` at container start, so every run walks the current checkout without an
 image rebuild. `ensure_image()` hashes `uv export --frozen` into an image label and
@@ -72,16 +72,16 @@ not covered: there the container uid no longer owns the bind mounts.
 
 ## What a run does
 
-1. Build/verify the sandbox image, boot `forgetful serve` as a host subprocess:
+1. Build/verify the sandbox image, boot `axmem serve` as a host subprocess:
    against the operator's Qdrant (`QDRANT_URL` and `QDRANT_API_KEY` of the harness environment, so a
    Qdrant node must already run) in collections of a prefix of their own, `AUTH_MODE=none` on the
    loopback bind, TensorRT embeddings (warm default model directory), `/health` polled to 200. The
-   run's collections are deleted at teardown. Every other Forgetful
+   run's collections are deleted at teardown. Every other Axmem
    setting is pinned to its default, so shell variables and
-   `~/.config/forgetful` cannot leak into the instance under review; the server is the
-   `forgetful` next to the interpreter running the harness, and the harness reaches it
+   `~/.config/axmem` cannot leak into the instance under review; the server is the
+   `axmem` next to the interpreter running the harness, and the harness reaches it
    directly (no `HTTP(S)_PROXY`).
-2. Start one container for the run — fenced env baked in (`FORGETFUL_SERVER` →
+2. Start one container for the run — fenced env baked in (`AXMEM_SERVER` →
    `host.docker.internal:<port>`, decoy `QDRANT_URL` for any `--local` detour), staged
    opencode credentials, `runs/<ts>/skills/` mounted rw, the wheel + runner mounted ro —
    then two in-container preflights, cheapest first: a stdlib GET of the throwaway
@@ -126,7 +126,7 @@ The run is evidence collection; acceptance is a review. For each skill:
    owns the truth.
 3. Classify surviving issues: doc defect / product defect / model noise.
 4. Check `meta.json` breach flags — any flagged tool name means the agent reached a
-   configured forgetful MCP server instead of the fenced CLI route. Grep `debug.log`
+   configured axmem MCP server instead of the fenced CLI route. Grep `debug.log`
    for `--local` while you're there (the decoy makes it harmless, but it signals the
    doc failed to keep the agent on the connected-server route).
 
@@ -140,10 +140,10 @@ Three independent fences, outermost first:
   (only `runs/<ts>/skills/`, the ro harness dir, and staged credential *copies*), so
   no tool the agent wields can touch the real repo, home directory, or knowledge base.
 - **Env fencing** still rides inside it (mem 1701: fence both routes) — the container
-  is born with `FORGETFUL_SERVER` pointing at the throwaway and `QDRANT_URL` at a
+  is born with `AXMEM_SERVER` pointing at the throwaway and `QDRANT_URL` at a
   decoy that nothing listens on, and with no real credentials to leak at all.
 - **Tool scoping + breach scan** remain defence-in-depth: agent-shell's tool lists do
-  not enforce under auto-approve, so the post-run scan flags any forgetful MCP tool
+  not enforce under auto-approve, so the post-run scan flags any axmem MCP tool
   use in the transcript.
 
 The `skills/` mount is the one tree both sides write, so the agent can plant symlinks in

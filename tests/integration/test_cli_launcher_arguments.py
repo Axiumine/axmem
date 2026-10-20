@@ -35,7 +35,7 @@ def recorded_runners(monkeypatch):
 
 
 def _invoke(monkeypatch, argv):
-    monkeypatch.setattr(sys, "argv", ["forgetful", *argv])
+    monkeypatch.setattr(sys, "argv", ["axmem", *argv])
     return main.cli()
 
 

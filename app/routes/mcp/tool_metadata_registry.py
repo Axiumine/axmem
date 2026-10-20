@@ -139,7 +139,7 @@ def register_memory_tools_metadata(
                     "description": "Optional free-form project scope label (max 500 characters); created on first use",
                     "required": False,
                     "default": None,
-                    "example": "forgetful",
+                    "example": "axmem",
                 },
                 {
                     "name": "source_repo",
@@ -147,7 +147,7 @@ def register_memory_tools_metadata(
                     "description": "Repository/project source (e.g., 'owner/repo') for provenance tracking",
                     "required": False,
                     "default": None,
-                    "example": "scottrbk/forgetful",
+                    "example": "axiumine/axmem",
                 },
                 {
                     "name": "source_files",
@@ -216,7 +216,7 @@ def register_memory_tools_metadata(
             ],
             "returns": "MemoryCreateResponse with id, title, linked_memory_ids, similar_memories, obsolete_matches",
             "examples": [
-                'execute_forgetful_tool("create_memory", {"title": "FastAPI auth pattern", "content": "Use JWT with httponly cookies...", "context": "Security decision", "keywords": ["auth", "jwt"], "tags": ["security"], "importance": 9})',
+                'execute_axmem_tool("create_memory", {"title": "FastAPI auth pattern", "content": "Use JWT with httponly cookies...", "context": "Security decision", "keywords": ["auth", "jwt"], "tags": ["security"], "importance": 9})',
             ],
             "tags": ["memory", "create", "linking"],
         },
@@ -282,7 +282,7 @@ def register_memory_tools_metadata(
                     "description": "Only search memories in this project scope",
                     "required": False,
                     "default": None,
-                    "example": "forgetful",
+                    "example": "axmem",
                 },
                 {
                     "name": "strict_project_filter",
@@ -295,8 +295,8 @@ def register_memory_tools_metadata(
             ],
             "returns": "MemoryQueryResult with primary_memories, linked_memories, scores, total_count, token_count, truncated flag",
             "examples": [
-                'execute_forgetful_tool("query_memory", {"query": "authentication patterns", "query_context": "building API login", "k": 5})',
-                'execute_forgetful_tool("query_memory", {"query": "database design", "query_context": "schema review", "importance_threshold": 8, "k": 3})',
+                'execute_axmem_tool("query_memory", {"query": "authentication patterns", "query_context": "building API login", "k": 5})',
+                'execute_axmem_tool("query_memory", {"query": "database design", "query_context": "schema review", "importance_threshold": 8, "k": 3})',
             ],
             "tags": ["memory", "search", "semantic", "query"],
         },
@@ -372,7 +372,7 @@ def register_memory_tools_metadata(
                     "description": "New project scope label - replaces the existing one; an empty string clears it (optional)",
                     "required": False,
                     "default": None,
-                    "example": "forgetful",
+                    "example": "axmem",
                 },
                 {
                     "name": "source_repo",
@@ -380,7 +380,7 @@ def register_memory_tools_metadata(
                     "description": "New repository/project source. Unchanged if null.",
                     "required": False,
                     "default": None,
-                    "example": "scottrbk/forgetful",
+                    "example": "axiumine/axmem",
                 },
                 {
                     "name": "source_files",
@@ -449,8 +449,8 @@ def register_memory_tools_metadata(
             ],
             "returns": "Full Memory object after update",
             "examples": [
-                'execute_forgetful_tool("update_memory", {"memory_id": "018f2c3e-0000-7000-8000-000000000042", "importance": 9})',
-                'execute_forgetful_tool("update_memory", {"memory_id": "018f2c3e-0000-7000-8000-000000000042", "content": "Updated content", "tags": ["revised", "important"]})',
+                'execute_axmem_tool("update_memory", {"memory_id": "018f2c3e-0000-7000-8000-000000000042", "importance": 9})',
+                'execute_axmem_tool("update_memory", {"memory_id": "018f2c3e-0000-7000-8000-000000000042", "content": "Updated content", "tags": ["revised", "important"]})',
             ],
             "tags": ["memory", "update", "patch"],
         },
@@ -482,9 +482,9 @@ def register_memory_tools_metadata(
             ],
             "returns": "List of memory IDs that were successfully linked",
             "examples": [
-                'execute_forgetful_tool("link_memories", {"memory_id": "018f2c3e-0000-7000-8000-000000000042", "related_ids": ["018f2c3e-0000-7000-8000-000000000010", "018f2c3e-0000-7000-8000-000000000015"]})',
-                'execute_forgetful_tool("link_memories", {"source_id": "018f2c3e-0000-7000-8000-000000000042", "target_id": "018f2c3e-0000-7000-8000-000000000057"})',
-                'execute_forgetful_tool("link_memories", {"memory_ids": ["018f2c3e-0000-7000-8000-000000000042", "018f2c3e-0000-7000-8000-000000000057"]})',
+                'execute_axmem_tool("link_memories", {"memory_id": "018f2c3e-0000-7000-8000-000000000042", "related_ids": ["018f2c3e-0000-7000-8000-000000000010", "018f2c3e-0000-7000-8000-000000000015"]})',
+                'execute_axmem_tool("link_memories", {"source_id": "018f2c3e-0000-7000-8000-000000000042", "target_id": "018f2c3e-0000-7000-8000-000000000057"})',
+                'execute_axmem_tool("link_memories", {"memory_ids": ["018f2c3e-0000-7000-8000-000000000042", "018f2c3e-0000-7000-8000-000000000057"]})',
             ],
             "tags": ["memory", "linking", "relationships"],
         },
@@ -516,10 +516,10 @@ def register_memory_tools_metadata(
             ],
             "returns": "Dict with 'success' boolean (True if all requested links were removed, False if any link didn't exist)",
             "examples": [
-                'execute_forgetful_tool("unlink_memories", {"source_id": "018f2c3e-0000-7000-8000-000000000042", "target_id": "018f2c3e-0000-7000-8000-000000000057"})',
-                'execute_forgetful_tool("unlink_memories", {"memory_id": "018f2c3e-0000-7000-8000-000000000042", "related_id": "018f2c3e-0000-7000-8000-000000000057"})',
-                'execute_forgetful_tool("unlink_memories", {"memory_id": "018f2c3e-0000-7000-8000-000000000042", "related_ids": ["018f2c3e-0000-7000-8000-000000000057", "018f2c3e-0000-7000-8000-000000000058"]})',
-                'execute_forgetful_tool("unlink_memories", {"memory_ids": ["018f2c3e-0000-7000-8000-000000000042", "018f2c3e-0000-7000-8000-000000000057", "018f2c3e-0000-7000-8000-000000000058"]})',
+                'execute_axmem_tool("unlink_memories", {"source_id": "018f2c3e-0000-7000-8000-000000000042", "target_id": "018f2c3e-0000-7000-8000-000000000057"})',
+                'execute_axmem_tool("unlink_memories", {"memory_id": "018f2c3e-0000-7000-8000-000000000042", "related_id": "018f2c3e-0000-7000-8000-000000000057"})',
+                'execute_axmem_tool("unlink_memories", {"memory_id": "018f2c3e-0000-7000-8000-000000000042", "related_ids": ["018f2c3e-0000-7000-8000-000000000057", "018f2c3e-0000-7000-8000-000000000058"]})',
+                'execute_axmem_tool("unlink_memories", {"memory_ids": ["018f2c3e-0000-7000-8000-000000000042", "018f2c3e-0000-7000-8000-000000000057", "018f2c3e-0000-7000-8000-000000000058"]})',
             ],
             "tags": ["memory", "unlink", "graph", "linking"],
         },
@@ -543,7 +543,7 @@ def register_memory_tools_metadata(
             ],
             "returns": "Complete Memory object with all fields",
             "examples": [
-                'execute_forgetful_tool("get_memory", {"memory_id": "018f2c3e-0000-7000-8000-000000000042"})',
+                'execute_axmem_tool("get_memory", {"memory_id": "018f2c3e-0000-7000-8000-000000000042"})',
             ],
             "tags": ["memory", "retrieve", "read"],
         },
@@ -586,7 +586,7 @@ def register_memory_tools_metadata(
             ],
             "returns": "Boolean indicating success",
             "examples": [
-                'execute_forgetful_tool("mark_memory_obsolete", {"memory_id": "018f2c3e-0000-7000-8000-000000000042", "reason": "Outdated approach", "superseded_by": "018f2c3e-0000-7000-8000-000000000100"})',
+                'execute_axmem_tool("mark_memory_obsolete", {"memory_id": "018f2c3e-0000-7000-8000-000000000042", "reason": "Outdated approach", "superseded_by": "018f2c3e-0000-7000-8000-000000000100"})',
             ],
             "tags": ["memory", "delete", "obsolete", "lifecycle"],
         },
@@ -611,7 +611,7 @@ def register_memory_tools_metadata(
             ],
             "returns": "Boolean indicating success",
             "examples": [
-                'execute_forgetful_tool("unobsolete_memory", {"memory_id": "018f2c3e-0000-7000-8000-000000000042"})',
+                'execute_axmem_tool("unobsolete_memory", {"memory_id": "018f2c3e-0000-7000-8000-000000000042"})',
             ],
             "tags": ["memory", "obsolete", "lifecycle"],
         },
@@ -647,7 +647,7 @@ def register_memory_tools_metadata(
                     "description": "Optional filter to one project scope",
                     "required": False,
                     "default": None,
-                    "example": "forgetful",
+                    "example": "axmem",
                 },
                 {
                     "name": "include_obsolete",
@@ -700,11 +700,11 @@ def register_memory_tools_metadata(
             ],
             "returns": "Dictionary with memories list (sorted per sort_by/sort_order) and total_count",
             "examples": [
-                'execute_forgetful_tool("get_recent_memories", {"limit": 5})',
-                'execute_forgetful_tool("get_recent_memories", {"limit": 10, "project": "forgetful"})',
-                'execute_forgetful_tool("get_recent_memories", {"tags": ["ai-champion"], "limit": 20})',
+                'execute_axmem_tool("get_recent_memories", {"limit": 5})',
+                'execute_axmem_tool("get_recent_memories", {"limit": 10, "project": "axmem"})',
+                'execute_axmem_tool("get_recent_memories", {"tags": ["ai-champion"], "limit": 20})',
                 (
-                    'execute_forgetful_tool("get_recent_memories", '
+                    'execute_axmem_tool("get_recent_memories", '
                     '{"importance_min": 8, "created_since": "2026-08-01T00:00:00Z", '
                     '"sort_by": "importance"})'
                 ),
@@ -740,7 +740,7 @@ def register_memory_tools_metadata(
                     "description": "Restrict the rebuild to memories in this project scope of the caller",
                     "required": False,
                     "default": None,
-                    "example": "forgetful",
+                    "example": "axmem",
                 },
             ],
             "returns": (
@@ -751,9 +751,9 @@ def register_memory_tools_metadata(
                 "An unknown project scope is rejected with VALIDATION_ERROR"
             ),
             "examples": [
-                'execute_forgetful_tool("rebuild_embeddings", {"memory_ids": ["018f2c3e-0000-7000-8000-000000000123", "018f2c3e-0000-7000-8000-000000000124"]})',
-                'execute_forgetful_tool("rebuild_embeddings", {"project": "forgetful"})',
-                'execute_forgetful_tool("rebuild_embeddings", {})',
+                'execute_axmem_tool("rebuild_embeddings", {"memory_ids": ["018f2c3e-0000-7000-8000-000000000123", "018f2c3e-0000-7000-8000-000000000124"]})',
+                'execute_axmem_tool("rebuild_embeddings", {"project": "axmem"})',
+                'execute_axmem_tool("rebuild_embeddings", {})',
             ],
             "tags": ["memory", "embeddings", "admin", "repair"],
         },

@@ -1,19 +1,19 @@
-# Gemini CLI Commands for Forgetful
+# Gemini CLI Commands for Axmem
 
-Custom commands for using Forgetful with [Gemini CLI](https://github.com/google-gemini/gemini-cli).
+Custom commands for using Axmem with [Gemini CLI](https://github.com/google-gemini/gemini-cli).
 
-> **Credits**: These commands were contributed by [@CharlieBytesX](https://github.com/CharlieBytesX) in [Discussion #15](https://github.com/ScottRBK/forgetful/discussions/15).
+> **Credits**: These commands were contributed by [@CharlieBytesX](https://github.com/CharlieBytesX) to the project Axmem is derived from.
 
 ## Prerequisites
 
-Ensure Forgetful MCP server is configured:
+Ensure Axmem MCP server is configured:
 
 ```bash
 # STDIO transport (recommended for local use)
-gemini mcp add forgetful uvx forgetful-ai
+gemini mcp add axmem uvx axmem
 
 # Or HTTP transport (for remote use)
-gemini mcp add -t http forgetful http://localhost:8020/mcp
+gemini mcp add -t http axmem http://localhost:8020/mcp
 ```
 
 ## Installation
@@ -30,10 +30,10 @@ Or copy individual commands as needed.
 
 | Command | Description |
 |---------|-------------|
-| `/encode-repo` | Bootstrap a repository into Forgetful's knowledge base using a 7-phase protocol |
-| `/forgetful-setup` | Configure the Forgetful MCP server |
-| `/memory-explore` | Deep exploration of the Forgetful knowledge graph |
-| `/memory-list` | List recent memories from Forgetful |
+| `/encode-repo` | Bootstrap a repository into Axmem's knowledge base using a 7-phase protocol |
+| `/axmem-setup` | Configure the Axmem MCP server |
+| `/memory-explore` | Deep exploration of the Axmem knowledge graph |
+| `/memory-list` | List recent memories from Axmem |
 | `/memory-save` | Save current context as an atomic memory with curation workflow |
 | `/memory-search` | Search memories semantically |
 
@@ -41,7 +41,7 @@ Or copy individual commands as needed.
 
 ### Encode a Repository
 
-Bootstrap a new project into Forgetful:
+Bootstrap a new project into Axmem:
 
 ```
 /encode-repo my-project

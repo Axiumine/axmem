@@ -1,5 +1,5 @@
 ---
-description: Deep exploration of the Forgetful knowledge graph
+description: Deep exploration of the Axmem knowledge graph
 ---
 # Memory Explore
 
@@ -20,7 +20,7 @@ Perform deep knowledge graph traversal to find related memories.
 Start with a semantic search:
 
 ```
-execute_forgetful_tool("query_memory", {
+execute_axmem_tool("query_memory", {
   "query": "$ARGUMENTS",
   "query_context": "Deep exploration via /memory-explore command",
   "k": 5,
@@ -36,7 +36,7 @@ Collect all primary_memories and linked_memories.
 For each primary memory found, get full details:
 
 ```
-execute_forgetful_tool("get_memory", {"memory_id": <id>})
+execute_axmem_tool("get_memory", {"memory_id": <id>})
 ```
 
 Extract: project, linked_memory_ids
@@ -46,7 +46,7 @@ Extract: project, linked_memory_ids
 For each expanded memory, get the memories it links to that are not yet visited:
 
 ```
-execute_forgetful_tool("get_memory", {"memory_id": <linked_id>})
+execute_axmem_tool("get_memory", {"memory_id": <linked_id>})
 ```
 
 Repeat for the new memories, skipping any ID already visited.
@@ -56,7 +56,7 @@ Repeat for the new memories, skipping any ID already visited.
 For each discovered project scope, search again within it for memories the first query ranked too low:
 
 ```
-execute_forgetful_tool("query_memory", {
+execute_axmem_tool("query_memory", {
   "query": "$ARGUMENTS",
   "query_context": "Project-scoped exploration via /memory-explore command",
   "project": "<project scope>"

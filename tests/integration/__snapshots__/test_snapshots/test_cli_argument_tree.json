@@ -1,5 +1,5 @@
 {
-  "forgetful": [
+  "axmem": [
     {
       "choices": null,
       "default": null,
@@ -24,7 +24,7 @@
       "type": null
     }
   ],
-  "forgetful auth": [
+  "axmem auth": [
     {
       "choices": null,
       "default": null,
@@ -38,7 +38,7 @@
       "type": null
     }
   ],
-  "forgetful auth login": [
+  "axmem auth login": [
     {
       "choices": null,
       "default": null,
@@ -63,7 +63,7 @@
       "type": null
     }
   ],
-  "forgetful auth status": [
+  "axmem auth status": [
     {
       "choices": null,
       "default": null,
@@ -77,7 +77,7 @@
       "type": null
     }
   ],
-  "forgetful backup": [
+  "axmem backup": [
     {
       "choices": null,
       "default": null,
@@ -102,7 +102,7 @@
       "type": null
     }
   ],
-  "forgetful call": [
+  "axmem call": [
     {
       "choices": null,
       "default": null,
@@ -132,7 +132,7 @@
       "flags": [
         "--server"
       ],
-      "help": "Execute against a remote Forgetful deployment (beats FORGETFUL_SERVER)",
+      "help": "Execute against a remote Axmem deployment (beats AXMEM_SERVER)",
       "nargs": null,
       "required": false,
       "type": null
@@ -143,7 +143,7 @@
       "flags": [
         "--local"
       ],
-      "help": "Force local mode even when FORGETFUL_SERVER is configured",
+      "help": "Force local mode even when AXMEM_SERVER is configured",
       "nargs": 0,
       "required": false,
       "type": null
@@ -171,7 +171,7 @@
       "type": "_json_object"
     }
   ],
-  "forgetful export": [
+  "axmem export": [
     {
       "choices": null,
       "default": null,
@@ -196,7 +196,7 @@
       "type": null
     }
   ],
-  "forgetful import": [
+  "axmem import": [
     {
       "choices": null,
       "default": null,
@@ -221,7 +221,7 @@
       "type": null
     }
   ],
-  "forgetful memory": [
+  "axmem memory": [
     {
       "choices": null,
       "default": null,
@@ -235,7 +235,7 @@
       "type": null
     }
   ],
-  "forgetful memory get": [
+  "axmem memory get": [
     {
       "choices": null,
       "default": null,
@@ -265,7 +265,7 @@
       "flags": [
         "--server"
       ],
-      "help": "Execute against a remote Forgetful deployment (beats FORGETFUL_SERVER)",
+      "help": "Execute against a remote Axmem deployment (beats AXMEM_SERVER)",
       "nargs": null,
       "required": false,
       "type": null
@@ -276,7 +276,7 @@
       "flags": [
         "--local"
       ],
-      "help": "Force local mode even when FORGETFUL_SERVER is configured",
+      "help": "Force local mode even when AXMEM_SERVER is configured",
       "nargs": 0,
       "required": false,
       "type": null
@@ -293,7 +293,7 @@
       "type": "uuid_value"
     }
   ],
-  "forgetful memory recent": [
+  "axmem memory recent": [
     {
       "choices": null,
       "default": null,
@@ -323,7 +323,7 @@
       "flags": [
         "--server"
       ],
-      "help": "Execute against a remote Forgetful deployment (beats FORGETFUL_SERVER)",
+      "help": "Execute against a remote Axmem deployment (beats AXMEM_SERVER)",
       "nargs": null,
       "required": false,
       "type": null
@@ -334,7 +334,7 @@
       "flags": [
         "--local"
       ],
-      "help": "Force local mode even when FORGETFUL_SERVER is configured",
+      "help": "Force local mode even when AXMEM_SERVER is configured",
       "nargs": 0,
       "required": false,
       "type": null
@@ -364,7 +364,7 @@
       "type": null
     }
   ],
-  "forgetful memory save": [
+  "axmem memory save": [
     {
       "choices": null,
       "default": null,
@@ -394,7 +394,7 @@
       "flags": [
         "--server"
       ],
-      "help": "Execute against a remote Forgetful deployment (beats FORGETFUL_SERVER)",
+      "help": "Execute against a remote Axmem deployment (beats AXMEM_SERVER)",
       "nargs": null,
       "required": false,
       "type": null
@@ -405,7 +405,7 @@
       "flags": [
         "--local"
       ],
-      "help": "Force local mode even when FORGETFUL_SERVER is configured",
+      "help": "Force local mode even when AXMEM_SERVER is configured",
       "nargs": 0,
       "required": false,
       "type": null
@@ -456,7 +456,7 @@
       "type": null
     }
   ],
-  "forgetful memory search": [
+  "axmem memory search": [
     {
       "choices": null,
       "default": null,
@@ -486,7 +486,7 @@
       "flags": [
         "--server"
       ],
-      "help": "Execute against a remote Forgetful deployment (beats FORGETFUL_SERVER)",
+      "help": "Execute against a remote Axmem deployment (beats AXMEM_SERVER)",
       "nargs": null,
       "required": false,
       "type": null
@@ -497,7 +497,7 @@
       "flags": [
         "--local"
       ],
-      "help": "Force local mode even when FORGETFUL_SERVER is configured",
+      "help": "Force local mode even when AXMEM_SERVER is configured",
       "nargs": 0,
       "required": false,
       "type": null
@@ -550,7 +550,7 @@
       "type": null
     }
   ],
-  "forgetful qdrant-check": [
+  "axmem qdrant-check": [
     {
       "choices": null,
       "default": null,
@@ -564,7 +564,7 @@
       "type": null
     }
   ],
-  "forgetful re-embed": [
+  "axmem re-embed": [
     {
       "choices": null,
       "default": null,
@@ -600,7 +600,7 @@
       "type": null
     }
   ],
-  "forgetful restore": [
+  "axmem restore": [
     {
       "choices": null,
       "default": null,
@@ -636,7 +636,7 @@
       "type": null
     }
   ],
-  "forgetful serve": [
+  "axmem serve": [
     {
       "choices": null,
       "default": null,
@@ -686,7 +686,7 @@
       "type": "int"
     }
   ],
-  "forgetful tools": [
+  "axmem tools": [
     {
       "choices": null,
       "default": null,
@@ -700,7 +700,7 @@
       "type": null
     }
   ],
-  "forgetful tools info": [
+  "axmem tools info": [
     {
       "choices": null,
       "default": null,
@@ -730,7 +730,7 @@
       "flags": [
         "--server"
       ],
-      "help": "Execute against a remote Forgetful deployment (beats FORGETFUL_SERVER)",
+      "help": "Execute against a remote Axmem deployment (beats AXMEM_SERVER)",
       "nargs": null,
       "required": false,
       "type": null
@@ -741,7 +741,7 @@
       "flags": [
         "--local"
       ],
-      "help": "Force local mode even when FORGETFUL_SERVER is configured",
+      "help": "Force local mode even when AXMEM_SERVER is configured",
       "nargs": 0,
       "required": false,
       "type": null
@@ -758,7 +758,7 @@
       "type": null
     }
   ],
-  "forgetful tools list": [
+  "axmem tools list": [
     {
       "choices": null,
       "default": null,
@@ -788,7 +788,7 @@
       "flags": [
         "--server"
       ],
-      "help": "Execute against a remote Forgetful deployment (beats FORGETFUL_SERVER)",
+      "help": "Execute against a remote Axmem deployment (beats AXMEM_SERVER)",
       "nargs": null,
       "required": false,
       "type": null
@@ -799,7 +799,7 @@
       "flags": [
         "--local"
       ],
-      "help": "Force local mode even when FORGETFUL_SERVER is configured",
+      "help": "Force local mode even when AXMEM_SERVER is configured",
       "nargs": 0,
       "required": false,
       "type": null

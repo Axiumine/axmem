@@ -123,7 +123,7 @@ async def test_invalid_project_is_rejected_e2e(mcp_client, bad_project):
 
 @pytest.mark.asyncio
 async def test_project_tools_no_longer_exist_e2e(mcp_client):
-    discovered = await mcp_client.call_tool("discover_forgetful_tools", {})
+    discovered = await mcp_client.call_tool("discover_axmem_tools", {})
     names = {t["name"] for tools in discovered.data["tools_by_category"].values() for t in tools}
 
     assert names.isdisjoint({

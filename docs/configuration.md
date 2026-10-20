@@ -1,13 +1,13 @@
 # Configuration Guide
 
-This guide explains all available environment variables for configuring Forgetful.
+This guide explains all available environment variables for configuring Axmem.
 
 ## Quick Start
 
-All configuration is optional except authentication: Forgetful uses sensible defaults from `app/config/settings.py` when no `.env` file exists, but the server refuses to start until `AUTH_MODE` is set (see [Authentication Configuration](#authentication-configuration)). For a local server, `AUTH_MODE=none` is enough on stdio or with `SERVER_HOST=127.0.0.1`.
+All configuration is optional except authentication: Axmem uses sensible defaults from `app/config/settings.py` when no `.env` file exists, but the server refuses to start until `AUTH_MODE` is set (see [Authentication Configuration](#authentication-configuration)). For a local server, `AUTH_MODE=none` is enough on stdio or with `SERVER_HOST=127.0.0.1`.
 
-To customize configuration, copy the reference file from the repository root and edit it. Forgetful reads
-`.env` from the directory it is started in and `~/.config/forgetful/.env` (the user config file, which
+To customize configuration, copy the reference file from the repository root and edit it. Axmem reads
+`.env` from the directory it is started in and `~/.config/axmem/.env` (the user config file, which
 outranks the local one):
 
 ```bash
@@ -23,7 +23,7 @@ uv run main.py --transport http
 ## Application Info
 
 ### `SERVICE_NAME`
-- **Default**: `Forgetful`
+- **Default**: `Axmem`
 - **Description**: Display name for the service in logs and metrics
 - **Example**: `SERVICE_NAME=MyMemoryService`
 
@@ -33,7 +33,7 @@ uv run main.py --transport http
 - **Example**: `SERVICE_VERSION=v1.2.3`
 
 ### `SERVICE_DESCRIPTION`
-- **Default**: `Forgetful Memory Service`
+- **Default**: `Axmem Memory Service`
 - **Description**: Human-readable description of the service
 - **Example**: `SERVICE_DESCRIPTION="My custom memory MCP server"`
 
@@ -75,8 +75,8 @@ uv run main.py --transport http
 - **Default**: `verbose`
 - **Description**: Controls how much guidance is embedded in the MCP meta-tool descriptions exposed to clients
 - **Values**:
-  - `verbose` - Include detailed inline guidance in `discover_forgetful_tools` and `execute_forgetful_tool`
-  - `compact` - Keep meta-tool descriptions short and use `how_to_use_forgetful_tool` for detailed schemas and examples
+  - `verbose` - Include detailed inline guidance in `discover_axmem_tools` and `execute_axmem_tool`
+  - `compact` - Keep meta-tool descriptions short and use `how_to_use_axmem_tool` for detailed schemas and examples
 - **Example**: `MCP_DESCRIPTOR_MODE=compact`
 
 ---
@@ -129,7 +129,7 @@ export and import.
 
 ### `BACKUP_DIR`
 - **Default**: empty (the `backups` directory in the platform data directory)
-- **Description**: Where `forgetful backup` and `forgetful export` write
+- **Description**: Where `axmem backup` and `axmem export` write
 - **Notes**:
   - Created as `0700` if missing; the files themselves are `0600`
   - Must be persistent storage
@@ -138,16 +138,16 @@ export and import.
 ### Operating a cluster
 
 - **Consistency**: every write waits for Qdrant (`wait=true`) and uses strong ordering. A write that must not overwrite another writer (an update, an obsolete mark, a restore) is conditional on the version it read, and a lost race is retried a bounded number of times and then answered with 409 (`ConflictError`). Reads that check a write use quorum consistency (two of three replicas), so they still answer while one node is down.
-- **`forgetful qdrant-check`** reads every node on its own (local reads) and lists the points on which the nodes differ. It only reports and exits with 1 on divergence. Repair is the operator's decision.
-- **Backups** are taken per node and per shard. Quiesce the writers, run `forgetful qdrant-check` until the nodes agree, then `forgetful backup` snapshots every node into one set. Restore (`forgetful restore <dir> --yes`, server stopped) on one node with the snapshot as the source of truth, wait until every replica is `Active`, look for leftover `Partial` replicas, and run `forgetful qdrant-check` before the writers start. Aliases are not stored in snapshots; `forgetful restore` points the live alias at the restored generation.
-- **Second line of defence**: `forgetful export <file>` writes every memory and link as JSON lines without vectors; `forgetful import <file>` embeds each memory again with the configured provider. Keep exports as well as snapshots.
-- **Embedding changes**: `EMBEDDING_DIMENSIONS`, the model or the provider changed means `forgetful re-embed` builds a new generation next to the live one and switches the alias when it is complete. A failed run leaves the live generation untouched. The previous generation is kept after success; delete it by hand once you no longer need it (see [Embedding Migration](embedding_migration.md)).
+- **`axmem qdrant-check`** reads every node on its own (local reads) and lists the points on which the nodes differ. It only reports and exits with 1 on divergence. Repair is the operator's decision.
+- **Backups** are taken per node and per shard. Quiesce the writers, run `axmem qdrant-check` until the nodes agree, then `axmem backup` snapshots every node into one set. Restore (`axmem restore <dir> --yes`, server stopped) on one node with the snapshot as the source of truth, wait until every replica is `Active`, look for leftover `Partial` replicas, and run `axmem qdrant-check` before the writers start. Aliases are not stored in snapshots; `axmem restore` points the live alias at the restored generation.
+- **Second line of defence**: `axmem export <file>` writes every memory and link as JSON lines without vectors; `axmem import <file>` embeds each memory again with the configured provider. Keep exports as well as snapshots.
+- **Embedding changes**: `EMBEDDING_DIMENSIONS`, the model or the provider changed means `axmem re-embed` builds a new generation next to the live one and switches the alias when it is complete. A failed run leaves the live generation untouched. The previous generation is kept after success; delete it by hand once you no longer need it (see [Embedding Migration](embedding_migration.md)).
 
 ---
 
 ## Authentication Configuration
 
-Forgetful fails closed. The server has no default authentication mode: with `AUTH_MODE` unset it
+Axmem fails closed. The server has no default authentication mode: with `AUTH_MODE` unset it
 **refuses to start**, so a server can never come up open by accident. Choose one mode:
 
 | `AUTH_MODE` | Credential | Tenant comes from |
@@ -220,11 +220,11 @@ Validates JWTs with a JWKS endpoint or a public key.
 AUTH_MODE=jwt
 FASTMCP_SERVER_AUTH_JWT_JWKS_URI=https://auth.yourcompany.com/.well-known/jwks.json
 FASTMCP_SERVER_AUTH_JWT_ISSUER=https://auth.yourcompany.com
-FASTMCP_SERVER_AUTH_JWT_AUDIENCE=forgetful-api
+FASTMCP_SERVER_AUTH_JWT_AUDIENCE=axmem-api
 FASTMCP_SERVER_AUTH_JWT_REQUIRED_SCOPES=api:read,api:write
 ```
 
-Either `FASTMCP_SERVER_AUTH_JWT_JWKS_URI` or `FASTMCP_SERVER_AUTH_JWT_PUBLIC_KEY` is required. Forgetful
+Either `FASTMCP_SERVER_AUTH_JWT_JWKS_URI` or `FASTMCP_SERVER_AUTH_JWT_PUBLIC_KEY` is required. Axmem
 validates the signature, issuer, audience and expiry; an expired or invalid token gets `401`.
 
 ### Token introspection (`AUTH_MODE=introspection`)
@@ -235,7 +235,7 @@ Validates opaque bearer tokens at an introspection endpoint (OAuth 2.0 RFC 7662)
 # .env
 AUTH_MODE=introspection
 FASTMCP_SERVER_AUTH_INTROSPECTION_URL=https://auth.yourcompany.com/oauth/introspect
-FASTMCP_SERVER_AUTH_INTROSPECTION_CLIENT_ID=forgetful-resource-server
+FASTMCP_SERVER_AUTH_INTROSPECTION_CLIENT_ID=axmem-resource-server
 FASTMCP_SERVER_AUTH_INTROSPECTION_CLIENT_SECRET=your-client-secret
 FASTMCP_SERVER_AUTH_INTROSPECTION_REQUIRED_SCOPES=api:read,api:write
 ```
@@ -271,7 +271,7 @@ A token the endpoint reports as inactive, or whose `exp` has passed, gets `401`.
 and `DEFAULT_USER_ID`, `DEFAULT_USER_NAME`, `DEFAULT_USER_EMAIL` no longer exist. Replace
 `FASTMCP_SERVER_AUTH=...JWTVerifier` with `AUTH_MODE=jwt` (and `...IntrospectionTokenVerifier` with
 `AUTH_MODE=introspection`), and `DEFAULT_USER_ID` with `DEFAULT_TENANT`. The SQL databases are gone and nothing
-is migrated in place: carry memories over with an export of the old deployment's data and `forgetful import`.
+is migrated in place: carry memories over with an export of the old deployment's data and `axmem import`.
 
 ---
 
@@ -286,13 +286,13 @@ is migrated in place: carry memories over with an export of the old deployment's
 2. **Token scopes**:
    - Define required scopes: `FASTMCP_SERVER_AUTH_*_REQUIRED_SCOPES`
    - Implement least-privilege access
-   - Forgetful narrows the tools a token can use from its `scope` (or `scp`) claim, given as a
-     space-separated string or a list. Forgetful scopes are `*`, `read`, `write`, `read:<category>`
-     and `write:<category>`, applied within the `FORGETFUL_SCOPES` ceiling. Any other scope
+   - Axmem narrows the tools a token can use from its `scope` (or `scp`) claim, given as a
+     space-separated string or a list. Axmem scopes are `*`, `read`, `write`, `read:<category>`
+     and `write:<category>`, applied within the `AXMEM_SCOPES` ceiling. Any other scope
      (`openid`, `email`, another API's scope) is ignored.
-   - A token that carries scopes but none of the Forgetful ones is denied every tool, so add one
+   - A token that carries scopes but none of the Axmem ones is denied every tool, so add one
      (for example `*`) to tokens whose scopes are only verifier requirements such as `api:read`.
-     A token with no scope claim at all gets the full `FORGETFUL_SCOPES` ceiling. A static token
+     A token with no scope claim at all gets the full `AXMEM_SCOPES` ceiling. A static token
      carries no scopes and gets the ceiling.
 
 3. **Development vs production**:
@@ -305,7 +305,7 @@ is migrated in place: carry memories over with an export of the old deployment's
    AUTH_MODE=jwt
    FASTMCP_SERVER_AUTH_JWT_JWKS_URI=https://auth.company.com/.well-known/jwks.json
    FASTMCP_SERVER_AUTH_JWT_ISSUER=https://auth.company.com
-   FASTMCP_SERVER_AUTH_JWT_AUDIENCE=forgetful-prod
+   FASTMCP_SERVER_AUTH_JWT_AUDIENCE=axmem-prod
    ```
 
 ---
@@ -334,10 +334,10 @@ is migrated in place: carry memories over with an export of the old deployment's
 
 ## CLI Configuration
 
-The `forgetful` CLI executes the same tool registry as the MCP server - locally by
+The `axmem` CLI executes the same tool registry as the MCP server - locally by
 default, or against a remote deployment.
 
-### `FORGETFUL_SERVER`
+### `AXMEM_SERVER`
 
 - **Default**: `` (empty - local mode)
 - **Purpose**: Remote deployment URL the CLI executes against. The URL is normalized
@@ -350,16 +350,16 @@ default, or against a remote deployment.
     explicit path is left untouched, and a query string or fragment is preserved, so
     normalizing an already-normalized URL changes nothing.
 
-  So `localhost:8020` becomes `http://localhost:8020/mcp` and `forgetful.example.com`
-  becomes `https://forgetful.example.com/mcp`.
+  So `localhost:8020` becomes `http://localhost:8020/mcp` and `axmem.example.com`
+  becomes `https://axmem.example.com/mcp`.
 
-  Do not put credentials in the URL (`https://user:password@host`). `forgetful auth
+  Do not put credentials in the URL (`https://user:password@host`). `axmem auth
   login` drops them before saving the URL, and `auth status` and CLI error messages mask
-  them. Use `FORGETFUL_TOKEN` (below) to authenticate.
-- **Set by**: `forgetful auth login --server URL` (written to `~/.config/forgetful/.env`),
+  them. Use `AXMEM_TOKEN` (below) to authenticate.
+- **Set by**: `axmem auth login --server URL` (written to `~/.config/axmem/.env`),
   or manually via shell env / any `.env` file in the standard list.
 
-### `FORGETFUL_TOKEN`
+### `AXMEM_TOKEN`
 
 - **Default**: unset
 - **Purpose**: Bearer token the CLI sends to a remote deployment (a JWT, an introspected
@@ -381,16 +381,16 @@ each request 300 seconds.
 ### Configuration precedence (highest wins)
 
 1. Per-invocation flags: `--server URL` / `--local`
-2. Shell environment: `FORGETFUL_SERVER`, `FORGETFUL_TOKEN`
-3. User config file: `~/.config/forgetful/.env` (`forgetful auth login --server URL` saves `FORGETFUL_SERVER` there)
+2. Shell environment: `AXMEM_SERVER`, `AXMEM_TOKEN`
+3. User config file: `~/.config/axmem/.env` (`axmem auth login --server URL` saves `AXMEM_SERVER` there)
 4. Defaults: local mode, Qdrant at `http://127.0.0.1:6333`, TensorRT embeddings and TensorRT reranking (both need an NVIDIA GPU)
 
-### `forgetful auth`
+### `axmem auth`
 
-`forgetful auth login --server URL` checks the connection (sending `FORGETFUL_TOKEN`, if set) and saves
-`FORGETFUL_SERVER` to the user config file. There is no interactive sign-in and nothing is cached on
-disk. `forgetful auth status` is read-only: it reports the active mode and, in remote mode, sends
-`FORGETFUL_TOKEN` (or nothing) as a plain bearer to prove the credentials work. A `401` is reported as
+`axmem auth login --server URL` checks the connection (sending `AXMEM_TOKEN`, if set) and saves
+`AXMEM_SERVER` to the user config file. There is no interactive sign-in and nothing is cached on
+disk. `axmem auth status` is read-only: it reports the active mode and, in remote mode, sends
+`AXMEM_TOKEN` (or nothing) as a plain bearer to prove the credentials work. A `401` is reported as
 not authenticated.
 
 ---
@@ -508,7 +508,7 @@ to manage. Each tenant has its own scopes: the same label used by two tenants is
 
 ## Provenance Defaults
 
-These settings allow you to stamp every object created through a Forgetful server instance with identifying information about the agent and software doing the encoding. Useful when multiple agents or tools write to the same knowledge base.
+These settings allow you to stamp every object created through an Axmem server instance with identifying information about the agent and software doing the encoding. Useful when multiple agents or tools write to the same knowledge base.
 
 Values are checked at startup against the length limits of the fields they are copied into (noted per setting below); an over-long value stops startup with an error naming the setting, instead of failing every create later.
 
@@ -597,16 +597,16 @@ ENFORCE_ENV_OVERWRITE=true
 - **Example**: `EMBEDDING_TF32=true`
 
 ### `EMBEDDING_MODEL_DIR`
-- **Default**: `models/embedder` in the platform user data directory (e.g., `~/.local/share/forgetful/models/embedder`)
+- **Default**: `models/embedder` in the platform user data directory (e.g., `~/.local/share/axmem/models/embedder`)
 - **Description**: Where the TensorRT embedder keeps the model files (`onnx/model.onnx`, `tokenizer.json`) and a `manifest.json` with their SHA-256, under a directory named after the repository (`BAAI--bge-small-en-v1.5`)
 - **Note**: Only used when `EMBEDDING_PROVIDER=TensorRT`. Files already present are never downloaded, so a host without internet access can be seeded by copying the directory, and `HF_HUB_OFFLINE=1` then keeps the Hugging Face client from trying (see [Model files and offline hosts](gpu-models.md#model-files-and-offline-hosts)). A file that no longer matches its recorded SHA-256 stops startup
-- **Example**: `EMBEDDING_MODEL_DIR=/var/lib/forgetful/models/embedder`
+- **Example**: `EMBEDDING_MODEL_DIR=/var/lib/axmem/models/embedder`
 
 ### `EMBEDDING_ENGINE_CACHE_DIR`
-- **Default**: `models/tensorrt` in the platform user data directory (e.g., `~/.local/share/forgetful/models/tensorrt`), the same default as `RERANKING_ENGINE_CACHE_DIR`
+- **Default**: `models/tensorrt` in the platform user data directory (e.g., `~/.local/share/axmem/models/tensorrt`), the same default as `RERANKING_ENGINE_CACHE_DIR`
 - **Description**: Where the built embeddings engine is cached, one directory per fingerprint, inside a directory named after the model
 - **Note**: Only used when `EMBEDDING_PROVIDER=TensorRT`. The fingerprint covers the model SHA-256, TensorRT version, GPU name, compute capability, driver major version, `EMBEDDING_TF32` and the optimization profile (batch 1 to 64, sequence 2 to 512); a change in any of them rebuilds the engine. The embedder and the reranker may share one cache directory because each engine has a directory of its own. See [GPU models](gpu-models.md#engine-cache)
-- **Example**: `EMBEDDING_ENGINE_CACHE_DIR=/var/lib/forgetful/models/tensorrt`
+- **Example**: `EMBEDDING_ENGINE_CACHE_DIR=/var/lib/axmem/models/tensorrt`
 
 ### `EMBEDDING_REQUEST_TIMEOUT_SECONDS`
 - **Default**: `60`
@@ -693,7 +693,7 @@ ENFORCE_ENV_OVERWRITE=true
 
 **Note**: These settings only apply when `EMBEDDING_PROVIDER=Ollama`
 
-> Ollama uses native async via the `ollama` Python SDK. No API key required (Ollama runs locally). Install with `pip install forgetful-ai[ollama]`.
+> Ollama uses native async via the `ollama` Python SDK. No API key required (Ollama runs locally). Install with `pip install axmem[ollama]`.
 
 #### `OLLAMA_BASE_URL`
 - **Default**: `http://localhost:11434`
@@ -708,7 +708,7 @@ The provider posts JSON to an HTTP embeddings gateway: `POST {GATEWAY_URL}{GATEW
 
 A reply is checked before anything is stored: the number of vectors must equal the number of texts, every vector must be exactly `EMBEDDING_DIMENSIONS` numbers wide, and no number may be NaN or infinite. Otherwise the call fails with an error that names the mismatch. Statuses 429 and 503 are retried, waiting for `Retry-After` (at most 30 seconds), and 502, 504 and network errors are retried with a growing wait, up to four attempts in all. 403 (for example a budget or model refusal), 422 and every other status fail at once. Error messages carry the status and the gateway's `code` only, never the response body, the token or the texts.
 
-> **Re-embed required**: vectors from the gateway's model are not comparable with vectors from any other model. After switching to or from `gateway`, set `EMBEDDING_DIMENSIONS` to the width the gateway's model returns and run `forgetful --re-embed`. See the [Embedding Migration Guide](./embedding_migration.md).
+> **Re-embed required**: vectors from the gateway's model are not comparable with vectors from any other model. After switching to or from `gateway`, set `EMBEDDING_DIMENSIONS` to the width the gateway's model returns and run `axmem --re-embed`. See the [Embedding Migration Guide](./embedding_migration.md).
 
 #### `GATEWAY_URL`
 - **Default**: (empty string)
@@ -817,21 +817,21 @@ service, not this local setting.
 - **Example**: `RERANKING_TF32=true`
 
 #### `RERANKING_MODEL_DIR`
-- **Default**: `models/reranker` in the platform user data directory (e.g., `~/.local/share/forgetful/models/reranker`)
+- **Default**: `models/reranker` in the platform user data directory (e.g., `~/.local/share/axmem/models/reranker`)
 - **Description**: Where the TensorRT reranker keeps the model files (`onnx/model.onnx`, `tokenizer.json`) and a `manifest.json` with their SHA-256
 - **Note**: Only used when `RERANKING_PROVIDER=TensorRT`. Files already present are never downloaded, so an offline host can be seeded by copying the directory (see [Model files and offline hosts](gpu-models.md#model-files-and-offline-hosts)). A file that no longer matches its recorded SHA-256 stops startup
-- **Example**: `RERANKING_MODEL_DIR=/var/lib/forgetful/models/reranker`
+- **Example**: `RERANKING_MODEL_DIR=/var/lib/axmem/models/reranker`
 
 #### `RERANKING_ENGINE_CACHE_DIR`
-- **Default**: `models/tensorrt` in the platform user data directory (e.g., `~/.local/share/forgetful/models/tensorrt`)
+- **Default**: `models/tensorrt` in the platform user data directory (e.g., `~/.local/share/axmem/models/tensorrt`)
 - **Description**: Where built TensorRT engines are cached, one directory per fingerprint
 - **Note**: Only used when `RERANKING_PROVIDER=TensorRT`. The fingerprint covers the model SHA-256, TensorRT version, GPU name, compute capability, driver major version, `RERANKING_TF32` and the optimization profile; a change in any of them rebuilds the engine, and directories of other fingerprints are removed and logged. See [GPU models](gpu-models.md#engine-cache)
-- **Example**: `RERANKING_ENGINE_CACHE_DIR=/var/lib/forgetful/models/tensorrt`
+- **Example**: `RERANKING_ENGINE_CACHE_DIR=/var/lib/axmem/models/tensorrt`
 
 #### `RERANKING_URL`
 - **Default**: (empty string)
 - **Description**: HTTP endpoint URL for re-ranking requests
-- **Note**: Only used when `RERANKING_PROVIDER=HTTP`, where it is required: Forgetful refuses to start with `RERANKING_ENABLED=true` and an empty URL
+- **Note**: Only used when `RERANKING_PROVIDER=HTTP`, where it is required: Axmem refuses to start with `RERANKING_ENABLED=true` and an empty URL
 - **Examples**:
   - Jina: `https://api.jina.ai/v1/rerank`
   - Cohere: `https://api.cohere.com/v2/rerank`
@@ -883,7 +883,7 @@ LOG_FORMAT=console
 AUTH_MODE=jwt
 FASTMCP_SERVER_AUTH_JWT_JWKS_URI=https://auth.example.com/.well-known/jwks.json
 FASTMCP_SERVER_AUTH_JWT_ISSUER=https://auth.example.com
-FASTMCP_SERVER_AUTH_JWT_AUDIENCE=forgetful
+FASTMCP_SERVER_AUTH_JWT_AUDIENCE=axmem
 SERVER_PORT=8020
 SERVER_HOST=127.0.0.1
 QDRANT_URL=http://q1.internal:6333,http://q2.internal:6333,http://q3.internal:6333

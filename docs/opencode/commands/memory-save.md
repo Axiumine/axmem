@@ -1,5 +1,5 @@
 ---
-description: Save current context as an atomic memory in Forgetful
+description: Save current context as an atomic memory in Axmem
 ---
 # Save Memory
 
@@ -17,7 +17,7 @@ Create an atomic memory from the current conversation context.
 
 Before creating, query for related memories:
 ```
-execute_forgetful_tool("query_memory", {
+execute_axmem_tool("query_memory", {
   "query": "<topic of new memory>",
   "query_context": "Checking for existing memories before creating new one",
   "k": 5,
@@ -103,12 +103,12 @@ Found 2 related memories:
 
 Ready to save this memory:
 
-Title: "Plugin architecture: Two-plugin strategy (forgetful + context-hub)"
-Content: "Decided on two-plugin approach: (1) forgetful - standalone memory tools,
-(2) context-hub - orchestrates Forgetful + Context7 + WebSearch. Claude Code handles
+Title: "Plugin architecture: Two-plugin strategy (axmem + context-hub)"
+Content: "Decided on two-plugin approach: (1) axmem - standalone memory tools,
+(2) context-hub - orchestrates Axmem + Context7 + WebSearch. Claude Code handles
 duplicate MCP configs gracefully via scope hierarchy."
-Context: "Architecture decision for shipping Forgetful as a Claude Code plugin"
-Keywords: [claude-code, plugin, forgetful, mcp, architecture]
+Context: "Architecture decision for shipping Axmem as a Claude Code plugin"
+Keywords: [claude-code, plugin, axmem, mcp, architecture]
 Tags: [decision, architecture]
 Importance: 8 (major architectural decision)
 Project: <scope label, for example the repository name; optional>

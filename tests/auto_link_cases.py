@@ -43,7 +43,7 @@ async def assert_the_cutoff_separates_the_texts(embedder: Any) -> None:
 
 async def create_through_the_tool(mcp_client: Any, text: tuple[str, str, str]):
     title, content, context = text
-    return await mcp_client.call_tool("execute_forgetful_tool", {
+    return await mcp_client.call_tool("execute_axmem_tool", {
         "tool_name": "create_memory",
         "arguments": {
             "title": title,

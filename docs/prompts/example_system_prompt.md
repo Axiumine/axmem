@@ -1,4 +1,4 @@
-# Forgetful Memory System
+# Axmem Memory System
 
 ## When to Create Memories
 Create for: decisions, preferences, patterns, technical solutions, project context.

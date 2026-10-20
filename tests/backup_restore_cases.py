@@ -127,5 +127,5 @@ if __name__ == "__main__":
         app.bootstrap.get_embedding_adapter(), stop_at=FAIL_AT[sys.argv[1]], stop=deliberate_failure,
     )
     app.bootstrap.get_embedding_adapter = lambda: provider
-    sys.argv = ["forgetful", "re-embed", "--batch-size", "1"]
+    sys.argv = ["axmem", "re-embed", "--batch-size", "1"]
     sys.exit(cli())

@@ -1,6 +1,6 @@
 # Core Concepts
 
-Forgetful organizes knowledge into memories, grouped by an optional project scope, and owned by a tenant. Understanding when to use each makes the difference between a cluttered knowledge dump and a useful, searchable knowledge graph.
+Axmem organizes knowledge into memories, grouped by an optional project scope, and owned by a tenant. Understanding when to use each makes the difference between a cluttered knowledge dump and a useful, searchable knowledge graph.
 
 ---
 
@@ -10,7 +10,7 @@ Forgetful organizes knowledge into memories, grouped by an optional project scop
 
 **Atomic knowledge units** - one concept per note.
 
-Memories are the core of Forgetful. Each memory captures a single fact, decision, preference, or insight. Think of them as the nodes in your knowledge graph.
+Memories are the core of Axmem. Each memory captures a single fact, decision, preference, or insight. Think of them as the nodes in your knowledge graph.
 
 **Important:** Memories are the only stored type. A project is a label on a memory, not a separate record.
 
@@ -60,7 +60,7 @@ A tenant is the identity a request is authenticated as: the `tenant_id` claim of
 
 ## Provenance Tracking
 
-Forgetful supports optional provenance fields on memories so you can trace where knowledge came from and which agent encoded it. This is particularly useful when multiple agents or tools write to the same knowledge base.
+Axmem supports optional provenance fields on memories so you can trace where knowledge came from and which agent encoded it. This is particularly useful when multiple agents or tools write to the same knowledge base.
 
 ### Supported Fields
 

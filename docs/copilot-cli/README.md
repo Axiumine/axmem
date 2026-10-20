@@ -1,6 +1,6 @@
-# GitHub Copilot CLI Integration for Forgetful
+# GitHub Copilot CLI Integration for Axmem
 
-Custom agents and skills for using Forgetful with [GitHub Copilot CLI](https://github.com/github/copilot-cli).
+Custom agents and skills for using Axmem with [GitHub Copilot CLI](https://github.com/github/copilot-cli).
 
 ## Prerequisites
 
@@ -13,7 +13,7 @@ Ensure you have:
 
 ### Standard Setup (Recommended)
 
-Add Forgetful via the interactive `/mcp add` command in Copilot CLI:
+Add Axmem via the interactive `/mcp add` command in Copilot CLI:
 
 ```bash
 # Start Copilot CLI
@@ -22,9 +22,9 @@ copilot
 # Then use the /mcp add command
 /mcp add
 # Enter the following:
-#   Name: forgetful
+#   Name: axmem
 #   Command: uvx
-#   Arguments: forgetful-ai
+#   Arguments: axmem
 # Press Ctrl+S to save
 ```
 
@@ -38,9 +38,9 @@ Alternatively, edit `~/.copilot/mcp-config.json` directly:
 ```json
 {
   "mcpServers": {
-    "forgetful": {
+    "axmem": {
       "command": "uvx",
-      "args": ["forgetful-ai"]
+      "args": ["axmem"]
     }
   }
 }
@@ -53,9 +53,9 @@ For another Qdrant, custom embeddings, or environment variables:
 ```json
 {
   "mcpServers": {
-    "forgetful": {
+    "axmem": {
       "command": "uvx",
-      "args": ["forgetful-ai"],
+      "args": ["axmem"],
       "env": {
         "QDRANT_URL": "http://qdrant.internal:6333",
         "QDRANT_API_KEY": "your-qdrant-api-key",
@@ -69,12 +69,12 @@ For another Qdrant, custom embeddings, or environment variables:
 
 ### Remote HTTP Server
 
-For connecting to a Forgetful instance running elsewhere:
+For connecting to an Axmem instance running elsewhere:
 
 ```json
 {
   "mcpServers": {
-    "forgetful": {
+    "axmem": {
       "url": "http://localhost:8020/mcp"
     }
   }
@@ -105,11 +105,11 @@ repository root. Copy them to your Copilot CLI skills directory:
 
 ```bash
 # Global installation (all projects)
-cp -r skills/forgetful-* ~/.copilot/skills/
+cp -r skills/axmem-* ~/.copilot/skills/
 
 # Or repository-specific
 mkdir -p .github/skills
-cp -r skills/forgetful-* .github/skills/
+cp -r skills/axmem-* .github/skills/
 ```
 
 ## Available Agents
@@ -118,7 +118,7 @@ Custom agents are specialized versions of Copilot for specific tasks. Invoke the
 
 | Agent | Description |
 |-------|-------------|
-| `forgetful-memory` | Memory operations: search, save, update, and manage memories |
+| `axmem-memory` | Memory operations: search, save, update, and manage memories |
 | `memory-curator` | Memory maintenance: deduplicate, link, mark obsolete, update |
 | `knowledge-explorer` | Deep knowledge graph traversal for comprehensive context |
 
@@ -142,7 +142,7 @@ Search my memories for authentication patterns
 Or explicitly invoke the agent:
 
 ```
-/agent forgetful-memory
+/agent axmem-memory
 Search for authentication patterns in my knowledge base
 ```
 
@@ -157,7 +157,7 @@ Save this conversation about the new caching strategy to memory with importance 
 ### List Recent Memories
 
 ```
-Show me the last 10 memories from the Forgetful project
+Show me the last 10 memories from the Axmem project
 ```
 
 ### Explore the Knowledge Graph
@@ -169,7 +169,7 @@ Trace all connections from the payment processing decision
 
 ### Encode a Repository
 
-Bootstrap a new project into Forgetful:
+Bootstrap a new project into Axmem:
 
 ```
 Analyze this repository and store its key architectural decisions and patterns as memories
@@ -251,7 +251,7 @@ curl http://localhost:8020/health
 
 ### View Logs
 
-Check Forgetful logs at `~/.forgetful/forgetful.log` (if logging is enabled).
+Check Axmem logs at `~/.axmem/axmem.log` (if logging is enabled).
 
 ### Agent Not Loading
 

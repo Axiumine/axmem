@@ -1,12 +1,12 @@
-# Forgetful Memory System
+# Axmem Memory System
 
-You have access to Forgetful, a semantic memory system that provides persistent knowledge storage across conversations and sessions.
+You have access to Axmem, a semantic memory system that provides persistent knowledge storage across conversations and sessions.
 
 ## Overview
 
-Forgetful is an MCP (Model Context Protocol) server that gives AI agents persistent memory. It stores knowledge as atomic notes using Zettelkasten principles, automatically builds knowledge graphs through semantic linking, and retrieves relevant context through natural language queries.
+Axmem is an MCP (Model Context Protocol) server that gives AI agents persistent memory. It stores knowledge as atomic notes using Zettelkasten principles, automatically builds knowledge graphs through semantic linking, and retrieves relevant context through natural language queries.
 
-**Key capability**: Forgetful exposes only 3 meta-tools that provide access to 17 internal tools. This preserves your context window (~500 tokens vs ~15-20K if all tools were exposed directly).
+**Key capability**: Axmem exposes only 3 meta-tools that provide access to 17 internal tools. This preserves your context window (~500 tokens vs ~15-20K if all tools were exposed directly).
 
 ---
 
@@ -32,7 +32,7 @@ Use the 1-10 scale consistently:
 - **<6**: Minor context (avoid creating these)
 
 ### Auto-Linking
-When you create a memory, Forgetful automatically:
+When you create a memory, Axmem automatically:
 1. Generates an embedding vector for the content
 2. Finds semantically similar memories (≥0.7 cosine similarity by default)
 3. Creates bidirectional links (default: 3 connections)
@@ -45,7 +45,7 @@ is truncated.
 
 ---
 
-## When to Use Forgetful (Trigger Patterns)
+## When to Use Axmem (Trigger Patterns)
 
 Adapt these patterns to your agent's domain.
 
@@ -74,7 +74,7 @@ Adapt these patterns to your agent's domain.
 - Patterns in how they work or think
 - Relationships between concepts
 
-### Skip Forgetful When...
+### Skip Axmem When...
 
 - Information is momentary (today's weather, current time)
 - Knowledge is universally available
@@ -85,33 +85,33 @@ Adapt these patterns to your agent's domain.
 
 ## The Meta-Tools Pattern
 
-Forgetful uses 3 gateway tools to access all functionality:
+Axmem uses 3 gateway tools to access all functionality:
 
-### 1. `discover_forgetful_tools(category?)`
+### 1. `discover_axmem_tools(category?)`
 List available tools, optionally filtered by category.
 
 ```python
 # See all tool categories
-discover_forgetful_tools()
+discover_axmem_tools()
 
 # See only the memory tools
-discover_forgetful_tools(category="memory")
+discover_axmem_tools(category="memory")
 ```
 
 Category: `memory` (the filter `linking` selects the link and unlink tools)
 
-### 2. `how_to_use_forgetful_tool(tool_name)`
+### 2. `how_to_use_axmem_tool(tool_name)`
 Get detailed documentation for a specific tool including parameters and examples.
 
 ```python
-how_to_use_forgetful_tool("create_memory")
+how_to_use_axmem_tool("create_memory")
 ```
 
-### 3. `execute_forgetful_tool(tool_name, arguments)`
+### 3. `execute_axmem_tool(tool_name, arguments)`
 Execute any registered tool dynamically.
 
 ```python
-execute_forgetful_tool("create_memory", {
+execute_axmem_tool("create_memory", {
     "title": "API design: REST over GraphQL",
     "content": "Chose REST for this project because...",
     "context": "Recording the API design decision",
@@ -127,7 +127,7 @@ execute_forgetful_tool("create_memory", {
 
 ## Two Building Blocks
 
-Forgetful organizes knowledge across 2 types:
+Axmem organizes knowledge across 2 types:
 
 | Type | What it stores | When to use |
 |------|---------------|-------------|
@@ -176,7 +176,7 @@ Always check if similar knowledge exists:
 
 ```python
 # Before creating memory about auth
-results = execute_forgetful_tool("query_memory", {
+results = execute_axmem_tool("query_memory", {
     "query": "authentication OAuth JWT",
     "query_context": "Checking for existing auth memories before creating",
     "k": 5
@@ -184,10 +184,10 @@ results = execute_forgetful_tool("query_memory", {
 
 if similar_exists(results):
     # Update existing memory instead
-    execute_forgetful_tool("update_memory", {...})
+    execute_axmem_tool("update_memory", {...})
 else:
     # Create new memory
-    execute_forgetful_tool("create_memory", {...})
+    execute_axmem_tool("create_memory", {...})
 ```
 
 ### 2. Project Scope
@@ -195,7 +195,7 @@ else:
 Pick one label per project and use it consistently (for example the repository name). Check what the project already holds:
 
 ```python
-recent = execute_forgetful_tool("get_recent_memories", {
+recent = execute_axmem_tool("get_recent_memories", {
     "limit": 5,
     "project": "owner/repo-name"
 })
@@ -204,7 +204,7 @@ recent = execute_forgetful_tool("get_recent_memories", {
 ### 3. Memory Creation Template
 
 ```python
-execute_forgetful_tool("create_memory", {
+execute_axmem_tool("create_memory", {
     "title": "[Concise, searchable, <200 chars]",
     "content": "[ONE concept, ~300-400 words, max 2000 chars]",
     "importance": 8,  # 1-10 scale
@@ -221,7 +221,7 @@ For long content, split it into atomic memories and link them:
 
 ```python
 # 1. Capture each key decision as an atomic memory
-memory1 = execute_forgetful_tool("create_memory", {
+memory1 = execute_axmem_tool("create_memory", {
     "title": "Architecture: Event-driven with Kafka",
     "content": "Selected event-driven architecture...",
     "context": "Extracted from ADR-003",
@@ -231,7 +231,7 @@ memory1 = execute_forgetful_tool("create_memory", {
     "project": "owner/repo-name"
 })
 
-memory2 = execute_forgetful_tool("create_memory", {
+memory2 = execute_axmem_tool("create_memory", {
     "title": "Tradeoff: Eventual consistency accepted",
     "content": "Team accepted eventual consistency...",
     "context": "Extracted from ADR-003",
@@ -242,7 +242,7 @@ memory2 = execute_forgetful_tool("create_memory", {
 })
 
 # 2. Link the pieces to each other
-execute_forgetful_tool("link_memories", {
+execute_axmem_tool("link_memories", {
     "memory_id": memory1["id"],
     "related_ids": [memory2["id"]]
 })
@@ -255,13 +255,13 @@ neighbours; add manual links for connections embeddings miss:
 
 ```python
 # Find the earlier memory the new one builds on
-matches = execute_forgetful_tool("query_memory", {
+matches = execute_axmem_tool("query_memory", {
     "query": "Kafka event-driven architecture",
     "query_context": "Finding the decision this tradeoff follows from"
 })
 
 # Link the new memory to it
-execute_forgetful_tool("link_memories", {
+execute_axmem_tool("link_memories", {
     "memory_id": memory["id"],
     "related_ids": [matches["primary_memories"][0]["id"]]
 })
@@ -296,13 +296,13 @@ execute_forgetful_tool("link_memories", {
 # Essential patterns
 
 # 1. Query memory
-execute_forgetful_tool("query_memory", {
+execute_axmem_tool("query_memory", {
     "query": "search terms",
     "query_context": "why searching"
 })
 
 # 2. Create memory
-execute_forgetful_tool("create_memory", {
+execute_axmem_tool("create_memory", {
     "title": "Short title",
     "content": "One concept",
     "context": "Why this matters",
@@ -312,7 +312,7 @@ execute_forgetful_tool("create_memory", {
 })
 
 # 3. Link memories
-execute_forgetful_tool("link_memories", {
+execute_axmem_tool("link_memories", {
     "memory_id": 42,
     "related_ids": [156]
 })

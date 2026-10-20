@@ -35,7 +35,7 @@ from test_harness.walkthrough import SessionOutcome
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _DOCKER_DIR = Path(__file__).resolve().parent / "docker"
-_HASH_LABEL = "forgetful.harness.requirements-hash"
+_HASH_LABEL = "axmem.harness.requirements-hash"
 _OPENCODE_AUTH = Path("~/.local/share/opencode/auth.json")
 _INSTALL_TIMEOUT = 300
 _HEALTH_TIMEOUT = 180
@@ -43,7 +43,7 @@ _HOST_EXEC_GRACE = 120
 _MISSING_SDK = "docker SDK (docker-py) is not installed - run `uv sync --group harness`"
 _REACHABILITY_TIMEOUT = 60
 
-IMAGE = "forgetful-test-harness:latest"
+IMAGE = "axmem-test-harness:latest"
 CONTAINER_HOME = "/home/node"
 SKILLS_MOUNT = "/skills"
 HARNESS_MOUNT = "/harness"
@@ -67,7 +67,7 @@ def build_container_env(server_url: str) -> dict[str, str]:
     targets (mem 1701). The container is born with only this environment, so there
     are no real credentials to scrub - just none to introduce."""
     return {
-        "FORGETFUL_SERVER": server_url,
+        "AXMEM_SERVER": server_url,
         "QDRANT_URL": DECOY_QDRANT_URL,
         "EMBEDDING_PROVIDER": "TensorRT",
         "EMBEDDING_MODEL": "BAAI/bge-small-en-v1.5",
@@ -286,7 +286,7 @@ class AgentContainer:
         }
         self._abort_if_stopping()
 
-        name = f"forgetful-uat-{self.run_dir.name}"
+        name = f"axmem-uat-{self.run_dir.name}"
         try:
             self._client.containers.get(name).remove(force=True)
         except docker.errors.NotFound:
@@ -335,7 +335,7 @@ class AgentContainer:
     def check_server_reachable(self) -> None:
         """Fail fast when the throwaway server cannot be reached from in here.
 
-        The agent's `forgetful` calls all go to FORGETFUL_SERVER; if that route is dead
+        The agent's `axmem` calls all go to AXMEM_SERVER; if that route is dead
         every session would burn model time on connection errors that read like
         product findings. A tiny stdlib GET costs nothing next to the model probe.
         """
@@ -445,6 +445,6 @@ class AgentContainer:
             except Exception as exc:
                 print(
                     f"warning: could not {step} container "
-                    f"forgetful-uat-{self.run_dir.name}: {exc}",
+                    f"axmem-uat-{self.run_dir.name}: {exc}",
                     file=sys.stderr,
                 )

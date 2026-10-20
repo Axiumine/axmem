@@ -1,4 +1,4 @@
-This section provides more detailed instructions on how to connect forgetful to various AI Agent applications.
+This section provides more detailed instructions on how to connect axmem to various AI Agent applications.
 - [Claude Code](#claude-code)
 - [VS Code](#vs-code)
 - [Copilot CLI](#copilot-cli)
@@ -6,19 +6,19 @@ This section provides more detailed instructions on how to connect forgetful to 
 - [Codex](#codex)
 - [Gemini CLI](#gemini-cli)
 - [OpenCode](#opencode)
-- [Forgetful CLI](#forgetful-cli)
+- [Axmem CLI](#axmem-cli)
 
 ## Authentication
 
-Forgetful fails closed: a server with no `AUTH_MODE` refuses to start (see the
+Axmem fails closed: a server with no `AUTH_MODE` refuses to start (see the
 [Configuration Guide](configuration.md#authentication-configuration)). What that means for a client:
 
-- **STDIO** (the client launches `uvx forgetful-ai` itself): there is no network listener and no bearer
+- **STDIO** (the client launches `uvx axmem` itself): there is no network listener and no bearer
   token, so the server needs `AUTH_MODE=none`. Set it once for every launch in the user config file, or
   add it to the `env` of a client entry:
 
   ```bash
-  mkdir -p ~/.config/forgetful && echo "AUTH_MODE=none" >> ~/.config/forgetful/.env
+  mkdir -p ~/.config/axmem && echo "AUTH_MODE=none" >> ~/.config/axmem/.env
   ```
 
   Every STDIO example below assumes this. All requests are then the one local tenant (`DEFAULT_TENANT`).
@@ -31,24 +31,14 @@ Forgetful fails closed: a server with no `AUTH_MODE` refuses to start (see the
 
 ## Claude Code
 
-### [Plugin](https://github.com/ScottRBK/forgetful-plugin) 
-
-```bash
-/plugin marketplace add ScottRBK/forgetful-plugin
-/plugin install forgetful-plugin@forgetful-plugins
-cd ~/.claude/plugins/forgetful-plugin
-cp .mcp.json.stdio.example .mcp.json
-```
-
-
 ### STDIO Transport
 ```bash
-claude mcp add --scope user forgetful uvx forgetful-ai
+claude mcp add --scope user axmem uvx axmem
 ```
 
 ### STDIO with Environment Variables (Google)
 ```bash
-claude mcp add --scope user forgetful uvx forgetful-ai \
+claude mcp add --scope user axmem uvx axmem \
   -e QDRANT_URL=http://localhost:6333 \
   -e QDRANT_API_KEY=your-qdrant-api-key \
   -e EMBEDDING_PROVIDER=Google \
@@ -58,7 +48,7 @@ claude mcp add --scope user forgetful uvx forgetful-ai \
 
 ### STDIO with Environment Variables (OpenAI)
 ```bash
-claude mcp add --scope user forgetful uvx forgetful-ai \
+claude mcp add --scope user axmem uvx axmem \
   -e EMBEDDING_PROVIDER=OpenAI \
   -e OPENAI_API_KEY=sk-your-openai-api-key \
   -e EMBEDDING_MODEL=text-embedding-3-small \
@@ -67,7 +57,7 @@ claude mcp add --scope user forgetful uvx forgetful-ai \
 
 ### STDIO with Environment Variables (Ollama)
 ```bash
-claude mcp add --scope user forgetful "uvx forgetful-ai[ollama]" \
+claude mcp add --scope user axmem "uvx axmem[ollama]" \
   -e EMBEDDING_PROVIDER=Ollama \
   -e OLLAMA_BASE_URL=http://localhost:11434 \
   -e EMBEDDING_MODEL=nomic-embed-text \
@@ -76,7 +66,7 @@ claude mcp add --scope user forgetful "uvx forgetful-ai[ollama]" \
 
 ### STDIO with Environment Variables (llama.cpp / OpenAI-compatible)
 ```bash
-claude mcp add --scope user forgetful uvx forgetful-ai \
+claude mcp add --scope user axmem uvx axmem \
   -e EMBEDDING_PROVIDER=OpenAI \
   -e OPENAI_BASE_URL=http://localhost:8080/v1 \
   -e EMBEDDING_MODEL=my-model \
@@ -86,13 +76,13 @@ claude mcp add --scope user forgetful uvx forgetful-ai \
 
 ### HTTP Transport
 ```bash
-claude mcp add --transport http --scope user forgetful http://localhost:8020/mcp
+claude mcp add --transport http --scope user axmem http://localhost:8020/mcp
 ```
 
 ### HTTP Transport with a bearer token
 ```bash
-claude mcp add --transport http --scope user forgetful https://forgetful.example.com/mcp \
-  --header "Authorization: Bearer $FORGETFUL_TOKEN"
+claude mcp add --transport http --scope user axmem https://axmem.example.com/mcp \
+  --header "Authorization: Bearer $AXMEM_TOKEN"
 ```
 
 
@@ -107,10 +97,10 @@ See [VS Code MCP docs](https://code.visualstudio.com/docs/copilot/customization/
 ```json
 {
   "servers": {
-    "forgetful": {
+    "axmem": {
       "type": "stdio",
       "command": "uvx",
-      "args": ["forgetful-ai"]
+      "args": ["axmem"]
     }
   }
 }
@@ -121,10 +111,10 @@ See [VS Code MCP docs](https://code.visualstudio.com/docs/copilot/customization/
 ```json
 {
   "servers": {
-    "forgetful": {
+    "axmem": {
       "type": "stdio",
       "command": "uvx",
-      "args": ["forgetful-ai"],
+      "args": ["axmem"],
       "env": {
         "QDRANT_URL": "http://localhost:6333",
         "QDRANT_API_KEY": "${input:qdrant-api-key}",
@@ -158,10 +148,10 @@ Tag all objects written by this server instance with agent and model identity. S
 ```json
 {
   "servers": {
-    "forgetful": {
+    "axmem": {
       "type": "stdio",
       "command": "uvx",
-      "args": ["forgetful-ai"],
+      "args": ["axmem"],
       "env": {
         "ENCODING_AGENT": "VS Code Copilot",
         "ENCODING_VERSION": "1.0",
@@ -180,7 +170,7 @@ Tag all objects written by this server instance with agent and model identity. S
 ```json
 {
   "servers": {
-    "forgetful": {
+    "axmem": {
       "type": "http",
       "url": "http://localhost:8020/mcp"
     }
@@ -193,17 +183,17 @@ Tag all objects written by this server instance with agent and model identity. S
 ```json
 {
   "servers": {
-    "forgetful": {
+    "axmem": {
       "type": "http",
-      "url": "https://forgetful.example.com/mcp",
-      "headers": { "Authorization": "Bearer ${input:forgetful-token}" }
+      "url": "https://axmem.example.com/mcp",
+      "headers": { "Authorization": "Bearer ${input:axmem-token}" }
     }
   },
   "inputs": [
     {
       "type": "promptString",
-      "id": "forgetful-token",
-      "description": "Forgetful bearer token",
+      "id": "axmem-token",
+      "description": "Axmem bearer token",
       "password": true
     }
   ]
@@ -221,7 +211,7 @@ copilot
 
 # Use the /mcp add command interactively
 /mcp add
-# Enter: Name: forgetful, Command: uvx, Arguments: forgetful-ai
+# Enter: Name: axmem, Command: uvx, Arguments: axmem
 # Press Ctrl+S to save
 ```
 
@@ -230,9 +220,9 @@ copilot
 ```json
 {
   "mcpServers": {
-    "forgetful": {
+    "axmem": {
       "command": "uvx",
-      "args": ["forgetful-ai"]
+      "args": ["axmem"]
     }
   }
 }
@@ -243,7 +233,7 @@ copilot
 ```json
 {
   "mcpServers": {
-    "forgetful": {
+    "axmem": {
       "url": "http://localhost:8020/mcp"
     }
   }
@@ -252,7 +242,7 @@ copilot
 
 ### Custom Agents & Skills
 
-For enhanced workflows with Forgetful, we provide ready-to-use Copilot CLI agents and skills for memory management, search, and knowledge graph exploration.
+For enhanced workflows with Axmem, we provide ready-to-use Copilot CLI agents and skills for memory management, search, and knowledge graph exploration.
 
 See [Copilot CLI Integration](copilot-cli/README.md) for installation and usage.
 
@@ -266,9 +256,9 @@ Pasting the following configuration into your Cursor `~/.cursor/mcp.json` file i
 ```json
 {
   "mcpServers": {
-    "forgetful": {
+    "axmem": {
       "command": "uvx",
-      "args": ["forgetful-ai"]
+      "args": ["axmem"]
       }
     }
 }
@@ -278,14 +268,14 @@ Pasting the following configuration into your Cursor `~/.cursor/mcp.json` file i
 ```json
 {
   "mcpServers": {
-    "forgetful": {
+    "axmem": {
       "url": "http://localhost:8020/mcp"
       }
     }
 }
 ```
 
-[![Install MCP Server](https://cursor.com/deeplink/mcp-install-dark.svg)](cursor://anysphere.cursor-deeplink/mcp/install?name=forgetful_ai&config=eyJjb21tYW5kIjoidXZ4IGZvcmdldGZ1bC1haSJ9)
+[![Install MCP Server](https://cursor.com/deeplink/mcp-install-dark.svg)](cursor://anysphere.cursor-deeplink/mcp/install?name=axmem&config=eyJjb21tYW5kIjoidXZ4IGF4bWVtIn0=)
 
 
 ## Codex
@@ -293,13 +283,13 @@ Pasting the following configuration into your Cursor `~/.cursor/mcp.json` file i
 ### STDIO Transport
 
 ```bash
-codex mcp add forgetful uvx forgetful-ai 
+codex mcp add axmem uvx axmem 
 ```
 
 ### HTTP Transport
 
 ```bash
-codex mcp add forgetful --url http://localhost:8020/mcp
+codex mcp add axmem --url http://localhost:8020/mcp
 ```
 
 
@@ -309,17 +299,17 @@ codex mcp add forgetful --url http://localhost:8020/mcp
 ### STDIO Transport
 
 ```bash
-gemini mcp add forgetful uvx forgetful-ai
+gemini mcp add axmem uvx axmem
 ```
 ### HTTP Transport
 
 ```bash
-gemini mcp add -t http forgetful http://localhost:8020/mcp
+gemini mcp add -t http axmem http://localhost:8020/mcp
 ```
 
 ### Custom Commands
 
-For enhanced workflows with Forgetful, we provide ready-to-use Gemini CLI commands for memory management, search, and repository encoding.
+For enhanced workflows with Axmem, we provide ready-to-use Gemini CLI commands for memory management, search, and repository encoding.
 
 See [Gemini CLI Commands](gemini-cli/README.md) for installation and usage.
 
@@ -333,9 +323,9 @@ Add to your `opencode.json` or `opencode.jsonc` configuration file.
 ```jsonc
 {
   "mcp": {
-    "forgetful": {
+    "axmem": {
       "type": "local",
-      "command": ["uvx", "forgetful-ai"]
+      "command": ["uvx", "axmem"]
     }
   }
 }
@@ -346,9 +336,9 @@ Add to your `opencode.json` or `opencode.jsonc` configuration file.
 ```jsonc
 {
   "mcp": {
-    "forgetful": {
+    "axmem": {
       "type": "local",
-      "command": ["uvx", "forgetful-ai"],
+      "command": ["uvx", "axmem"],
       "env": {
         "ENCODING_AGENT": "OpenCode",
         "ENCODING_VERSION": "1.3.13",
@@ -367,7 +357,7 @@ Add to your `opencode.json` or `opencode.jsonc` configuration file.
 ```jsonc
 {
   "mcp": {
-    "forgetful": {
+    "axmem": {
       "type": "remote",
       "url": "http://localhost:8020/mcp"
     }
@@ -377,73 +367,73 @@ Add to your `opencode.json` or `opencode.jsonc` configuration file.
 
 ### Custom Commands & Skills
 
-For enhanced workflows with Forgetful, we provide ready-to-use OpenCode commands and skills for memory management, search, and repository encoding.
+For enhanced workflows with Axmem, we provide ready-to-use OpenCode commands and skills for memory management, search, and repository encoding.
 
 See [OpenCode Integration](opencode/README.md) for installation and usage.
 
-## Forgetful CLI
+## Axmem CLI
 
-Forgetful ships its own terminal client alongside the MCP server - no MCP client
+Axmem ships its own terminal client alongside the MCP server - no MCP client
 required. It executes the same tool registry the meta-tools use.
 
 ### Local (default)
 
 ```bash
-uv tool install forgetful-ai
-forgetful memory search "wsl dns" -c "wsl networking"
-forgetful memory save "content" --title "Title" --importance 7
+uv tool install axmem
+axmem memory search "wsl dns" -c "wsl networking"
+axmem memory save "content" --title "Title" --importance 7
 ```
 
 Local mode uses the same Qdrant and settings as a locally launched server
-(`~/.config/forgetful/.env` is shared by both).
+(`~/.config/axmem/.env` is shared by both).
 
 ### From a source checkout (before a PyPI release)
 
-`uv tool install forgetful-ai` pulls from PyPI. To exercise the CLI from a clone,
+`uv tool install axmem` pulls from PyPI. To exercise the CLI from a clone,
 run the console script through the project venv - no install, and edits apply
 immediately:
 
 ```bash
-uv run forgetful --help          # top-level help lists the subcommands
-uv run forgetful tools list
-uv run forgetful memory recent
+uv run axmem --help          # top-level help lists the subcommands
+uv run axmem tools list
+uv run axmem memory recent
 ```
 
-To put a real `forgetful` on your PATH from local source (the shipped experience),
+To put a real `axmem` on your PATH from local source (the shipped experience),
 install the checkout editable:
 
 ```bash
 uv tool install --editable .     # run from the repo root
-forgetful memory recent
-uv tool uninstall forgetful-ai   # to remove
+axmem memory recent
+uv tool uninstall axmem   # to remove
 ```
 
-Bare `forgetful` (and `uvx --from . forgetful`) still boots the MCP server for
-back-compat, so lead with a verb - `forgetful memory --help`, `forgetful tools
+Bare `axmem` (and `uvx --from . axmem`) still boots the MCP server for
+back-compat, so lead with a verb - `axmem memory --help`, `axmem tools
 --help` - to explore the CLI.
 
 ### Remote deployment with a bearer token
 
 Against a remote deployment that requires a credential (see
 [Configuration Guide](configuration.md#authentication-configuration)). There is no
-interactive sign-in: the CLI sends the bearer token in `FORGETFUL_TOKEN` (a JWT, an
+interactive sign-in: the CLI sends the bearer token in `AXMEM_TOKEN` (a JWT, an
 introspected token or a static token, as the server is configured). The token is read from the
 environment only and is never written to a file.
 
 ```bash
-export FORGETFUL_TOKEN="<token>"
+export AXMEM_TOKEN="<token>"
 
-forgetful auth login --server https://forgetful.example.com
-# Checks the connection and credentials, then saves FORGETFUL_SERVER to
-# ~/.config/forgetful/.env
+axmem auth login --server https://axmem.example.com
+# Checks the connection and credentials, then saves AXMEM_SERVER to
+# ~/.config/axmem/.env
 
-forgetful auth status    # server, whether the credentials work (read-only)
-forgetful memory search "deployment checklist" -c "release prep"   # runs remotely
+axmem auth status    # server, whether the credentials work (read-only)
+axmem memory search "deployment checklist" -c "release prep"   # runs remotely
 ```
 
 The token names the tenant, so the CLI reaches only that tenant's memories. Memories can be
 grouped under a free-form scope label with `-p/--project` (for example
-`forgetful memory save "..." --title "..." -p billing`); the label is created on first use.
+`axmem memory save "..." --title "..." -p billing`); the label is created on first use.
 
 Local mode needs no token and is the `DEFAULT_TENANT` tenant. A local CLI invocation never
 starts a network listener, so it works whatever `AUTH_MODE` is set to.

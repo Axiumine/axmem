@@ -25,7 +25,7 @@
     - [x] Bootstrap factory shared by server and CLI (app/bootstrap.py)
     - [x] Subcommand dispatch with permanent legacy-flag fallback
     - [x] Generic passthrough (tools list/info, call --args JSON, --json output)
-    - [x] Remote mode via fastmcp client (FORGETFUL_TOKEN bearer)
+    - [x] Remote mode via fastmcp client (AXMEM_TOKEN bearer)
     - [x] auth login / status (the browser OAuth flow and the token cache were removed)
     - [x] Curated verbs (memory search/save/get/recent, with a project scope string)
 - [x] PyPI package

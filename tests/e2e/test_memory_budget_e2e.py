@@ -22,7 +22,7 @@ async def _warm_models(embedding_adapter, reranker_adapter):
 async def _seed(mcp_client, count: int = MEMORY_COUNT) -> None:
     for i in range(count):
         await mcp_client.call_tool(
-            "execute_forgetful_tool",
+            "execute_axmem_tool",
             {
                 "tool_name": "create_memory",
                 "arguments": {
@@ -47,7 +47,7 @@ async def test_query_stays_within_budget(mcp_client):
     await _seed(mcp_client, 20)
     for i in range(20):
         await mcp_client.call_tool(
-            "execute_forgetful_tool",
+            "execute_axmem_tool",
             {
                 "tool_name": "query_memory",
                 "arguments": {"query": f"memory budget {i}", "query_context": "budget", "k": 5},

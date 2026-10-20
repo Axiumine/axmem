@@ -1,5 +1,5 @@
 {
-  description = "forgetful-ai - MCP Server for AI Agent Memory";
+  description = "axmem - MCP Server for AI Agent Memory";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -63,16 +63,16 @@
 
           # 3. Version: default dev, release injects the real tag.
           # Pure builds (incl. `nix flake check`) always see "" -> "0.0.0+dev", never crash.
-          # Release: FORGETFUL_VERSION=$(git describe --tags) nix build --impure
+          # Release: AXMEM_VERSION=$(git describe --tags) nix build --impure
           version =
             let
-              r = builtins.tryEval (builtins.getEnv "FORGETFUL_VERSION");
+              r = builtins.tryEval (builtins.getEnv "AXMEM_VERSION");
               e = if r.success then r.value else "";
             in
             if e != "" then e else "0.0.0+dev";
 
           myOverrides = _final: prev: {
-            "forgetful-ai" = prev."forgetful-ai".overrideAttrs (_old: {
+            axmem = prev.axmem.overrideAttrs (_old: {
               SETUPTOOLS_SCM_PRETEND_VERSION = version;
             });
           };
@@ -89,25 +89,24 @@
               );
 
           # 5. Runtime env from the lock (default groups)
-          forgetfulEnv = pythonSet.mkVirtualEnv "forgetful-env" workspace.deps.default;
+          axmemEnv = pythonSet.mkVirtualEnv "axmem-env" workspace.deps.default;
 
           # 6. App package (house stdenv+makeWrapper for servers)
           appPkg = pkgs.stdenv.mkDerivation {
-            pname = "forgetful-ai";
+            pname = "axmem";
             inherit version;
             src = ./.;
             nativeBuildInputs = [ pkgs.makeWrapper ];
-            buildInputs = [ forgetfulEnv ];
+            buildInputs = [ axmemEnv ];
             installPhase = ''
               mkdir -p $out/bin $out/lib
               cp -r app main.py $out/lib/
-              makeWrapper ${forgetfulEnv}/bin/forgetful $out/bin/forgetful-ai \
+              makeWrapper ${axmemEnv}/bin/axmem $out/bin/axmem \
                 --prefix PYTHONPATH : "$out/lib"
-              ln -s $out/bin/forgetful-ai $out/bin/forgetful
             '';
             meta = {
               description = "MCP Server for AI Agent Memory";
-              mainProgram = "forgetful-ai";
+              mainProgram = "axmem";
             };
           };
         in
@@ -123,7 +122,7 @@
 
           devShells.default = pkgs.mkShell {
             packages = [
-              forgetfulEnv
+              axmemEnv
               pkgs.uv
               pkgs.ruff
               pkgs.python314Packages.pytest
@@ -140,20 +139,20 @@
             ${lib.getExe config.pre-commit.settings.package} run --all-files --config ${config.pre-commit.settings.configFile}
           '';
 
-          # App package (house pattern: stdenv+makeWrapper server); pname stays forgetful-ai.
+          # App package (house pattern: stdenv+makeWrapper server); pname is axmem.
           packages = {
-            forgetful-ai = appPkg;
+            axmem = appPkg;
             default = appPkg;
           };
 
           apps = {
-            forgetful-ai = {
+            axmem = {
               type = "app";
-              program = "${appPkg}/bin/forgetful-ai";
+              program = "${appPkg}/bin/axmem";
             };
             default = {
               type = "app";
-              program = "${appPkg}/bin/forgetful-ai";
+              program = "${appPkg}/bin/axmem";
             };
           };
         };

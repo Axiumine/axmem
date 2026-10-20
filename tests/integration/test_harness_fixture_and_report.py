@@ -45,8 +45,8 @@ from test_harness.walkthrough import (
 )
 
 THROWAWAY_URL = "http://127.0.0.1:59999"
-SKILL = "forgetful-recall"
-FIXTURE_SKILL = "forgetful-encode-repo"
+SKILL = "axmem-recall"
+FIXTURE_SKILL = "axmem-encode-repo"
 
 OK_RESULT = {
     "type": "result", "content": "ok", "cost": 0.01, "duration": 2.5,
@@ -207,16 +207,16 @@ def test_non_string_tool_use_content_is_not_a_breach(tmp_path):
     # Arrange
     events = [
         {"type": "tool_use", "content": {"a": 1}},
-        {"type": "tool_use", "content": ["forgetful"]},
+        {"type": "tool_use", "content": ["axmem"]},
         {"type": "tool_use", "content": None},
-        {"type": "tool_use", "content": "mcp__forgetful__search"},
+        {"type": "tool_use", "content": "mcp__axmem__search"},
     ]
 
     # Act
     breaches = scan_for_breaches(events)
 
     # Assert: only the real MCP-style tool name is flagged
-    assert breaches == ["mcp__forgetful__search"]
+    assert breaches == ["mcp__axmem__search"]
 
 
 async def test_pathological_agent_files_do_not_abort_the_run(tmp_path):
@@ -415,8 +415,8 @@ def test_broken_git_fails_the_run_up_front_with_exit_code_2(tmp_path, monkeypatc
 # The skills tree is mounted rw into the sandbox: the host must never follow its symlinks
 # --------------------------------------------------------------------------------------
 
-FIRST = "forgetful-remember"
-SECOND = "forgetful-recall"
+FIRST = "axmem-remember"
+SECOND = "axmem-recall"
 
 
 def plant_symlink(link: Path, target: Path) -> None:
@@ -480,7 +480,7 @@ async def test_symlinked_skill_md_does_not_overwrite_a_host_file(tmp_path, outsi
     assert victim.read_text() == "ORIGINAL HOST FILE\n"
     planted = run_dir / "skills" / SECOND / "workspace" / "SKILL.md"
     assert not planted.is_symlink()
-    assert "name: forgetful-recall" in planted.read_text(encoding="utf-8")
+    assert "name: axmem-recall" in planted.read_text(encoding="utf-8")
 
 
 async def test_symlinked_prompt_and_meta_do_not_write_host_files(tmp_path, outside):
@@ -871,12 +871,12 @@ LOCALE_CHILD = textwrap.dedent(
             return SessionOutcome(kind="ran")
 
     async def main():
-        config = HarnessConfig(skills=["forgetful-recall"], skills_dir=skills_src)
+        config = HarnessConfig(skills=["axmem-recall"], skills_dir=skills_src)
         run_dir = work / "run"
         run_dir.mkdir()
         results = await Walkthrough(config, Agent(), "http://x", run_dir).run()
-        copied = (run_dir / "skills" / "forgetful-recall" / "workspace" / "SKILL.md").read_bytes()
-        meta = (run_dir / "skills" / "forgetful-recall" / "meta.json").read_bytes()
+        copied = (run_dir / "skills" / "axmem-recall" / "workspace" / "SKILL.md").read_bytes()
+        meta = (run_dir / "skills" / "axmem-recall" / "meta.json").read_bytes()
         print(json.dumps({
             "codec": locale.getencoding(),
             "copied": copied.decode("utf-8"),
@@ -895,10 +895,10 @@ def test_exchanged_files_are_utf8_even_when_the_host_codec_is_not(tmp_path):
     # Arrange: a child interpreter whose default text codec is ASCII (UTF-8 mode off, C
     # locale; on Windows the ANSI code page already is non-UTF-8), and a SKILL.md with
     # characters outside it, as every shipped skill has
-    skill_text = "---\nname: forgetful-recall\n---\nterminal \u2014 \u201cinstall\u201d, local\n"
+    skill_text = "---\nname: axmem-recall\n---\nterminal \u2014 \u201cinstall\u201d, local\n"
     skills_src = tmp_path / "skills_src"
-    (skills_src / "forgetful-recall").mkdir(parents=True)
-    (skills_src / "forgetful-recall" / "SKILL.md").write_bytes(skill_text.encode("utf-8"))
+    (skills_src / "axmem-recall").mkdir(parents=True)
+    (skills_src / "axmem-recall" / "SKILL.md").write_bytes(skill_text.encode("utf-8"))
     env = {k: v for k, v in os.environ.items() if k not in {"PYTHONUTF8", "PYTHONIOENCODING"}}
     env.update(
         PYTHONUTF8="0", PYTHONCOERCECLOCALE="0", LC_ALL="C", LANG="C",

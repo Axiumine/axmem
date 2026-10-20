@@ -1,5 +1,5 @@
 rules:
-  - id: forgetful-no-print-in-app
+  - id: axmem-no-print-in-app
     languages: [python]
     severity: ERROR
     message: >-
@@ -10,7 +10,7 @@ rules:
       include: ["app/"]
       exclude: ["app/routes/cli/"]  # the CLI prints results on purpose
 
-  - id: forgetful-no-naive-utcnow
+  - id: axmem-no-naive-utcnow
     languages: [python]
     severity: ERROR
     message: >-
@@ -22,7 +22,7 @@ rules:
       - pattern: datetime.utcfromtimestamp(...)
       - pattern: datetime.datetime.utcfromtimestamp(...)
 
-  - id: forgetful-deprecated-asyncio
+  - id: axmem-deprecated-asyncio
     languages: [python]
     severity: ERROR
     message: >-
@@ -33,7 +33,7 @@ rules:
       - pattern: asyncio.get_event_loop()
       - pattern: asyncio.get_event_loop_policy()
 
-  - id: forgetful-qdrant-write-outside-store
+  - id: axmem-qdrant-write-outside-store
     languages: [python]
     severity: ERROR
     message: >-
@@ -53,7 +53,7 @@ rules:
       include: ["app/"]
       exclude: ["app/repositories/qdrant/store.py"]
 
-  - id: forgetful-qdrant-write-without-wait
+  - id: axmem-qdrant-write-without-wait
     languages: [python]
     severity: ERROR
     message: A Qdrant write that does not wait for the result can be acknowledged before it is applied.
@@ -62,7 +62,7 @@ rules:
     paths:
       include: ["app/"]
 
-  - id: forgetful-subprocess-shell-true
+  - id: axmem-subprocess-shell-true
     languages: [python]
     severity: ERROR
     message: subprocess with shell=True invites command injection. Pass an argv list.
@@ -70,7 +70,7 @@ rules:
       - pattern: subprocess.$FUNC(..., shell=True, ...)
       - pattern: os.system(...)
 
-  - id: forgetful-swallowed-exception
+  - id: axmem-swallowed-exception
     languages: [python]
     severity: WARNING
     message: Exception swallowed without logging or re-raising hides real failures.
@@ -88,7 +88,7 @@ rules:
     paths:
       include: ["app/", "main.py"]
 
-  - id: forgetful-http-call-without-timeout
+  - id: axmem-http-call-without-timeout
     languages: [python]
     severity: ERROR
     message: HTTP calls without an explicit timeout can hang the server indefinitely.
@@ -104,13 +104,13 @@ rules:
     paths:
       include: ["app/", "main.py"]
 
-  - id: forgetful-tls-verification-disabled
+  - id: axmem-tls-verification-disabled
     languages: [python]
     severity: ERROR
     message: TLS certificate verification must not be disabled.
     pattern: $F(..., verify=False, ...)
 
-  - id: forgetful-unsafe-deserialization
+  - id: axmem-unsafe-deserialization
     languages: [python]
     severity: ERROR
     message: Unsafe deserialization / dynamic evaluation of untrusted data.
@@ -123,7 +123,7 @@ rules:
     paths:
       include: ["app/", "main.py"]
 
-  - id: forgetful-mutable-default-argument
+  - id: axmem-mutable-default-argument
     languages: [python]
     severity: ERROR
     message: Mutable default argument is shared across calls. Use None and create inside.
@@ -141,7 +141,7 @@ rules:
           async def $F(..., $A={}, ...):
               ...
 
-  - id: forgetful-blocking-call-in-async
+  - id: axmem-blocking-call-in-async
     languages: [python]
     severity: WARNING
     message: >-

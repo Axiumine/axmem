@@ -14,8 +14,8 @@ from app.config.settings import settings
 _PATCHED_FIELDS = [
     "EMBEDDING_PROVIDER",
     "RERANKING_ENABLED",
-    "FORGETFUL_SCOPES",
-    "FORGETFUL_SERVER",
+    "AXMEM_SCOPES",
+    "AXMEM_SERVER",
 ]
 
 
@@ -24,16 +24,16 @@ def cli_env(qdrant_env, tmp_path, monkeypatch, tensorrt_reranker, tensorrt_embed
     original = {name: getattr(settings, name) for name in _PATCHED_FIELDS}
     settings.EMBEDDING_PROVIDER = "TensorRT"
     settings.RERANKING_ENABLED = True  # the runtime shares the session's real TensorRT reranker
-    settings.FORGETFUL_SCOPES = "*"
-    settings.FORGETFUL_SERVER = ""
-    monkeypatch.delenv("FORGETFUL_TOKEN", raising=False)
+    settings.AXMEM_SCOPES = "*"
+    settings.AXMEM_SERVER = ""
+    monkeypatch.delenv("AXMEM_TOKEN", raising=False)
     yield settings
     for name, value in original.items():
         setattr(settings, name, value)
 
 
 def invoke_cli(monkeypatch, capsys, argv):
-    monkeypatch.setattr(sys, "argv", ["forgetful", *argv])
+    monkeypatch.setattr(sys, "argv", ["axmem", *argv])
     exit_code = main.cli()
     captured = capsys.readouterr()
     return exit_code or 0, captured.out, captured.err
@@ -141,7 +141,7 @@ def test_project_flag_creates_the_scope_on_first_use(cli_env, monkeypatch, capsy
 
 
 def test_project_commands_are_gone(cli_env, monkeypatch, capsys):
-    monkeypatch.setattr(sys, "argv", ["forgetful", "project", "list"])
+    monkeypatch.setattr(sys, "argv", ["axmem", "project", "list"])
 
     with pytest.raises(SystemExit) as excinfo:
         main.cli()
@@ -151,7 +151,7 @@ def test_project_commands_are_gone(cli_env, monkeypatch, capsys):
 
 
 def test_memory_search_without_context_exits_two(cli_env, monkeypatch, capsys):
-    monkeypatch.setattr(sys, "argv", ["forgetful", "memory", "search", "WSL2 DNS"])
+    monkeypatch.setattr(sys, "argv", ["axmem", "memory", "search", "WSL2 DNS"])
 
     with pytest.raises(SystemExit) as excinfo:
         main.cli()

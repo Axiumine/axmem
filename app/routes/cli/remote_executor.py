@@ -1,4 +1,4 @@
-"""Remote ToolExecutor: drives a deployed Forgetful server through fastmcp.Client.
+"""Remote ToolExecutor: drives a deployed Axmem server through fastmcp.Client.
 
 execute()/list_tools()/tool_info() proxy the server's meta-tools, so the tenant and
 scopes are enforced server-side from the token and help text always matches the
@@ -70,7 +70,7 @@ def client_timeouts() -> dict[str, float]:
 
 
 def bearer_token_from_env() -> str | None:
-    """The bearer token from FORGETFUL_TOKEN, normalised, or None.
+    """The bearer token from AXMEM_TOKEN, normalised, or None.
 
     Secrets pasted into env files, CI variables or k8s mounts often carry a trailing
     newline or spaces; sent as-is they make the HTTP layer reject the header with an
@@ -79,12 +79,12 @@ def bearer_token_from_env() -> str | None:
     holds control or non-ASCII characters can never be a valid header value: reject it
     with a fixed message that does not repeat the secret.
     """
-    token = (os.environ.get("FORGETFUL_TOKEN") or "").strip()
+    token = (os.environ.get("AXMEM_TOKEN") or "").strip()
     if not token:
         return None
     if not (token.isascii() and token.isprintable()):
         raise ValueError(
-            "FORGETFUL_TOKEN contains control or non-ASCII characters; "
+            "AXMEM_TOKEN contains control or non-ASCII characters; "
             "fix the value or unset it",
         )
     return token
@@ -115,7 +115,7 @@ class RemoteExecutor:
             return result.data
 
         # Bare arrays/scalars produce no MCP structured content (object root required)
-        # and execute_forgetful_tool declares no output schema, so .data is None; the
+        # and execute_axmem_tool declares no output schema, so .data is None; the
         # value survives only as JSON text in the single content block.
         for block in result.content or []:
             text = getattr(block, "text", None)
@@ -128,16 +128,16 @@ class RemoteExecutor:
 
     async def execute(self, tool_name: str, arguments: dict[str, Any]) -> Any:
         return await self._call(
-            "execute_forgetful_tool",
+            "execute_axmem_tool",
             {"tool_name": tool_name, "arguments": arguments},
         )
 
     async def list_tools(self, category: str | None = None) -> dict[str, Any]:
         payload = {"category": category} if category else {}
-        return await self._call("discover_forgetful_tools", payload)
+        return await self._call("discover_axmem_tools", payload)
 
     async def tool_info(self, tool_name: str) -> dict[str, Any]:
-        return await self._call("how_to_use_forgetful_tool", {"tool_name": tool_name})
+        return await self._call("how_to_use_axmem_tool", {"tool_name": tool_name})
 
     async def close(self) -> None:
         # Runs in the command runner's finally block: a connection that failed to

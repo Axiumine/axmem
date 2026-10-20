@@ -1,6 +1,6 @@
 """E2E tests: the throwaway server boots and takes writes whatever the host looks like.
 
-Boots the real `forgetful serve` console script as an OS subprocess (the test Qdrant node,
+Boots the real `axmem serve` console script as an OS subprocess (the test Qdrant node,
 AUTH_MODE=none) from hosts that used to break the harness: a shell or user-config dotenv file
 restricting the instance's scopes, and an un-activated venv with a proxy configured for
 every non-loopback request. A write tool call (create_memory) is the canary - it needs
@@ -8,13 +8,13 @@ the write scopes and a working harness-to-server connection.
 """
 import pytest
 
-from test_harness.server import ThrowawayForgetful, _ephemeral_port
+from test_harness.server import ThrowawayAxmem, _ephemeral_port
 
 TITLE = "harness-canary"
 
 
 async def _boot_and_write(run_dir) -> str:
-    server = ThrowawayForgetful(run_dir=run_dir)
+    server = ThrowawayAxmem(run_dir=run_dir)
     server.start()
     try:
         created = await server.execute("create_memory", {
@@ -44,7 +44,7 @@ async def test_scopes_exported_in_the_shell_do_not_restrict_the_instance(
     run_dir, monkeypatch,
 ):
     # Arrange: a developer shell with a read-only instance ceiling exported
-    monkeypatch.setenv("FORGETFUL_SCOPES", "read")
+    monkeypatch.setenv("AXMEM_SCOPES", "read")
 
     # Act
     written = await _boot_and_write(run_dir)
@@ -57,13 +57,13 @@ async def test_scopes_exported_in_the_shell_do_not_restrict_the_instance(
 async def test_scopes_in_the_user_config_do_not_restrict_the_instance(
     run_dir, tmp_path, monkeypatch,
 ):
-    # Arrange: <config dir>/forgetful/.env is read by Settings whatever the cwd;
+    # Arrange: <config dir>/axmem/.env is read by Settings whatever the cwd;
     # XDG_CONFIG_HOME stands in for ~/.config so the real one is never touched
     config_home = tmp_path / "xdg"
-    (config_home / "forgetful").mkdir(parents=True)
-    (config_home / "forgetful" / ".env").write_text("FORGETFUL_SCOPES=read\n")
+    (config_home / "axmem").mkdir(parents=True)
+    (config_home / "axmem" / ".env").write_text("AXMEM_SCOPES=read\n")
     monkeypatch.setenv("XDG_CONFIG_HOME", str(config_home))
-    monkeypatch.delenv("FORGETFUL_SCOPES", raising=False)
+    monkeypatch.delenv("AXMEM_SCOPES", raising=False)
 
     # Act
     written = await _boot_and_write(run_dir)

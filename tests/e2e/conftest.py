@@ -92,14 +92,14 @@ async def build_app(embedding_adapter, reranker_adapter, auth_provider=None):
         )
 
         # Resolve instance-level scope ceiling
-        instance_scopes = parse_scopes(settings.FORGETFUL_SCOPES)
+        instance_scopes = parse_scopes(settings.AXMEM_SCOPES)
         mcp._instance_permitted_tools = resolve_permitted_tools(instance_scopes, registry)
         mcp._instance_scopes = instance_scopes
 
         yield
 
     # Create FastMCP app
-    mcp = FastMCP("Forgetful-E2E", lifespan=lifespan, auth=auth_provider)
+    mcp = FastMCP("Axmem-E2E", lifespan=lifespan, auth=auth_provider)
 
     # Routes
     health.register(mcp)
@@ -150,7 +150,7 @@ async def mcp_client(qdrant_app):
     pytest.param("read,write:memories", id="scope-read-all-write-memories"),
 ])
 async def scoped_mcp_client(request, qdrant_app):
-    """Parameterized MCP client with different FORGETFUL_SCOPES settings.
+    """Parameterized MCP client with different AXMEM_SCOPES settings.
 
     Each parameterization creates a client where the instance-level scopes
     are overridden to test permission enforcement.

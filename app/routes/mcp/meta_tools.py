@@ -3,9 +3,9 @@ This module implements the meta-tools pattern as an alternative to bloating the 
 within the MCP service. Instead of loading all tool definitions upfront, we only expose 3 meta-tools.
 
 The three meta-tools:
-1. discover_forgetful_tools: List available tools by category, with enough info to allow most LLMs one-shot usage
-2. how_to_use_forgetful_tool: Get detailed documentation for a specific tool
-3. execute_forgetful_tool: Dynamically invoke any tool with arguments
+1. discover_axmem_tools: List available tools by category, with enough info to allow most LLMs one-shot usage
+2. how_to_use_axmem_tool: Get detailed documentation for a specific tool
+3. execute_axmem_tool: Dynamically invoke any tool with arguments
 
 Docstrings for discover and execute are built at registration time from the descriptor mode
 (MCP_DESCRIPTOR_MODE).
@@ -21,13 +21,13 @@ from app.config.settings import settings
 from app.models.tool_registry_models import ToolCategory
 from app.routes.mcp.scope_resolver import get_effective_scopes, get_required_scope
 from app.routes.mcp.tool_errors import client_error_detail
-from app.routes.server_state import ForgetfulMCP, server_of
+from app.routes.server_state import AxmemMCP, server_of
 
 logger = logging.getLogger(__name__)
 
 
 # ============================================================================
-# Dynamic Docstring Sections — discover_forgetful_tools
+# Dynamic Docstring Sections — discover_axmem_tools
 # ============================================================================
 
 _DISCOVER_CORE_SECTIONS = """\
@@ -54,7 +54,7 @@ _DISCOVER_CORE_SECTIONS = """\
 
 
 # ============================================================================
-# Dynamic Docstring Sections — execute_forgetful_tool
+# Dynamic Docstring Sections — execute_axmem_tool
 # ============================================================================
 
 _EXECUTE_CORE_EXAMPLES = """\
@@ -62,17 +62,17 @@ _EXECUTE_CORE_EXAMPLES = """\
     ## Quick Start - One-Shot Examples (all required params shown)
 
     **Memory Operations:**
-    - Search: execute_forgetful_tool("query_memory", {"query": "search terms", "query_context": "why searching"})
-    - Create: execute_forgetful_tool("create_memory", {"title": "Short title", "content": "Memory content (<2000 chars)", "context": "Why this matters", "keywords": ["kw1", "kw2"], "tags": ["tag1"], "importance": 7, "project": "my-project"})
-    - Create with provenance: execute_forgetful_tool("create_memory", {"title": "...", "content": "...", "context": "...", "keywords": [...], "tags": [...], "importance": 7, "source_repo": "owner/repo", "source_files": ["src/main.py"], "confidence": 0.85, "encoding_agent": "claude-sonnet-4"})
-    - Update: execute_forgetful_tool("update_memory", {"memory_id": 1, "content": "new content"})
-    - Get: execute_forgetful_tool("get_memory", {"memory_id": 1})
-    - Link: execute_forgetful_tool("link_memories", {"memory_id": 1, "related_ids": [2, 3]})
-    - Unlink: execute_forgetful_tool("unlink_memories", {"source_id": 1, "target_id": 2})
-    - Obsolete: execute_forgetful_tool("mark_memory_obsolete", {"memory_id": 42, "reason": "Outdated approach", "superseded_by": 100})
+    - Search: execute_axmem_tool("query_memory", {"query": "search terms", "query_context": "why searching"})
+    - Create: execute_axmem_tool("create_memory", {"title": "Short title", "content": "Memory content (<2000 chars)", "context": "Why this matters", "keywords": ["kw1", "kw2"], "tags": ["tag1"], "importance": 7, "project": "my-project"})
+    - Create with provenance: execute_axmem_tool("create_memory", {"title": "...", "content": "...", "context": "...", "keywords": [...], "tags": [...], "importance": 7, "source_repo": "owner/repo", "source_files": ["src/main.py"], "confidence": 0.85, "encoding_agent": "claude-sonnet-4"})
+    - Update: execute_axmem_tool("update_memory", {"memory_id": 1, "content": "new content"})
+    - Get: execute_axmem_tool("get_memory", {"memory_id": 1})
+    - Link: execute_axmem_tool("link_memories", {"memory_id": 1, "related_ids": [2, 3]})
+    - Unlink: execute_axmem_tool("unlink_memories", {"source_id": 1, "target_id": 2})
+    - Obsolete: execute_axmem_tool("mark_memory_obsolete", {"memory_id": 42, "reason": "Outdated approach", "superseded_by": 100})
 
     **Project scope:**
-    - Query within a scope: execute_forgetful_tool("query_memory", {"query": "search terms", "query_context": "why searching", "project": "my-project"})"""
+    - Query within a scope: execute_axmem_tool("query_memory", {"query": "search terms", "query_context": "why searching", "project": "my-project"})"""
 
 
 # ============================================================================
@@ -87,7 +87,7 @@ def _build_category_list() -> str:
 
 
 def _build_tool_categories_line() -> str:
-    """Build the tool categories pipe-separated line for execute_forgetful_tool."""
+    """Build the tool categories pipe-separated line for execute_axmem_tool."""
     categories = ["memory", "linking"]
     return " | ".join(categories)
 
@@ -101,11 +101,11 @@ def _get_mcp_descriptor_mode() -> str:
 
 
 def _build_compact_discover_docstring(categories: str) -> str:
-    """Build a compact discover_forgetful_tools docstring."""
+    """Build a compact discover_axmem_tools docstring."""
     return f"""\
-Discover available Forgetful tools, optionally filtered by category.
+Discover available Axmem tools, optionally filtered by category.
 
-    Use this tool to list the available inner tools. Call how_to_use_forgetful_tool(tool_name)
+    Use this tool to list the available inner tools. Call how_to_use_axmem_tool(tool_name)
     for full parameter documentation and examples before uncommon or write operations.
 
     Args:
@@ -118,14 +118,14 @@ Discover available Forgetful tools, optionally filtered by category.
 
 
 def _build_compact_execute_docstring(tool_categories: str) -> str:
-    """Build a compact execute_forgetful_tool docstring."""
+    """Build a compact execute_axmem_tool docstring."""
     return f"""\
-Execute any registered Forgetful inner tool by name.
+Execute any registered Axmem inner tool by name.
 
     Typical flow:
-    1. Call discover_forgetful_tools(category?) to find tool names.
-    2. Call how_to_use_forgetful_tool(tool_name) for full schemas and examples.
-    3. Call execute_forgetful_tool(tool_name, arguments) to run the selected tool.
+    1. Call discover_axmem_tools(category?) to find tool names.
+    2. Call how_to_use_axmem_tool(tool_name) for full schemas and examples.
+    3. Call execute_axmem_tool(tool_name, arguments) to run the selected tool.
 
     Tool categories: {tool_categories}
 
@@ -140,7 +140,7 @@ Execute any registered Forgetful inner tool by name.
 
 
 def _build_discover_docstring() -> str:
-    """Build the discover_forgetful_tools docstring."""
+    """Build the discover_axmem_tools docstring."""
     categories = _build_category_list()
     if _get_mcp_descriptor_mode() == "compact":
         return _build_compact_discover_docstring(categories)
@@ -169,23 +169,23 @@ Discover available tools, optionally filtered by category
     parts.append("""
 
     ## Workflow
-    1. Call discover_forgetful_tools() to see this catalog
-    2. Call execute_forgetful_tool(tool_name, {args}) to run any tool
-    3. If needed, call how_to_use_forgetful_tool(tool_name) for full parameter docs
+    1. Call discover_axmem_tools() to see this catalog
+    2. Call execute_axmem_tool(tool_name, {args}) to run any tool
+    3. If needed, call how_to_use_axmem_tool(tool_name) for full parameter docs
     """)
 
     return "".join(parts)
 
 
 def _build_execute_docstring() -> str:
-    """Build the execute_forgetful_tool docstring."""
+    """Build the execute_axmem_tool docstring."""
     tool_categories = _build_tool_categories_line()
     if _get_mcp_descriptor_mode() == "compact":
         return _build_compact_execute_docstring(tool_categories)
 
     parts = [
         f"""\
-Execute any registered tool dynamically. Forgetful is a semantic memory system for LLMs.
+Execute any registered tool dynamically. Axmem is a semantic memory system for LLMs.
 {_EXECUTE_CORE_EXAMPLES}""",
     ]
 
@@ -198,7 +198,7 @@ Execute any registered tool dynamically. Forgetful is a semantic memory system f
     ## Tool Categories
     {tool_categories}
 
-    Use discover_forgetful_tools(category?) for full parameter details and optional params.
+    Use discover_axmem_tools(category?) for full parameter details and optional params.
 
     ---
 
@@ -222,7 +222,7 @@ Execute any registered tool dynamically. Forgetful is a semantic memory system f
 
 
 def build_discovery_payload(registry, permitted: set, category: str | None = None) -> dict[str, Any]:
-    """Build the discover_forgetful_tools payload for a permitted tool set."""
+    """Build the discover_axmem_tools payload for a permitted tool set."""
     if category:
         try:
             cat_enum = ToolCategory(category.lower())
@@ -258,7 +258,7 @@ def build_discovery_payload(registry, permitted: set, category: str | None = Non
 
 
 def build_tool_documentation(registry, permitted: set, tool_name: str) -> dict[str, Any]:
-    """Build the how_to_use_forgetful_tool payload, enforcing existence and scope."""
+    """Build the how_to_use_axmem_tool payload, enforcing existence and scope."""
     tool = registry.get_tool(tool_name)
     if not tool:
         available_tools = [m.name for m in registry.get_permitted_tools(permitted)[:10]]
@@ -288,7 +288,7 @@ def reject_invalid_argument_names(tool_name: str, arguments: dict[str, Any]) -> 
     """
     if all(isinstance(name, str) and name.isidentifier() for name in arguments):
         return
-    logger.warning("execute_forgetful_tool: %r rejected, invalid argument name", tool_name)
+    logger.warning("execute_axmem_tool: %r rejected, invalid argument name", tool_name)
     raise ToolError(
         "Invalid argument name: argument names must be identifiers "
         "(letters, digits and underscores, not starting with a digit)",
@@ -317,17 +317,17 @@ def ensure_tool_executable(registry, permitted: set, tool_name: str) -> None:
 # ============================================================================
 
 
-def register(mcp: ForgetfulMCP):
+def register(mcp: AxmemMCP):
     """Register meta-tools with the provided FastMCP instance - registry accessed via ctx pattern"""
 
     # Build the docstrings for the configured descriptor mode
     discover_doc = _build_discover_docstring()
     execute_doc = _build_execute_docstring()
 
-    # -- discover_forgetful_tools --
+    # -- discover_axmem_tools --
     # Defined without @mcp.tool() so we can set docstring before registration
 
-    async def discover_forgetful_tools(
+    async def discover_axmem_tools(
         category: str | None = None,
         *,
         ctx: Context,
@@ -336,27 +336,27 @@ def register(mcp: ForgetfulMCP):
         try:
             registry = server_of(ctx).registry
             permitted, _ = get_effective_scopes(ctx)
-            logger.info("discover_forgetful_tools: category=%r", category)
+            logger.info("discover_axmem_tools: category=%r", category)
 
             result = build_discovery_payload(registry, permitted, category)
 
-            logger.info("discover_forgetful_tools: returned %d tools", result["total_count"])
+            logger.info("discover_axmem_tools: returned %d tools", result["total_count"])
             return result
 
         except ToolError:
             raise
         except Exception as e:
-            logger.error("discover_forgetful_tools failed: %r", e, exc_info=True)
+            logger.error("discover_axmem_tools failed: %r", e, exc_info=True)
             raise ToolError(f"Failed to discover tools: {client_error_detail(e)}")
 
-    discover_forgetful_tools.__doc__ = discover_doc
-    mcp.tool()(discover_forgetful_tools)
+    discover_axmem_tools.__doc__ = discover_doc
+    mcp.tool()(discover_axmem_tools)
 
-    # -- how_to_use_forgetful_tool --
+    # -- how_to_use_axmem_tool --
     # Static docstring, no dynamic content needed
 
     @mcp.tool()
-    async def how_to_use_forgetful_tool(
+    async def how_to_use_axmem_tool(
         tool_name: str,
         ctx: Context,
     ) -> dict[str, Any]:
@@ -374,24 +374,24 @@ def register(mcp: ForgetfulMCP):
         try:
             registry = server_of(ctx).registry
             permitted, _ = get_effective_scopes(ctx)
-            logger.info("how_to_use_forgetful_tool: tool_name=%r", tool_name)
+            logger.info("how_to_use_axmem_tool: tool_name=%r", tool_name)
 
             detailed_info = build_tool_documentation(registry, permitted, tool_name)
-            logger.info("how_to_use_forgetful_tool: returned docs for %r", tool_name)
+            logger.info("how_to_use_axmem_tool: returned docs for %r", tool_name)
             return detailed_info
 
         except ToolError:
             raise
         except Exception as e:
-            logger.error("how_to_use_forgetful_tool failed for %r: %r", tool_name, e, exc_info=True)
+            logger.error("how_to_use_axmem_tool failed for %r: %r", tool_name, e, exc_info=True)
             raise ToolError(
                 f"Failed to get documentation for {tool_name!r}: {client_error_detail(e)}",
             )
 
-    # -- execute_forgetful_tool --
+    # -- execute_axmem_tool --
     # Defined without @mcp.tool() so we can set docstring before registration
 
-    async def execute_forgetful_tool(
+    async def execute_axmem_tool(
         tool_name: str,
         arguments: dict[str, Any],
         ctx: Context,
@@ -402,7 +402,7 @@ def register(mcp: ForgetfulMCP):
 
             registry = server_of(ctx).registry
             permitted, _ = get_effective_scopes(ctx)
-            logger.info("execute_forgetful_tool: %r, args=%r", tool_name, list(arguments.keys()))
+            logger.info("execute_axmem_tool: %r, args=%r", tool_name, list(arguments.keys()))
 
             ensure_tool_executable(registry, permitted, tool_name)
 
@@ -415,14 +415,14 @@ def register(mcp: ForgetfulMCP):
                 arguments=arguments,
             )
 
-            logger.info("execute_forgetful_tool: %r executed successfully", tool_name)
+            logger.info("execute_axmem_tool: %r executed successfully", tool_name)
             return result
 
         except ToolError:
             raise
         except Exception as e:
-            logger.error("execute_forgetful_tool failed for %r: %r", tool_name, e, exc_info=True)
+            logger.error("execute_axmem_tool failed for %r: %r", tool_name, e, exc_info=True)
             raise ToolError(f"Failed to execute {tool_name!r}: {client_error_detail(e)}")
 
-    execute_forgetful_tool.__doc__ = execute_doc
-    mcp.tool()(execute_forgetful_tool)
+    execute_axmem_tool.__doc__ = execute_doc
+    mcp.tool()(execute_axmem_tool)

@@ -1,10 +1,10 @@
-# Forgetful Search Functionality
+# Axmem Search Functionality
 
-This section details Forgetful's search functionality and associated configuration.
+This section details Axmem's search functionality and associated configuration.
 
 ## Auto-Linking Pipeline
 
-When a new memory is created, Forgetful automatically builds knowledge graph connections:
+When a new memory is created, Axmem automatically builds knowledge graph connections:
 
 ```mermaid
 flowchart LR

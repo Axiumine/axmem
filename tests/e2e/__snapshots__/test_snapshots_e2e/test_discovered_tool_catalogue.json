@@ -8,7 +8,7 @@
       {
         "category": "memory",
         "description": "Create atomic memory with auto-linking and lifecycle management. Stores single concepts (<400 words).",
-        "example": "execute_forgetful_tool(\"create_memory\", {\"title\": \"FastAPI auth pattern\", \"content\": \"Use JWT with httponly cookies...\", \"context\": \"Security decision\", \"keywords\": [\"auth\", \"jwt\"], \"tags\": [\"security\"], \"importance\": 9})",
+        "example": "execute_axmem_tool(\"create_memory\", {\"title\": \"FastAPI auth pattern\", \"content\": \"Use JWT with httponly cookies...\", \"context\": \"Security decision\", \"keywords\": [\"auth\", \"jwt\"], \"tags\": [\"security\"], \"importance\": 9})",
         "mutates": true,
         "name": "create_memory",
         "parameters": {
@@ -84,7 +84,7 @@
           },
           "project": {
             "description": "Optional free-form project scope label (max 500 characters); created on first use",
-            "example": "forgetful",
+            "example": "axmem",
             "required": false,
             "type": "Optional[str]"
           },
@@ -99,7 +99,7 @@
           },
           "source_repo": {
             "description": "Repository/project source (e.g., 'owner/repo') for provenance tracking",
-            "example": "scottrbk/forgetful",
+            "example": "axiumine/axmem",
             "required": false,
             "type": "Optional[str]"
           },
@@ -131,7 +131,7 @@
       {
         "category": "memory",
         "description": "Semantic search across memories to find relevant information",
-        "example": "execute_forgetful_tool(\"query_memory\", {\"query\": \"authentication patterns\", \"query_context\": \"building API login\", \"k\": 5})",
+        "example": "execute_axmem_tool(\"query_memory\", {\"query\": \"authentication patterns\", \"query_context\": \"building API login\", \"k\": 5})",
         "mutates": false,
         "name": "query_memory",
         "parameters": {
@@ -167,7 +167,7 @@
           },
           "project": {
             "description": "Only search memories in this project scope",
-            "example": "forgetful",
+            "example": "axmem",
             "required": false,
             "type": "Optional[str]"
           },
@@ -195,7 +195,7 @@
       {
         "category": "memory",
         "description": "Update existing memory fields using PATCH semantics (only specified fields are updated)",
-        "example": "execute_forgetful_tool(\"update_memory\", {\"memory_id\": \"018f2c3e-0000-7000-8000-000000000042\", \"importance\": 9})",
+        "example": "execute_axmem_tool(\"update_memory\", {\"memory_id\": \"018f2c3e-0000-7000-8000-000000000042\", \"importance\": 9})",
         "mutates": true,
         "name": "update_memory",
         "parameters": {
@@ -276,7 +276,7 @@
           },
           "project": {
             "description": "New project scope label - replaces the existing one; an empty string clears it (optional)",
-            "example": "forgetful",
+            "example": "axmem",
             "required": false,
             "type": "Optional[str]"
           },
@@ -291,7 +291,7 @@
           },
           "source_repo": {
             "description": "New repository/project source. Unchanged if null.",
-            "example": "scottrbk/forgetful",
+            "example": "axiumine/axmem",
             "required": false,
             "type": "Optional[str]"
           },
@@ -322,7 +322,7 @@
       {
         "category": "memory",
         "description": "Manually create bidirectional links between memories (symmetric linking). Accepts memory_id + related_ids (or aliases source_id + target_id/target_ids, memory_ids=[src, tgt])",
-        "example": "execute_forgetful_tool(\"link_memories\", {\"memory_id\": \"018f2c3e-0000-7000-8000-000000000042\", \"related_ids\": [\"018f2c3e-0000-7000-8000-000000000010\", \"018f2c3e-0000-7000-8000-000000000015\"]})",
+        "example": "execute_axmem_tool(\"link_memories\", {\"memory_id\": \"018f2c3e-0000-7000-8000-000000000042\", \"related_ids\": [\"018f2c3e-0000-7000-8000-000000000010\", \"018f2c3e-0000-7000-8000-000000000015\"]})",
         "mutates": true,
         "name": "link_memories",
         "parameters": {
@@ -354,7 +354,7 @@
       {
         "category": "memory",
         "description": "Remove bidirectional link(s) between memories. Accepts source_id + target_id (or aliases memory_id + related_id, target_ids, related_ids, memory_ids=[src, tgt, ...])",
-        "example": "execute_forgetful_tool(\"unlink_memories\", {\"source_id\": \"018f2c3e-0000-7000-8000-000000000042\", \"target_id\": \"018f2c3e-0000-7000-8000-000000000057\"})",
+        "example": "execute_axmem_tool(\"unlink_memories\", {\"source_id\": \"018f2c3e-0000-7000-8000-000000000042\", \"target_id\": \"018f2c3e-0000-7000-8000-000000000057\"})",
         "mutates": true,
         "name": "unlink_memories",
         "parameters": {
@@ -382,7 +382,7 @@
       {
         "category": "memory",
         "description": "Retrieve complete memory details by ID",
-        "example": "execute_forgetful_tool(\"get_memory\", {\"memory_id\": \"018f2c3e-0000-7000-8000-000000000042\"})",
+        "example": "execute_axmem_tool(\"get_memory\", {\"memory_id\": \"018f2c3e-0000-7000-8000-000000000042\"})",
         "mutates": false,
         "name": "get_memory",
         "parameters": {
@@ -404,7 +404,7 @@
       {
         "category": "memory",
         "description": "Mark a memory as obsolete (soft delete with audit trail). Restore with unobsolete_memory.",
-        "example": "execute_forgetful_tool(\"mark_memory_obsolete\", {\"memory_id\": \"018f2c3e-0000-7000-8000-000000000042\", \"reason\": \"Outdated approach\", \"superseded_by\": \"018f2c3e-0000-7000-8000-000000000100\"})",
+        "example": "execute_axmem_tool(\"mark_memory_obsolete\", {\"memory_id\": \"018f2c3e-0000-7000-8000-000000000042\", \"reason\": \"Outdated approach\", \"superseded_by\": \"018f2c3e-0000-7000-8000-000000000100\"})",
         "mutates": true,
         "name": "mark_memory_obsolete",
         "parameters": {
@@ -438,7 +438,7 @@
       {
         "category": "memory",
         "description": "Restore a memory previously marked obsolete (undo soft delete)",
-        "example": "execute_forgetful_tool(\"unobsolete_memory\", {\"memory_id\": \"018f2c3e-0000-7000-8000-000000000042\"})",
+        "example": "execute_axmem_tool(\"unobsolete_memory\", {\"memory_id\": \"018f2c3e-0000-7000-8000-000000000042\"})",
         "mutates": true,
         "name": "unobsolete_memory",
         "parameters": {
@@ -460,7 +460,7 @@
       {
         "category": "memory",
         "description": "Retrieve most recent memories sorted by creation timestamp (newest first by default)",
-        "example": "execute_forgetful_tool(\"get_recent_memories\", {\"limit\": 5})",
+        "example": "execute_axmem_tool(\"get_recent_memories\", {\"limit\": 5})",
         "mutates": false,
         "name": "get_recent_memories",
         "parameters": {
@@ -502,7 +502,7 @@
           },
           "project": {
             "description": "Optional filter to one project scope",
-            "example": "forgetful",
+            "example": "axmem",
             "required": false,
             "type": "Optional[str]"
           },
@@ -532,7 +532,7 @@
       {
         "category": "memory",
         "description": "Rebuild embeddings for a tenant-scoped subset of memories without resetting global vector storage. Targets explicit memory ids, a single project scope, or all caller-owned memories.",
-        "example": "execute_forgetful_tool(\"rebuild_embeddings\", {\"memory_ids\": [\"018f2c3e-0000-7000-8000-000000000123\", \"018f2c3e-0000-7000-8000-000000000124\"]})",
+        "example": "execute_axmem_tool(\"rebuild_embeddings\", {\"memory_ids\": [\"018f2c3e-0000-7000-8000-000000000123\", \"018f2c3e-0000-7000-8000-000000000124\"]})",
         "mutates": true,
         "name": "rebuild_embeddings",
         "parameters": {
@@ -553,7 +553,7 @@
           },
           "project": {
             "description": "Restrict the rebuild to memories in this project scope of the caller",
-            "example": "forgetful",
+            "example": "axmem",
             "required": false,
             "type": "Optional[str]"
           }

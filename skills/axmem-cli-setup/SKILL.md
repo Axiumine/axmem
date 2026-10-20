@@ -1,7 +1,7 @@
 ---
-name: forgetful-cli-setup
+name: axmem-cli-setup
 description: >-
-  Set up the Forgetful CLI and connect from a terminal — install, local or remote mode,
+  Set up the Axmem CLI and connect from a terminal — install, local or remote mode,
   auth, and verification. Use when connecting a human or headless agent via shell, wiring
   CI with token auth, or operating a local server (serve, Qdrant selection, feature
   flags, re-embedding). Also covers the machine contract: --json output, exit codes, and
@@ -10,10 +10,10 @@ license: MIT
 disable-model-invocation: true
 tags: [cli, setup, auth, operations, terminal]
 allowed-tools:
-  - Bash(forgetful:*)
+  - Bash(axmem:*)
 ---
 
-# Setting up the Forgetful CLI
+# Setting up the Axmem CLI
 
 The CLI is the shell-native surface: same tool registry as MCP, reachable by anything that
 can run a command. Setup ends with a verified round-trip, not an installed binary.
@@ -21,33 +21,33 @@ can run a command. Setup ends with a verified round-trip, not an installed binar
 ## Install
 
 ```bash
-uvx forgetful-ai --version     # ephemeral, no install
-pip install forgetful-ai       # or: uv tool install forgetful-ai
+uvx axmem --version     # ephemeral, no install
+pip install axmem       # or: uv tool install axmem
 ```
 
-Both `forgetful` and `forgetful-ai` invoke the same CLI.
+Both `axmem` and `axmem` invoke the same CLI.
 
 ## Choose a mode
 
-Connection precedence: `--local` > `--server URL` > `FORGETFUL_SERVER` env > local default.
+Connection precedence: `--local` > `--server URL` > `AXMEM_SERVER` env > local default.
 
 - **Local** (default): runs in-process against the locally configured Qdrant — zero
   config, no server needed. Right for a personal knowledge base on one machine.
-- **Remote**: drives a deployed server. Set `FORGETFUL_TOKEN` (a bearer token: JWT,
+- **Remote**: drives a deployed server. Set `AXMEM_TOKEN` (a bearer token: JWT,
   introspected or static, as the server is configured) in the environment, then
-  `forgetful auth login --server <url>` checks the connection and saves the server to the
-  user config; or set `FORGETFUL_SERVER` as well and skip the login. The token is read from
+  `axmem auth login --server <url>` checks the connection and saves the server to the
+  user config; or set `AXMEM_SERVER` as well and skip the login. The token is read from
   the environment only and never stored; there is no browser flow. The token names the
   tenant, and a tenant sees only its own memories. Local mode is the `DEFAULT_TENANT` tenant.
 
-Config merges shell env over `~/.config/forgetful/.env`. Check state anytime with
-`forgetful auth status`.
+Config merges shell env over `~/.config/axmem/.env`. Check state anytime with
+`axmem auth status`.
 
 ## Verify — the completion criterion
 
 ```bash
-forgetful tools list                          # registry categories come back
-forgetful memory recent --json                # one real call round-trips
+axmem tools list                          # registry categories come back
+axmem memory recent --json                # one real call round-trips
 ```
 
 Done when: both succeed against the intended target (local or the remote URL).
@@ -61,29 +61,29 @@ success, `1` tool or runtime error, `2` usage error. Parse output, branch on exi
 
 ## The discovery ladder
 
-1. **Curated verbs** for the common paths: `forgetful memory search|save|get|recent`
+1. **Curated verbs** for the common paths: `axmem memory search|save|get|recent`
    (`-p/--project <label>` scopes them to a project).
-2. **`forgetful tools list [--category <c>]`** to discover every registry operation.
-3. **`forgetful tools info <operation>`** for the schema.
-4. **`forgetful call <operation> --args '<JSON>'`** to invoke anything the registry has.
+2. **`axmem tools list [--category <c>]`** to discover every registry operation.
+3. **`axmem tools info <operation>`** for the schema.
+4. **`axmem call <operation> --args '<JSON>'`** to invoke anything the registry has.
 
 The judgment for what to store, query, and link lives in the domain skills
-(`forgetful-remember`, `forgetful-recall`, ...) — the ladder is how the CLI reaches the
+(`axmem-remember`, `axmem-recall`, ...) — the ladder is how the CLI reaches the
 same operations.
 
 ## Operating a local server
 
 - The server refuses to start without `AUTH_MODE`. `AUTH_MODE=none` serves one local tenant and is
-  accepted only on stdio or on a loopback bind: `AUTH_MODE=none forgetful serve --transport http
+  accepted only on stdio or on a loopback bind: `AUTH_MODE=none axmem serve --transport http
   --host 127.0.0.1 --port 8020` (or `--transport stdio` for MCP clients that spawn a process). A
   server bound to another address needs `AUTH_MODE=jwt`, `introspection` or `static`.
 - Storage via env: Qdrant is the only store. `QDRANT_URL` (one node or a comma-separated cluster, default
   `http://127.0.0.1:6333`), `QDRANT_API_KEY`, and `QDRANT_COLLECTION_PREFIX` to keep several deployments apart.
-- Operator commands against the configured Qdrant: `forgetful backup`, `forgetful restore <dir> --yes` (stop the
-  server first), `forgetful export <file>`, `forgetful import <file>`, `forgetful qdrant-check` (compares the
+- Operator commands against the configured Qdrant: `axmem backup`, `axmem restore <dir> --yes` (stop the
+  server first), `axmem export <file>`, `axmem import <file>`, `axmem qdrant-check` (compares the
   nodes of a cluster).
-- Memory ids are UUIDs: `forgetful memory get <uuid>`; a number is refused.
-- After changing embedding provider or model: `forgetful re-embed --dry-run` to preview,
-  then `forgetful re-embed` (batch size tunable via `--batch-size`).
+- Memory ids are UUIDs: `axmem memory get <uuid>`; a number is refused.
+- After changing embedding provider or model: `axmem re-embed --dry-run` to preview,
+  then `axmem re-embed` (batch size tunable via `--batch-size`).
 
 Done when: `/health` answers (HTTP) or an MCP client lists the three meta-tools (stdio).

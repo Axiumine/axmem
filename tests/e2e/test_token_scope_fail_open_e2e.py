@@ -3,7 +3,7 @@
 Drives the in-process FastMCP app (real Qdrant, real meta-tools, real scope
 resolver). Access tokens are produced by FastMCP's own JWTVerifier from a signed
 JWT, and installed the way the MCP SDK's auth middleware does (auth_context_var).
-The instance ceiling is the default FORGETFUL_SCOPES="*".
+The instance ceiling is the default AXMEM_SCOPES="*".
 """
 from contextlib import asynccontextmanager
 
@@ -36,13 +36,13 @@ async def _access_token_for(claims: dict):
 
 
 async def _discovered_tools(client) -> list[dict]:
-    result = await client.call_tool("discover_forgetful_tools", {})
+    result = await client.call_tool("discover_axmem_tools", {})
     return [tool for tools in result.data["tools_by_category"].values() for tool in tools]
 
 
 async def _execute(client, tool_name: str, arguments: dict):
     return await client.call_tool(
-        "execute_forgetful_tool",
+        "execute_axmem_tool",
         {"tool_name": tool_name, "arguments": arguments},
         raise_on_error=False,
     )

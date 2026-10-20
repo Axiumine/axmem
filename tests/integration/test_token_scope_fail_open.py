@@ -1,7 +1,7 @@
 """Integration tests: a token's scope claim must never widen access to the instance ceiling.
 
 Covers how the access token's scope claim is turned into token scopes and
-intersected with the instance ceiling (FORGETFUL_SCOPES):
+intersected with the instance ceiling (AXMEM_SCOPES):
 
 - unknown scopes next to a recognised one (``openid read``) are ignored, the
   recognised one still narrows access
@@ -137,7 +137,7 @@ class TestNothingRecognisedDenies:
             "READ",
             "read:memory",
             "api:read api:write",
-            "forgetful:read",
+            "axmem:read",
         ],
     )
     def test_claim_without_recognised_scope_denies_everything(self, registry, scope_claim):
@@ -218,7 +218,7 @@ class TestNoScopeClaimKeepsInstanceCeiling:
     def test_token_without_scope_claim(self, registry, claims):
         assert _effective(registry, claims) == ALL_TOOLS
 
-    def test_upstream_provider_scopes_on_token_are_not_forgetful_scopes(self, registry):
+    def test_upstream_provider_scopes_on_token_are_not_axmem_scopes(self, registry):
         # A verifier may fill AccessToken.scopes with the issuer's own scopes while the
         # token carries no scope claim: ceiling applies.
         permitted = _effective(registry, {"login": "octocat"}, scopes=["user", "read:user"])

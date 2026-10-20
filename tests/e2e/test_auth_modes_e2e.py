@@ -16,7 +16,7 @@ from fastmcp.server.auth.providers.jwt import JWTVerifier, RSAKeyPair
 from tests.e2e.conftest import TENANT_TOKENS, auth_stack, static_token_verifier
 
 ISSUER = "https://idp.example.test"
-AUDIENCE = "forgetful-test"
+AUDIENCE = "axmem-test"
 VALID, INVALID, EXPIRED, MISSING = "valid", "invalid", "expired", "missing"
 
 
@@ -63,18 +63,18 @@ class _FakeIdP:
     async def post(self, url, data=None, headers=None):
         token = data["token"]
         if token == "live-opaque-token":
-            return self._Response({"active": True, "sub": "alice", "client_id": "forgetful"})
+            return self._Response({"active": True, "sub": "alice", "client_id": "axmem"})
         if token == "expired-opaque-token":
             return self._Response({"active": False})
         if token == "stale-but-active-token":
-            return self._Response({"active": True, "sub": "alice", "client_id": "forgetful", "exp": 1})
+            return self._Response({"active": True, "sub": "alice", "client_id": "axmem", "exp": 1})
         return self._Response({"active": False})
 
 
 def _introspection_mode() -> Mode:
     verifier = IntrospectionTokenVerifier(
         introspection_url="https://idp.example.test/introspect",
-        client_id="forgetful",
+        client_id="axmem",
         client_secret="secret",
         http_client=_FakeIdP(),
     )
@@ -95,7 +95,7 @@ def _static_mode() -> Mode:
     )
 
 
-RECENT = ("execute_forgetful_tool", {"tool_name": "get_recent_memories", "arguments": {}})
+RECENT = ("execute_axmem_tool", {"tool_name": "get_recent_memories", "arguments": {}})
 MODES = [_jwt_mode, _introspection_mode, _static_mode]
 
 

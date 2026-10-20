@@ -19,17 +19,17 @@ def test_defaults_match_locked_decisions():
     assert config.effort is None
     assert config.surface == "cli"
     assert config.skills == list(SKILL_ORDER)
-    assert config.timeout_for("forgetful-recall") == 900
-    assert config.timeout_for("forgetful-encode-repo") == 1800
+    assert config.timeout_for("axmem-recall") == 900
+    assert config.timeout_for("axmem-encode-repo") == 1800
 
 
 def test_walkthrough_order_starts_with_setup_and_ends_with_encode_repo():
     # Assert: cli-setup verifies the connection story before anything writes; encode-repo
     # is the heaviest write pass and depends on nothing after it. mcp-setup is reserved
     # for the MCP surface pass and must not be walked in v1.
-    assert SKILL_ORDER[0] == "forgetful-cli-setup"
-    assert SKILL_ORDER[-1] == "forgetful-encode-repo"
-    assert "forgetful-mcp-setup" not in SKILL_ORDER
+    assert SKILL_ORDER[0] == "axmem-cli-setup"
+    assert SKILL_ORDER[-1] == "axmem-encode-repo"
+    assert "axmem-mcp-setup" not in SKILL_ORDER
     assert len(SKILL_ORDER) == 6
 
 
@@ -43,7 +43,7 @@ def test_env_overrides_defaults(monkeypatch):
 
     # Assert
     assert config.model == "anthropic/claude-sonnet-4-5"
-    assert config.timeout_for("forgetful-recall") == 300
+    assert config.timeout_for("axmem-recall") == 300
 
 
 def test_init_kwargs_beat_env(monkeypatch):
@@ -65,16 +65,16 @@ def test_surface_other_than_cli_is_rejected():
 
 def test_skills_subset_normalizes_to_walkthrough_order():
     # Arrange: filter spelled in reverse of canonical order
-    subset = ["forgetful-recall", "forgetful-remember"]
+    subset = ["axmem-recall", "axmem-remember"]
 
     # Act
     config = HarnessConfig(skills=subset)
 
     # Assert
-    assert config.skills == ["forgetful-remember", "forgetful-recall"]
+    assert config.skills == ["axmem-remember", "axmem-recall"]
 
 
 def test_unknown_skill_is_rejected_by_name():
     # Act / Assert
-    with pytest.raises(ValueError, match="forgetful-teleport"):
-        HarnessConfig(skills=["forgetful-recall", "forgetful-teleport"])
+    with pytest.raises(ValueError, match="axmem-teleport"):
+        HarnessConfig(skills=["axmem-recall", "axmem-teleport"])

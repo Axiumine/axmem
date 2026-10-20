@@ -1,6 +1,6 @@
 """E2E test that a slow embedding provider does not freeze the server.
 
-Full stack: MCP client -> execute_forgetful_tool -> MemoryService -> Qdrant
+Full stack: MCP client -> execute_axmem_tool -> MemoryService -> Qdrant
 repository -> AzureOpenAIAdapter (real openai SDK, in-process fake endpoint).
 """
 import asyncio
@@ -71,7 +71,7 @@ def embedding_adapter(embedding_gate, monkeypatch):
 
 
 async def test_create_memory_keeps_the_event_loop_free(mcp_client, embedding_gate):
-    create = asyncio.create_task(mcp_client.call_tool("execute_forgetful_tool", {
+    create = asyncio.create_task(mcp_client.call_tool("execute_axmem_tool", {
         "tool_name": "create_memory",
         "arguments": {
             "title": "Event loop probe",

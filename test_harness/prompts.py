@@ -9,14 +9,14 @@ drift.
 from test_harness.report import report_contract_example
 
 _TEMPLATE = """\
-You are doing a pre-release documentation review of an agent skill for Forgetful, a
+You are doing a pre-release documentation review of an agent skill for Axmem, a
 knowledge-base system. The skill under review is ./SKILL.md in your working directory.
 
 Your job is to work through the skill for real, the way an agent following it would:
 
 - Read ./SKILL.md carefully.
-- Follow its guidance step by step against the live system it describes. The `forgetful`
-  CLI is installed and already connected to a live Forgetful server (FORGETFUL_SERVER is
+- Follow its guidance step by step against the live system it describes. The `axmem`
+  CLI is installed and already connected to a live Axmem server (AXMEM_SERVER is
   set for you). Pass --json when calling it.
 - Actually run the operations the skill teaches and check each behaves as documented.
   Where a step is judgment rather than a command, exercise the judgment on a realistic
@@ -29,7 +29,7 @@ Ground rules:
 - Invoke every operation directly yourself. Do not delegate to subagents or background
   tasks.
 - Use the server you are connected to: do not pass --local or --server flags to the
-  forgetful CLI.
+  axmem CLI.
 - Stay inside the working directory; put any scratch files here.
 - Do not install anything or modify user configuration.
 {note}
@@ -45,17 +45,17 @@ verdict "pass" is a legitimate outcome; do not invent problems.
 """
 
 _PER_SKILL_NOTES = {
-    "forgetful-cli-setup": (
+    "axmem-cli-setup": (
         "Note for this skill: the CLI is already installed and connected here. Verify "
         "its claims with safe read-only commands (auth status, tools list, memory "
-        "recent); review install and `forgetful serve` instructions by inspection only — "
+        "recent); review install and `axmem serve` instructions by inspection only — "
         "do not run installers or start servers."
     ),
-    "forgetful-context-gather": (
+    "axmem-context-gather": (
         "Note for this skill: invoke the workflow for a realistic request of your own "
         "choosing — search the knowledge base first and pick a topic it actually covers."
     ),
-    "forgetful-encode-repo": (
+    "axmem-encode-repo": (
         "Note for this skill: encode the repository at ./fixture-repo in your working "
         "directory."
     ),

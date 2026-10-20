@@ -258,7 +258,7 @@ class QdrantSchema:
         if vector_size is not None and found_size != vector_size:
             problems.append(
                 f"vectors are {found_size} wide but {vector_size} are configured "
-                "(EMBEDDING_DIMENSIONS; run `forgetful re-embed` after changing the model)",
+                "(EMBEDDING_DIMENSIONS; run `axmem re-embed` after changing the model)",
             )
         for label, found, wanted in (
             ("shard_number", params.shard_number, settings.QDRANT_SHARD_NUMBER),

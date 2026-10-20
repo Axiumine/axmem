@@ -112,7 +112,7 @@ jobs:
           echo "Testing installation from wheel: $WHEEL"
 
           # Test that CLI command works
-          uvx --from "$WHEEL" forgetful --help
+          uvx --from "$WHEEL" axmem --help
           echo "✓ CLI command works"
 
           echo "✓ Smoke test passed - wheel installs correctly with all dependencies"

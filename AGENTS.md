@@ -1,4 +1,4 @@
-# Forgetful Development Guide
+# Axmem Development Guide
 
 ## Architecture
 
@@ -36,7 +36,7 @@ We focus on **integration and E2E tests** over unit tests. Tests should cover cr
 
 Aim for each test to finish in under 15 seconds; this is advisory, with no enforced timing checks.
 
-The integration, SQLite E2E and PostgreSQL E2E suites run the real TensorRT embedder and reranker, so they need an
+The integration and end-to-end suites run the real TensorRT embedder and reranker, so they need an
 NVIDIA GPU (driver R580 or newer, see [docs/gpu-models.md](docs/gpu-models.md)). There is no CPU path, test-only
 embedder, stub reranker or skip: each suite ends the pytest run with exit code 2 and the cause when the GPU is
 unusable. The session fixtures `tensorrt_embedder` and `tensorrt_reranker` (`tests/conftest.py`) return the
@@ -53,24 +53,14 @@ These tests use in-memory stubs and run fast (~seconds). They form the bulk of o
 
 ### End-to-End Tests
 
-#### SQLite E2E Tests
-**Location**: `tests/e2e_sqlite/`
-**Purpose**: Test complete stack with in-memory SQLite
-**Requirements**: None (no Docker required)
-**Run locally**:
-```bash
-uv run pytest tests/e2e_sqlite/
-```
-These tests use an in-memory SQLite database for test isolation. Fast execution with automatic cleanup. 
-
-#### PostgreSQL E2E Tests
+#### Qdrant E2E Tests
 **Location**: `tests/e2e/`
-**Purpose**: Test complete stack with real PostgreSQL
-**Requirements**: Docker; the fixtures start (or reuse) a `forgetful-db` PostgreSQL container
+**Purpose**: Test complete stack with a real Qdrant node
+**Requirements**: Docker; `tests/qdrant_support.py` starts a Qdrant container on a random loopback port with an API
+key and removes it at the end of the run, and ends the run at once when it cannot (it never skips)
 **Run locally**:
 ```bash
-docker rm -f forgetful-db && docker volume rm forgetful_db_data  # optional: start from an empty database
-uv run pytest -m e2e
+uv run pytest tests/e2e/
 ```
 Docker is only a test dependency. The project has no container deployment: it runs natively (`uv run main.py`).
 
@@ -78,7 +68,7 @@ Docker is only a test dependency. The project has no container deployment: it ru
 ## Quality gates
 Commits and pushes are gated by `.githooks/` (enable with `uv run python -m scripts.quality install`).
 The pipeline (ruff, import-linter, bandit, semgrep, vulture, radon cc/mi, mypy, pylint, snapshot
-tests, coverage at 100%, PostgreSQL e2e, memray, trivy, Qodana, mutmut,
+tests, coverage at 100%, Qdrant e2e, memray, trivy, Qodana, mutmut,
 GitNexus) and how to run or bypass single gates is documented in
 [docs/quality-gates.md](docs/quality-gates.md). Run `uv run python -m scripts.quality stage pre-commit`
 before committing; do not weaken a threshold to make a gate pass, fix the code or justify the exception.
@@ -113,7 +103,7 @@ and consider whether these need updating as part of the changes you have made to
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **forgetful**.
+This project is indexed by GitNexus under the name of its checkout directory (`list_repos` shows it; `{repo}` below).
 
 > Index stale? Run `node .gitnexus/run.cjs analyze --index-only` from the project root — it auto-selects an available runner. No `.gitnexus/run.cjs` yet? Bootstrap with `npx`, `bunx`, or `pnpm dlx` — e.g. `bunx gitnexus@latest analyze` (npm 11 npx crash; #1939).
 
@@ -137,9 +127,9 @@ This project is indexed by GitNexus as **forgetful**.
 
 | Resource | Use for |
 | --- | --- |
-| `gitnexus://repo/forgetful/context` | Codebase overview, check index freshness |
-| `gitnexus://repo/forgetful/clusters` | All functional areas |
-| `gitnexus://repo/forgetful/processes` | All execution flows |
-| `gitnexus://repo/forgetful/process/{name}` | Step-by-step execution trace |
+| `gitnexus://repo/{repo}/context` | Codebase overview, check index freshness |
+| `gitnexus://repo/{repo}/clusters` | All functional areas |
+| `gitnexus://repo/{repo}/processes` | All execution flows |
+| `gitnexus://repo/{repo}/process/{name}` | Step-by-step execution trace |
 
 <!-- gitnexus:end -->

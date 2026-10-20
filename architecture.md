@@ -1,4 +1,4 @@
-# Forgetful architecture
+# Axmem architecture
 
 Reviewable, agent-authored overview, checked against source on 2026-10-08, with boundary changes checked on 2026-10-17
 and the structure re-verified on 2026-10-19 against the `quality-gates` branch (`37ee70f`), then updated for the
@@ -8,12 +8,13 @@ fail-closed authentication and projects reduced to a scope string, and for batch
 `gateway` embeddings provider, and for the direct TensorRT 11 reranker on the NVIDIA GPU (replacing the FastEmbed
 cross-encoder), and for the in-process TensorRT embeddings provider that is now the default, and for the removal of
 ONNX Runtime and the FastEmbed CPU embedder, and for Qdrant as the only store (SQLite, PostgreSQL, SQLAlchemy and
-Alembic are gone; memory ids are UUIDs; tenants have no stored record), on the `axmem` branch.
+Alembic are gone; memory ids are UUIDs; tenants have no stored record), and for the rename of the product, package, CLI
+and environment variables to Axmem, on the `axmem` branch.
 This is a selective interpretation, not an exhaustive dependency inventory.
 The component groupings below are inferred for readability; the described execution paths
 and wiring were verified against source. Line numbers are inspection starting points and may drift.
 
-Forgetful provides persistent, semantically searchable memories and related knowledge through
+Axmem provides persistent, semantically searchable memories and related knowledge through
 MCP tools, HTTP endpoints, and a CLI. Its intended boundary is
 **routes → services → protocols → repositories/adapters**, as described in [AGENTS.md](AGENTS.md).
 Protocols are Python contracts, not an extra runtime process: services call injected implementations.
@@ -32,7 +33,7 @@ flowchart TD
     Registry --> ToolAdapters["Tool adapters: one module per domain, identity, models, results"]
     ToolAdapters --> Services["Domain services"]
     HTTP["HTTP custom routes"] --> Services
-    Server["ForgetfulMCP: typed holder of services, registry, scope ceiling"]
+    Server["AxmemMCP: typed holder of services, registry, scope ceiling"]
     HTTP -->|reads services from| Server
     MCP -->|reads registry and scopes from| Server
     Server -->|holds| Services
@@ -64,7 +65,7 @@ commands have additional paths omitted here; the diagram does not assert univers
 
 | Inspection point | Responsibility |
 | --- | --- |
-| [main.py:43](main.py#L43) | Server lifespan configures logging, calls `build_runtime`, attaches services/registry/scopes to the typed `ForgetfulMCP` instance ([server_state.py](app/routes/server_state.py)), then disposes the runtime on normal shutdown. Logging is deferred to protect STDIO transport. |
+| [main.py:43](main.py#L43) | Server lifespan configures logging, calls `build_runtime`, attaches services/registry/scopes to the typed `AxmemMCP` instance ([server_state.py](app/routes/server_state.py)), then disposes the runtime on normal shutdown. Logging is deferred to protect STDIO transport. |
 | [main.py:92](main.py#L92), [main.py:417](main.py#L417) | Construct the typed FastMCP subclass with the configured authentication provider; `_serve` first asks `ensure_startup_allowed` ([auth.py:146](app/config/auth.py#L146)) and exits with code 1 when the configuration is refused (see "MCP, HTTP, and identity"), then builds the embedder (`start_tensorrt_embedder`, only when `EMBEDDING_PROVIDER` is `TensorRT`) and the reranker (`get_reranker_adapter`) and exits with code 1 and `Error: the embedder cannot start: <cause>` or `Error: the reranker cannot start: <cause>` when a TensorRT engine cannot run (no GPU, missing libraries, driver, model, build failure or an embedding width that is not `EMBEDDING_DIMENSIONS`; see "Contracts, storage, and implementation variants"), then runs the app over STDIO or HTTP. Both HTTP branches run the app under Uvicorn directly so lifespan teardown (`dispose_runtime`) completes before a shutdown signal is re-raised; the CORS branch additionally wraps the app with Starlette middleware. |
 | [main.py:577](main.py#L577) | Console entry point `cli`: a known subcommand goes to `parser.dispatch`; any other argv falls through to the permanent legacy launcher (`--transport`, `--re-embed`, ...), which rejects the re-embed-only flags when `--re-embed` is absent. |
 | [bootstrap.py:197](app/bootstrap.py#L197) | Composition root: choose providers, connect to Qdrant and make the collections exist (`QdrantSchema.ensure` checks the server version and refuses a layout that differs from the settings), construct the repository, services, tool registry, and instance scope ceiling, and log what the TensorRT models did at start-up together with the GPU memory they hold and the one CUDA context they share (`log_tensorrt_models`). |
@@ -86,16 +87,16 @@ Both conform to [ToolExecutor:10](app/protocols/executor.py#L10).
 
 The active MCP surface is registered by [meta_tools.py:330](app/routes/mcp/meta_tools.py#L330):
 
-1. `discover_forgetful_tools` lists permitted tool metadata, optionally by category.
-2. `how_to_use_forgetful_tool` returns detailed metadata for a permitted tool.
-3. `execute_forgetful_tool` rejects argument names that are not identifiers
+1. `discover_axmem_tools` lists permitted tool metadata, optionally by category.
+2. `how_to_use_axmem_tool` returns detailed metadata for a permitted tool.
+3. `execute_axmem_tool` rejects argument names that are not identifiers
    ([line 290](app/routes/mcp/meta_tools.py#L290)), checks the name/permissions
    ([line 308](app/routes/mcp/meta_tools.py#L308)), injects context, and dispatches it.
 
 Failures leave the meta-tools through [tool_errors.py:36](app/routes/mcp/tool_errors.py#L36): domain and
 argument errors keep their authored message, while Qdrant and other unexpected errors are logged
 server-side and reach the client only as a short generic sentence. The `linking` category of
-`discover_forgetful_tools` is a tag filter across the memory link tools.
+`discover_axmem_tools` is a tag filter across the memory link tools.
 Caller-supplied names are logged with `%r` and quoted with `!r` inside `ToolError` text (FastMCP
 logs every failed tool call with a traceback that ends in that text); argument names are screened
 first because CPython copies an unknown keyword verbatim into the `TypeError` that the logs and
@@ -120,7 +121,7 @@ only through the registry and these three meta-tools.
 HTTP endpoints are FastMCP custom routes accepting Starlette requests, rather than a separate
 FastAPI application despite the opening docstring in `main.py`.
 The services, registry and scope ceiling that the lifespan attaches are declared once on
-[ForgetfulMCP:29](app/routes/server_state.py#L29), a `FastMCP` subclass; routes, middleware and
+[AxmemMCP:29](app/routes/server_state.py#L29), a `FastMCP` subclass; routes, middleware and
 `register(mcp)` take that type, and [server_of:43](app/routes/server_state.py#L43) narrows an MCP
 request context to it (the in-process CLI passes a duck-typed shim carrying only the attributes adapters read).
 [main.py:103](main.py#L103) mounts health, auth info, and the memory routes.
@@ -269,7 +270,7 @@ Package initializers and generated version metadata are scanned; they are not ex
 New source areas need an explicit decision about which rules apply.
 
 `main.py` is a standalone startup/operational module, reviewed manually rather than scanned by
-Import Linter; tests and the evaluation harness are outside the production rules. A semgrep rule (`.semgrep/forgetful.yml`) also
+Import Linter; tests and the evaluation harness are outside the production rules. A semgrep rule (`.semgrep/axmem.yml`) also
 forbids the client's write methods outside `store.py` and any write with `wait=False`.
 Static imports in functions, re-exports, and `TYPE_CHECKING` blocks are checked.
 Dynamic imports, runtime attribute access, and arbitrary file/network operations are not checked;
@@ -308,7 +309,7 @@ It is a **historical snapshot of an older revision**: it was last exported on 20
 regenerated since (Mycelium is not part of the toolchain and no gate reads the map). Use this overview
 and current source first. The snapshot predates the October 17 boundary changes (embedding/backup types
 and rebuild wiring moved), and it shows none of the later restructuring: both memory repositories split into mixin modules, `tool_adapters.py` split
-into `app/routes/mcp/adapters/*`, the typed `ForgetfulMCP` in `app/routes/server_state.py`, and the helper
+into `app/routes/mcp/adapters/*`, the typed `AxmemMCP` in `app/routes/server_state.py`, and the helper
 modules added since. It also still lists the seven per-category `app/routes/mcp/*_tools.py` modules,
 which were removed because they were never mounted, the FastEmbed cross-encoder reranker (`FastEmbedCrossEncoderAdapter`, with the `RERANKING_THREADS` and `RERANKING_ONNX_PROVIDERS` settings and the DirectML handling), the FastEmbed embedder (`FastEmbeddingAdapter`, `fastembed_offline.py`, the first-run model check, and the `FASTEMBED_*` and `EMBEDDING_ONNX_PROVIDERS` settings), the graph REST view (`app/routes/api/graph.py`,
 `GraphService`, `get_subgraph_nodes`, `SubgraphResponse`), and planning (`PlanService`, `TaskService`, their

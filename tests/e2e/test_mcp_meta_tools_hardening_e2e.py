@@ -2,7 +2,7 @@
 
 - store failures reach the client as short messages, never request details, stored text or tenant ids
 - caller-controlled names cannot forge or inject into the console log
-- every category advertised by discover_forgetful_tools lists tools
+- every category advertised by discover_axmem_tools lists tools
 """
 
 import io
@@ -50,7 +50,7 @@ def assert_no_leak(message: str, allowed_ids: tuple[str, ...] = ()) -> None:
 
 async def execute(client, tool_name: str, arguments: dict):
     return await client.call_tool(
-        "execute_forgetful_tool", {"tool_name": tool_name, "arguments": arguments},
+        "execute_axmem_tool", {"tool_name": tool_name, "arguments": arguments},
     )
 
 
@@ -61,7 +61,7 @@ async def tool_error(client, tool_name: str, arguments: dict) -> str:
 
 
 class TestExecuteErrorsAreSanitised:
-    """execute_forgetful_tool keeps domain messages and hides what the store said."""
+    """execute_axmem_tool keeps domain messages and hides what the store said."""
 
     async def test_store_failure_returns_the_generic_message(
         self, mcp_client, qdrant_app, monkeypatch,
@@ -123,7 +123,7 @@ class TestDiscoverCategories:
     """Every category the tool docstrings advertise holds tools."""
 
     async def test_linking_category_lists_link_tools(self, mcp_client):
-        result = await mcp_client.call_tool("discover_forgetful_tools", {"category": "linking"})
+        result = await mcp_client.call_tool("discover_axmem_tools", {"category": "linking"})
         data = result.data
 
         names = {tool["name"] for tools in data["tools_by_category"].values() for tool in tools}
@@ -137,7 +137,7 @@ class TestDiscoverCategories:
 
         for category in advertised:
             result = await mcp_client.call_tool(
-                "discover_forgetful_tools", {"category": category},
+                "discover_axmem_tools", {"category": category},
             )
             assert result.data["total_count"] > 0, f"advertised category {category!r} is empty"
 
@@ -258,13 +258,13 @@ class TestLogInjection:
     @pytest.mark.parametrize(
         ("meta_tool", "arguments", "marker"),
         [
-            ("how_to_use_forgetful_tool", {"tool_name": "x\n" + FORGED_RECORD}, "how_to_use"),
+            ("how_to_use_axmem_tool", {"tool_name": "x\n" + FORGED_RECORD}, "how_to_use"),
             (
-                "execute_forgetful_tool",
+                "execute_axmem_tool",
                 {"tool_name": "x\n" + FORGED_RECORD, "arguments": {}},
-                "execute_forgetful_tool",
+                "execute_axmem_tool",
             ),
-            ("discover_forgetful_tools", {"category": "x\n" + FORGED_RECORD}, "discover"),
+            ("discover_axmem_tools", {"category": "x\n" + FORGED_RECORD}, "discover"),
         ],
         ids=["how_to_use", "execute", "discover"],
     )
@@ -280,12 +280,12 @@ class TestLogInjection:
 
     async def test_escape_sequences_do_not_reach_the_log(self, mcp_client, console_log):
         await ignore_tool_error(
-            mcp_client, "how_to_use_forgetful_tool", {"tool_name": "x\x1b[2J\x1b[31mPWNED"},
+            mcp_client, "how_to_use_axmem_tool", {"tool_name": "x\x1b[2J\x1b[31mPWNED"},
         )
 
         output = console_log()
 
-        assert "how_to_use_forgetful_tool" in output, "precondition: the call was logged"
+        assert "how_to_use_axmem_tool" in output, "precondition: the call was logged"
         assert "\x1b[2J" not in output
 
     @pytest.mark.parametrize(
@@ -303,7 +303,7 @@ class TestLogInjection:
 
         output = console_log()
 
-        assert "execute_forgetful_tool" in output, "precondition: the rejected call was logged"
+        assert "execute_axmem_tool" in output, "precondition: the rejected call was logged"
         assert forged_lines(output) == []
         assert "\x1b[2J" not in output
         assert "\r" not in output
@@ -328,13 +328,13 @@ class TestLogInjection:
     @pytest.mark.parametrize(
         ("meta_tool", "arguments", "error_text"),
         [
-            ("how_to_use_forgetful_tool", {"tool_name": HOSTILE_NAME}, "not found in registry"),
+            ("how_to_use_axmem_tool", {"tool_name": HOSTILE_NAME}, "not found in registry"),
             (
-                "execute_forgetful_tool",
+                "execute_axmem_tool",
                 {"tool_name": HOSTILE_NAME, "arguments": {}},
                 "not found in registry",
             ),
-            ("discover_forgetful_tools", {"category": HOSTILE_NAME}, "Invalid category"),
+            ("discover_axmem_tools", {"category": HOSTILE_NAME}, "Invalid category"),
         ],
         ids=["how_to_use", "execute", "discover"],
     )
@@ -357,12 +357,12 @@ class TestLogInjection:
         ("meta_tool", "arguments", "error_text"),
         [
             (
-                "how_to_use_forgetful_tool",
+                "how_to_use_axmem_tool",
                 {"tool_name": HOSTILE_NAME},
                 "Failed to get documentation for",
             ),
             (
-                "execute_forgetful_tool",
+                "execute_axmem_tool",
                 {"tool_name": HOSTILE_NAME, "arguments": {}},
                 "Failed to execute",
             ),
@@ -394,4 +394,4 @@ class TestLogInjection:
 
         output = console_log()
 
-        assert "execute_forgetful_tool: 'get_recent_memories'" in output
+        assert "execute_axmem_tool: 'get_recent_memories'" in output

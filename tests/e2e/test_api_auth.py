@@ -175,6 +175,6 @@ class TestFailClosed:
 
         with pytest.raises(ToolError, match="Authentication is not configured"):
             await mcp_client.call_tool(
-                "execute_forgetful_tool",
+                "execute_axmem_tool",
                 {"tool_name": "get_recent_memories", "arguments": {}},
             )

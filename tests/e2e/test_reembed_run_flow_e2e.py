@@ -182,7 +182,7 @@ async def stop_the_second_call():
 
 provider = MigratingEmbedder(app.bootstrap.get_embedding_adapter(), stop_at=2, stop=stop_the_second_call)
 app.bootstrap.get_embedding_adapter = lambda: provider
-sys.argv = ["forgetful", "re-embed", "--batch-size", "1"]
+sys.argv = ["axmem", "re-embed", "--batch-size", "1"]
 sys.exit(cli())
 """
 

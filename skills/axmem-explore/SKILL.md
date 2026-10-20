@@ -1,17 +1,17 @@
 ---
-name: forgetful-explore
+name: axmem-explore
 description: >-
-  Explore the Forgetful knowledge graph when flat search isn't enough — cross-project
+  Explore the Axmem knowledge graph when flat search isn't enough — cross-project
   investigations, "what do we know about X", tracing how decisions connect. Use when recall
   returns fragments that trail across domains. Walks memories, their links, and project
   scopes into one synthesized picture.
 license: MIT
 tags: [knowledge-graph, traversal, links, investigation]
 allowed-tools:
-  - mcp__forgetful__discover_forgetful_tools
-  - mcp__forgetful__how_to_use_forgetful_tool
-  - mcp__forgetful__execute_forgetful_tool
-  - Bash(forgetful:*)
+  - mcp__axmem__discover_axmem_tools
+  - mcp__axmem__how_to_use_axmem_tool
+  - mcp__axmem__execute_axmem_tool
+  - Bash(axmem:*)
 ---
 
 # Exploring the knowledge graph
@@ -24,11 +24,11 @@ synthesized picture that states the path taken — never a raw dump of hops.
 Operations are named by registry name (`query_memory`, `get_memory`, ...).
 Invoke via whichever surface this agent has:
 
-- **MCP**: `execute_forgetful_tool(tool_name="query_memory", arguments={...})`
-- **CLI**: `forgetful call query_memory --args '{"query": "...", "query_context": "..."}' --json`
+- **MCP**: `execute_axmem_tool(tool_name="query_memory", arguments={...})`
+- **CLI**: `axmem call query_memory --args '{"query": "...", "query_context": "..."}' --json`
 
-Get any operation's schema at runtime: `how_to_use_forgetful_tool` (MCP) or
-`forgetful tools info <operation>` (CLI) — schemas are deliberately not repeated here.
+Get any operation's schema at runtime: `how_to_use_axmem_tool` (MCP) or
+`axmem tools info <operation>` (CLI) — schemas are deliberately not repeated here.
 
 ## Choose a depth first
 

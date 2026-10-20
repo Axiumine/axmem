@@ -8,7 +8,7 @@ from typing import Any, Protocol
 
 
 class ToolExecutor(Protocol):
-    """Executes Forgetful registry tools and exposes their discovery metadata."""
+    """Executes Axmem registry tools and exposes their discovery metadata."""
 
     async def execute(self, tool_name: str, arguments: dict[str, Any]) -> Any:
         ...

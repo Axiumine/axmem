@@ -103,7 +103,7 @@ async def test_rest_routes_treat_another_tenants_memory_as_unknown(embedding_ada
 
 
 async def _tool(client, name: str, **arguments):
-    return await client.call_tool("execute_forgetful_tool", {"tool_name": name, "arguments": arguments})
+    return await client.call_tool("execute_axmem_tool", {"tool_name": name, "arguments": arguments})
 
 
 async def _denied(client, name: str, **arguments) -> None:

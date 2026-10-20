@@ -1,7 +1,7 @@
 """Integration tests for LocalExecutor (docs/dev/cli_plan.md phase 3)
 
 LocalExecutor drives the same ToolRegistry the MCP meta-tools execute, through the
-CliContext shim (default user, no auth) with the FORGETFUL_SCOPES ceiling applied.
+CliContext shim (default user, no auth) with the AXMEM_SCOPES ceiling applied.
 Uses the real composition root against a real Qdrant node.
 """
 import pytest
@@ -49,7 +49,7 @@ async def test_execute_unknown_tool_raises_error_naming_available_tools(local_ex
 
 
 async def test_scope_ceiling_denies_write_tool_with_required_scope(runtime_settings):
-    settings.FORGETFUL_SCOPES = "read"
+    settings.AXMEM_SCOPES = "read"
     executor = LocalExecutor(await build_runtime())
 
     try:

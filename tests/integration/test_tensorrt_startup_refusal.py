@@ -29,7 +29,7 @@ HIDE_AND_RUN = textwrap.dedent(
                 raise ModuleNotFoundError(f"No module named {{name!r}} (hidden by the test)", name=name)
 
     sys.meta_path.insert(0, Hidden())
-    sys.argv = ["forgetful", *{argv!r}]
+    sys.argv = ["axmem", *{argv!r}]
     import main
     raise SystemExit(main.cli())
     """,

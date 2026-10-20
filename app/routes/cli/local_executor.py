@@ -1,7 +1,7 @@
 """Local ToolExecutor: executes the in-process ToolRegistry.
 
-Same execution path as meta_tools.execute_forgetful_tool - identical existence and
-FORGETFUL_SCOPES checks, identical ctx injection - but against a runtime built by
+Same execution path as meta_tools.execute_axmem_tool - identical existence and
+AXMEM_SCOPES checks, identical ctx injection - but against a runtime built by
 app.bootstrap instead of a live FastMCP server.
 """
 from typing import Any

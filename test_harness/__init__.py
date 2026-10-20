@@ -1,2 +1,2 @@
 """UAT walkthrough harness: drives a real agent through the canonical skills against a
-throwaway local Forgetful and captures artifacts for supervised acceptance review."""
+throwaway local Axmem and captures artifacts for supervised acceptance review."""

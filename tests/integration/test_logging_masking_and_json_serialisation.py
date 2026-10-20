@@ -88,7 +88,7 @@ def _record_with_exception(message: str = "failed") -> logging.LogRecord:
         raise ValueError("boom")
     except ValueError:
         return logging.LogRecord(
-            "forgetful.test", logging.ERROR, __file__, 1, message, None, sys.exc_info(),
+            "axmem.test", logging.ERROR, __file__, 1, message, None, sys.exc_info(),
         )
 
 

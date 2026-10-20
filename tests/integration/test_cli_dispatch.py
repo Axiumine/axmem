@@ -31,7 +31,7 @@ def recorded_runners(monkeypatch):
 
 
 def _invoke(monkeypatch, argv):
-    monkeypatch.setattr(sys, "argv", ["forgetful", *argv])
+    monkeypatch.setattr(sys, "argv", ["axmem", *argv])
     return main.cli()
 
 
@@ -88,10 +88,10 @@ def test_version_flag_prints_version_and_exits_zero(monkeypatch, recorded_runner
 
 
 def test_top_level_help_advertises_subcommands(monkeypatch, recorded_runners, capsys):
-    """`forgetful --help` must reveal the subcommands, not only the legacy flags.
+    """`axmem --help` must reveal the subcommands, not only the legacy flags.
 
     --help isn't a KNOWN token, so it falls through to the legacy launcher; the
-    launcher's epilog is the only place a bare `forgetful --help` can list the new verbs.
+    launcher's epilog is the only place a bare `axmem --help` can list the new verbs.
     """
     with pytest.raises(SystemExit) as excinfo:
         _invoke(monkeypatch, ["--help"])

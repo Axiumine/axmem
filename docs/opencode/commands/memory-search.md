@@ -1,13 +1,13 @@
 ---
-description: Search memories semantically using Forgetful
+description: Search memories semantically using Axmem
 ---
 # Memory Search
 
-Search the Forgetful knowledge base for relevant memories.
+Search the Axmem knowledge base for relevant memories.
 
 ## Your Task
 
-Perform a semantic search using `execute_forgetful_tool("query_memory", {...})` with the user's query.
+Perform a semantic search using `execute_axmem_tool("query_memory", {...})` with the user's query.
 
 **Query**: $ARGUMENTS
 

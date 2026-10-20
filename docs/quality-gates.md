@@ -112,7 +112,7 @@ Linux-only (its engine cache locks with `fcntl`).
 | `ruff` | lint (existing rule set) | `ruff.toml` |
 | `imports` | layer contracts routes → services → protocols → repositories | `[tool.importlinter]` |
 | `bandit` | security lint on app/main/harness/scripts | `[tool.bandit]` |
-| `semgrep` | repo-specific rules (no `print` on the MCP stdout path, deprecated asyncio, Qdrant writes outside `store.py` or without `wait`, …); `SEMGREP_PACKS="p/python p/security-audit"` adds registry packs. Uses `semgrep` on `PATH`, else `uvx`, else the pinned Docker image | `.semgrep/forgetful.yml`, `.semgrepignore` |
+| `semgrep` | repo-specific rules (no `print` on the MCP stdout path, deprecated asyncio, Qdrant writes outside `store.py` or without `wait`, …); `SEMGREP_PACKS="p/python p/security-audit"` adds registry packs. Uses `semgrep` on `PATH`, else `uvx`, else the pinned Docker image | `.semgrep/axmem.yml`, `.semgrepignore` |
 | `vulture` | dead code, min confidence 60 | `[tool.vulture]`, `vulture_whitelist.py` |
 | `radon-cc` | no function/method rated C or worse (minimum rating B), tests included | `radon.cfg` |
 | `radon-mi` | every file maintainability grade A (score above 19), tests included | `radon.cfg` |
@@ -231,7 +231,7 @@ missing (for example no Docker for `e2e-qdrant`) reports `SKIP` with the reason 
   decorators, framework hooks) into `[tool.vulture]` `ignore_decorators` / `ignore_names`
   rather than the whitelist. The whitelist is only parsed by vulture, never imported or executed, and
   vulture does not scan `tests/`.
-* New semgrep rules live in `.semgrep/forgetful.yml` (rule ids are prefixed `forgetful-`).
+* New semgrep rules live in `.semgrep/axmem.yml` (rule ids are prefixed `axmem-`).
 * Fix a bandit or semgrep finding when the code can be made safe (Qdrant writes go through
   `QdrantStore` only). Suppress only code that is safe
   by construction, inline and with the reason on the same line: `# nosec B603 - argv list from

@@ -1,6 +1,6 @@
 # REST API Reference
 
-Forgetful exposes a REST API for web UI integration and external access.
+Axmem exposes a REST API for web UI integration and external access.
 
 **Base URL:** `http://localhost:8020/api/v1`
 
@@ -81,7 +81,7 @@ Health check endpoint (no authentication required).
 {
   "status": "healthy",
   "timestamp": "2024-12-05T10:00:00Z",
-  "service": "forgetful",
+  "service": "axmem",
   "version": "0.3.0"
 }
 ```

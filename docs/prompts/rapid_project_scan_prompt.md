@@ -96,7 +96,7 @@ Identify: DI approach, error handling, DB access, authentication
 
 #### A. Knowledge Base (if available)
 ```
-discover_forgetful_tools(category="memory")
+discover_axmem_tools(category="memory")
 query_memory({"query": "[project-name] architecture", "include_links": true})
 query_memory({"query": "[project-name] decisions", "include_links": true})
 ```

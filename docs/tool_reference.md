@@ -1,6 +1,6 @@
-# Forgetful MCP Server - Complete Tool Reference
+# Axmem MCP Server - Complete Tool Reference
 
-This guide provides comprehensive documentation for all tools available in the Forgetful MCP server.
+This guide provides comprehensive documentation for all tools available in the Axmem MCP server.
 
 ---
 
@@ -16,13 +16,13 @@ This guide provides comprehensive documentation for all tools available in the F
 
 ## Meta-Tools Pattern
 
-Forgetful uses a **meta-tools pattern** to preserve your LLM's context window. Only
+Axmem uses a **meta-tools pattern** to preserve your LLM's context window. Only
 **3 meta-tools** are visible to MCP clients; the inner tool catalog depends on the permitted
 scopes.
 
 ### The Three Meta-Tools
 
-#### 1. `discover_forgetful_tools`
+#### 1. `discover_axmem_tools`
 List available tools, optionally filtered by category.
 
 **Parameters:**
@@ -37,13 +37,13 @@ List available tools, optionally filtered by category.
 **Example:**
 ```python
 # Discover all memory tools
-discover_forgetful_tools(category="memory")
+discover_axmem_tools(category="memory")
 
 # Discover all available tools
-discover_forgetful_tools()
+discover_axmem_tools()
 ```
 
-#### 2. `how_to_use_forgetful_tool`
+#### 2. `how_to_use_axmem_tool`
 Get detailed documentation for a specific tool.
 
 **Parameters:**
@@ -54,10 +54,10 @@ Get detailed documentation for a specific tool.
 
 **Example:**
 ```python
-how_to_use_forgetful_tool(tool_name="create_memory")
+how_to_use_axmem_tool(tool_name="create_memory")
 ```
 
-#### 3. `execute_forgetful_tool`
+#### 3. `execute_axmem_tool`
 Execute any registered tool dynamically.
 
 **Parameters:**
@@ -77,7 +77,7 @@ Execute any registered tool dynamically.
 
 **Example:**
 ```python
-execute_forgetful_tool(
+execute_axmem_tool(
     tool_name="create_memory",
     arguments={
         "title": "Database choice: Qdrant",
@@ -96,7 +96,7 @@ execute_forgetful_tool(
 
 The catalog covers memories only: tools to store, search, link and retire them. Every tool
 acts on the memories of the calling tenant and no other (see [Tenants](#tenants)). Call
-`discover_forgetful_tools()` for the exact catalog exposed by the running server.
+`discover_axmem_tools()` for the exact catalog exposed by the running server.
 
 ### Tenants
 
@@ -118,7 +118,7 @@ creation order but are otherwise opaque.
 
 ## Memory Tools
 
-The core of Forgetful - atomic knowledge storage and semantic retrieval.
+The core of Axmem - atomic knowledge storage and semantic retrieval.
 
 ### `create_memory`
 
@@ -154,7 +154,7 @@ encoded as UTF-8 (for example a lone surrogate).
 
 **Example:**
 ```python
-memory = execute_forgetful_tool(
+memory = execute_axmem_tool(
     "create_memory",
     {
         "title": "API rate limiting: 100 req/min per user",
@@ -172,7 +172,7 @@ memory = execute_forgetful_tool(
 **Example with provenance:**
 ```python
 # Memory created by AI agent with source tracking
-memory = execute_forgetful_tool(
+memory = execute_axmem_tool(
     "create_memory",
     {
         "title": "FastAPI dependency injection pattern",
@@ -212,7 +212,7 @@ Semantic search across all memories with context-aware ranking.
 
 **Example:**
 ```python
-results = execute_forgetful_tool(
+results = execute_axmem_tool(
     "query_memory",
     {
         "query": "how do we handle authentication",
@@ -237,7 +237,7 @@ Retrieve complete memory details by ID.
 
 **Example:**
 ```python
-memory = execute_forgetful_tool("get_memory", {"memory_id": "3f2b8c1e-5d4a-4e7b-9c6a-1b2d3e4f5a6b"})
+memory = execute_axmem_tool("get_memory", {"memory_id": "3f2b8c1e-5d4a-4e7b-9c6a-1b2d3e4f5a6b"})
 ```
 
 ### `update_memory`
@@ -267,7 +267,7 @@ Update existing memory fields (PATCH semantics - only updates provided fields).
 
 **Example:**
 ```python
-execute_forgetful_tool(
+execute_axmem_tool(
     "update_memory",
     {
         "memory_id": "3f2b8c1e-5d4a-4e7b-9c6a-1b2d3e4f5a6b",
@@ -280,7 +280,7 @@ execute_forgetful_tool(
 **Example - Adding provenance after creation:**
 ```python
 # Add provenance to an existing memory
-execute_forgetful_tool(
+execute_axmem_tool(
     "update_memory",
     {
         "memory_id": "3f2b8c1e-5d4a-4e7b-9c6a-1b2d3e4f5a6b",
@@ -306,7 +306,7 @@ Manually create bidirectional links between memories.
 **Examples:**
 ```python
 # Standard syntax
-execute_forgetful_tool(
+execute_axmem_tool(
     "link_memories",
     {
         "memory_id": "3f2b8c1e-5d4a-4e7b-9c6a-1b2d3e4f5a6b",  # Rate limiting decision
@@ -315,7 +315,7 @@ execute_forgetful_tool(
 )
 
 # Alias syntax with source_id and target_id
-execute_forgetful_tool(
+execute_axmem_tool(
     "link_memories",
     {
         "source_id": "3f2b8c1e-5d4a-4e7b-9c6a-1b2d3e4f5a6b",
@@ -324,7 +324,7 @@ execute_forgetful_tool(
 )
 
 # Pair list syntax
-execute_forgetful_tool(
+execute_axmem_tool(
     "link_memories",
     {
         "memory_ids": ["3f2b8c1e-5d4a-4e7b-9c6a-1b2d3e4f5a6b", "7a9d0e12-3b4c-4d5e-8f60-718293a4b5c6"]
@@ -346,7 +346,7 @@ Remove bidirectional link(s) between memories.
 
 **Examples:**
 ```python
-execute_forgetful_tool(
+execute_axmem_tool(
     "unlink_memories",
     {
         "source_id": "3f2b8c1e-5d4a-4e7b-9c6a-1b2d3e4f5a6b",
@@ -354,7 +354,7 @@ execute_forgetful_tool(
     }
 )
 
-execute_forgetful_tool(
+execute_axmem_tool(
     "unlink_memories",
     {
         "memory_id": "3f2b8c1e-5d4a-4e7b-9c6a-1b2d3e4f5a6b",
@@ -362,7 +362,7 @@ execute_forgetful_tool(
     }
 )
 
-execute_forgetful_tool(
+execute_axmem_tool(
     "unlink_memories",
     {
         "memory_ids": ["3f2b8c1e-5d4a-4e7b-9c6a-1b2d3e4f5a6b", "7a9d0e12-3b4c-4d5e-8f60-718293a4b5c6", "c1d2e3f4-a5b6-4c7d-8e9f-0a1b2c3d4e5f"]
@@ -386,7 +386,7 @@ Soft delete a memory with audit trail and supersession tracking.
 
 **Example:**
 ```python
-execute_forgetful_tool(
+execute_axmem_tool(
     "mark_memory_obsolete",
     {
         "memory_id": "9b8a7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d",  # Old "Docker Swarm deployment" memory
@@ -408,7 +408,7 @@ Restore a memory previously marked obsolete (undo `mark_memory_obsolete`).
 
 **Example:**
 ```python
-execute_forgetful_tool(
+execute_axmem_tool(
     "unobsolete_memory",
     {"memory_id": "9b8a7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d"},
 )
@@ -430,7 +430,7 @@ Retrieve most recent memories sorted by creation timestamp.
 
 **Example:**
 ```python
-result = execute_forgetful_tool(
+result = execute_axmem_tool(
     "get_recent_memories",
     {"limit": 10, "project": "api-gateway"}
 )
@@ -470,7 +470,7 @@ There are no project tools (`create_project`, `list_projects`, `get_project`, `u
 - The REST list route takes `?project=<label>`, and the CLI takes `-p/--project <label>`.
 
 ```python
-execute_forgetful_tool(
+execute_axmem_tool(
     "create_memory",
     {
         "title": "Invoice rounding rule",
@@ -483,7 +483,7 @@ execute_forgetful_tool(
     }
 )
 
-execute_forgetful_tool(
+execute_axmem_tool(
     "query_memory",
     {"query": "how do we round invoices", "query_context": "Fixing a rounding bug", "project": "billing"}
 )
@@ -504,7 +504,7 @@ Real-world scenarios demonstrating how tools work together.
 project = "authentication-v2"
 
 # 2. Store the key decision as an atomic memory
-decision_memory = execute_forgetful_tool(
+decision_memory = execute_axmem_tool(
     "create_memory",
     {
         "title": "Auth strategy: OAuth2 for third-party + JWT for sessions",
@@ -518,7 +518,7 @@ decision_memory = execute_forgetful_tool(
 )
 
 # 3. Store the supporting detail as a second atomic memory and link the two
-middleware_memory = execute_forgetful_tool(
+middleware_memory = execute_axmem_tool(
     "create_memory",
     {
         "title": "JWT middleware: validate the bearer token in a FastAPI dependency",
@@ -530,13 +530,13 @@ middleware_memory = execute_forgetful_tool(
         "project": project
     }
 )
-execute_forgetful_tool(
+execute_axmem_tool(
     "link_memories",
     {"memory_id": decision_memory["id"], "related_ids": [middleware_memory["id"]]}
 )
 
 # 4. Later, query everything about auth
-results = execute_forgetful_tool(
+results = execute_axmem_tool(
     "query_memory",
     {
         "query": "authentication implementation",
@@ -553,7 +553,7 @@ results = execute_forgetful_tool(
 
 ```python
 # 1. Create onboarding memory
-onboarding_memory = execute_forgetful_tool(
+onboarding_memory = execute_axmem_tool(
     "create_memory",
     {
         "title": "Jordan Taylor joined - Payments team focus areas",
@@ -566,7 +566,7 @@ onboarding_memory = execute_forgetful_tool(
 )
 
 # 2. Query existing payment system memories
-payment_memories = execute_forgetful_tool(
+payment_memories = execute_axmem_tool(
     "query_memory",
     {
         "query": "payment gateway stripe paypal",
@@ -576,7 +576,7 @@ payment_memories = execute_forgetful_tool(
 )
 
 # 3. Link the relevant ones to the onboarding memory
-execute_forgetful_tool(
+execute_axmem_tool(
     "link_memories",
     {
         "memory_id": onboarding_memory["id"],
@@ -591,7 +591,7 @@ execute_forgetful_tool(
 
 ```python
 # 1. Create incident memory
-incident = execute_forgetful_tool(
+incident = execute_axmem_tool(
     "create_memory",
     {
         "title": "Redis failover incident - memory exhaustion",
@@ -604,7 +604,7 @@ incident = execute_forgetful_tool(
 )
 
 # 2. Record the follow-up as a memory
-followup = execute_forgetful_tool(
+followup = execute_axmem_tool(
     "create_memory",
     {
         "title": "Implemented Redis memory monitoring",
@@ -617,7 +617,7 @@ followup = execute_forgetful_tool(
 )
 
 # 3. Link the follow-up to the incident memory
-execute_forgetful_tool(
+execute_axmem_tool(
     "link_memories",
     {"memory_id": incident["id"], "related_ids": [followup["id"]]}
 )
@@ -632,7 +632,7 @@ execute_forgetful_tool(
 project = "database-evaluation-2025"
 
 # 2. Capture atomic insights as memories
-insight1 = execute_forgetful_tool(
+insight1 = execute_axmem_tool(
     "create_memory",
     {
         "title": "pgvector: Best for existing PostgreSQL setups",
@@ -645,7 +645,7 @@ insight1 = execute_forgetful_tool(
     }
 )
 
-insight2 = execute_forgetful_tool(
+insight2 = execute_axmem_tool(
     "create_memory",
     {
         "title": "Qdrant: Best performance for large-scale vector search",
@@ -659,7 +659,7 @@ insight2 = execute_forgetful_tool(
 )
 
 # 3. Make decision and create decision memory
-decision = execute_forgetful_tool(
+decision = execute_axmem_tool(
     "create_memory",
     {
         "title": "Decision: Qdrant for the memory store",
@@ -673,12 +673,12 @@ decision = execute_forgetful_tool(
 )
 
 # 4. Manually link related insights to decision
-execute_forgetful_tool(
+execute_axmem_tool(
     "link_memories",
     {"memory_id": decision["id"], "related_ids": [insight1["id"]]}
 )
 
-execute_forgetful_tool(
+execute_axmem_tool(
     "link_memories",
     {"memory_id": decision["id"], "related_ids": [insight2["id"]]}
 )
@@ -720,7 +720,7 @@ execute_forgetful_tool(
 
 ## Token Budget & Performance
 
-Forgetful protects your LLM context window with configurable token budgets:
+Axmem protects your LLM context window with configurable token budgets:
 
 - **Default: 8,000 tokens** per query result
 - **Max 20 memories** returned per query
@@ -745,4 +745,4 @@ MEMORY_MAX_MEMORIES=20
 ---
 
 **Last Updated:** 2025-01-22
-**Forgetful Version:** 0.1.x
+**Axmem Version:** 0.1.x

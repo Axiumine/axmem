@@ -43,14 +43,14 @@ def test_container_env_fences_both_routes():
     env = build_container_env(THROWAWAY_URL)
 
     # Assert
-    assert env["FORGETFUL_SERVER"] == THROWAWAY_URL
+    assert env["AXMEM_SERVER"] == THROWAWAY_URL
     assert env["QDRANT_URL"] == DECOY_QDRANT_URL
     assert "QDRANT_API_KEY" not in env
     assert env["RERANKING_ENABLED"] == "false"
     assert env["EMBEDDING_PROVIDER"] == "TensorRT"
     # A fresh container inherits nothing, so there must be no token to scrub - and
     # none accidentally introduced either
-    assert "FORGETFUL_TOKEN" not in env
+    assert "AXMEM_TOKEN" not in env
 
 
 def test_exec_command_wraps_runner_in_os_level_timeout():
@@ -59,13 +59,13 @@ def test_exec_command_wraps_runner_in_os_level_timeout():
     config = HarnessConfig()
 
     # Act
-    cmd = exec_command(config.timeout_for("forgetful-recall"), "forgetful-recall")
+    cmd = exec_command(config.timeout_for("axmem-recall"), "axmem-recall")
 
     # Assert
     assert cmd[:3] == ["timeout", "--kill-after=30s", "900"]
     assert "python" in cmd and "-u" in cmd
     assert f"{HARNESS_MOUNT}/runner.py" in cmd
-    assert cmd[-1] == f"{SKILLS_MOUNT}/forgetful-recall"
+    assert cmd[-1] == f"{SKILLS_MOUNT}/axmem-recall"
 
 
 def test_staged_mount_copies_into_an_owner_only_dir(tmp_path, staged):

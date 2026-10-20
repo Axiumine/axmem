@@ -1,15 +1,15 @@
 """Call helpers shared by the memory tool end-to-end tests.
 
-Every helper wraps one ``execute_forgetful_tool`` round trip so that the test
+Every helper wraps one ``execute_axmem_tool`` round trip so that the test
 modules read as scenarios instead of nested payload dictionaries.
 """
 import json
 
-META_TOOL = "execute_forgetful_tool"
+META_TOOL = "execute_axmem_tool"
 
 
 async def call_tool(client, tool_name, **arguments):
-    """Run one forgetful tool through the execute_forgetful_tool meta-tool."""
+    """Run one axmem tool through the execute_axmem_tool meta-tool."""
     return await client.call_tool(
         META_TOOL, {"tool_name": tool_name, "arguments": arguments},
     )

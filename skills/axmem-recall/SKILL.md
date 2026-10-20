@@ -1,5 +1,5 @@
 ---
-name: forgetful-recall
+name: axmem-recall
 description: >-
   Recall past knowledge before working — prior decisions, solved problems, preferences,
   project history. Use at the start of any task, when the user references earlier work, when
@@ -9,13 +9,13 @@ description: >-
 license: MIT
 tags: [memory, retrieval, search, context]
 allowed-tools:
-  - mcp__forgetful__discover_forgetful_tools
-  - mcp__forgetful__how_to_use_forgetful_tool
-  - mcp__forgetful__execute_forgetful_tool
-  - Bash(forgetful:*)
+  - mcp__axmem__discover_axmem_tools
+  - mcp__axmem__how_to_use_axmem_tool
+  - mcp__axmem__execute_axmem_tool
+  - Bash(axmem:*)
 ---
 
-# Recalling knowledge from Forgetful
+# Recalling knowledge from Axmem
 
 Retrieval quality is decided by how the query is shaped and scoped, and by treating coverage
 as something to judge rather than assume. Recall before proposing; history usually exists.
@@ -25,11 +25,11 @@ as something to judge rather than assume. Recall before proposing; history usual
 Operations are named by registry name (`query_memory`, `get_recent_memories`, ...). Invoke
 via whichever surface this agent has:
 
-- **MCP**: `execute_forgetful_tool(tool_name="query_memory", arguments={...})`
-- **CLI**: `forgetful call query_memory --args '{"query": "..."}' --json`
+- **MCP**: `execute_axmem_tool(tool_name="query_memory", arguments={...})`
+- **CLI**: `axmem call query_memory --args '{"query": "..."}' --json`
 
-Get any operation's schema at runtime: `how_to_use_forgetful_tool` (MCP) or
-`forgetful tools info <operation>` (CLI) — schemas are deliberately not repeated here.
+Get any operation's schema at runtime: `how_to_use_axmem_tool` (MCP) or
+`axmem tools info <operation>` (CLI) — schemas are deliberately not repeated here.
 
 ## Step 1 — Shape the query
 
@@ -46,7 +46,7 @@ Reads are cross-project by default, and usually should stay that way — knowled
 Narrow with `project` (the scope label) when the task is project-bound; add `strict_project_filter=True`
 to also keep linked memories inside that project (the default `False` lets links cross
 it). Use `importance_threshold` to cut noise — it excludes anything scored below the value
-given, pairing naturally with `forgetful-remember`'s rubric, where 5 is the noise floor for
+given, pairing naturally with `axmem-remember`'s rubric, where 5 is the noise floor for
 bulk/automated captures. Adjust `k` to trade breadth for focus. These are filters layered on
 top of semantic search, which stays the primary retrieval mechanism throughout.
 
@@ -68,7 +68,7 @@ Done when: results are judged sufficient, or absence is confirmed from more than
 
 Promising hits get `get_memory` for full content and links. When hits arrive as fragments or
 trail across domains, the flat list is the wrong shape — switch to
-`forgetful-explore` and walk the graph instead.
+`axmem-explore` and walk the graph instead.
 
 Done when: enough context is in hand, or the exploration skill has taken over.
 
@@ -80,7 +80,7 @@ This skill is the single source of truth for the retrieval reporting convention:
 - Nothing relevant: say so explicitly — "No existing memories about X."
 - Off-target results: flag them — "Retrieved some context but it seems tangential."
 
-A clean miss is also a signal: note the gap as a `forgetful-remember` candidate once the
+A clean miss is also a signal: note the gap as an `axmem-remember` candidate once the
 task resolves it.
 
 Done when: the user knows what memory contributed, even when the answer is "nothing".

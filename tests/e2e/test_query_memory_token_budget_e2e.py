@@ -22,7 +22,7 @@ def reranker_adapter():
 
 
 async def _call(client, tool, arguments):
-    result = await client.call_tool("execute_forgetful_tool", {"tool_name": tool, "arguments": arguments})
+    result = await client.call_tool("execute_axmem_tool", {"tool_name": tool, "arguments": arguments})
     return result.data
 
 

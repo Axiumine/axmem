@@ -23,7 +23,7 @@ from starlette.requests import Request
 
 from app.config.settings import TENANT_MAX_LENGTH, settings
 from app.models.tenant_models import Tenant
-from app.routes.server_state import ForgetfulMCP, server_of
+from app.routes.server_state import AxmemMCP, server_of
 
 logger = logging.getLogger(__name__)
 
@@ -256,7 +256,7 @@ async def _verify_bearer_token(auth: AuthProvider, token: str) -> AccessToken:
     return access_token
 
 
-async def get_tenant_from_request(request: Request, mcp: ForgetfulMCP) -> Tenant:
+async def get_tenant_from_request(request: Request, mcp: AxmemMCP) -> Tenant:
     """Get the tenant for HTTP routes (non-MCP endpoints).
 
     This is the HTTP equivalent of get_tenant_from_auth() for MCP tools.

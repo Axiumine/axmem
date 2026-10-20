@@ -37,7 +37,7 @@ async def test_reranking_orders_by_score(mcp_client):
     # but different focuses that the cross-encoder can distinguish
 
     # Memory 1: PostgreSQL - relational, ACID, complex queries
-    result1 = await mcp_client.call_tool("execute_forgetful_tool", {
+    result1 = await mcp_client.call_tool("execute_axmem_tool", {
         "tool_name": "create_memory", "arguments": {
             "title": "PostgreSQL Database",
             "content": "PostgreSQL is a powerful relational database with ACID compliance, complex query support, and strong data integrity. Ideal for applications requiring transactions and complex joins.",
@@ -50,7 +50,7 @@ async def test_reranking_orders_by_score(mcp_client):
     postgres_id = result1.data["id"]
 
     # Memory 2: MongoDB - document store, flexible schema
-    result2 = await mcp_client.call_tool("execute_forgetful_tool", {
+    result2 = await mcp_client.call_tool("execute_axmem_tool", {
         "tool_name": "create_memory", "arguments": {
             "title": "MongoDB Database",
             "content": "MongoDB is a document-oriented NoSQL database with flexible schemas and horizontal scaling. Good for applications with evolving data models and unstructured data.",
@@ -63,7 +63,7 @@ async def test_reranking_orders_by_score(mcp_client):
     mongodb_id = result2.data["id"]
 
     # Memory 3: Redis - in-memory, caching, speed
-    result3 = await mcp_client.call_tool("execute_forgetful_tool", {
+    result3 = await mcp_client.call_tool("execute_axmem_tool", {
         "tool_name": "create_memory", "arguments": {
             "title": "Redis Database",
             "content": "Redis is an in-memory data store optimized for caching and real-time applications. Provides sub-millisecond latency and is perfect for session storage, leaderboards, and rate limiting.",
@@ -77,7 +77,7 @@ async def test_reranking_orders_by_score(mcp_client):
 
     # Query with context that strongly favors Redis
     # The cross-encoder should recognize "caching" and "sub-millisecond latency"
-    query_result = await mcp_client.call_tool("execute_forgetful_tool", {
+    query_result = await mcp_client.call_tool("execute_axmem_tool", {
         "tool_name": "query_memory", "arguments": {
             "query": "database for application",
             "query_context": (
@@ -103,7 +103,7 @@ async def test_reranking_with_different_contexts(mcp_client):
     the cross-encoder actually influences ranking.
     """
     # Create memories about programming languages
-    result1 = await mcp_client.call_tool("execute_forgetful_tool", {
+    result1 = await mcp_client.call_tool("execute_axmem_tool", {
         "tool_name": "create_memory", "arguments": {
             "title": "Python Programming",
             "content": "Python is excellent for data science, machine learning, and AI applications. Has rich ecosystem with NumPy, Pandas, TensorFlow, and PyTorch.",
@@ -115,7 +115,7 @@ async def test_reranking_with_different_contexts(mcp_client):
     })
     python_id = result1.data["id"]
 
-    result2 = await mcp_client.call_tool("execute_forgetful_tool", {
+    result2 = await mcp_client.call_tool("execute_axmem_tool", {
         "tool_name": "create_memory", "arguments": {
             "title": "JavaScript Programming",
             "content": "JavaScript is essential for web development, both frontend and backend with Node.js. React, Vue, and Angular are popular frontend frameworks.",
@@ -127,7 +127,7 @@ async def test_reranking_with_different_contexts(mcp_client):
     })
     js_id = result2.data["id"]
 
-    result3 = await mcp_client.call_tool("execute_forgetful_tool", {
+    result3 = await mcp_client.call_tool("execute_axmem_tool", {
         "tool_name": "create_memory", "arguments": {
             "title": "Rust Programming",
             "content": "Rust provides memory safety and high performance for systems programming. Ideal for building fast, reliable software without garbage collection.",
@@ -140,7 +140,7 @@ async def test_reranking_with_different_contexts(mcp_client):
     rust_id = result3.data["id"]
 
     # Query 1: Context favoring data science
-    query1 = await mcp_client.call_tool("execute_forgetful_tool", {
+    query1 = await mcp_client.call_tool("execute_axmem_tool", {
         "tool_name": "query_memory", "arguments": {
             "query": "programming language",
             "query_context": "I want to build machine learning models and analyze datasets",
@@ -153,7 +153,7 @@ async def test_reranking_with_different_contexts(mcp_client):
     _assert_reranked(query1)
 
     # Query 2: Context favoring web development
-    query2 = await mcp_client.call_tool("execute_forgetful_tool", {
+    query2 = await mcp_client.call_tool("execute_axmem_tool", {
         "tool_name": "query_memory", "arguments": {
             "query": "programming language",
             "query_context": "I need to build an interactive web application with React",

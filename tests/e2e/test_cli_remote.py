@@ -1,6 +1,6 @@
 """E2E tests for CLI remote mode (docs/dev/cli_plan.md phase 4)
 
-Starts the real Forgetful server (main.mcp) in-process on an ephemeral HTTP port with
+Starts the real Axmem server (main.mcp) in-process on an ephemeral HTTP port with
 no auth and the test Qdrant node (state is shared across the server/CLI boundary), then drives
 main.cli() with --server against it.
 """
@@ -23,8 +23,8 @@ from tests.e2e.conftest import TENANT_TOKENS, static_token_verifier
 _PATCHED_FIELDS = [
     "EMBEDDING_PROVIDER",
     "RERANKING_ENABLED",
-    "FORGETFUL_SCOPES",
-    "FORGETFUL_SERVER",
+    "AXMEM_SCOPES",
+    "AXMEM_SERVER",
 ]
 
 
@@ -34,11 +34,11 @@ def cli_remote_env(tmp_path, monkeypatch, tensorrt_reranker, tensorrt_embedder):
     original = {name: getattr(settings, name) for name in _PATCHED_FIELDS}
     settings.EMBEDDING_PROVIDER = "TensorRT"
     settings.RERANKING_ENABLED = True  # the runtime shares the session's real TensorRT reranker
-    settings.FORGETFUL_SCOPES = "*"
-    settings.FORGETFUL_SERVER = ""
-    # Keep the OAuth token cache away from the real ~/.config/forgetful
+    settings.AXMEM_SCOPES = "*"
+    settings.AXMEM_SERVER = ""
+    # Keep the OAuth token cache away from the real ~/.config/axmem
     monkeypatch.setattr(paths, "config_dir", lambda: tmp_path / "config")
-    monkeypatch.delenv("FORGETFUL_TOKEN", raising=False)
+    monkeypatch.delenv("AXMEM_TOKEN", raising=False)
     yield settings
     for name, value in original.items():
         setattr(settings, name, value)
@@ -67,7 +67,7 @@ def running_server():
     deadline = time.monotonic() + 60
     while not server.started:
         if time.monotonic() > deadline or not thread.is_alive():
-            raise RuntimeError("in-process Forgetful server failed to start")
+            raise RuntimeError("in-process Axmem server failed to start")
         time.sleep(0.05)
 
     yield f"http://127.0.0.1:{port}/mcp"
@@ -75,7 +75,7 @@ def running_server():
     server.should_exit = True
     thread.join(timeout=15)
     if thread.is_alive():
-        raise RuntimeError("in-process Forgetful server failed to shut down in time")
+        raise RuntimeError("in-process Axmem server failed to shut down in time")
 
 
 @pytest.fixture
@@ -94,7 +94,7 @@ def token_server_url(cli_remote_env, monkeypatch):
 
 
 def invoke_cli(monkeypatch, capsys, argv):
-    monkeypatch.setattr(sys, "argv", ["forgetful", *argv])
+    monkeypatch.setattr(sys, "argv", ["axmem", *argv])
     exit_code = main.cli()
     captured = capsys.readouterr()
     return exit_code or 0, captured.out, captured.err
@@ -239,13 +239,13 @@ def test_remote_unknown_tool_maps_to_exit_one(http_server_url, monkeypatch, caps
 
 def _as(monkeypatch, token):
     if token is None:
-        monkeypatch.delenv("FORGETFUL_TOKEN", raising=False)
+        monkeypatch.delenv("AXMEM_TOKEN", raising=False)
     else:
-        monkeypatch.setenv("FORGETFUL_TOKEN", token)
+        monkeypatch.setenv("AXMEM_TOKEN", token)
 
 
 def test_remote_tenants_cannot_see_each_others_memories(token_server_url, monkeypatch, capsys):
-    """Over HTTP the FORGETFUL_TOKEN bearer token names the tenant; the other tenant sees nothing."""
+    """Over HTTP the AXMEM_TOKEN bearer token names the tenant; the other tenant sees nothing."""
     create_args = json.dumps({
         "title": "Alice remote private",
         "content": "Only alice may read this over the remote CLI",

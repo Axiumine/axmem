@@ -1,14 +1,14 @@
 ---
-description: Bootstrap a repository into Forgetful's knowledge base
+description: Bootstrap a repository into Axmem's knowledge base
 ---
 # Encode Repository
 
-Systematically populate the Forgetful knowledge base with comprehensive project context using the Zettelkasten-inspired bootstrap protocol.
+Systematically populate the Axmem knowledge base with comprehensive project context using the Zettelkasten-inspired bootstrap protocol.
 
 ## Purpose
 
 Transform an undocumented or lightly-documented codebase into a rich, searchable knowledge repository. Use this when:
-- Starting to use Forgetful for an existing project
+- Starting to use Axmem for an existing project
 - Onboarding a new project into the memory system
 - Preparing a project for AI agent collaboration
 - Creating institutional knowledge for team members
@@ -31,7 +31,7 @@ Parse for:
 A project is a scope label on memories, not a record: use the repository name (`owner/repo-name`) as the `project` value of every memory in this run. There is nothing to create first.
 
 ```
-execute_forgetful_tool("get_recent_memories", {"limit": 5, "project": "owner/repo-name"})
+execute_axmem_tool("get_recent_memories", {"limit": 5, "project": "owner/repo-name"})
 ```
 
 If memories come back, this repository was encoded before: treat the run as a refresh.
@@ -55,7 +55,7 @@ Explore the codebase to determine:
 ### Step 3: Query Existing KB Coverage
 
 ```
-execute_forgetful_tool("query_memory", {
+execute_axmem_tool("query_memory", {
   "query": "<project-name> architecture overview",
   "query_context": "Assessing existing knowledge base coverage for bootstrap",
   "k": 10,
@@ -395,21 +395,21 @@ After completion, test with validation queries:
 
 ```
 # Test 1: Architecture understanding
-execute_forgetful_tool("query_memory", {
+execute_axmem_tool("query_memory", {
   "query": "How is the codebase architected?",
   "query_context": "Testing bootstrap coverage",
   "project": "owner/repo-name"
 })
 
 # Test 2: Implementation patterns
-execute_forgetful_tool("query_memory", {
+execute_axmem_tool("query_memory", {
   "query": "How do I add a new API endpoint?",
   "query_context": "Testing bootstrap coverage",
   "project": "owner/repo-name"
 })
 
 # Test 3: Linked knowledge
-execute_forgetful_tool("get_memory", {"memory_id": <architecture_memory_id>})
+execute_axmem_tool("get_memory", {"memory_id": <architecture_memory_id>})
 ```
 
 If searches return poor results, create additional memories in those areas.

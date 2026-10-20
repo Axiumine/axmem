@@ -1,4 +1,4 @@
-# The UAT walkthrough container: opencode + agent-shell + the locked forgetful deps.
+# The UAT walkthrough container: opencode + agent-shell + the locked axmem deps.
 # The working-tree wheel installs --no-deps at container start (see container.py), so
 # a code change never needs an image rebuild - only a dependency change does, and
 # ensure_image() detects that from the requirements.lock hash label automatically.
@@ -17,7 +17,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         curl \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# uv manages Python 3.14 since Debian bookworm only ships 3.11 (forgetful needs 3.14+).
+# uv manages Python 3.14 since Debian bookworm only ships 3.11 (axmem needs 3.14+).
 # Download-then-run (not curl|sh) so a failed download fails the build.
 RUN curl -LsSf https://astral.sh/uv/install.sh -o /tmp/uv-install.sh && \
     env UV_INSTALL_DIR=/usr/local/bin sh /tmp/uv-install.sh && \

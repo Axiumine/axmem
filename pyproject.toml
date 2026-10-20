@@ -1,5 +1,5 @@
 [project]
-name = "forgetful-ai"
+name = "axmem"
 dynamic = ["version"]
 description = "MCP Server for AI Agent Memory - persistent, semantically-searchable memory for AI agents"
 readme = "README.md"
@@ -78,13 +78,12 @@ dev = [
 harness = ["docker>=7.1.0"]
 
 [project.urls]
-Homepage = "https://github.com/scottrbk/forgetful"
-Repository = "https://github.com/scottrbk/forgetful"
-Issues = "https://github.com/scottrbk/forgetful/issues"
+Homepage = "https://github.com/Axiumine/axmem"
+Repository = "https://github.com/Axiumine/axmem"
+Issues = "https://github.com/Axiumine/axmem/issues"
 
 [project.scripts]
-forgetful = "main:cli"
-forgetful-ai = "main:cli"
+axmem = "main:cli"
 
 [build-system]
 requires = ["hatchling", "hatch-vcs"]

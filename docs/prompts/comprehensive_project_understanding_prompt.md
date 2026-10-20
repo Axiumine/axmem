@@ -14,15 +14,15 @@ A systematic approach for gaining deep understanding of any codebase through kno
 
 ## Phase 1: Knowledge Base Mining (If Available)
 
-**If project has Forgetful MCP or similar knowledge base, start here:**
+**If project has Axmem MCP or similar knowledge base, start here:**
 
 ### Execute Knowledge Base Queries
 
-Use `discover_forgetful_tools` and execute these queries:
+Use `discover_axmem_tools` and execute these queries:
 
 ```
 # Discover available tools
-discover_forgetful_tools(category="memory")
+discover_axmem_tools(category="memory")
 
 # Query for project information
 query_memory({

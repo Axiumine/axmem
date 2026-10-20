@@ -30,7 +30,7 @@ from test_harness.safe_io import (
 )
 from test_harness.server import HarnessInfraError
 
-FIXTURE_SKILL = "forgetful-encode-repo"  # the one skill that works on a git repo
+FIXTURE_SKILL = "axmem-encode-repo"  # the one skill that works on a git repo
 _FIXTURE_ORIGIN = "https://github.com/scottrbk/uat-fixture-calc.git"
 _FIXTURE_FILES = {
     "README.md": "# uat-fixture-calc\n\nA tiny calculator used as an encoding target.\n",
@@ -190,8 +190,8 @@ def load_events(path: Path, root: Path | None = None) -> list[dict[str, Any]]:
 
 
 def scan_for_breaches(events: list[dict[str, Any]]) -> list[str]:
-    """Flag tool_use events that look like a forgetful MCP tool: reaching a configured
-    forgetful server directly instead of the fenced CLI route. MCP tool names carry no
+    """Flag tool_use events that look like an axmem MCP tool: reaching a configured
+    axmem server directly instead of the fenced CLI route. MCP tool names carry no
     spaces; CLI command strings (codex-style tool_use content) always do."""
     breaches = []
     for event in events:
@@ -199,7 +199,7 @@ def scan_for_breaches(events: list[dict[str, Any]]) -> list[str]:
             continue
         content = event.get("content")
         name = content.strip() if isinstance(content, str) else ""
-        if "forgetful" in name.lower() and " " not in name and name.lower() != "forgetful":
+        if "axmem" in name.lower() and " " not in name and name.lower() != "axmem":
             breaches.append(name)
     return breaches
 
@@ -243,7 +243,7 @@ class Walkthrough:
 
     async def run_skill(self, skill: str) -> SkillRunResult:
         # Everything under skills/ is bind-mounted into the container; server-side
-        # artifacts (forgetful.db, server.log) stay outside it at the run-dir root.
+        # artifacts (axmem.db, server.log) stay outside it at the run-dir root.
         skill_dir = self.mount / skill
         workspace = prepare_workspace(skill_dir, skill, self.config.skills_dir)
         prompt = build_prompt(skill)

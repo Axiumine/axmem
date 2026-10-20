@@ -13,7 +13,7 @@ def _package_not_installed(name: str) -> str:
 
 
 def test_installed_package_version_wins(monkeypatch):
-    monkeypatch.setattr(version_module, "version", lambda name: "9.8.7" if name == "forgetful-ai" else "?")
+    monkeypatch.setattr(version_module, "version", lambda name: "9.8.7" if name == "axmem" else "?")
 
     assert version_module.get_version() == "9.8.7"
 

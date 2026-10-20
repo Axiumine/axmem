@@ -1,10 +1,10 @@
 """CLI auth commands: login and status.
 
 There is no interactive sign-in: a remote server is reached with the bearer token in the
-FORGETFUL_TOKEN environment variable (a JWT, an introspected token or a static token, as
+AXMEM_TOKEN environment variable (a JWT, an introspected token or a static token, as
 the server is configured), and the token is never written to a file.
 
-login proves the connection and credentials with a request, then persists FORGETFUL_SERVER
+login proves the connection and credentials with a request, then persists AXMEM_SERVER
 into the user config file that settings.py already reads. status reports the active mode
 and, in remote mode, proves the credentials work.
 """
@@ -109,7 +109,7 @@ async def login(
         # The value is persisted to a config file that, by project rule, never holds secrets.
         print(
             "Note: credentials in the server URL are not used or saved; "
-            "set FORGETFUL_TOKEN to authenticate with a token.",
+            "set AXMEM_TOKEN to authenticate with a token.",
             file=sys.stderr,
         )
         url = bare_url
@@ -127,24 +127,24 @@ async def login(
     finally:
         await executor.close()
 
-    upsert_env_var(env_file or user_env_file(), "FORGETFUL_SERVER", url)
+    upsert_env_var(env_file or user_env_file(), "AXMEM_SERVER", url)
     print(f"Logged in to {url}")
-    print(f"Saved FORGETFUL_SERVER to {env_file or user_env_file()}")
+    print(f"Saved AXMEM_SERVER to {env_file or user_env_file()}")
     return 0
 
 
 async def status(*, server: str | None = None, client_factory=None) -> int:
     """Report the active mode; in remote mode prove the credentials work.
 
-    A status check must never change state. It sends the FORGETFUL_TOKEN bearer token, if
+    A status check must never change state. It sends the AXMEM_TOKEN bearer token, if
     set, to the server and asks for the tool list: a rejected or expired token therefore
     fails fast as "not authenticated", while a server in AUTH_MODE=none answers without one.
     """
     from app.config.settings import settings
 
-    url = server or settings.FORGETFUL_SERVER
+    url = server or settings.AXMEM_SERVER
     if not url:
-        print("Mode: local (no FORGETFUL_SERVER configured)")
+        print("Mode: local (no AXMEM_SERVER configured)")
         print(f"Qdrant: {', '.join(settings.qdrant_urls)}")
         return 0
 
@@ -161,5 +161,5 @@ async def status(*, server: str | None = None, client_factory=None) -> int:
         await executor.close()
 
     print(f"Server: {redact_url(executor.server_url)}")
-    print(f"Credentials: {'FORGETFUL_TOKEN' if token else 'none sent'}")
+    print(f"Credentials: {'AXMEM_TOKEN' if token else 'none sent'}")
     return 0

@@ -228,11 +228,11 @@ async def test_login_neither_persists_nor_echoes_url_credentials(tmp_path, capsy
     assert SECRET not in env_file.read_text()
     assert env_file.read_text().splitlines() == [
         "LOG_LEVEL=DEBUG",
-        "FORGETFUL_SERVER=http://127.0.0.1:18765/mcp",
+        "AXMEM_SERVER=http://127.0.0.1:18765/mcp",
     ]
     # The client uses the same credential-free URL that is persisted.
     assert seen == ["http://127.0.0.1:18765/mcp"]
-    assert "FORGETFUL_TOKEN" in out.err  # tells the user where credentials belong
+    assert "AXMEM_TOKEN" in out.err  # tells the user where credentials belong
 
 
 async def test_login_without_credentials_prints_no_credentials_notice(tmp_path, capsys):
@@ -264,8 +264,8 @@ async def test_login_failure_message_does_not_echo_credentials(tmp_path, capsys)
 
 @pytest.fixture
 def status_env(monkeypatch):
-    monkeypatch.setattr(settings, "FORGETFUL_SERVER", URL_WITH_SECRET)
-    monkeypatch.delenv("FORGETFUL_TOKEN", raising=False)
+    monkeypatch.setattr(settings, "AXMEM_SERVER", URL_WITH_SECRET)
+    monkeypatch.delenv("AXMEM_TOKEN", raising=False)
 
 
 async def test_status_redacts_url_credentials(status_env, monkeypatch, capsys):
@@ -308,7 +308,7 @@ async def test_status_error_path_redacts_url_credentials(status_env, monkeypatch
 async def test_tool_command_error_does_not_echo_url_credentials(
     extra, monkeypatch, capsys,
 ):
-    monkeypatch.delenv("FORGETFUL_TOKEN", raising=False)
+    monkeypatch.delenv("AXMEM_TOKEN", raising=False)
     monkeypatch.setattr(
         remote_executor,
         "_default_client_factory",
@@ -457,7 +457,7 @@ async def test_tool_command_against_a_non_mcp_200_exits_one(
     html_server, short_timeouts, monkeypatch, capsys,
 ):
     url, _ = html_server
-    monkeypatch.setenv("FORGETFUL_TOKEN", "t")
+    monkeypatch.setenv("AXMEM_TOKEN", "t")
 
     code = await asyncio.wait_for(
         _run_tool_command(_args(["tools", "list", "--server", url])),
@@ -472,8 +472,8 @@ async def test_auth_status_against_a_non_mcp_200_exits_one(
     html_server, short_timeouts, monkeypatch, capsys,
 ):
     url, _ = html_server
-    monkeypatch.setattr(settings, "FORGETFUL_SERVER", url)
-    monkeypatch.delenv("FORGETFUL_TOKEN", raising=False)
+    monkeypatch.setattr(settings, "AXMEM_SERVER", url)
+    monkeypatch.delenv("AXMEM_TOKEN", raising=False)
 
     code = await asyncio.wait_for(
         _run_auth_command(_args(["auth", "status"])), timeout=GUARD_SECONDS,

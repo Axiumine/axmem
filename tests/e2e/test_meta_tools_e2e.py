@@ -49,9 +49,9 @@ def _assert_tool_doc_fields(data):
 
 
 @pytest.mark.asyncio
-async def test_discover_forgetful_tools_all_e2e(mcp_client):
+async def test_discover_axmem_tools_all_e2e(mcp_client):
     """Test discovering all tools without category filter"""
-    result = await mcp_client.call_tool("discover_forgetful_tools", {})
+    result = await mcp_client.call_tool("discover_axmem_tools", {})
 
     assert result.data is not None
     _assert_discovery_payload_keys(result.data)
@@ -66,10 +66,10 @@ async def test_discover_forgetful_tools_all_e2e(mcp_client):
 
 
 @pytest.mark.asyncio
-async def test_discover_forgetful_tools_by_category_e2e(mcp_client):
+async def test_discover_axmem_tools_by_category_e2e(mcp_client):
     """Test discovering tools filtered by category"""
     result = await mcp_client.call_tool(
-        "discover_forgetful_tools",
+        "discover_axmem_tools",
         {"category": "memory"},
     )
 
@@ -89,7 +89,7 @@ async def test_discover_forgetful_tools_by_category_e2e(mcp_client):
 @pytest.mark.parametrize("removed_category", ["user", "project"])
 async def test_removed_categories_are_not_discoverable_e2e(mcp_client, removed_category):
     with pytest.raises(Exception) as exc_info:
-        await mcp_client.call_tool("discover_forgetful_tools", {"category": removed_category})
+        await mcp_client.call_tool("discover_axmem_tools", {"category": removed_category})
 
     assert removed_category in str(exc_info.value)
 
@@ -97,7 +97,7 @@ async def test_removed_categories_are_not_discoverable_e2e(mcp_client, removed_c
 @pytest.mark.asyncio
 async def test_discover_recent_memories_filters_e2e(mcp_client):
     """Clients can discover the two new recent-memory filters."""
-    result = await mcp_client.call_tool("discover_forgetful_tools", {"category": "memory"})
+    result = await mcp_client.call_tool("discover_axmem_tools", {"category": "memory"})
     recent = next(
         tool for tool in result.data["tools_by_category"]["memory"]
         if tool["name"] == "get_recent_memories"
@@ -112,7 +112,7 @@ async def test_discover_tools_invalid_category_e2e(mcp_client):
     """Test discovering tools with invalid category raises error"""
     with pytest.raises(Exception) as exc_info:
         await mcp_client.call_tool(
-            "discover_forgetful_tools",
+            "discover_axmem_tools",
             {"category": "invalid_category"},
         )
 
@@ -121,10 +121,10 @@ async def test_discover_tools_invalid_category_e2e(mcp_client):
 
 
 @pytest.mark.asyncio
-async def test_how_to_use_forgetful_tool_e2e(mcp_client):
+async def test_how_to_use_axmem_tool_e2e(mcp_client):
     """Test getting detailed documentation for a specific tool"""
     result = await mcp_client.call_tool(
-        "how_to_use_forgetful_tool",
+        "how_to_use_axmem_tool",
         {"tool_name": "query_memory"},
     )
 
@@ -145,7 +145,7 @@ async def test_how_to_use_nonexistent_tool_e2e(mcp_client):
     """Test getting documentation for nonexistent tool raises error"""
     with pytest.raises(Exception) as exc_info:
         await mcp_client.call_tool(
-            "how_to_use_forgetful_tool",
+            "how_to_use_axmem_tool",
             {"tool_name": "nonexistent_tool"},
         )
 
@@ -154,10 +154,10 @@ async def test_how_to_use_nonexistent_tool_e2e(mcp_client):
 
 
 @pytest.mark.asyncio
-async def test_execute_forgetful_tool_read_e2e(mcp_client):
+async def test_execute_axmem_tool_read_e2e(mcp_client):
     """Test executing a read tool through meta-tools"""
     result = await mcp_client.call_tool(
-        "execute_forgetful_tool",
+        "execute_axmem_tool",
         {
             "tool_name": "get_recent_memories",
             "arguments": {},
@@ -170,15 +170,15 @@ async def test_execute_forgetful_tool_read_e2e(mcp_client):
 
 
 @pytest.mark.asyncio
-async def test_execute_forgetful_tool_memory_create_e2e(mcp_client):
+async def test_execute_axmem_tool_memory_create_e2e(mcp_client):
     """Test executing create_memory tool through meta-tools"""
     result = await mcp_client.call_tool(
-        "execute_forgetful_tool",
+        "execute_axmem_tool",
         {
             "tool_name": "create_memory",
             "arguments": {
                 "title": "Meta-tool test memory",
-                "content": "Testing memory creation through execute_forgetful_tool",
+                "content": "Testing memory creation through execute_axmem_tool",
                 "context": "E2E test for meta-tools pattern",
                 "keywords": ["test", "meta-tools"],
                 "tags": ["test", "e2e"],
@@ -197,11 +197,11 @@ async def test_execute_forgetful_tool_memory_create_e2e(mcp_client):
 
 
 @pytest.mark.asyncio
-async def test_execute_forgetful_tool_memory_query_e2e(mcp_client):
+async def test_execute_axmem_tool_memory_query_e2e(mcp_client):
     """Test executing query_memory tool through meta-tools"""
     # First create a memory
     create_result = await mcp_client.call_tool(
-        "execute_forgetful_tool",
+        "execute_axmem_tool",
         {
             "tool_name": "create_memory",
             "arguments": {
@@ -218,7 +218,7 @@ async def test_execute_forgetful_tool_memory_query_e2e(mcp_client):
 
     # Now query for it
     query_result = await mcp_client.call_tool(
-        "execute_forgetful_tool",
+        "execute_axmem_tool",
         {
             "tool_name": "query_memory",
             "arguments": {
@@ -239,7 +239,7 @@ async def test_execute_nonexistent_tool_e2e(mcp_client):
     """Test executing a nonexistent tool raises error"""
     with pytest.raises(Exception) as exc_info:
         await mcp_client.call_tool(
-            "execute_forgetful_tool",
+            "execute_axmem_tool",
             {
                 "tool_name": "nonexistent_tool",
                 "arguments": {},
@@ -252,9 +252,9 @@ async def test_execute_nonexistent_tool_e2e(mcp_client):
 
 @pytest.mark.asyncio
 async def test_execute_tool_preserves_tenant_context_e2e(mcp_client):
-    """Test that the tenant is preserved through execute_forgetful_tool across multiple calls"""
+    """Test that the tenant is preserved through execute_axmem_tool across multiple calls"""
     created = await mcp_client.call_tool(
-        "execute_forgetful_tool",
+        "execute_axmem_tool",
         {
             "tool_name": "create_memory",
             "arguments": {
@@ -269,7 +269,7 @@ async def test_execute_tool_preserves_tenant_context_e2e(mcp_client):
     )
 
     fetched = await mcp_client.call_tool(
-        "execute_forgetful_tool",
+        "execute_axmem_tool",
         {"tool_name": "get_memory", "arguments": {"memory_id": created.data["id"]}},
     )
 
@@ -282,7 +282,7 @@ async def test_meta_tools_workflow_e2e(mcp_client):
     """Test complete workflow: discover → how_to_use → execute"""
     # Step 1: Discover tools in memory category
     discover_result = await mcp_client.call_tool(
-        "discover_forgetful_tools",
+        "discover_axmem_tools",
         {"category": "memory"},
     )
     assert discover_result.data is not None
@@ -295,7 +295,7 @@ async def test_meta_tools_workflow_e2e(mcp_client):
 
     # Step 2: Get detailed docs for create_memory
     docs_result = await mcp_client.call_tool(
-        "how_to_use_forgetful_tool",
+        "how_to_use_axmem_tool",
         {"tool_name": "create_memory"},
     )
     assert docs_result.data is not None
@@ -304,7 +304,7 @@ async def test_meta_tools_workflow_e2e(mcp_client):
 
     # Step 3: Execute create_memory
     execute_result = await mcp_client.call_tool(
-        "execute_forgetful_tool",
+        "execute_axmem_tool",
         {
             "tool_name": "create_memory",
             "arguments": {
@@ -329,7 +329,7 @@ async def test_meta_tools_workflow_e2e(mcp_client):
 async def test_execute_create_memory_with_project_via_meta_tools_e2e(mcp_client):
     """Test scoping a memory to a project through meta-tools"""
     result = await mcp_client.call_tool(
-        "execute_forgetful_tool",
+        "execute_axmem_tool",
         {
             "tool_name": "create_memory",
             "arguments": {
@@ -348,7 +348,7 @@ async def test_execute_create_memory_with_project_via_meta_tools_e2e(mcp_client)
     assert result.data["project"] == "meta-tools-project"
 
     listed = await mcp_client.call_tool(
-        "execute_forgetful_tool",
+        "execute_axmem_tool",
         {"tool_name": "get_recent_memories", "arguments": {"project": "meta-tools-project"}},
     )
     assert [m["id"] for m in listed.data["memories"]] == [result.data["id"]]
@@ -357,7 +357,7 @@ async def test_execute_create_memory_with_project_via_meta_tools_e2e(mcp_client)
 @pytest.mark.asyncio
 async def test_discover_all_categories_e2e(mcp_client):
     """Test that all tool categories are discoverable"""
-    result = await mcp_client.call_tool("discover_forgetful_tools", {})
+    result = await mcp_client.call_tool("discover_axmem_tools", {})
 
     assert result.data is not None
     categories = result.data["categories_available"]

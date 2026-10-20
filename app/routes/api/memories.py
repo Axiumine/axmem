@@ -34,7 +34,7 @@ from app.routes.api.request_utils import (
     read_json_object,
 )
 from app.routes.api.validation import validation_error_response
-from app.routes.server_state import ForgetfulMCP
+from app.routes.server_state import AxmemMCP
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +43,7 @@ VALID_SORT_BY = {"created_at", "updated_at", "importance"}
 VALID_SORT_ORDER = {"asc", "desc"}
 
 
-def register(mcp: ForgetfulMCP):
+def register(mcp: AxmemMCP):
     """Register memory REST routes with FastMCP"""
 
     @mcp.custom_route("/api/v1/memories", methods=["GET"])

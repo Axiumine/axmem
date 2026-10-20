@@ -55,19 +55,19 @@ class StubRunner:
 
 
 def make_walkthrough(tmp_path, runner, **config_kwargs):
-    config = HarnessConfig(skills=["forgetful-recall"], **config_kwargs)
+    config = HarnessConfig(skills=["axmem-recall"], **config_kwargs)
     run_dir = tmp_path / "run"
     run_dir.mkdir()
     return Walkthrough(config=config, runner=runner, server_url=THROWAWAY_URL, run_dir=run_dir)
 
 
-def valid_report(skill="forgetful-recall"):
+def valid_report(skill="axmem-recall"):
     return {"skill": skill, "verdict": "pass", "steps": [], "issues": []}
 
 
 def _assert_session_driven_with_skill_prompt(runner):
     """Assert the session was driven with the skill's prompt and timeout."""
-    assert runner.seen["skill"] == "forgetful-recall"
+    assert runner.seen["skill"] == "axmem-recall"
     assert runner.seen["timeout"] == 900
     assert report_contract_example() in runner.seen["prompt"]
 
@@ -83,11 +83,11 @@ def _assert_outcome_derived_from_event_file(result):
 
 def _assert_artifacts_written(walkthrough, runner):
     """Assert prompt.txt and meta.json were written into the skill directory."""
-    skill_dir = walkthrough.run_dir / "skills" / "forgetful-recall"
+    skill_dir = walkthrough.run_dir / "skills" / "axmem-recall"
     assert runner.seen["skill_dir"] == skill_dir
     assert (skill_dir / "prompt.txt").read_text() == runner.seen["prompt"]
     meta = json.loads((skill_dir / "meta.json").read_text())
-    assert meta["skill"] == "forgetful-recall"
+    assert meta["skill"] == "axmem-recall"
     assert meta["status"] == "completed"
     assert meta["report_status"] == "ok"
     assert meta["model"] == "opencode-go/deepseek-v4-flash"
@@ -105,7 +105,7 @@ async def test_run_skill_writes_artifacts_and_collects_report(tmp_path):
     walkthrough = make_walkthrough(tmp_path, runner)
 
     # Act
-    result = await walkthrough.run_skill("forgetful-recall")
+    result = await walkthrough.run_skill("axmem-recall")
 
     # Assert
     _assert_session_driven_with_skill_prompt(runner)
@@ -119,7 +119,7 @@ async def test_missing_report_is_finding_not_crash(tmp_path):
     walkthrough = make_walkthrough(tmp_path, runner)
 
     # Act
-    result = await walkthrough.run_skill("forgetful-recall")
+    result = await walkthrough.run_skill("axmem-recall")
 
     # Assert
     assert result.status == "completed"
@@ -136,12 +136,12 @@ async def test_timeout_outcome_marks_run_timeout(tmp_path):
     walkthrough = make_walkthrough(tmp_path, runner)
 
     # Act
-    result = await walkthrough.run_skill("forgetful-recall")
+    result = await walkthrough.run_skill("axmem-recall")
 
     # Assert
     assert result.status == "timeout"
     meta = json.loads(
-        (walkthrough.run_dir / "skills" / "forgetful-recall" / "meta.json").read_text(),
+        (walkthrough.run_dir / "skills" / "axmem-recall" / "meta.json").read_text(),
     )
     assert meta["status"] == "timeout"
 
@@ -153,7 +153,7 @@ async def test_stream_without_result_event_is_error(tmp_path):
     walkthrough = make_walkthrough(tmp_path, runner)
 
     # Act
-    result = await walkthrough.run_skill("forgetful-recall")
+    result = await walkthrough.run_skill("axmem-recall")
 
     # Assert
     assert result.status == "error"
@@ -166,7 +166,7 @@ async def test_error_event_is_captured(tmp_path):
     walkthrough = make_walkthrough(tmp_path, runner)
 
     # Act
-    result = await walkthrough.run_skill("forgetful-recall")
+    result = await walkthrough.run_skill("axmem-recall")
 
     # Assert
     assert result.status == "error"
@@ -174,24 +174,24 @@ async def test_error_event_is_captured(tmp_path):
 
 
 async def test_breach_scan_flags_real_mcp_tools_in_meta(tmp_path):
-    # Arrange: an MCP tool name referencing forgetful means the agent reached a
-    # configured forgetful server directly instead of the fenced CLI route
+    # Arrange: an MCP tool name referencing axmem means the agent reached a
+    # configured axmem server directly instead of the fenced CLI route
     events = [
-        {"type": "tool_use", "content": "forgetful_execute_forgetful_tool"},
+        {"type": "tool_use", "content": "axmem_execute_axmem_tool"},
         OK_RESULT,
     ]
     runner = StubRunner(events=events, report=valid_report())
     walkthrough = make_walkthrough(tmp_path, runner)
 
     # Act
-    result = await walkthrough.run_skill("forgetful-recall")
+    result = await walkthrough.run_skill("axmem-recall")
 
     # Assert
-    assert result.breaches == ["forgetful_execute_forgetful_tool"]
+    assert result.breaches == ["axmem_execute_axmem_tool"]
     meta = json.loads(
-        (walkthrough.run_dir / "skills" / "forgetful-recall" / "meta.json").read_text(),
+        (walkthrough.run_dir / "skills" / "axmem-recall" / "meta.json").read_text(),
     )
-    assert meta["breaches"] == ["forgetful_execute_forgetful_tool"]
+    assert meta["breaches"] == ["axmem_execute_axmem_tool"]
 
 
 def test_breach_scan_ignores_cli_commands_and_local_tools():
@@ -199,16 +199,16 @@ def test_breach_scan_ignores_cli_commands_and_local_tools():
     # and plain local tools are expected, not breaches
     events = [
         {"type": "tool_use", "content": "bash"},
-        {"type": "tool_use", "content": "forgetful call query_memory --json"},
-        {"type": "text", "content": "mentioning forgetful in prose"},
-        {"type": "tool_use", "content": "mcp__forgetful__execute_forgetful_tool"},
+        {"type": "tool_use", "content": "axmem call query_memory --json"},
+        {"type": "text", "content": "mentioning axmem in prose"},
+        {"type": "tool_use", "content": "mcp__axmem__execute_axmem_tool"},
     ]
 
     # Act
     breaches = scan_for_breaches(events)
 
     # Assert
-    assert breaches == ["mcp__forgetful__execute_forgetful_tool"]
+    assert breaches == ["mcp__axmem__execute_axmem_tool"]
 
 
 def test_torn_final_event_line_is_tolerated(tmp_path):
@@ -239,12 +239,12 @@ def test_workspace_prepared_with_skill_md(tmp_path):
     config = HarnessConfig()
 
     # Act
-    workspace = prepare_workspace(tmp_path / "forgetful-recall", "forgetful-recall",
+    workspace = prepare_workspace(tmp_path / "axmem-recall", "axmem-recall",
                                   config.skills_dir)
 
     # Assert: the canonical SKILL.md is copied in as the document under review
     copied = (workspace / "SKILL.md").read_text()
-    assert "name: forgetful-recall" in copied
+    assert "name: axmem-recall" in copied
 
 
 def test_encode_repo_workspace_gets_fixture_repo(tmp_path):
@@ -252,7 +252,7 @@ def test_encode_repo_workspace_gets_fixture_repo(tmp_path):
     config = HarnessConfig()
 
     # Act
-    workspace = prepare_workspace(tmp_path / "forgetful-encode-repo", "forgetful-encode-repo",
+    workspace = prepare_workspace(tmp_path / "axmem-encode-repo", "axmem-encode-repo",
                                   config.skills_dir)
 
     # Assert: a tiny committed git repo with a fake origin for project resolution.
@@ -276,7 +276,7 @@ def test_encode_repo_workspace_gets_fixture_repo(tmp_path):
 async def test_run_walks_skills_in_order_and_writes_summary(tmp_path):
     # Arrange
     runner = StubRunner(events=[OK_RESULT], report=valid_report())
-    config = HarnessConfig(skills=["forgetful-recall", "forgetful-remember"])
+    config = HarnessConfig(skills=["axmem-recall", "axmem-remember"])
     run_dir = tmp_path / "run"
     run_dir.mkdir()
     walkthrough = Walkthrough(
@@ -287,10 +287,10 @@ async def test_run_walks_skills_in_order_and_writes_summary(tmp_path):
     results = await walkthrough.run()
 
     # Assert: canonical order (remember before recall), summary on disk
-    assert [r.skill for r in results] == ["forgetful-remember", "forgetful-recall"]
+    assert [r.skill for r in results] == ["axmem-remember", "axmem-recall"]
     summary = json.loads((run_dir / "run.json").read_text())
     assert [entry["skill"] for entry in summary["skills"]] == [
-        "forgetful-remember", "forgetful-recall",
+        "axmem-remember", "axmem-recall",
     ]
     assert all(entry["status"] == "completed" for entry in summary["skills"])
 
@@ -300,7 +300,7 @@ def test_prompt_embeds_contract_and_ground_rules():
     from test_harness.prompts import build_prompt
 
     # Act
-    prompt = build_prompt("forgetful-recall")
+    prompt = build_prompt("axmem-recall")
 
     # Assert
     assert "./SKILL.md" in prompt
@@ -315,7 +315,7 @@ def test_encode_repo_prompt_points_at_fixture_repo():
     from test_harness.prompts import build_prompt
 
     # Act
-    prompt = build_prompt("forgetful-encode-repo")
+    prompt = build_prompt("axmem-encode-repo")
 
     # Assert
     assert "./fixture-repo" in prompt

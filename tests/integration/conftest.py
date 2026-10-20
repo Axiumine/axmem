@@ -63,7 +63,7 @@ def test_memory_service(memory_repository):
 _RUNTIME_FIELDS = [
     "EMBEDDING_PROVIDER",
     "RERANKING_ENABLED",
-    "FORGETFUL_SCOPES",
+    "AXMEM_SCOPES",
 ]
 
 
@@ -78,7 +78,7 @@ def runtime_settings(qdrant_env, tensorrt_reranker, tensorrt_embedder):
     original = {name: getattr(settings, name) for name in _RUNTIME_FIELDS}
     settings.EMBEDDING_PROVIDER = "TensorRT"
     settings.RERANKING_ENABLED = True
-    settings.FORGETFUL_SCOPES = "*"
+    settings.AXMEM_SCOPES = "*"
     yield settings
     for name, value in original.items():
         setattr(settings, name, value)

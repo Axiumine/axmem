@@ -22,7 +22,7 @@ def test_flags_map_to_config_fields():
         "--agent", "claude_code",
         "--model", "sonnet",
         "--effort", "medium",
-        "--skills", "forgetful-recall,forgetful-remember",
+        "--skills", "axmem-recall,axmem-remember",
         "--timeout", "120",
     ])
 
@@ -30,8 +30,8 @@ def test_flags_map_to_config_fields():
     assert config.agent_type == "claude_code"
     assert config.model == "sonnet"
     assert config.effort == "medium"
-    assert config.skills == ["forgetful-remember", "forgetful-recall"]
-    assert config.timeout_for("forgetful-recall") == 120
+    assert config.skills == ["axmem-remember", "axmem-recall"]
+    assert config.timeout_for("axmem-recall") == 120
 
 
 def test_rebuild_image_flag():

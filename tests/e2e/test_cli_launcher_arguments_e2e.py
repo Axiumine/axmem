@@ -56,7 +56,7 @@ def seeded_store(isolated_qdrant, monkeypatch, tensorrt_embedder):
 def test_reembed_rejects_non_positive_batch_size_before_any_step(
     seeded_store, monkeypatch, argv_prefix, bad_value,
 ):
-    monkeypatch.setattr(sys, "argv", ["forgetful", *argv_prefix, f"--batch-size={bad_value}"])
+    monkeypatch.setattr(sys, "argv", ["axmem", *argv_prefix, f"--batch-size={bad_value}"])
 
     with pytest.raises(SystemExit) as excinfo:
         cli()
@@ -67,7 +67,7 @@ def test_reembed_rejects_non_positive_batch_size_before_any_step(
 
 def test_reembed_with_positive_batch_size_still_completes(seeded_store, monkeypatch):
     live_before, _ = seeded_store
-    monkeypatch.setattr(sys, "argv", ["forgetful", "re-embed", "--batch-size=1"])
+    monkeypatch.setattr(sys, "argv", ["axmem", "re-embed", "--batch-size=1"])
 
     try:
         result = cli()

@@ -16,9 +16,9 @@ from tests.e2e.memory_tools_helpers_e2e import (
 
 def _assert_full_provenance(data):
     """Every provenance field stored by the full-provenance creation test."""
-    assert data["source_repo"] == "scottrbk/forgetful"
+    assert data["source_repo"] == "axiumine/axmem"
     assert data["source_files"] == ["src/main.py", "tests/test_main.py"]
-    assert data["source_url"] == "https://github.com/scottrbk/forgetful/blob/main/src/main.py"
+    assert data["source_url"] == "https://github.com/Axiumine/axmem/blob/main/src/main.py"
     assert data["confidence"] == 0.85
     assert data["encoding_agent"] == "claude-sonnet-4-20250514"
     assert data["encoding_version"] == "0.1.0"
@@ -45,9 +45,9 @@ async def test_create_memory_with_provenance_e2e(mcp_client):
         keywords=["ai-generated", "provenance", "test"],
         tags=["test", "provenance"],
         importance=8,
-        source_repo="scottrbk/forgetful",
+        source_repo="axiumine/axmem",
         source_files=["src/main.py", "tests/test_main.py"],
-        source_url="https://github.com/scottrbk/forgetful/blob/main/src/main.py",
+        source_url="https://github.com/Axiumine/axmem/blob/main/src/main.py",
         confidence=0.85,
         encoding_agent="claude-sonnet-4-20250514",
         encoding_version="0.1.0",

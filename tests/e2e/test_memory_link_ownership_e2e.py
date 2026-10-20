@@ -30,7 +30,7 @@ def no_auto_link(monkeypatch):
 
 
 async def _create_memory(mcp_client, title: str) -> str:
-    result = await mcp_client.call_tool("execute_forgetful_tool", {
+    result = await mcp_client.call_tool("execute_axmem_tool", {
         "tool_name": "create_memory", "arguments": {
             "title": title,
             "content": f"Body of {title}",
@@ -44,14 +44,14 @@ async def _create_memory(mcp_client, title: str) -> str:
 
 
 async def _get_linked_ids(mcp_client, memory_id: str) -> list[str]:
-    result = await mcp_client.call_tool("execute_forgetful_tool", {
+    result = await mcp_client.call_tool("execute_axmem_tool", {
         "tool_name": "get_memory", "arguments": {"memory_id": memory_id},
     })
     return result.data["linked_memory_ids"]
 
 
 async def _link(mcp_client, memory_id: str, related_ids: list[str]) -> list[str]:
-    result = await mcp_client.call_tool("execute_forgetful_tool", {
+    result = await mcp_client.call_tool("execute_axmem_tool", {
         "tool_name": "link_memories",
         "arguments": {"memory_id": memory_id, "related_ids": related_ids},
     })

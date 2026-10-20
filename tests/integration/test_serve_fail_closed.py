@@ -76,7 +76,7 @@ def test_a_credential_mode_starts_on_a_network_bind(monkeypatch, runners, mode):
 
 def test_the_serve_command_reports_the_refusal_with_exit_code_one(monkeypatch, runners, capsys):
     monkeypatch.setattr(settings, "AUTH_MODE", "")
-    monkeypatch.setattr(sys, "argv", ["forgetful", "serve", "--transport", "http", "--host", "127.0.0.1"])
+    monkeypatch.setattr(sys, "argv", ["axmem", "serve", "--transport", "http", "--host", "127.0.0.1"])
 
     assert main.cli() == 1
     assert runners == []

@@ -7,7 +7,7 @@ from app.services.re_embedding_service import ReEmbeddingService
 
 async def _create(mcp_client, title: str, content: str, keywords: list[str]):
     return await mcp_client.call_tool(
-        "execute_forgetful_tool",
+        "execute_axmem_tool",
         {
             "tool_name": "create_memory",
             "arguments": {
@@ -48,14 +48,14 @@ def _assert_reports_superseded_match(a_prime, a_id, b_id):
 async def _assert_obsolete_hidden_from_reads(mcp_client, a_prime, a_id):
     """Assert the obsolete memory is neither linked from ``a_prime`` nor returned by a query."""
     got = await mcp_client.call_tool(
-        "execute_forgetful_tool",
+        "execute_axmem_tool",
         {"tool_name": "get_memory", "arguments": {"memory_id": a_prime.data["id"]}},
     )
     linked = got.data.get("linked_memory_ids") or []
     assert a_id not in linked
 
     queried = await mcp_client.call_tool(
-        "execute_forgetful_tool",
+        "execute_axmem_tool",
         {
             "tool_name": "query_memory",
             "arguments": {
@@ -90,7 +90,7 @@ async def test_recreating_superseded_memory_reports_match(isolated_qdrant, mcp_c
     a_id = a.data["id"]
     b_id = b.data["id"]
     await mcp_client.call_tool(
-        "execute_forgetful_tool",
+        "execute_axmem_tool",
         {
             "tool_name": "mark_memory_obsolete",
             "arguments": {
@@ -129,7 +129,7 @@ async def test_obsolete_warning_disabled_returns_empty(mcp_client):
     )
     a_id, b_id = a.data["id"], b.data["id"]
     await mcp_client.call_tool(
-        "execute_forgetful_tool",
+        "execute_axmem_tool",
         {
             "tool_name": "mark_memory_obsolete",
             "arguments": {
@@ -163,7 +163,7 @@ async def test_unrelated_content_no_match(mcp_client):
         ["garden", "tomato"],
     )
     await mcp_client.call_tool(
-        "execute_forgetful_tool",
+        "execute_axmem_tool",
         {
             "tool_name": "mark_memory_obsolete",
             "arguments": {"memory_id": old.data["id"], "reason": "outdated"},
@@ -188,7 +188,7 @@ async def test_threshold_boundary(mcp_client):
     )
     a_id = a.data["id"]
     await mcp_client.call_tool(
-        "execute_forgetful_tool",
+        "execute_axmem_tool",
         {
             "tool_name": "mark_memory_obsolete",
             "arguments": {"memory_id": a_id, "reason": "superseded"},
@@ -219,7 +219,7 @@ async def test_obsolete_without_superseded_by(mcp_client):
     )
     a_id = a.data["id"]
     await mcp_client.call_tool(
-        "execute_forgetful_tool",
+        "execute_axmem_tool",
         {
             "tool_name": "mark_memory_obsolete",
             "arguments": {"memory_id": a_id, "reason": "supersession test fixture"},
@@ -249,7 +249,7 @@ async def test_limit_three_highest_first(mcp_client):
         mid = r.data["id"]
         obsolete_ids.append(mid)
         await mcp_client.call_tool(
-            "execute_forgetful_tool",
+            "execute_axmem_tool",
             {
                 "tool_name": "mark_memory_obsolete",
                 "arguments": {"memory_id": mid, "reason": "duplicate"},

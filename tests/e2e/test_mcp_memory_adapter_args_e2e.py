@@ -1,6 +1,6 @@
 """E2E tests for argument handling in the memory tool adapters.
 
-`execute_forgetful_tool` passes free-form arguments straight to the adapters, so the
+`execute_axmem_tool` passes free-form arguments straight to the adapters, so the
 adapters themselves must validate or coerce them. These tests drive the real stack
 (FastMCP client -> registry -> adapter -> service -> Qdrant) and cover:
 
@@ -31,7 +31,7 @@ def disable_auto_linking():
 
 async def _exec(client, tool_name, arguments):
     return await client.call_tool(
-        "execute_forgetful_tool",
+        "execute_axmem_tool",
         {"tool_name": tool_name, "arguments": arguments},
     )
 

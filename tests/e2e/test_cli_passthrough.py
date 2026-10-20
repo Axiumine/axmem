@@ -19,8 +19,8 @@ from app.config.settings import settings
 _PATCHED_FIELDS = [
     "EMBEDDING_PROVIDER",
     "RERANKING_ENABLED",
-    "FORGETFUL_SCOPES",
-    "FORGETFUL_SERVER",
+    "AXMEM_SCOPES",
+    "AXMEM_SERVER",
 ]
 
 
@@ -28,17 +28,17 @@ _PATCHED_FIELDS = [
 def cli_env(qdrant_env, tmp_path, tensorrt_reranker, tensorrt_embedder):
     """Settings pointing at the test Qdrant node, so state persists across cli() invocations."""
     original = {name: getattr(settings, name) for name in _PATCHED_FIELDS}
-    settings.FORGETFUL_SERVER = ""  # never leak these tests onto a configured remote
+    settings.AXMEM_SERVER = ""  # never leak these tests onto a configured remote
     settings.EMBEDDING_PROVIDER = "TensorRT"
     settings.RERANKING_ENABLED = True  # the runtime shares the session's real TensorRT reranker
-    settings.FORGETFUL_SCOPES = "*"
+    settings.AXMEM_SCOPES = "*"
     yield settings
     for name, value in original.items():
         setattr(settings, name, value)
 
 
 def invoke_cli(monkeypatch, capsys, argv):
-    monkeypatch.setattr(sys, "argv", ["forgetful", *argv])
+    monkeypatch.setattr(sys, "argv", ["axmem", *argv])
     exit_code = main.cli()
     captured = capsys.readouterr()
     return exit_code or 0, captured.out, captured.err
@@ -94,7 +94,7 @@ def test_call_create_then_query_finds_memory(cli_env, monkeypatch, capsys):
 
 
 def test_call_malformed_args_json_exits_with_usage_error(cli_env, monkeypatch, capsys):
-    monkeypatch.setattr(sys, "argv", ["forgetful", "call", "create_memory", "--args", "{not json"])
+    monkeypatch.setattr(sys, "argv", ["axmem", "call", "create_memory", "--args", "{not json"])
 
     with pytest.raises(SystemExit) as excinfo:
         main.cli()
@@ -141,12 +141,12 @@ def test_call_unknown_tool_json_mode_emits_error_object(cli_env, monkeypatch, ca
 def test_python_main_py_propagates_cli_exit_codes():
     """`python main.py <subcommand>` must exit with the command's status, not 0.
 
-    The `forgetful` console script wraps cli()'s return value in sys.exit(), but
+    The `axmem` console script wraps cli()'s return value in sys.exit(), but
     running the module directly needs main.py to do that itself. Port 9 refuses the
     connection immediately, so the command fails fast with exit code 1.
     """
     repo_root = Path(__file__).resolve().parents[2]
-    env = {**os.environ, "FORGETFUL_TOKEN": "dummy-token"}
+    env = {**os.environ, "AXMEM_TOKEN": "dummy-token"}
 
     result = subprocess.run(
         [

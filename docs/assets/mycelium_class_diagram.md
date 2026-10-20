@@ -17,12 +17,12 @@ Keep paths: none.
 Calls removed by test filtering: 4561. Type relationships removed: 119.
 
 -
-  `test_harness/runs/20260710-211850-opencode/forgetful-encode-repo/workspace/fixture-repo/src/calc.
+  `test_harness/runs/20260710-211850-opencode/axmem-encode-repo/workspace/fixture-repo/src/calc.
   py`: 3 source occurrences (test-path).
 - `test_harness/runs/20260710-223528-opencode/harness/runner.py`: 6 source occurrences (test-path).
 - `test_harness/runs/20260711-085317-opencode/harness/runner.py`: 6 source occurrences (test-path).
 -
-  `test_harness/runs/20260711-085317-opencode/skills/forgetful-encode-repo/workspace/fixture-repo/sr
+  `test_harness/runs/20260711-085317-opencode/skills/axmem-encode-repo/workspace/fixture-repo/sr
   c/calc.py`: 3 source occurrences (test-path).
 - `tests/e2e/conftest.py`: 21 source occurrences (test-path).
 - `tests/e2e/test_api_activity.py`: 45 source occurrences (test-path).
@@ -348,8 +348,8 @@ classDiagram
         +TOKEN_CACHE_ENABLED: bool
         +TOKEN_CACHE_TTL_SECONDS: int
         +TOKEN_CACHE_MAX_SIZE: int
-        +FORGETFUL_SCOPES: str
-        +FORGETFUL_SERVER: str
+        +AXMEM_SCOPES: str
+        +AXMEM_SERVER: str
         +MCP_DESCRIPTOR_MODE: str
         +MEMORY_TITLE_MAX_LENGTH: int
         +MEMORY_CONTENT_MAX_LENGTH: int
@@ -3812,7 +3812,7 @@ classDiagram
     class c0292["HarnessInfraError"] {
         <<class>>
     }
-    class c0293["ThrowawayForgetful"] {
+    class c0293["ThrowawayAxmem"] {
         <<class>>
         -__init__(run_dir: Path, boot_timeout: float) unknown
         +run_dir: unknown
@@ -5222,7 +5222,7 @@ classDiagram
 - c0286: `WalkthroughReport` — `test_harness/report.py`:82
 - c0287: `test_harness/report.py` — `test_harness/report.py`:1
 - c0292: `HarnessInfraError` — `test_harness/server.py`:27
-- c0293: `ThrowawayForgetful` — `test_harness/server.py`:43
+- c0293: `ThrowawayAxmem` — `test_harness/server.py`:43
 - c0294: `test_harness/server.py` — `test_harness/server.py`:1
 - c0295: `SessionOutcome` — `test_harness/walkthrough.py`:43
 - c0296: `SessionRunner` — `test_harness/walkthrough.py`:51
@@ -7719,7 +7719,7 @@ classDiagram
 - c0277 ..> c0279: `_run() constructs AgentContainer`
 - c0277 ..> c0280: `_run() calls ensure_image()`
 - c0277 ..> c0293: `_run() calls seed_skills()`
-- c0277 ..> c0293: `_run() constructs ThrowawayForgetful`
+- c0277 ..> c0293: `_run() constructs ThrowawayAxmem`
 - c0277 ..> c0297: `type in _print_summary`
 - c0277 ..> c0298: `_run() calls run_skill()`
 - c0277 ..> c0298: `_run() calls write_summary()`

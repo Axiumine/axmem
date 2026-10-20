@@ -33,7 +33,8 @@ cross-encoder reranking.
 
 | Area | Change | Why | Status |
 |---|---|---|---|
-| Identity | Renamed to Axmem under Axiumine; README rewritten, Forgetful credited, MIT notice kept | A separate product with its own direction | Done (`b121d350`); rename of the package, CLI and environment variables Planned |
+| Identity | Renamed to Axmem under Axiumine; README rewritten, Forgetful credited, MIT notice kept | A separate product with its own direction | Done (`b121d350`) |
+| Rename | Package, console script, CLI, environment variables (`AXMEM_SERVER`, `AXMEM_TOKEN`, `AXMEM_SCOPES`), config and data directories, MCP server name, the three meta-tools (`discover_axmem_tools`, `how_to_use_axmem_tool`, `execute_axmem_tool`), skills, semgrep rule ids, harness names, docs and snapshots all say `axmem`; the old names are not read; the upstream-authored `org_knowledge_proposal.md` and the upstream plugin section of the connectivity guide are removed; the diagram image keeps its file name because it cannot be edited | A product that shares a name with its upstream cannot be installed beside it, and a client config, an environment or a log line would not say which of the two it meant | Done (the commit titled "rename forgetful to axmem") |
 | Python | 3.14 only; `compat` gate removed; ruff target py314 | One supported version removes the matrix and a redundant gate | Done (`1eea81a5`, `c78d3f98`) |
 | Quality | Gate orchestrator, Git hooks, 100 % branch coverage threshold (proposed upstream as #163) | Every check runs the same way locally, in hooks and in CI | Done |
 | Coverage data | `data_file` set to `.coverage-data/.coverage`, so the data file and its per-process fragments stay out of the repository root | `parallel = true` writes one `.coverage.*` file per measured process, and interrupted runs left them in the root | Done |
@@ -127,4 +128,5 @@ tests use an in-process fake router built from the router schema.
   libraries through the PyPI stub package) were checked in a local environment, not on a GitHub-hosted runner, and the
   self-hosted GPU runner has not been provisioned or run against these workflows.
 - The Nix flake (`flake.nix`, `docs/nix.md`) was not built or run with the TensorRT and CUDA wheels; Nix was not
-  available when the reranker landed.
+  available when the reranker landed. The rename of its package, app and wrapper to `axmem`
+  was not built either.

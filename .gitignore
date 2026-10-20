@@ -11,7 +11,7 @@ data/
 # Tools
 .pi/
 .codex/
-.forgetful/
+.axmem/
 
 # Virtual environments
 .venv

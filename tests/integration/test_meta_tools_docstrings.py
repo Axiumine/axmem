@@ -1,6 +1,6 @@
 """Tests for meta-tool docstring generation.
 
-The discover_forgetful_tools and execute_forgetful_tool docstrings are built at
+The discover_axmem_tools and execute_axmem_tool docstrings are built at
 startup from the descriptor mode. These tests verify the verbose and compact forms.
 """
 
@@ -25,7 +25,7 @@ class TestBuildCategoryList:
 
 
 class TestBuildToolCategoriesLine:
-    """Verify the pipe-separated categories line in execute_forgetful_tool."""
+    """Verify the pipe-separated categories line in execute_axmem_tool."""
 
     def test_every_category_is_listed(self):
         result = _build_tool_categories_line()
@@ -65,7 +65,7 @@ class TestMcpDescriptorMode:
 
 
 class TestDiscoverDocstring:
-    """Verify the discover_forgetful_tools docstring."""
+    """Verify the discover_axmem_tools docstring."""
 
     def test_tool_sections_are_present(self):
         with patch("app.routes.mcp.meta_tools.settings") as mock_settings:
@@ -94,15 +94,15 @@ class TestDiscoverDocstring:
 
             doc = _build_discover_docstring()
 
-        assert "Discover available Forgetful tools" in doc
-        assert "how_to_use_forgetful_tool(tool_name)" in doc
+        assert "Discover available Axmem tools" in doc
+        assert "how_to_use_axmem_tool(tool_name)" in doc
         assert "## All Available Tools" not in doc
         assert "**Memory Tools**" not in doc
         assert len(doc) < 900
 
 
 class TestExecuteDocstring:
-    """Verify the execute_forgetful_tool docstring."""
+    """Verify the execute_axmem_tool docstring."""
 
     def test_examples_are_present(self):
         with patch("app.routes.mcp.meta_tools.settings") as mock_settings:
@@ -139,8 +139,8 @@ class TestExecuteDocstring:
 
             doc = _build_execute_docstring()
 
-        assert "Execute any registered Forgetful inner tool by name" in doc
-        assert "how_to_use_forgetful_tool(tool_name)" in doc
+        assert "Execute any registered Axmem inner tool by name" in doc
+        assert "how_to_use_axmem_tool(tool_name)" in doc
         assert "Tool categories:" in doc
         assert "## Quick Start" not in doc
         assert "**Memory Operations:**" not in doc

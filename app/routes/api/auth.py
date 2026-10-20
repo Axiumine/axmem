@@ -5,7 +5,7 @@ import logging
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-from app.routes.server_state import ForgetfulMCP
+from app.routes.server_state import AxmemMCP
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +16,7 @@ AUTH_MODE_BY_PROVIDER = {
 }
 
 
-def register(mcp: ForgetfulMCP):
+def register(mcp: AxmemMCP):
     """Register auth info routes with FastMCP"""
 
     @mcp.custom_route("/api/v1/auth/info", methods=["GET"])

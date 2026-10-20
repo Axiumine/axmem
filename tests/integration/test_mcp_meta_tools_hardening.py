@@ -2,10 +2,10 @@
 
 Covers, with stubbed services and no Qdrant node:
 - ``client_error_detail`` keeps authored messages and hides client and server details.
-- ``execute_forgetful_tool`` never puts the request, the collection names or the client's text from a
+- ``execute_axmem_tool`` never puts the request, the collection names or the client's text from a
   memory operation in a ToolError.
-- ``discover_forgetful_tools`` honours the advertised ``linking`` category.
-- ``execute_forgetful_tool`` rejects argument names that cannot be keyword arguments.
+- ``discover_axmem_tools`` honours the advertised ``linking`` category.
+- ``execute_axmem_tool`` rejects argument names that cannot be keyword arguments.
 - an unknown tool or category name is quoted with ``repr`` inside the error text, so ESC, CR and
   LF cannot reach the client or the server log (FastMCP logs every ToolError with a traceback).
 """
@@ -126,7 +126,7 @@ def _memory_tools_server(error: Exception) -> FastMCP:
 
 async def _execute(client: Client, tool_name: str, arguments: dict):
     return await client.call_tool(
-        "execute_forgetful_tool", {"tool_name": tool_name, "arguments": arguments},
+        "execute_axmem_tool", {"tool_name": tool_name, "arguments": arguments},
     )
 
 

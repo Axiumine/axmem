@@ -1,7 +1,7 @@
 """E2E tests for CLI auth status / login against the real in-process server.
 
 Reuses the server fixtures of the CLI remote suite and drives
-main.cli() end to end: FORGETFUL_TOKEN hygiene, `auth status` under a read-only scope
+main.cli() end to end: AXMEM_TOKEN hygiene, `auth status` under a read-only scope
 ceiling, and `auth login` saving the server.
 """
 import pytest
@@ -18,15 +18,15 @@ SECRET = "s3cr3t-token-VALUE-123"
 @pytest.fixture
 def read_only_server_url(cli_remote_env, request):
     """The real server with a scope ceiling that only allows reads."""
-    cli_remote_env.FORGETFUL_SCOPES = "read"
+    cli_remote_env.AXMEM_SCOPES = "read"
     return request.getfixturevalue("http_server_url")
 
 
-# -- FORGETFUL_TOKEN hygiene ---------------------------------------------------
+# -- AXMEM_TOKEN hygiene ---------------------------------------------------
 
 
 def test_tools_list_accepts_token_with_trailing_newline(http_server_url, monkeypatch, capsys):
-    monkeypatch.setenv("FORGETFUL_TOKEN", f"{SECRET}\n")
+    monkeypatch.setenv("AXMEM_TOKEN", f"{SECRET}\n")
 
     code, _, err = invoke_cli(monkeypatch, capsys, ["tools", "list", "--server", http_server_url])
 
@@ -35,31 +35,31 @@ def test_tools_list_accepts_token_with_trailing_newline(http_server_url, monkeyp
 
 
 def test_malformed_token_is_rejected_without_echoing_it(http_server_url, monkeypatch, capsys):
-    monkeypatch.setenv("FORGETFUL_TOKEN", f"{SECRET}\nsecond-line")
+    monkeypatch.setenv("AXMEM_TOKEN", f"{SECRET}\nsecond-line")
 
     code, out, err = invoke_cli(monkeypatch, capsys, ["tools", "list", "--server", http_server_url])
 
     assert code == 1
-    assert "FORGETFUL_TOKEN" in err
+    assert "AXMEM_TOKEN" in err
     assert SECRET not in out + err
 
 
 def test_auth_status_with_trailing_newline_token_authenticates(
     http_server_url, monkeypatch, capsys,
 ):
-    monkeypatch.setattr(settings, "FORGETFUL_SERVER", http_server_url)
-    monkeypatch.setenv("FORGETFUL_TOKEN", f"{SECRET}\n")
+    monkeypatch.setattr(settings, "AXMEM_SERVER", http_server_url)
+    monkeypatch.setenv("AXMEM_TOKEN", f"{SECRET}\n")
 
     code, out, err = invoke_cli(monkeypatch, capsys, ["auth", "status"])
 
     assert code == 0, err
     assert f"Server: {http_server_url}" in out
-    assert "Credentials: FORGETFUL_TOKEN" in out
+    assert "Credentials: AXMEM_TOKEN" in out
     assert SECRET not in out + err
 
 
 def test_auth_status_without_a_token_says_none_is_sent(http_server_url, monkeypatch, capsys):
-    monkeypatch.setattr(settings, "FORGETFUL_SERVER", http_server_url)
+    monkeypatch.setattr(settings, "AXMEM_SERVER", http_server_url)
 
     code, out, err = invoke_cli(monkeypatch, capsys, ["auth", "status"])
 
@@ -81,7 +81,7 @@ def test_auth_status_is_authenticated_under_a_read_only_scope(
     )
     assert code == 0, f"{out!r} {err!r}"
 
-    monkeypatch.setattr(settings, "FORGETFUL_SERVER", url)
+    monkeypatch.setattr(settings, "AXMEM_SERVER", url)
     code, out, err = invoke_cli(monkeypatch, capsys, ["auth", "status"])
 
     assert code == 0, f"exit={code} out={out!r} err={err!r}"
@@ -95,7 +95,7 @@ def test_auth_status_is_authenticated_under_a_read_only_scope(
 def test_auth_login_saves_the_server_and_never_a_token(
     http_server_url, monkeypatch, capsys,
 ):
-    monkeypatch.setenv("FORGETFUL_TOKEN", SECRET)
+    monkeypatch.setenv("AXMEM_TOKEN", SECRET)
 
     code, out, err = invoke_cli(
         monkeypatch, capsys, ["auth", "login", "--server", http_server_url],
@@ -104,7 +104,7 @@ def test_auth_login_saves_the_server_and_never_a_token(
     assert code == 0, err
     assert f"Logged in to {http_server_url}" in out
     saved = paths.user_env_file().read_text(encoding="utf-8")
-    assert f"FORGETFUL_SERVER={http_server_url}" in saved
+    assert f"AXMEM_SERVER={http_server_url}" in saved
     assert SECRET not in saved + out + err
 
 

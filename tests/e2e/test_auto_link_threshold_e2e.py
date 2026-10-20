@@ -52,11 +52,11 @@ async def test_rebuild_embeddings_respects_similarity_cutoff(mcp_client, embeddi
     monkeypatch.setattr(settings, "MEMORY_NUM_AUTO_LINK", 3)
 
     # Act: rebuild the anchor through the public tool.
-    rebuilt = await mcp_client.call_tool("execute_forgetful_tool", {
+    rebuilt = await mcp_client.call_tool("execute_axmem_tool", {
         "tool_name": "rebuild_embeddings",
         "arguments": {"memory_ids": [anchor.data["id"]]},
     })
-    fetched = await mcp_client.call_tool("execute_forgetful_tool", {
+    fetched = await mcp_client.call_tool("execute_axmem_tool", {
         "tool_name": "get_memory",
         "arguments": {"memory_id": anchor.data["id"]},
     })

@@ -1,4 +1,4 @@
-"""Argparse tree and dispatch for the Forgetful CLI subcommands.
+"""Argparse tree and dispatch for the Axmem CLI subcommands.
 
 main.cli() routes argv here only when argv[0] is a KNOWN subcommand; anything else
 falls back to the legacy launcher so every documented pre-CLI invocation keeps working
@@ -51,8 +51,8 @@ def build_parser() -> argparse.ArgumentParser:
     from app.config.settings import settings
 
     parser = argparse.ArgumentParser(
-        prog="forgetful",
-        description="Forgetful - MCP server and memory CLI",
+        prog="axmem",
+        description="Axmem - MCP server and memory CLI",
     )
     parser.add_argument(
         "--version",
@@ -61,7 +61,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    serve = subparsers.add_parser("serve", help="Run the Forgetful MCP server")
+    serve = subparsers.add_parser("serve", help="Run the Axmem MCP server")
     serve.add_argument(
         "--transport",
         choices=["stdio", "http"],
@@ -126,15 +126,15 @@ def build_parser() -> argparse.ArgumentParser:
     output_flags.add_argument(
         "--server",
         metavar="URL",
-        help="Execute against a remote Forgetful deployment (beats FORGETFUL_SERVER)",
+        help="Execute against a remote Axmem deployment (beats AXMEM_SERVER)",
     )
     output_flags.add_argument(
         "--local",
         action="store_true",
-        help="Force local mode even when FORGETFUL_SERVER is configured",
+        help="Force local mode even when AXMEM_SERVER is configured",
     )
 
-    tools = subparsers.add_parser("tools", help="Inspect the available Forgetful tools")
+    tools = subparsers.add_parser("tools", help="Inspect the available Axmem tools")
     tools_sub = tools.add_subparsers(dest="tools_command", required=True)
     tools_list = tools_sub.add_parser(
         "list",
@@ -155,7 +155,7 @@ def build_parser() -> argparse.ArgumentParser:
     call = subparsers.add_parser(
         "call",
         parents=[output_flags],
-        help="Execute any Forgetful tool by name",
+        help="Execute any Axmem tool by name",
     )
     call.add_argument("tool", help="Tool name")
     call.add_argument(
@@ -226,7 +226,7 @@ def build_parser() -> argparse.ArgumentParser:
     auth_sub = auth.add_subparsers(dest="auth_command", required=True)
     auth_login = auth_sub.add_parser(
         "login",
-        help="Check the connection (with FORGETFUL_TOKEN, if set); saves FORGETFUL_SERVER to the user config",
+        help="Check the connection (with AXMEM_TOKEN, if set); saves AXMEM_SERVER to the user config",
     )
     auth_login.add_argument("--server", metavar="URL", required=True, help="Server URL")
     auth_sub.add_parser("status", help="Show the active server and prove the credentials work")
@@ -235,16 +235,16 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 async def _build_executor(args):
-    """Construct the ToolExecutor: --local > --server > FORGETFUL_SERVER > local default.
+    """Construct the ToolExecutor: --local > --server > AXMEM_SERVER > local default.
 
-    FORGETFUL_SERVER merges shell env and the user config file with the right
-    precedence via pydantic-settings; FORGETFUL_TOKEN (the bearer token sent to a remote
+    AXMEM_SERVER merges shell env and the user config file with the right
+    precedence via pydantic-settings; AXMEM_TOKEN (the bearer token sent to a remote
     server) is shell env only, deliberately kept out of config files.
     """
     from app.config.settings import settings
 
     if not getattr(args, "local", False):
-        server_url = getattr(args, "server", None) or settings.FORGETFUL_SERVER
+        server_url = getattr(args, "server", None) or settings.AXMEM_SERVER
         if server_url:
             from app.routes.cli.remote_executor import (
                 RemoteExecutor,

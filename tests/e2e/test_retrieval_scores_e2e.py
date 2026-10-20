@@ -16,7 +16,7 @@ async def test_scores_aligned_and_non_increasing(mcp_client):
         ]
         for title, content, keywords in topics:
             await mcp_client.call_tool(
-                "execute_forgetful_tool",
+                "execute_axmem_tool",
                 {
                     "tool_name": "create_memory",
                     "arguments": {
@@ -31,7 +31,7 @@ async def test_scores_aligned_and_non_increasing(mcp_client):
             )
 
         query_result = await mcp_client.call_tool(
-            "execute_forgetful_tool",
+            "execute_axmem_tool",
             {
                 "tool_name": "query_memory",
                 "arguments": {
@@ -60,7 +60,7 @@ async def test_scores_aligned_and_non_increasing(mcp_client):
 async def test_exact_content_query_scores_high(mcp_client):
     content = "Unique exact match content for scores e2e xyzzy-12345"
     create_result = await mcp_client.call_tool(
-        "execute_forgetful_tool",
+        "execute_axmem_tool",
         {
             "tool_name": "create_memory",
             "arguments": {
@@ -75,7 +75,7 @@ async def test_exact_content_query_scores_high(mcp_client):
     )
     mem_id = create_result.data["id"]
     query_result = await mcp_client.call_tool(
-        "execute_forgetful_tool",
+        "execute_axmem_tool",
         {
             "tool_name": "query_memory",
             "arguments": {
@@ -96,7 +96,7 @@ async def test_exact_content_query_scores_high(mcp_client):
 @pytest.mark.asyncio
 async def test_no_results_empty_scores(mcp_client):
     query_result = await mcp_client.call_tool(
-        "execute_forgetful_tool",
+        "execute_axmem_tool",
         {
             "tool_name": "query_memory",
             "arguments": {
@@ -150,14 +150,14 @@ async def test_create_similar_memories_have_similarity(mcp_client):
         "importance": 7,
     }
     await mcp_client.call_tool(
-        "execute_forgetful_tool",
+        "execute_axmem_tool",
         {"tool_name": "create_memory", "arguments": args},
     )
     args2 = dict(args)
     args2["title"] = "Similarity pair B"
     args2["content"] = "Docker compose stacks for local Postgres and Redis cache layer."
     result2 = await mcp_client.call_tool(
-        "execute_forgetful_tool",
+        "execute_axmem_tool",
         {"tool_name": "create_memory", "arguments": args2},
     )
     sims = result2.data.get("similar_memories") or []

@@ -1,5 +1,5 @@
 ---
-name: forgetful-remember
+name: axmem-remember
 description: >-
   Remember knowledge worth keeping — a decision made, a solution found, a preference stated,
   a pattern confirmed. Use when work surfaces something future sessions will need, or the
@@ -8,13 +8,13 @@ description: >-
 license: MIT
 tags: [memory, capture, curation, knowledge-management]
 allowed-tools:
-  - mcp__forgetful__discover_forgetful_tools
-  - mcp__forgetful__how_to_use_forgetful_tool
-  - mcp__forgetful__execute_forgetful_tool
-  - Bash(forgetful:*)
+  - mcp__axmem__discover_axmem_tools
+  - mcp__axmem__how_to_use_axmem_tool
+  - mcp__axmem__execute_axmem_tool
+  - Bash(axmem:*)
 ---
 
-# Remembering knowledge in Forgetful
+# Remembering knowledge in Axmem
 
 Capture is a sequence, not a single call: route the content to the right store, ground it in
 a project, check what already exists, then create atomically and link. Removal and rewriting
@@ -26,11 +26,11 @@ queried lately.
 Operations are named by registry name (`query_memory`, `create_memory`, ...). Invoke via
 whichever surface this agent has:
 
-- **MCP**: `execute_forgetful_tool(tool_name="create_memory", arguments={...})`
-- **CLI**: `forgetful call create_memory --args '{"title": "..."}' --json`
+- **MCP**: `execute_axmem_tool(tool_name="create_memory", arguments={...})`
+- **CLI**: `axmem call create_memory --args '{"title": "..."}' --json`
 
-Get any operation's schema at runtime: `how_to_use_forgetful_tool` (MCP) or
-`forgetful tools info <operation>` (CLI) — schemas are deliberately not repeated here.
+Get any operation's schema at runtime: `how_to_use_axmem_tool` (MCP) or
+`axmem tools info <operation>` (CLI) — schemas are deliberately not repeated here.
 
 ## Step 1 — Route the type
 

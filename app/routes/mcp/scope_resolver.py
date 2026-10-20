@@ -2,7 +2,7 @@
 
 Resolves OAuth-style scopes to sets of permitted tool names.
 Two-layer model:
-  1. Instance-level ceiling via FORGETFUL_SCOPES env var (default "*")
+  1. Instance-level ceiling via AXMEM_SCOPES env var (default "*")
   2. Per-session restriction via OAuth token `scope`/`scp` claim (intersection model)
 
 Scope tokens:
@@ -162,7 +162,7 @@ def get_effective_scopes(ctx: Context) -> tuple[set[str], frozenset[str]]:
     Intersection model:
     1. Start with instance-level scopes from ctx.fastmcp._instance_permitted_tools
     2. If OAuth token has scopes, intersect with token-level permissions
-       (a token whose scopes include no Forgetful scope permits nothing)
+       (a token whose scopes include no Axmem scope permits nothing)
     3. If no token scopes, fall back to instance-level permissions
 
     Args:
@@ -232,7 +232,7 @@ def _raw_token_scopes(claims: dict[str, Any]) -> list[str]:
 
 
 def _split_recognised_scopes(raw_scopes: list[str]) -> tuple[set[str], list[str]]:
-    """Separate the Forgetful scopes from the ones this module does not understand"""
+    """Separate the Axmem scopes from the ones this module does not understand"""
     recognised: set[str] = set()
     ignored: list[str] = []
     for raw_scope in raw_scopes:
@@ -251,11 +251,11 @@ def _extract_token_scopes(ctx: Context) -> frozenset[str] | None:
 
     The scopes are read from the `scope` claim, then the `scp` claim (the same
     precedence as FastMCP's JWTVerifier). Each claim may be a space-separated
-    string (RFC 6749) or a list. Tokens that are not Forgetful scopes (for example
+    string (RFC 6749) or a list. Tokens that are not Axmem scopes (for example
     `openid` or another API's scopes) are ignored one by one, so they never drop
-    the Forgetful scopes next to them.
+    the Axmem scopes next to them.
 
-    A token that carries scopes but none of them is a Forgetful scope gets an
+    A token that carries scopes but none of them is an Axmem scope gets an
     empty set (nothing permitted): a token must never widen to the full instance
     ceiling because of scopes this module does not understand.
     """
@@ -271,7 +271,7 @@ def _extract_token_scopes(ctx: Context) -> frozenset[str] | None:
 
     if not recognised:
         logger.warning(
-            f"OAuth token scopes {ignored} contain no recognised Forgetful scope, denying all tools",
+            f"OAuth token scopes {ignored} contain no recognised Axmem scope, denying all tools",
         )
         return frozenset()
 
