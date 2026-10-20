@@ -18,11 +18,12 @@ from app.config.settings import settings
 from app.models.memory_models import MemoryCreate
 from app.repositories.postgres.memory_repository import PostgresMemoryRepository
 from app.services.re_embedding_service import ReEmbeddingService
+from tests.embedding_stubs import BatchViaSingle
 
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 
-class StubEmbeddings:
+class StubEmbeddings(BatchViaSingle):
     """Deterministic embedding adapter, independent of the configured provider."""
 
     async def generate_embedding(self, text: str) -> list[float]:

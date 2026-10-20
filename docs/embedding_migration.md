@@ -12,9 +12,10 @@ You need to run a re-embedding migration whenever you change any of these settin
 
 | Setting | Example Change |
 |---------|---------------|
-| `EMBEDDING_PROVIDER` | `FastEmbed` -> `OpenAI` |
+| `EMBEDDING_PROVIDER` | `FastEmbed` -> `OpenAI`, or any provider -> `gateway` |
 | `EMBEDDING_MODEL` | `bge-small-en-v1.5` -> `text-embedding-3-small` |
 | `EMBEDDING_DIMENSIONS` | `384` -> `1536` |
+| `GATEWAY_BACKEND`, `GATEWAY_MODEL` | another backend or model behind the same gateway |
 
 If you only change non-embedding settings (database, auth, reranking, etc.), no re-embedding is needed.
 
@@ -65,7 +66,7 @@ forgetful --re-embed [--batch-size N] [--dry-run]
 
 Number of memories to process per batch. Must be a whole number of at least `1`; anything else is rejected before any backup or schema change. Default: `20`.
 
-Lower values use less memory and are safer for rate-limited APIs. Higher values are faster for local providers like FastEmbed.
+Lower values use less memory and are safer for rate-limited APIs. Higher values are faster for local providers like FastEmbed. Each batch is handed to the provider as one list of texts: FastEmbed embeds it natively and the `gateway` provider sends it as one request (split into requests of at most 256 texts when the batch is larger); the other remote providers still embed the texts of a batch one at a time.
 
 ```bash
 forgetful --re-embed --batch-size 50    # faster for local providers
@@ -277,6 +278,24 @@ AZURE_SUPPORTS_DIMENSIONS=false
 forgetful --re-embed
 ```
 
+### Any provider to an HTTP embeddings gateway
+
+```bash
+# Settings (environment or the config file)
+EMBEDDING_PROVIDER=gateway
+EMBEDDING_DIMENSIONS=1024          # the width the gateway's model returns
+GATEWAY_URL=https://embeddings.example.net
+GATEWAY_BACKEND=local
+GATEWAY_MODEL=embed-small
+GATEWAY_AGENT_ID=axmem
+GATEWAY_TOKEN=...
+
+# Migrate (a new provider is a new vector space, even at the same width)
+forgetful --re-embed --batch-size 100
+```
+
+The gateway answers with vectors of its model's width. If that differs from `EMBEDDING_DIMENSIONS`, the run stops at the first batch with an error that names both widths, and the backup is restored. A budget or model refusal (HTTP 403) and a rejected request (422) stop the run at once; a rate limit or an unavailable backend is retried a few times first. See [the gateway settings](./configuration.md#gateway-embedding-provider-configuration).
+
 ### Upgrading Model Within Same Provider
 
 Even when staying on the same provider, switching models requires re-embedding:
@@ -338,7 +357,7 @@ By default the backup is written in the directory of `SQLITE_PATH`, for SQLite a
 
 - **Always dry-run first** to verify your configuration and memory count
 - **Use a conservative batch size** (10-20) for cloud providers to avoid rate limits
-- **Use a larger batch size** (50-100) for local providers (FastEmbed, Ollama) for faster processing
+- **Use a larger batch size** (50-100) for local providers (FastEmbed, Ollama) for faster processing, and for the `gateway` provider, which sends a batch as a single request
 - **Don't delete backups immediately** - verify search quality first by querying a few memories
 - **Stop the server** before running re-embed to avoid concurrent access issues
 - The migration processes all users' memories in a single run (it's a global operation)

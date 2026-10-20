@@ -19,6 +19,7 @@
     - [x] AzureOpenAI
     - [x] Open AI
     - [x] Ollama
+    - [x] HTTP embeddings gateway (optional, batched)
     - [ ] Open Router
 - [x] First-party CLI (fourth front door over the ToolRegistry)
     - [x] Bootstrap factory shared by server and CLI (app/bootstrap.py)

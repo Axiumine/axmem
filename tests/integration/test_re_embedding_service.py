@@ -49,6 +49,7 @@ def _make_mock_adapter(dimensions: int = 384):
     """Create a mock EmbeddingsAdapter"""
     adapter = AsyncMock()
     adapter.generate_embedding.return_value = [0.1] * dimensions
+    adapter.generate_embeddings.side_effect = lambda texts: [[0.1] * dimensions for _ in texts]
     return adapter
 
 
@@ -64,7 +65,10 @@ async def test_re_embed_processes_all_memories():
 
     assert result.total_processed == 5
     assert result.total_memories == 5
-    assert adapter.generate_embedding.call_count == 5
+    # One provider call carries the whole batch of five memories
+    adapter.generate_embeddings.assert_awaited_once()
+    assert len(adapter.generate_embeddings.call_args[0][0]) == 5
+    adapter.generate_embedding.assert_not_called()
     repo.bulk_update_embeddings.assert_called_once()
 
     # Verify all memory IDs were included in the update
@@ -86,7 +90,8 @@ async def test_re_embed_respects_batch_size():
     assert result.total_processed == 20
     # Should have 4 batches of 5
     assert repo.bulk_update_embeddings.call_count == 4
-    assert adapter.generate_embedding.call_count == 20
+    assert adapter.generate_embeddings.call_count == 4
+    assert sum(len(call[0][0]) for call in adapter.generate_embeddings.call_args_list) == 20
 
 
 @pytest.mark.asyncio
@@ -124,7 +129,7 @@ async def test_re_embed_empty_database():
     # Vector storage is still resized (a dimension change needs it); nothing is written
     repo.reset_embedding_storage.assert_awaited_once()
     repo.bulk_update_embeddings.assert_not_called()
-    adapter.generate_embedding.assert_not_called()
+    adapter.generate_embeddings.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -156,7 +161,7 @@ async def test_re_embed_adapter_error_propagates():
     memories = [_make_memory(1)]
     repo = _make_mock_repo(memories)
     adapter = _make_mock_adapter()
-    adapter.generate_embedding.side_effect = RuntimeError("API rate limit exceeded")
+    adapter.generate_embeddings.side_effect = RuntimeError("API rate limit exceeded")
 
     service = ReEmbeddingService(repo, adapter, batch_size=20)
 
@@ -262,6 +267,7 @@ async def test_rebuild_targeted_no_candidates_short_circuits():
     result = await service.rebuild_targeted(user_id=uuid4())
 
     assert result.rebuilt_ids == []
+    adapter.generate_embeddings.assert_not_called()
     adapter.generate_embedding.assert_not_called()
     repo.upsert_targeted_embeddings.assert_not_called()
 
@@ -316,15 +322,53 @@ async def test_rebuild_targeted_records_embedding_failures():
             raise RuntimeError("transient API failure")
         return [0.1] * 384
 
+    adapter.generate_embeddings.side_effect = RuntimeError("batch rejected")
     adapter.generate_embedding.side_effect = flaky_embedding
 
     service = ReEmbeddingService(repo, adapter, batch_size=20)
     result = await service.rebuild_targeted(user_id=uuid4())
 
+    # The failed batch is retried memory by memory, which isolates memory 2
+    adapter.generate_embeddings.assert_awaited_once()
+    assert adapter.generate_embedding.await_count == 3
     assert sorted(result.rebuilt_ids) == [1, 3]
     assert len(result.failed) == 1
     assert result.failed[0]["memory_id"] == 2
     assert result.failed[0]["reason"] == "embedding_failed"
+
+
+@pytest.mark.asyncio
+async def test_rebuild_targeted_embeds_a_batch_in_one_call():
+    """A batch of memories reaches the provider as one generate_embeddings call."""
+    from uuid import uuid4
+
+    memories = [_make_memory(i) for i in range(1, 4)]
+    repo = _make_targeted_repo(memories)
+    adapter = _make_mock_adapter()
+
+    result = await ReEmbeddingService(repo, adapter, batch_size=20).rebuild_targeted(user_id=uuid4())
+
+    adapter.generate_embeddings.assert_awaited_once()
+    assert len(adapter.generate_embeddings.call_args[0][0]) == 3
+    adapter.generate_embedding.assert_not_called()
+    assert sorted(result.rebuilt_ids) == [1, 2, 3]
+
+
+@pytest.mark.asyncio
+async def test_rebuild_targeted_count_mismatch_falls_back_to_single_calls():
+    """A provider that returns the wrong number of vectors does not corrupt the rebuild."""
+    from uuid import uuid4
+
+    memories = [_make_memory(i) for i in range(1, 3)]
+    repo = _make_targeted_repo(memories)
+    adapter = _make_mock_adapter()
+    adapter.generate_embeddings.side_effect = lambda texts: [[0.1] * 384]
+
+    result = await ReEmbeddingService(repo, adapter, batch_size=20).rebuild_targeted(user_id=uuid4())
+
+    assert adapter.generate_embedding.await_count == 2
+    assert sorted(result.rebuilt_ids) == [1, 2]
+    assert result.failed == []
 
 
 @pytest.mark.asyncio

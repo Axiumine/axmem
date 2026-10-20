@@ -188,7 +188,10 @@ async def _restore_backup(db_adapter, backup_service, backup_path):
 def _print_reembed_configuration(batch_size):
     """Step 1: show the configuration the re-embed will run with."""
     print("\n[1/5] Validating configuration...")
-    model_display = settings.AZURE_DEPLOYMENT if settings.EMBEDDING_PROVIDER == "Azure" else settings.EMBEDDING_MODEL
+    model_display = {
+        "Azure": settings.AZURE_DEPLOYMENT,
+        "gateway": settings.GATEWAY_MODEL,
+    }.get(settings.EMBEDDING_PROVIDER, settings.EMBEDDING_MODEL)
     print(f"  Provider: {settings.EMBEDDING_PROVIDER} ({model_display})")
     print(f"  Dimensions: {settings.EMBEDDING_DIMENSIONS}")
     if settings.DATABASE == "SQLite":

@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import cast
 
 from platformdirs import user_config_dir, user_data_dir
-from pydantic import Field, ValidationInfo, field_validator
+from pydantic import Field, SecretStr, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.version import get_version
@@ -24,7 +24,7 @@ _default_config_dir = Path(user_config_dir("forgetful", ensure_exists=False))
 
 # Accepted values of the enumerated settings; the first entry is the default. Matching is
 # case-insensitive and the spelling below is the canonical one the rest of the code compares to.
-EMBEDDING_PROVIDERS = ("FastEmbed", "Azure", "Google", "OpenAI", "Ollama")
+EMBEDDING_PROVIDERS = ("FastEmbed", "Azure", "Google", "OpenAI", "Ollama", "gateway")
 RERANKING_PROVIDERS = ("FastEmbed", "HTTP")
 LOG_FORMATS = ("console", "json")
 # AUTH_MODE has no default choice: a blank value stays blank and the server refuses to start
@@ -184,11 +184,11 @@ class Settings(BaseSettings):
     ENFORCE_ENV_OVERWRITE: bool = False  # When True, env values override agent-provided values
 
     # Search Configuration
-    EMBEDDING_PROVIDER: str = "FastEmbed" # FastEmbed | Azure | Google | OpenAI | Ollama
+    EMBEDDING_PROVIDER: str = "FastEmbed" # FastEmbed | Azure | Google | OpenAI | Ollama | gateway
     EMBEDDING_MODEL: str = "BAAI/bge-small-en-v1.5"
     EMBEDDING_DIMENSIONS: int = 384
     EMBEDDING_ONNX_PROVIDERS: str = ""  # FastEmbed only; comma-separated ONNX Runtime providers, empty = default
-    # Per-request timeout (seconds) for the remote providers (Azure | Google | OpenAI | Ollama).
+    # Per-request timeout (seconds) for the remote providers (Azure | Google | OpenAI | Ollama | gateway).
     # The OpenAI/Azure SDK clients retry failed requests, so a call can take (retries + 1) x this value.
     EMBEDDING_REQUEST_TIMEOUT_SECONDS: float = Field(default=60.0, gt=0, allow_inf_nan=False)
 
@@ -209,6 +209,19 @@ class Settings(BaseSettings):
 
     # OLLAMA EMBEDDING PROVIDER CONFIG
     OLLAMA_BASE_URL: str = "http://localhost:11434"
+
+    # GATEWAY EMBEDDING PROVIDER CONFIG (HTTP embeddings gateway; read only when EMBEDDING_PROVIDER=gateway)
+    GATEWAY_URL: str = ""                        # base URL, e.g. https://embeddings.example.net
+    GATEWAY_PATH: str = "/api/v1/embeddings"
+    GATEWAY_TOKEN: SecretStr = SecretStr("")     # credential; sent as "Bearer <token>" in Authorization
+    GATEWAY_AUTH_HEADER: str = "Authorization"   # any other name receives the raw token
+    GATEWAY_TENANT_HEADER: str = "X-Tenant-Id"
+    GATEWAY_TENANT: str = ""                     # sent in GATEWAY_TENANT_HEADER only when set
+    GATEWAY_BACKEND: str = ""
+    GATEWAY_MODEL: str = ""
+    GATEWAY_AGENT_ID: str = ""
+    GATEWAY_METADATA: dict[str, str] = {}        # JSON object of string values, sent with every request
+    GATEWAY_SUPPORTS_DIMENSIONS: bool = False    # True sends EMBEDDING_DIMENSIONS as the "dimensions" field
 
     # RERANKING
     RERANKING_ENABLED: bool = True

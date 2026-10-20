@@ -22,9 +22,10 @@ from app.repositories.sqlite.memory_repository import SqliteMemoryRepository
 from app.repositories.sqlite.sqlite_adapter import SqliteDatabaseAdapter
 from app.routes.mcp.tool_adapters import MemoryToolAdapters
 from app.services.re_embedding_service import ReEmbeddingService
+from tests.embedding_stubs import BatchViaSingle
 
 
-class StaticEmbeddingAdapter:
+class StaticEmbeddingAdapter(BatchViaSingle):
     """Deterministic, fully offline embedding adapter for SQLite-vec tests."""
 
     def __init__(self, dimensions: int = 384):

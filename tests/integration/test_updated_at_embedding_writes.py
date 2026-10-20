@@ -52,6 +52,7 @@ def _make_repo(memories: list[Memory]) -> AsyncMock:
 def _make_adapter() -> AsyncMock:
     adapter = AsyncMock()
     adapter.generate_embedding.return_value = [0.1] * 384
+    adapter.generate_embeddings.side_effect = lambda texts: [[0.1] * 384 for _ in texts]
     return adapter
 
 
@@ -94,6 +95,7 @@ async def test_embedding_failure_reports_a_stable_code_not_the_exception_text():
             raise RuntimeError(f"provider rejected request {SECRET_DETAIL}")
         return [0.1] * 384
 
+    adapter.generate_embeddings.side_effect = RuntimeError(f"provider rejected batch {SECRET_DETAIL}")
     adapter.generate_embedding.side_effect = flaky
 
     result = await ReEmbeddingService(repo, adapter, batch_size=20).rebuild_targeted(user_id=uuid4())

@@ -11,9 +11,10 @@ from app.bootstrap import create_backup_service
 from app.config.settings import settings
 from app.models.memory_models import MemoryCreate
 from app.models.user_models import UserCreate
+from tests.embedding_stubs import BatchViaSingle
 
 
-class BackupTestEmbeddings:
+class BackupTestEmbeddings(BatchViaSingle):
     """Use one known vector when seeding, and a different vector during migration."""
 
     def __init__(self, failure=None):

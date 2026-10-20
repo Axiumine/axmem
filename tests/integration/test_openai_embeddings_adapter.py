@@ -109,6 +109,30 @@ async def test_generate_embedding_returns_vector(mock_settings, mock_openai_clie
 
 
 @pytest.mark.asyncio
+async def test_generate_embeddings_embeds_each_text_in_order(mock_settings, mock_openai_client):
+    """The batch entry point calls the one-text request for each text and keeps their order."""
+    from app.repositories.embeddings.embedding_adapter import OpenAIEmbeddingsAdapter
+
+    _, mock_client = mock_openai_client
+
+    def respond(input, model, dimensions):  # noqa: A002 - the keyword names of the OpenAI client
+        embedding = MagicMock()
+        embedding.embedding = [float(len(input[0]))]
+        response = MagicMock()
+        response.data = [embedding]
+        return response
+
+    mock_client.embeddings.create.side_effect = respond
+
+    adapter = OpenAIEmbeddingsAdapter()
+
+    assert await adapter.generate_embeddings(["a", "bbb", "cc"]) == [[1.0], [3.0], [2.0]]
+    assert mock_client.embeddings.create.call_count == 3
+    assert await adapter.generate_embeddings([]) == []
+    assert mock_client.embeddings.create.call_count == 3
+
+
+@pytest.mark.asyncio
 async def test_generate_embedding_with_dimensions(mock_settings, mock_openai_client):
     """EMBEDDING_DIMENSIONS setting is forwarded to the API when supports_dimensions=True."""
     from app.repositories.embeddings.embedding_adapter import OpenAIEmbeddingsAdapter

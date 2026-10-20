@@ -72,7 +72,7 @@ Memories belong to a **tenant**, the owner of a set of memories, and a tenant ne
 - Flexible storage – SQLite (default, zero-config; slated for removal, see the note above) or PostgreSQL (for scale and production deployments)
 - Stores memories as vectors so they can be retrieved with natural-language queries from AI agents.
 - Cross-encoder reranking to improve recall and precision of memory retrieval.
-- Flexible embedding and cross-encoder providers; run everything locally without calls to the cloud thanks to FastEmbed
+- Flexible embedding and cross-encoder providers; run everything locally without calls to the cloud thanks to FastEmbed, or send embeddings to an optional HTTP embeddings gateway (`EMBEDDING_PROVIDER=gateway`; switching providers needs a re-embed, see [Embedding Migration](docs/embedding_migration.md))
 - Automatic linking of semantically similar memories, automating the creation of the knowledge graph.
 
 For the complete roadmap, see [Features Roadmap](docs/features_roadmap.md).
@@ -329,6 +329,7 @@ For vector search and optional cross-encoder reranking, see
 ### Key Settings (Optional)
 
 - `MEMORY_TOKEN_BUDGET` – Max tokens for query results (default: `8000`)
+- `EMBEDDING_PROVIDER` – `FastEmbed` (default), `Azure`, `Google`, `OpenAI`, `Ollama` or `gateway`
 - `EMBEDDING_MODEL` – Embedding model (default: `BAAI/bge-small-en-v1.5`)
 - `MEMORY_NUM_AUTO_LINK` – Auto-link count (default: `3`, set `0` to disable)
 - `MEMORY_SIMILARITY_THRESHOLD` – Minimum cosine similarity for auto-links (default: `0.7`)

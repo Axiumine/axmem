@@ -3,9 +3,10 @@
 import pytest
 
 from app.config.settings import settings
+from tests.embedding_stubs import BatchViaSingle
 
 
-class KnownEmbeddings:
+class KnownEmbeddings(BatchViaSingle):
     """Predictable embeddings keep the threshold test independent of a model download."""
 
     async def generate_embedding(self, text: str) -> list[float]:

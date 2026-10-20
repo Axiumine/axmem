@@ -31,13 +31,14 @@ from tests.backup_restore_cases import (
     assert_originals_restored,
     seed_memories,
 )
+from tests.embedding_stubs import BatchViaSingle
 
 ROOT = Path(__file__).resolve().parents[2]
 OLD_DIMS = 4
 NEW_DIMS = 6
 
 
-class FakeEmbedder:
+class FakeEmbedder(BatchViaSingle):
     """Deterministic embedder whose output width follows the (changeable) configuration."""
 
     async def generate_embedding(self, text):
@@ -234,6 +235,9 @@ mode = sys.argv[1]
 
 class Provider:
     calls = 0
+
+    async def generate_embeddings(self, texts):
+        return [await self.generate_embedding(text) for text in texts]
 
     async def generate_embedding(self, text):
         self.calls += 1

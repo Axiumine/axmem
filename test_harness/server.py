@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+from pydantic import SecretStr
 
 from app.routes.cli.remote_executor import RemoteExecutor
 
@@ -105,6 +106,8 @@ def _host_env_with_default_settings() -> dict[str, str]:
         if name in _HOST_PASSTHROUGH or field.is_required():
             continue
         default = field.get_default(call_default_factory=True)
+        if isinstance(default, SecretStr):
+            default = default.get_secret_value()
         if default is not None:  # no env spelling for "unset"
             env[name] = default if isinstance(default, str) else json.dumps(default)
     return env

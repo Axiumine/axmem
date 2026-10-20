@@ -30,6 +30,7 @@ from app.config.settings import (
     settings,
 )
 from app.repositories.embeddings import embedding_adapter as embedding_module
+from app.repositories.embeddings import gateway_adapter as gateway_module
 from app.repositories.embeddings import reranker_adapter as reranker_module
 from app.utils.provenance import PROVENANCE_ENV_MAP
 
@@ -59,6 +60,7 @@ def fake_adapters(monkeypatch):
         "FastEmbeddingAdapter",
     ):
         monkeypatch.setattr(embedding_module, name, fake(name))
+    monkeypatch.setattr(gateway_module, "GatewayEmbeddingsAdapter", fake("GatewayEmbeddingsAdapter"))
     for name in ("HttpRerankAdapter", "FastEmbedCrossEncoderAdapter"):
         monkeypatch.setattr(reranker_module, name, fake(name))
 
@@ -71,6 +73,7 @@ def fake_adapters(monkeypatch):
         ("EMBEDDING_PROVIDER", " azure ", "Azure"),
         ("EMBEDDING_PROVIDER", "google", "Google"),
         ("EMBEDDING_PROVIDER", "fastembed", "FastEmbed"),
+        ("EMBEDDING_PROVIDER", " Gateway ", "gateway"),
         ("RERANKING_PROVIDER", "http", "HTTP"),
         ("RERANKING_PROVIDER", "fastembed", "FastEmbed"),
         ("LOG_FORMAT", "JSON", "json"),
@@ -113,6 +116,8 @@ def test_blank_choice_setting_keeps_the_default(monkeypatch, setting):
         ("google", "GoogleEmbeddingsAdapter"),
         ("fastembed", "FastEmbeddingAdapter"),
         ("FastEmbed", "FastEmbeddingAdapter"),
+        ("gateway", "GatewayEmbeddingsAdapter"),
+        ("GATEWAY", "GatewayEmbeddingsAdapter"),
     ],
 )
 def test_embedding_factory_selects_provider_ignoring_case(monkeypatch, fake_adapters, value, adapter):

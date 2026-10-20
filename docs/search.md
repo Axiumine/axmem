@@ -48,5 +48,8 @@ We also support Google Embedding models available via the Gemini API
 
 ### [Azure](https://learn.microsoft.com/en-us/azure/ai-foundry/openai/tutorials/embeddings?view=foundry-classic&tabs=command-line)
 Support for the Azure Foundry OpenAI embeddings is now added as well. 
+
+### Gateway
+An optional HTTP embeddings gateway (`EMBEDDING_PROVIDER=gateway`). Texts go out in batches of up to 256 and the returned vectors are checked against `EMBEDDING_DIMENSIONS` before they are stored. See the [gateway settings](configuration.md#gateway-embedding-provider-configuration).
 ## Configuration
 The following configuration options are available for search

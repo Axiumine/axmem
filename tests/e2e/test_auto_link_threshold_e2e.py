@@ -2,10 +2,12 @@
 
 import pytest
 
+from tests.embedding_stubs import BatchViaSingle
+
 pytestmark = [pytest.mark.e2e, pytest.mark.asyncio(loop_scope="session")]
 
 
-class KnownEmbeddings:
+class KnownEmbeddings(BatchViaSingle):
     async def generate_embedding(self, text: str) -> list[float]:
         vectors = {
             "Anchor": (1.0, 0.0),

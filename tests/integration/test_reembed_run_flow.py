@@ -42,6 +42,7 @@ def _memory_repo(memories: list[Memory]):
 def _embedder():
     adapter = AsyncMock()
     adapter.generate_embedding.return_value = [0.1] * 8
+    adapter.generate_embeddings.side_effect = lambda texts: [[0.1] * 8 for _ in texts]
     return adapter
 
 
@@ -54,7 +55,7 @@ async def test_empty_database_still_resets_vector_storage():
 
     memory_repo.reset_embedding_storage.assert_awaited_once()
     memory_repo.bulk_update_embeddings.assert_not_called()
-    embedder.generate_embedding.assert_not_called()
+    embedder.generate_embeddings.assert_not_called()
     assert (result.total_memories, result.total_processed) == (0, 0)
     assert result.validation is not None
     assert result.validation.all_passed
@@ -92,7 +93,7 @@ async def test_failed_validation_keeps_constraints_relaxed():
 async def test_failed_run_never_restores_constraints():
     memory_repo = _memory_repo([_memory(1), _memory(2)])
     embedder = _embedder()
-    embedder.generate_embedding.side_effect = [[0.1] * 8, RuntimeError("provider down")]
+    embedder.generate_embeddings.side_effect = [[[0.1] * 8], RuntimeError("provider down")]
 
     with pytest.raises(RuntimeError, match="provider down"):
         await ReEmbeddingService(memory_repo, embedder, batch_size=1).re_embed_all()

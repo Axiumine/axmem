@@ -2,6 +2,7 @@
 import asyncio
 import logging
 import time
+from itertools import batched
 from typing import TYPE_CHECKING, NotRequired, TypedDict
 
 from google import genai
@@ -9,7 +10,7 @@ from google.genai import types
 from openai import AzureOpenAI, OpenAI
 
 from app.config.settings import settings
-from app.protocols.embedding_protocol import EmbeddingsAdapter
+from app.protocols.embedding_protocol import EMBEDDING_BATCH_LIMIT, EmbeddingsAdapter
 from app.repositories.embeddings.fastembed_offline import (
     FastEmbedKwargs,
     FastEmbedProviderKwargs,
@@ -37,6 +38,17 @@ class _OpenAIClientKwargs(TypedDict):
     api_key: str
     timeout: float
     base_url: NotRequired[str]  # left out entirely to keep the library default
+
+
+class _OneTextPerRequest(EmbeddingsAdapter):
+    """Batch entry point for providers whose client embeds one text per request.
+
+    ``generate_embeddings`` calls ``generate_embedding`` for each text in turn, so it keeps
+    that method's logging, error handling and rate-limit behaviour.
+    """
+
+    async def generate_embeddings(self, texts: list[str]) -> list[list[float]]:
+        return [await self.generate_embedding(text) for text in texts]
 
 
 class FastEmbeddingAdapter(EmbeddingsAdapter):
@@ -89,7 +101,25 @@ class FastEmbeddingAdapter(EmbeddingsAdapter):
 
         return list(map(float, embeddings[0]))
 
-class AzureOpenAIAdapter(EmbeddingsAdapter):
+    def _embed_group(self, texts: list[str]) -> list:
+        return list(self.model.embed(texts))
+
+    async def generate_embeddings(self, texts: list[str]) -> list[list[float]]:
+        vectors: list[list[float]] = []
+        for group in batched(texts, EMBEDDING_BATCH_LIMIT):
+            try:
+                embedded = await asyncio.to_thread(self._embed_group, list(group))
+            except Exception:
+                logger.error("Error generating embeddings", exc_info=True, extra={
+                    "embedding provider": "fastembed",
+                    "embedding model": settings.EMBEDDING_MODEL,
+                })
+                raise
+            vectors.extend(list(map(float, vector)) for vector in embedded)
+        return vectors
+
+
+class AzureOpenAIAdapter(_OneTextPerRequest):
     """Generate embeddings using Azure Open AI Embeddings Provider"""
 
     def __init__(self):
@@ -147,7 +177,7 @@ class AzureOpenAIAdapter(EmbeddingsAdapter):
 
         return embeddings
 
-class GoogleEmbeddingsAdapter(EmbeddingsAdapter):
+class GoogleEmbeddingsAdapter(_OneTextPerRequest):
     """Generate embeddings using Google Generative AI embedding models."""
 
     def __init__(self):
@@ -209,7 +239,7 @@ def _openai_api_key(base_url: str | None) -> str:
     raise ValueError("OPENAI_API_KEY must be configured for OpenAIEmbeddingsAdapter")
 
 
-class OpenAIEmbeddingsAdapter(EmbeddingsAdapter):
+class OpenAIEmbeddingsAdapter(_OneTextPerRequest):
     """Generate embeddings using OpenAI's embedding models.
 
     Supports custom base_url for OpenAI-compatible endpoints (llama.cpp, vLLM, LiteLLM).
@@ -265,7 +295,7 @@ class OpenAIEmbeddingsAdapter(EmbeddingsAdapter):
         return response.data[0].embedding
 
 
-class OllamaEmbeddingsAdapter(EmbeddingsAdapter):
+class OllamaEmbeddingsAdapter(_OneTextPerRequest):
     """Generate embeddings using Ollama's native API."""
 
     def __init__(self):

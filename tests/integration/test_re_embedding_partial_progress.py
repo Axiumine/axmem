@@ -32,6 +32,7 @@ def _memory(memory_id: int) -> Memory:
 def _adapter() -> AsyncMock:
     adapter = AsyncMock()
     adapter.generate_embedding.return_value = [0.1] * 384
+    adapter.generate_embeddings.side_effect = lambda texts: [[0.1] * 384 for _ in texts]
     return adapter
 
 
@@ -120,6 +121,7 @@ async def test_targeted_rebuild_reports_progress_after_every_batch():
 async def test_targeted_rebuild_writes_nothing_when_no_memory_could_be_embedded():
     repo = _targeted_repo([_memory(1), _memory(2)])
     adapter = _adapter()
+    adapter.generate_embeddings.side_effect = RuntimeError("embedding provider down")
     adapter.generate_embedding.side_effect = RuntimeError("embedding provider down")
 
     result = await ReEmbeddingService(repo, adapter).rebuild_targeted(user_id=uuid4())

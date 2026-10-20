@@ -94,12 +94,14 @@ class ReEmbeddingService:
             if not memories:
                 break
 
-            # Generate embeddings for this batch
-            updates: list[tuple[int, list[float]]] = []
-            for memory in memories:
-                embedding_text = build_embedding_text(memory)
-                embedding = await self.embedding_adapter.generate_embedding(embedding_text)
-                updates.append((memory.id, embedding))
+            # Generate embeddings for this batch: one provider call for all of its memories
+            embeddings = await self.embedding_adapter.generate_embeddings(
+                [build_embedding_text(memory) for memory in memories],
+            )
+            updates = [
+                (memory.id, embedding)
+                for memory, embedding in zip(memories, embeddings, strict=True)
+            ]
 
             # Write batch
             await self.memory_repository.bulk_update_embeddings(updates)
@@ -186,7 +188,7 @@ class ReEmbeddingService:
         - never calls `reset_embedding_storage()`,
         - operates only on memories owned by `user_id`,
         - reuses the existing embedding pipeline (`build_embedding_text` +
-          `EmbeddingsAdapter.generate_embedding`) so embeddings stay
+          `EmbeddingsAdapter.generate_embeddings`) so embeddings stay
           dimensionally consistent with the rest of the corpus.
 
         Args:
@@ -294,24 +296,46 @@ class ReEmbeddingService:
     ) -> tuple[list[tuple[int, list[float]]], dict[int, datetime]]:
         """Generate embeddings for one batch; a memory that fails is recorded in `result.failed`.
 
+        The batch goes to the provider in one call. When that call fails, each memory is
+        retried on its own, so one memory the provider rejects does not fail the others.
+
         Returns:
             (updates to persist, `updated_at` each memory had when it was read)
         """
-        updates: list[tuple[int, list[float]]] = []
-        expected_updated_at: dict[int, datetime] = {}
+        try:
+            embeddings = await self.embedding_adapter.generate_embeddings(
+                [build_embedding_text(memory) for memory in memories],
+            )
+            embedded = list(zip(memories, embeddings, strict=True))
+        except Exception:  # noqa: BLE001 - intentional broad capture
+            logger.exception("rebuild_embeddings: batch embedding failed, retrying one memory at a time", extra={
+                "user_id": str(user_id),
+                "batch_size": len(memories),
+            })
+            embedded = await self._embed_one_by_one(user_id=user_id, memories=memories, result=result)
+        updates = [(memory.id, embedding) for memory, embedding in embedded]
+        expected_updated_at = {memory.id: memory.updated_at for memory, _ in embedded}
+        return updates, expected_updated_at
+
+    async def _embed_one_by_one(
+        self,
+        user_id: UUID,
+        memories: list[Memory],
+        result: TargetedRebuildResult,
+    ) -> list[tuple[Memory, list[float]]]:
+        """Embed each memory on its own; a memory that fails is recorded in `result.failed`."""
+        embedded: list[tuple[Memory, list[float]]] = []
         for memory in memories:
             try:
-                embedding_text = build_embedding_text(memory)
-                embedding = await self.embedding_adapter.generate_embedding(embedding_text)
-                updates.append((memory.id, embedding))
-                expected_updated_at[memory.id] = memory.updated_at
+                embedding = await self.embedding_adapter.generate_embedding(build_embedding_text(memory))
+                embedded.append((memory, embedding))
             except Exception:  # noqa: BLE001 - intentional broad capture
                 logger.exception("rebuild_embeddings: embedding failed", extra={
                     "memory_id": memory.id,
                     "user_id": str(user_id),
                 })
                 result.failed.append({"memory_id": memory.id, "reason": "embedding_failed"})
-        return updates, expected_updated_at
+        return embedded
 
     async def _persist_batch(
         self,

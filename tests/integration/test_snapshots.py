@@ -22,6 +22,7 @@ from app.routes.cli.parser import build_parser
 pytestmark = pytest.mark.snapshot
 
 SECRET_FIELD = re.compile(r"KEY|SECRET|TOKEN|PASSWORD|CLIENT_ID", re.IGNORECASE)
+URL_PATH_FIELDS = {"GATEWAY_PATH"}  # begin with "/" but are URL paths, not filesystem paths: pin them literally
 VOLATILE_FIELDS = {"SERVICE_VERSION"}  # derived from the git revision, changes with every commit
 ALEMBIC_VERSIONS = Path(__file__).resolve().parents[2] / "alembic" / "versions"
 
@@ -82,7 +83,7 @@ def test_settings_defaults(pristine_settings, json_snapshot):
             dumped[name] = "<varies per build>"
         elif SECRET_FIELD.search(name):
             dumped[name] = "<set>" if value else "<unset>"
-        elif isinstance(value, str) and PurePath(value).is_absolute():
+        elif name not in URL_PATH_FIELDS and isinstance(value, str) and PurePath(value).is_absolute():
             dumped[name] = "<absolute path>"  # platform- and user-specific default
         elif isinstance(value, str | int | float | bool | type(None)):
             dumped[name] = value

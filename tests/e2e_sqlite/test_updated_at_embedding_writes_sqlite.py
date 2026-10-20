@@ -29,12 +29,13 @@ from app.repositories.sqlite.user_repository import SqliteUserRepository
 from app.routes.mcp.tool_adapters import MemoryToolAdapters
 from app.services.memory_service import MemoryService
 from app.services.re_embedding_service import ReEmbeddingService
+from tests.embedding_stubs import BatchViaSingle
 
 DIMS = 384
 LEAK_MARKERS = ("[SQL:", "INSERT INTO", "[parameters:", "vec_memories", "\\x00", "b'", "Dimension mismatch")
 
 
-class GatedEmbeddingAdapter:
+class GatedEmbeddingAdapter(BatchViaSingle):
     """Deterministic adapter; can hold calls whose text contains `gate_marker`.
 
     `wrong_dimension_marker` makes texts containing it return a vector of the wrong length,

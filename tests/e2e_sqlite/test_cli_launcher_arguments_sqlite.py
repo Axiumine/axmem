@@ -16,9 +16,10 @@ from app.models.memory_models import MemoryCreate
 from app.models.user_models import UserCreate
 from app.repositories.sqlite.memory_repository import SqliteMemoryRepository
 from main import cli
+from tests.embedding_stubs import BatchViaSingle
 
 
-class FakeEmbeddings:
+class FakeEmbeddings(BatchViaSingle):
     async def generate_embedding(self, text):
         vector = [0.0] * settings.EMBEDDING_DIMENSIONS
         vector[0] = 1.0

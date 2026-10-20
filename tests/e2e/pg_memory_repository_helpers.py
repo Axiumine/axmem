@@ -11,6 +11,7 @@ from app.config.settings import settings
 from app.models.memory_models import MemoryCreate
 from app.models.user_models import UserCreate
 from app.repositories.postgres.user_repository import PostgresUserRepository
+from tests.embedding_stubs import BatchViaSingle
 
 
 def vector_for(text: str) -> list[float]:
@@ -20,7 +21,7 @@ def vector_for(text: str) -> list[float]:
     return [rng.uniform(-1.0, 1.0) for _ in range(settings.EMBEDDING_DIMENSIONS)]
 
 
-class HashingEmbeddings:
+class HashingEmbeddings(BatchViaSingle):
     """Embedding adapter returning ``vector_for(text)`` without calling any provider."""
 
     async def generate_embedding(self, text: str) -> list[float]:

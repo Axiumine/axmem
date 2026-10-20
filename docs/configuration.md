@@ -582,8 +582,8 @@ ENFORCE_ENV_OVERWRITE=true
 ### `EMBEDDING_PROVIDER`
 - **Default**: `FastEmbed`
 - **Description**: Embedding generation provider
-- **Current Support**: FastEmbed | Azure | Google | OpenAI | Ollama
-- **Note**: Matched case-insensitively. Any other value stops startup with an error naming the setting; an empty value keeps the default
+- **Current Support**: FastEmbed | Azure | Google | OpenAI | Ollama | gateway
+- **Note**: Matched case-insensitively. Any other value stops startup with an error naming the setting; an empty value keeps the default. Changing the provider needs a re-embed of all existing memories, see the [Embedding Migration Guide](./embedding_migration.md). `gateway` is optional: no `GATEWAY_*` setting is read or required while another provider is selected
 - **Example**: `EMBEDDING_PROVIDER=FastEmbed`
 
 ### `EMBEDDING_MODEL`
@@ -609,8 +609,8 @@ ENFORCE_ENV_OVERWRITE=true
 ### `EMBEDDING_REQUEST_TIMEOUT_SECONDS`
 - **Default**: `60`
 - **Values**: Positive number of seconds
-- **Description**: Per-request timeout for the remote embedding providers (Azure, Google, OpenAI and Ollama), so a server that accepts a connection but never answers fails the request instead of hanging it
-- **Note**: Ignored by FastEmbed (local). The OpenAI and Azure SDK clients retry failed requests twice, so a single call can take up to three times this value. Raise it if your server needs longer to answer, for example while an Ollama model is loading
+- **Description**: Per-request timeout for the remote embedding providers (Azure, Google, OpenAI, Ollama and the gateway), so a server that accepts a connection but never answers fails the request instead of hanging it
+- **Note**: Ignored by FastEmbed (local). The OpenAI and Azure SDK clients retry failed requests twice, so a single call can take up to three times this value; the gateway adapter makes up to four attempts per request. Raise it if your server needs longer to answer, for example while an Ollama model is loading
 - **Example**: `EMBEDDING_REQUEST_TIMEOUT_SECONDS=120`
 
 ### `DENSE_SEARCH_CANDIDATES`
@@ -697,6 +697,75 @@ ENFORCE_ENV_OVERWRITE=true
 - **Default**: `http://localhost:11434`
 - **Description**: Ollama server URL
 - **Example**: `OLLAMA_BASE_URL=http://localhost:11434`
+
+### Gateway Embedding Provider Configuration
+
+**Note**: These settings only apply when `EMBEDDING_PROVIDER=gateway`; they are not read otherwise. `GATEWAY_URL`, `GATEWAY_BACKEND`, `GATEWAY_MODEL` and `GATEWAY_AGENT_ID` are required: startup fails with an error naming the missing ones.
+
+The provider posts JSON to an HTTP embeddings gateway: `POST {GATEWAY_URL}{GATEWAY_PATH}` with the fields `request_id`, `agent_id`, `backend`, `model`, `input` (1 to 256 texts, in order), `metadata` and, when enabled, `dimensions`. The reply carries one vector per text in input order. A call with more than 256 texts is split into requests of at most 256. Each request has a fresh `request_id`, an `X-Idempotency-Key` that stays the same when that request is retried, and an `X-Correlation-Id` shared by all requests of one call.
+
+A reply is checked before anything is stored: the number of vectors must equal the number of texts, every vector must be exactly `EMBEDDING_DIMENSIONS` numbers wide, and no number may be NaN or infinite. Otherwise the call fails with an error that names the mismatch. Statuses 429 and 503 are retried, waiting for `Retry-After` (at most 30 seconds), and 502, 504 and network errors are retried with a growing wait, up to four attempts in all. 403 (for example a budget or model refusal), 422 and every other status fail at once. Error messages carry the status and the gateway's `code` only, never the response body, the token or the texts.
+
+> **Re-embed required**: vectors from the gateway's model are not comparable with vectors from any other model. After switching to or from `gateway`, set `EMBEDDING_DIMENSIONS` to the width the gateway's model returns and run `forgetful --re-embed`. See the [Embedding Migration Guide](./embedding_migration.md).
+
+#### `GATEWAY_URL`
+- **Default**: (empty string)
+- **Description**: Base URL of the gateway, `http://` or `https://`
+- **Note**: Must not contain credentials, a query or a fragment; use `GATEWAY_TOKEN` and `GATEWAY_PATH`
+- **Example**: `GATEWAY_URL=https://embeddings.example.net`
+
+#### `GATEWAY_PATH`
+- **Default**: `/api/v1/embeddings`
+- **Description**: Path appended to `GATEWAY_URL`
+- **Example**: `GATEWAY_PATH=/api/v1/embeddings`
+
+#### `GATEWAY_TOKEN`
+- **Default**: (empty string)
+- **Description**: Credential for the gateway. With the default `GATEWAY_AUTH_HEADER` it is sent as `Authorization: Bearer <token>`; with any other header name the raw token is sent. Nothing is sent when it is empty
+- **Security**: **Keep this secret** - never commit to version control. It is held as a secret value, so it does not appear in the settings' representation or in logs. It must be printable ASCII
+- **Example**: `GATEWAY_TOKEN=your-gateway-token-here`
+
+#### `GATEWAY_AUTH_HEADER`
+- **Default**: `Authorization`
+- **Description**: Name of the header that carries the token
+- **Example**: `GATEWAY_AUTH_HEADER=X-Api-Key`
+
+#### `GATEWAY_TENANT_HEADER`
+- **Default**: `X-Tenant-Id`
+- **Description**: Name of the header that carries `GATEWAY_TENANT`
+- **Example**: `GATEWAY_TENANT_HEADER=X-Tenant-Id`
+
+#### `GATEWAY_TENANT`
+- **Default**: (empty string)
+- **Description**: Tenant the gateway should account the requests to. The header is sent only when this is set
+- **Example**: `GATEWAY_TENANT=acme`
+
+#### `GATEWAY_BACKEND`
+- **Default**: (empty string)
+- **Description**: Value of the request's `backend` field: which of the gateway's backends serves the model
+- **Example**: `GATEWAY_BACKEND=local`
+
+#### `GATEWAY_MODEL`
+- **Default**: (empty string)
+- **Description**: Value of the request's `model` field. `EMBEDDING_MODEL` is not used by this provider
+- **Example**: `GATEWAY_MODEL=embed-small`
+
+#### `GATEWAY_AGENT_ID`
+- **Default**: (empty string)
+- **Description**: Value of the request's `agent_id` field, the caller identity the gateway sees
+- **Example**: `GATEWAY_AGENT_ID=axmem`
+
+#### `GATEWAY_METADATA`
+- **Default**: `{}`
+- **Description**: JSON object of string values sent as the request's `metadata` field. Axmem adds no values of its own
+- **Note**: A value that is not a string stops startup
+- **Example**: `GATEWAY_METADATA={"team": "memory"}`
+
+#### `GATEWAY_SUPPORTS_DIMENSIONS`
+- **Default**: `false`
+- **Description**: Send `EMBEDDING_DIMENSIONS` as the request's optional `dimensions` field, for models that can return a shorter vector
+- **Note**: The returned width must equal `EMBEDDING_DIMENSIONS` whether or not the field is sent
+- **Example**: `GATEWAY_SUPPORTS_DIMENSIONS=true`
 
 ### Re-ranking Configuration
 

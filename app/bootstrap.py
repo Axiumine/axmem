@@ -45,6 +45,7 @@ def get_embedding_adapter():
         OllamaEmbeddingsAdapter,
         OpenAIEmbeddingsAdapter,
     )
+    from app.repositories.embeddings.gateway_adapter import GatewayEmbeddingsAdapter
 
     provider = canonical_choice("EMBEDDING_PROVIDER", settings.EMBEDDING_PROVIDER, EMBEDDING_PROVIDERS)
     if provider == "Azure":
@@ -55,6 +56,8 @@ def get_embedding_adapter():
         return OpenAIEmbeddingsAdapter()
     if provider == "Ollama":
         return OllamaEmbeddingsAdapter()
+    if provider == "gateway":
+        return GatewayEmbeddingsAdapter()
     return FastEmbeddingAdapter(providers=settings.embedding_onnx_providers)
 
 
