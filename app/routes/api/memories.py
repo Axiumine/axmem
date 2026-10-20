@@ -7,7 +7,7 @@ import logging
 from uuid import UUID
 
 from pydantic import ValidationError
-from starlette.requests import Request
+from starlette.requests import ClientDisconnect, Request
 from starlette.responses import JSONResponse
 
 from app.exceptions import (
@@ -223,6 +223,8 @@ def register(mcp: AxmemMCP):
             body = await request.json()
             reason = body.get("reason", "Marked obsolete via API")
             superseded_by = body.get("superseded_by")
+        except ClientDisconnect:  # the body was cut off (over the size limit, or the client left): nothing was asked
+            return JSONResponse({"error": "The request body was not received"}, status_code=400)
         except Exception:
             reason = "Marked obsolete via API"
             superseded_by = None

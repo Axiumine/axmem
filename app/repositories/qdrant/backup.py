@@ -171,7 +171,7 @@ def _manifest_files(manifest_path: Path) -> list[Any]:
     """The list of file entries in the manifest, or ``ValueError`` when the manifest is not JSON of that shape."""
     try:
         document = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except ValueError as exc:  # invalid JSON or invalid UTF-8
+    except (ValueError, RecursionError) as exc:  # invalid JSON, invalid UTF-8 or nested deeper than the parser goes
         raise ValueError(f"{manifest_path} is not a valid manifest: {exc}") from exc
     listed = document.get("files") if isinstance(document, dict) else None
     if not isinstance(listed, list):

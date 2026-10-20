@@ -71,6 +71,7 @@ async def test_a_snapshot_that_qdrant_refuses_is_reported_by_name_and_status(tmp
     ("manifest", "complaint"),
     [
         ("{not json", "is not a valid manifest"),
+        pytest.param("[" * 200_000, "is not a valid manifest", id="nested-deeper-than-the-parser-goes"),
         ("[]", "no list of files"),
         ('{"files": {"a": 1}}', "no list of files"),
         ('{"files": ["node1-links.snapshot"]}', "does not name its node"),

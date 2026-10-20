@@ -128,7 +128,9 @@ def test_queue_handler_keeps_the_exception_and_adds_the_request_context_of_the_e
 # ---- a hostile text cannot hold the log filter -----------------------------------------------------------
 
 
-@pytest.mark.parametrize("bait", ["://a:", "://" + "a" * 200 + ":", "x://" + "u" * 300 + ":" + "p" * 3000])
+@pytest.mark.parametrize(
+    "bait", ["://a:", "://a:/?#", "://" + "a" * 200 + ":", "x://" + "u" * 300 + ":" + "p" * 3000],
+)
 def test_a_text_built_to_slow_the_url_pattern_is_filtered_in_a_moment(bait):
     """The scan of every ``://`` used to run to the end of the message: a megabyte of ``://a:`` took about a minute."""
     import time
@@ -167,6 +169,11 @@ def test_a_text_below_the_limit_is_not_shortened():
         ("connect to postgres://admin:s3cret@db.internal:5432/app", "connect to postgres://***:***@db.internal:5432/app"),
         ("see https://example.com/a:b and mail user:pw@example.com", "see https://example.com/a:b and mail user:pw@example.com"),
         ("http://user:p%40ss@host/path", "http://***:***@host/path"),
+        # a password that was not percent-encoded: "/", "?" and "#" are common in a generated one
+        ("postgresql://app:pa/ss@db:5432/x", "postgresql://***:***@db:5432/x"),
+        ("redis://u:pa?ss@h", "redis://***:***@h"),
+        ("redis://u:pa#ss@h", "redis://***:***@h"),
+        pytest.param("https://u:" + "p" * 3000 + "@host/x", "https://***:***@host/x", id="a-token-as-the-password"),
     ],
 )
 def test_credentials_in_a_url_are_still_masked(text, masked):

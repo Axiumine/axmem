@@ -116,10 +116,11 @@ class SensitiveDataFilter(logging.Filter):
         ),
         # api-key=something, "api_key": "something" (the Qdrant API key travels in the api-key header)
         (re.compile(r'api[-_]?key["\']?\s*[:=]\s*["\']?([^"\s,}]+)["\']?', re.IGNORECASE), "api-key=***"),
-        # URL with credentials: scheme://user:password@host. Both parts stop at whitespace and at the characters
-        # that end a URL's authority, and are bounded, so a hostile text of "://a:" repeated cannot make the scan
-        # of each "://" run to the end of the message (that was quadratic and froze the event loop).
-        (re.compile(r"://[^\s:/?#@]{1,256}:[^\s/?#@]{1,1024}@", re.IGNORECASE), "://***:***@"),
+        # URL with credentials: scheme://user:password@host. Both parts stop at whitespace and are bounded, so a
+        # hostile text of "://a:" repeated cannot make the scan of each "://" run to the end of the message (that
+        # was quadratic and froze the event loop). The user stops at the characters that end a URL's authority; the
+        # password may hold "/", "?" and "#", which a generated password often does and which are masked all the same.
+        (re.compile(r"://[^\s:/?#@]{1,256}:[^\s@]{1,4096}@", re.IGNORECASE), "://***:***@"),
     ]
 
     # Text longer than this is shortened before it is scanned (its head and its tail stay): a log line of

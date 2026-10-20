@@ -95,6 +95,29 @@ def test_a_setting_that_does_not_validate_is_named_in_one_line(name, value):
     assert_one_line_refusal(result, name)
 
 
+@pytest.mark.parametrize("name", ["LOG_LEVEL", "LOG_FORMAT", "EMBEDDING_PROVIDER", "RERANKING_PROVIDER", "AUTH_MODE"])
+def test_a_choice_setting_that_is_not_a_choice_names_itself_and_never_repeats_its_value(monkeypatch, name):
+    """A key pasted into the wrong setting must not be printed back."""
+    from app.config.settings import load_settings
+
+    secret = "sk-secret-abc123"
+    monkeypatch.setenv(name, secret)
+
+    with pytest.raises(SystemExit) as stopped:
+        load_settings()
+
+    assert name in str(stopped.value)
+    assert "Must be one of" in str(stopped.value)
+    assert secret not in str(stopped.value)
+
+
+def test_the_process_does_not_print_a_credential_pasted_into_a_choice_setting():
+    result = run_main(["--version"], LOG_LEVEL="sk-secret-abc123")
+
+    assert_one_line_refusal(result, "LOG_LEVEL")
+    assert "sk-secret-abc123" not in result.stderr + result.stdout
+
+
 def test_a_blank_log_level_means_the_default():
     result = run_main(["--version"], LOG_LEVEL="")
 

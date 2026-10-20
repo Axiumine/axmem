@@ -64,6 +64,8 @@ anything else answers `415` before the body is read. A request without a body ne
 A body is also limited in size: one above `REQUEST_BODY_MAX_BYTES` (4 MiB by default, REST routes and `/mcp` alike) is
 answered `413` with `{"error": "The request body is larger than the limit of <n> bytes"}`. A declared `Content-Length`
 above the limit is refused without reading the body, and a chunked body is refused as soon as it passes the limit.
+A request that is refused for its size changes nothing: the route is not run on the part of the body that was read, and
+`DELETE /api/v1/memories/{id}`, whose body is optional, does not treat a body that was cut off as an empty one.
 
 ### Limits of the fields
 

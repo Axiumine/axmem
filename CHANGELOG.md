@@ -443,6 +443,16 @@ Fixes found by reviewing the feature cuts (no upstream counterpart: the code the
   shared directory no longer redirects the export onto another file. `import` skips and counts a line that is not
   UTF-8, is nested too deeply, holds a number of thousands of digits, has an id or a version of the wrong type, no
   text to embed or text that cannot be encoded, instead of stopping at the first of them.
+- **Review of the robustness fixes:** a `DELETE /api/v1/memories/{id}` whose chunked body passed `REQUEST_BODY_MAX_BYTES`
+  was answered `413` and still marked the memory obsolete, because the route took the cut-off body for an empty one; it
+  answers `400` and changes nothing. A setting that is not a choice (`LOG_LEVEL`, `LOG_FORMAT`, `EMBEDDING_PROVIDER`,
+  `RERANKING_PROVIDER`, `AUTH_MODE`) printed its value back in the `Error:` line (`Unsupported LOG_LEVEL setting:
+  '<value>'`), so a key pasted into the wrong setting reached stderr; the line names the setting and the choices only.
+  `restore` of a manifest nested deeper than the JSON parser goes ended in a traceback, and is one `Error:` line now. The
+  bounded pattern for credentials in a URL masked less than the first one: a password with `/`, `?` or `#` was left
+  in the log. It is masked again, up to 4096 characters; one with a space, or longer, is still not masked. A `GATEWAY_URL`
+  with an empty `?` or `#` (which the check for a query or a fragment let through, and the path was appended after the
+  marker) is refused at start-up.
 
 - **Tests, CI and hooks:** the Qdrant preflight of the suites pulls `qdrant/qdrant:v1.19.2` when the image is not local (a
   clean or pruned runner, or a bumped version) and still ends the run with exit code 2 and the cause when Docker or the

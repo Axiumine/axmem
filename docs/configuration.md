@@ -815,7 +815,7 @@ A reply is checked before anything is stored: the number of vectors must equal t
 #### `GATEWAY_URL`
 - **Default**: (empty string)
 - **Description**: Base URL of the gateway, `http://` or `https://`
-- **Note**: Must not contain credentials, a query or a fragment; use `GATEWAY_TOKEN` and `GATEWAY_PATH`
+- **Note**: Must not contain credentials, a query or a fragment (an empty `?` or `#` counts: the path would be appended after it); use `GATEWAY_TOKEN` and `GATEWAY_PATH`
 - **Example**: `GATEWAY_URL=https://embeddings.example.net`
 
 #### `GATEWAY_PATH`

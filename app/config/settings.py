@@ -67,7 +67,8 @@ def canonical_choice(setting: str, value: str, choices: tuple[str, ...]) -> str:
 
     A blank value means "not set" and resolves to the default (the first choice). Anything
     else that is not a choice raises, so a typo fails fast instead of silently selecting a
-    different provider or format.
+    different provider or format. The error names the setting and never repeats the value, which may be a
+    credential pasted into the wrong setting.
     """
     wanted = (value or "").strip().lower()
     if not wanted:
@@ -75,7 +76,7 @@ def canonical_choice(setting: str, value: str, choices: tuple[str, ...]) -> str:
     for choice in choices:
         if choice.lower() == wanted:
             return choice
-    raise ValueError(f"Unsupported {setting} setting: {value!r}. Must be one of: {', '.join(choices)}")
+    raise ValueError(f"Unsupported {setting} setting. Must be one of: {', '.join(choices)}")
 
 
 def _field_name(info: ValidationInfo) -> str:

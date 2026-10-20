@@ -252,6 +252,22 @@ async def test_a_chunked_body_above_the_limit_is_answered_413_as_it_is_read(qdra
     assert response.status_code == 413
 
 
+async def test_a_chunked_delete_above_the_limit_is_refused_and_marks_nothing(qdrant_app):
+    """The handler used to read the cut-off body as "no body" and mark the memory obsolete under a 413."""
+    async with limited_client(qdrant_app) as client:
+        memory_id = await _create(client)
+
+        refused = await client.request("DELETE", f"{API}/{memory_id}", content=_chunks(8), headers=JSON_HEADERS)
+        untouched = (await client.get(f"{API}/{memory_id}")).json()
+        served = await client.request("DELETE", f"{API}/{memory_id}", json={"reason": "No longer true"})
+        marked = (await client.get(f"{API}/{memory_id}")).json()
+
+    assert refused.status_code == 413
+    assert untouched["is_obsolete"] is False
+    assert served.status_code == 200, served.text
+    assert (marked["is_obsolete"], marked["obsolete_reason"]) == (True, "No longer true")
+
+
 async def test_a_body_within_the_limit_is_served(qdrant_app):
     async with limited_client(qdrant_app) as client:
         response = await client.post(f"{API}/search", json={"query": "q", "query_context": "c"})
