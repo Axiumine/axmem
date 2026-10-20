@@ -9,7 +9,7 @@ authors = [{name = "Scott", email = "scott@example.com"}]
 classifiers = [
     "Programming Language :: Python :: 3.14",
     "License :: OSI Approved :: MIT License",
-    "Operating System :: OS Independent",
+    "Operating System :: POSIX :: Linux",
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
@@ -22,8 +22,11 @@ dependencies = [
     "fastapi==0.136.3",
     "fastembed==0.8.0",
     "fastmcp==3.2.2",
+    "cuda-python==13.4.4",
     "google-genai==1.66.0",
     "httpx==0.28.1",
+    "huggingface-hub==1.4.1",
+    "numpy==2.4.2",
     "ollama==0.6.1",
     "openai==2.20.0",
     "pgvector==0.4.2",
@@ -37,12 +40,28 @@ dependencies = [
     "sqlalchemy[asyncio]==2.0.46",
     "sqlite-vec==0.1.6",
     "starlette==1.3.1",
+    "tensorrt-cu13==11.4.0.106",
+    "tensorrt-cu13-bindings==11.4.0.106",
+    "tensorrt-cu13-libs==11.4.0.106",
     "tiktoken==0.12.0",
+    "tokenizers==0.22.2",
     "uvicorn==0.40.0",
 ]
 
 [project.optional-dependencies]
 ollama = ["ollama>=0.4"]
+
+# TensorRT 11 for CUDA 13 comes from NVIDIA's index (the PyPI project of the same name only
+# holds an installer stub). The index is explicit: only the packages named below use it.
+[[tool.uv.index]]
+name = "nvidia"
+url = "https://pypi.nvidia.com"
+explicit = true
+
+[tool.uv.sources]
+tensorrt-cu13 = { index = "nvidia" }
+tensorrt-cu13-bindings = { index = "nvidia" }
+tensorrt-cu13-libs = { index = "nvidia" }
 
 [dependency-groups]
 dev = [
@@ -144,6 +163,7 @@ source_modules = [
 ]
 forbidden_modules = [
     "sqlalchemy", "openai", "google", "fastembed", "httpx", "ollama",
+    "tensorrt", "cuda", "tokenizers", "huggingface_hub",
     "subprocess", "shutil",
 ]
 
@@ -220,7 +240,7 @@ init_typed = true
 warn_required_dynamic_aliases = true
 
 [[tool.mypy.overrides]]
-module = ["sqlite_vec.*", "fastembed.*", "pgvector.*", "tiktoken.*", "dotenv.*"]
+module = ["sqlite_vec.*", "fastembed.*", "pgvector.*", "tiktoken.*", "dotenv.*", "tensorrt.*", "tensorrt_bindings.*", "cuda.*", "tokenizers.*"]
 ignore_missing_imports = true
 
 [tool.pylint.main]

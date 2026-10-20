@@ -1,20 +1,8 @@
-import asyncio
-from concurrent.futures import ThreadPoolExecutor
-from typing import TYPE_CHECKING, Protocol
+from typing import Protocol
 
 import httpx
 
 from app.config.settings import settings
-from app.repositories.embeddings.fastembed_offline import (
-    FastEmbedKwargs,
-    FastEmbedProviderKwargs,
-    load_fastembed_model,
-)
-
-if TYPE_CHECKING:
-    from fastembed.rerank.cross_encoder import TextCrossEncoder
-
-DIRECTML_PROVIDER = "DmlExecutionProvider"
 
 
 class RerankAdapter(Protocol):
@@ -24,98 +12,6 @@ class RerankAdapter(Protocol):
                      documents: list[str],
     ) -> list[tuple[int, float]]:
         ...
-
-class FastEmbedCrossEncoderAdapter:
-    """Cross-encoder reranker using FastEmbeds TextCrossEncoder"""
-
-    def __init__(
-            self,
-            model: str = settings.RERANKING_MODEL,
-            threads: int = 1,
-            cache_dir: str | None = None,
-            workers: int = 1,
-            providers: list[str] | None = None,
-    ):
-        """Set inference threads and the maximum number of concurrent reranking jobs."""
-        if providers and any(p.strip() == DIRECTML_PROVIDER for p in providers) and workers > 1:
-            raise ValueError(
-                f"RERANKING_WORKERS={workers} is not supported with {DIRECTML_PROVIDER}: "
-                "DirectML allows only one inference call at a time per session. "
-                "Set RERANKING_WORKERS=1.",
-            )
-        self.model_name = model
-        self.threads = threads
-        self.cache_dir = cache_dir
-        self.providers = providers
-
-        effective_cache_dir = cache_dir or settings.FASTEMBED_CACHE_DIR
-        self._model = load_fastembed_model(
-            model_role="reranking",
-            model_name=model,
-            cache_dir=effective_cache_dir,
-            factory=lambda fastembed_kwargs: self._create_text_cross_encoder(
-                model=model,
-                threads=threads,
-                cache_dir=effective_cache_dir,
-                providers=providers,
-                fastembed_kwargs=fastembed_kwargs,
-            ),
-        )
-        self._executor = ThreadPoolExecutor(max_workers=workers)
-
-    def _create_text_cross_encoder(
-            self,
-            *,
-            model: str,
-            threads: int,
-            cache_dir: str | None,
-            providers: list[str] | None = None,
-            fastembed_kwargs: FastEmbedKwargs,
-    ) -> TextCrossEncoder:
-        from fastembed.rerank.cross_encoder import TextCrossEncoder
-
-        provider_kwargs: FastEmbedProviderKwargs = (
-            {"providers": providers} if providers is not None else {}
-        )
-        return TextCrossEncoder(
-            model_name=model,
-            threads=threads,
-            cache_dir=cache_dir,
-            **fastembed_kwargs,
-            **provider_kwargs,
-        )
-
-    async def rerank(
-            self,
-            query: str,
-            documents: list[str],
-    ) -> list[tuple[int, float]]:
-        """Score documents by relevance to query"""
-        if not documents:
-            return []
-
-        loop = asyncio.get_running_loop()
-
-        ranked = await loop.run_in_executor(
-            self._executor,
-            self._rerank_sync,
-            query,
-            documents,
-        )
-
-        return ranked
-
-    def _rerank_sync(self, query: str, documents: list[str])-> list[tuple[int,float]]:
-        """Synchronous reranking implementation"""
-        scores = list(self._model.rerank(query=query, documents=documents))
-        ranked = sorted(enumerate(scores), key=lambda x: x[1], reverse=True)
-        return ranked
-
-    def __del__(self):
-        """CLeanup thread ppol on deletion."""
-        if hasattr(self, "_executor"):
-            self._executor.shutdown(wait=False)
-
 
 class HttpRerankAdapter:
     """Cross-encoder reranker using http"""

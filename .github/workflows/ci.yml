@@ -14,14 +14,50 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test:
-    name: test (${{ matrix.os }}, py${{ matrix.python }})
+  # Static checks need no GPU and run on hosted runners. The TensorRT libraries (about 3.8 GB) are
+  # left out of the environment: ruff, import-linter and the architecture tests never load them.
+  lint:
+    name: lint (py${{ matrix.python }})
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
         python: ["3.14"]
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install dependencies
+        run: uv sync --locked --all-extras --dev --no-install-package tensorrt-cu13-libs
+
+      - name: Check architecture boundaries and rule proofs
+        run: uv run --frozen --no-sync pytest tests/architecture/ -v
+
+      - name: Run linting
+        run: uv tool run ruff check .
+
+  # The integration and end-to-end suites run the real TensorRT reranker: they need a self-hosted runner
+  # with an NVIDIA GPU (driver R580 or newer). See docs/quality-gates.md for the runner requirements.
+  test:
+    name: test (py${{ matrix.python }})
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.14"]
+    runs-on: [self-hosted, linux, gpu]
     env:
       FASTEMBED_CACHE_DIR: ${{ github.workspace }}/.cache/fastembed
 
@@ -44,9 +80,6 @@ jobs:
       - name: Install dependencies
         run: uv sync --locked --all-extras --dev
 
-      - name: Check architecture boundaries and rule proofs
-        run: uv run --frozen pytest tests/architecture/ -v
-
       - name: Cache FastEmbed models
         uses: actions/cache@v6
         with:
@@ -61,12 +94,9 @@ jobs:
       - name: Run SQLite E2E tests
         run: uv run pytest tests/e2e_sqlite/ -v
 
-      - name: Run linting
-        run: uv tool run ruff check .
-
   smoke-test:
     runs-on: ubuntu-latest
-    needs: test
+    needs: [lint, test]
 
     steps:
       - name: Checkout code

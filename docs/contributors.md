@@ -97,18 +97,43 @@ uv run main.py --transport http
 
 We focus on **integration and E2E tests** over unit tests. Tests should cover critical workflows without exhaustive edge case coverage.
 
+### Tests need an NVIDIA GPU
+
+The integration, SQLite e2e and PostgreSQL e2e suites run the real TensorRT reranker on the GPU. There is
+no CPU path, no stub reranker, no fake `tensorrt` module and no `gpu` marker to deselect: a machine without
+a usable GPU cannot run these suites. Requirements are in [GPU reranking](gpu-reranking.md) (driver R580 or
+newer, Linux); `uv sync` installs CUDA 13 and TensorRT 11.
+
+Each of the three suites begins with a hard preflight (`tests/gpu_preflight.py`, called from the suite's
+`conftest.py` in `pytest_collection_modifyitems`). It ends the pytest run with exit code 2 and the cause, and
+runs no test, when no NVIDIA GPU is visible, TensorRT or the CUDA bindings cannot be imported, or
+`pytest -n N` asks for more workers than the GPU memory holds (pytest-xdist is not a project dependency; the
+check only applies when you install it yourself). Each pytest process loads its
+own engine and holds about 2.2 GiB of GPU memory (about 1.8 GiB more for each extra reranker worker), so
+`-n` is limited to what fits in 90 % of the card. The suites share one reranker engine per process through
+the session fixture `tensorrt_reranker` in `tests/conftest.py`, so the engine is loaded once per run (about
+0.3 s from the cache, 5 to 7 s when it has to be built).
+
+What stays a test double, and why: HTTP mock transports and loopback HTTP servers for `HttpRerankAdapter`
+(the code under test is the HTTP client); stub embedding adapters (no embedding model is the subject);
+recorders and spies that delegate to the real reranker (to observe the candidates a search sends it);
+a barrier around `TensorRTEngine.infer` (to force two inferences to overlap); a module finder that hides
+`tensorrt` or `cuda` in a subprocess (to prove the server refuses to start rather than falling back); and
+one deliberately invalid `cudaMemcpy` (to prove a failed CUDA call is reported and cleared). Everything
+else about the reranker is the real engine on the real GPU.
+
 ### Integration Tests
 
 **Location**: `tests/integration/`
 
-**Purpose**: Test business logic with stubbed I/O (no real database required)
+**Purpose**: Test business logic with stubbed I/O (no real database required; the reranker is real)
 
 **Run locally**:
 ```bash
 uv run pytest tests/integration/
 ```
 
-These tests use in-memory stubs and run fast (~seconds). They form the bulk of our test suite and catch 90% of issues.
+These tests use in-memory stubs for storage and embeddings, run the real reranker and run fast (~seconds). They form the bulk of our test suite and catch 90% of issues.
 
 ### End-to-End Tests
 
@@ -118,16 +143,16 @@ These tests use in-memory stubs and run fast (~seconds). They form the bulk of o
 
 **Purpose**: Test complete stack with in-memory SQLite
 
-**Requirements**: None (no Docker required)
+**Requirements**: an NVIDIA GPU (see above); no Docker required
 
 **Run locally**:
 ```bash
 uv run pytest tests/e2e_sqlite/
 ```
 
-**CI Status**: ✅ Runs automatically in CI workflow on every push/PR
+**CI Status**: ✅ Runs automatically in CI workflow on every push/PR, on the GPU runner
 
-These tests use an in-memory SQLite database for test isolation, with automatic cleanup. The suite is large (several thousand tests across the integration and SQLite e2e directories), so run a single file or `-k` selection while iterating and the whole directory before pushing. They provide full-stack coverage without Docker dependencies, making them ideal for CI.
+These tests use an in-memory SQLite database for test isolation, with automatic cleanup. The suite is large (several thousand tests across the integration and SQLite e2e directories), so run a single file or `-k` selection while iterating and the whole directory before pushing. They provide full-stack coverage without Docker dependencies.
 
 #### PostgreSQL E2E Tests
 
@@ -195,21 +220,24 @@ uv tool run ruff check .
 
 **Purpose**: Fast feedback for contributors
 
-**Matrix**: Python 3.14 on Ubuntu and Windows.
+**Matrix**: Python 3.14.
 
-**Steps**:
-1. Check architecture boundaries and rule proofs (no database or provider calls).
-2. Run integration tests (stubbed, no Docker).
-3. Run SQLite E2E tests (real SQLite, full stack).
-4. Run linting.
+**Jobs**:
+1. `lint` (hosted Ubuntu runner, no GPU): check architecture boundaries and rule proofs, then run linting. The
+   TensorRT libraries are left out of its environment (`--no-install-package tensorrt-cu13-libs`).
+2. `test` (self-hosted GPU runner, `runs-on: [self-hosted, linux, gpu]`): run integration tests (stubbed
+   storage and embeddings, real reranker) and SQLite E2E tests (real SQLite, full stack).
+3. `smoke-test` (hosted runner): build the wheel, check the Alembic files are included and
+   `forgetful --help` works.
 
-One further job follows: a wheel smoke test (build the wheel, check the Alembic files are included and
-`forgetful --help` works).
+The GPU runner is a machine you provide and register with those labels; see
+[quality-gates.md](quality-gates.md#pipeline) for what it needs. The Windows leg was removed because the
+TensorRT reranker is Linux-only.
 
 **Merge requirements**: Configure branch rules to require this workflow's `test` check.
 The workflow alone does not make it mandatory for merging.
 
-**Test Coverage**: Integration tests validate business logic with stubs. SQLite E2E tests validate the complete application stack including real database interactions, all without Docker dependencies.
+**Test Coverage**: Integration tests validate business logic with stubbed storage and embeddings and the real reranker. SQLite E2E tests validate the complete application stack including real database interactions, all without Docker dependencies.
 
 ### `e2e.yml` - PostgreSQL E2E Validation
 
@@ -217,7 +245,7 @@ The workflow alone does not make it mandatory for merging.
 
 **Purpose**: Validate with real PostgreSQL database
 
-**Matrix**: Python 3.14.
+**Matrix**: Python 3.14, on the self-hosted GPU runner (`runs-on: [self-hosted, linux, gpu]`).
 
 **Steps**:
 1. Install PostgreSQL backup client tools.
@@ -235,10 +263,11 @@ The workflow alone does not make a check mandatory for merging.
 
 **Purpose**: Run the same gates as the local Git hooks (`scripts/quality`) so a bypassed hook is caught
 
-**Jobs**: `static` (lint, import boundaries, security, dead code, complexity, types, pylint and the
-snapshot tests, on Python 3.14), `coverage` (SQLite and PostgreSQL suites combined, 100 % required),
-`memory` (memray budgets), `trivy`, `qodana` (uses the `QODANA_TOKEN` repository secret; skipped for pull
-requests from forks) and `mutation` (weekly and manual only). See [quality-gates.md](quality-gates.md).
+**Jobs**: `static` (lint, import boundaries, security, dead code, complexity, types and pylint on a hosted
+runner, on Python 3.14), then on the self-hosted GPU runner `snapshots`, `coverage` (SQLite and PostgreSQL
+suites combined, 100 % required), `memory` (memray budgets) and `mutation` (weekly and manual only); `trivy` and `qodana` (uses the
+`QODANA_TOKEN` repository secret; skipped for pull requests from forks) run on hosted runners. See
+[quality-gates.md](quality-gates.md).
 
 ### `publish.yml` - PyPI Publication
 

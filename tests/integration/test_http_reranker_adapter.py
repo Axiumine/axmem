@@ -200,7 +200,6 @@ async def test_http_reranks_overlap_independently_of_local_worker_limit(monkeypa
 
     monkeypatch.setattr(settings, "RERANKING_ENABLED", True)
     monkeypatch.setattr(settings, "RERANKING_PROVIDER", "HTTP")
-    monkeypatch.setattr(settings, "RERANKING_THREADS", 4)
     monkeypatch.setattr(settings, "RERANKING_WORKERS", 1)
     monkeypatch.setattr(settings, "RERANKING_URL", "https://reranker.test/v1/rerank")
     monkeypatch.setattr(settings, "RERANKING_MODEL", "remote-model")
@@ -221,13 +220,9 @@ async def test_http_reranks_overlap_independently_of_local_worker_limit(monkeypa
             "results": [{"index": index, "relevance_score": 0.9}],
         })
 
-    def reject_local_model(**_kwargs):
-        pytest.fail("HTTP reranking must not load a local model")
-
     client_class = httpx.AsyncClient
     transport = httpx.MockTransport(handle_request)
     monkeypatch.setattr(httpx, "AsyncClient", lambda: client_class(transport=transport))
-    monkeypatch.setattr("fastembed.rerank.cross_encoder.TextCrossEncoder", reject_local_model)
     adapter = get_reranker_adapter()
 
     results = await asyncio.gather(

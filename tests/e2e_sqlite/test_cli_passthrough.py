@@ -27,7 +27,7 @@ _PATCHED_FIELDS = [
 
 
 @pytest.fixture
-def cli_sqlite_env(tmp_path):
+def cli_sqlite_env(tmp_path, tensorrt_reranker):
     """File-backed SQLite settings so state persists across cli() invocations."""
     original = {name: getattr(settings, name) for name in _PATCHED_FIELDS}
     settings.FORGETFUL_SERVER = ""  # never leak these tests onto a configured remote
@@ -35,7 +35,7 @@ def cli_sqlite_env(tmp_path):
     settings.SQLITE_MEMORY = False
     settings.SQLITE_PATH = str(tmp_path / "cli-e2e.db")
     settings.EMBEDDING_PROVIDER = "FastEmbed"
-    settings.RERANKING_ENABLED = False
+    settings.RERANKING_ENABLED = True  # the runtime shares the session's real TensorRT reranker
     settings.FORGETFUL_SCOPES = "*"
     yield settings
     for name, value in original.items():

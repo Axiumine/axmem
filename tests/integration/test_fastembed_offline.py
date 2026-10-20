@@ -1,6 +1,6 @@
 """Network-free tests for FastEmbed offline/cache-only startup."""
 import os
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -115,50 +115,3 @@ def test_fast_embedding_adapter_wraps_offline_load_error(monkeypatch, fastembed_
 
         with pytest.raises(RuntimeError, match="Could not load FastEmbed embedding model"):
             FastEmbeddingAdapter()
-
-
-def test_fastembed_reranker_passes_local_files_only(monkeypatch, fastembed_cache_dir):
-    monkeypatch.setattr(settings, "FASTEMBED_LOCAL_FILES_ONLY", True)
-    monkeypatch.setattr(settings, "FASTEMBED_CACHE_DIR", fastembed_cache_dir)
-    mock_encoder = MagicMock()
-
-    with patch(
-        "fastembed.rerank.cross_encoder.TextCrossEncoder",
-        return_value=mock_encoder,
-    ) as mock_cls:
-        from app.repositories.embeddings.reranker_adapter import (
-            FastEmbedCrossEncoderAdapter,
-        )
-
-        adapter = FastEmbedCrossEncoderAdapter(
-            model="Xenova/ms-marco-MiniLM-L-12-v2",
-            threads=2,
-            cache_dir=fastembed_cache_dir,
-        )
-
-    mock_cls.assert_called_once_with(
-        model_name="Xenova/ms-marco-MiniLM-L-12-v2",
-        threads=2,
-        cache_dir=fastembed_cache_dir,
-        local_files_only=True,
-    )
-    assert adapter._model is mock_encoder
-
-
-def test_fastembed_reranker_wraps_offline_load_error(monkeypatch, fastembed_cache_dir):
-    monkeypatch.setattr(settings, "FASTEMBED_LOCAL_FILES_ONLY", True)
-    monkeypatch.setattr(settings, "FASTEMBED_CACHE_DIR", fastembed_cache_dir)
-
-    with patch(
-        "fastembed.rerank.cross_encoder.TextCrossEncoder",
-        side_effect=ValueError("missing model"),
-    ):
-        from app.repositories.embeddings.reranker_adapter import (
-            FastEmbedCrossEncoderAdapter,
-        )
-
-        with pytest.raises(RuntimeError, match="Could not load FastEmbed reranking model"):
-            FastEmbedCrossEncoderAdapter(
-                model="Xenova/ms-marco-MiniLM-L-12-v2",
-                cache_dir=fastembed_cache_dir,
-            )

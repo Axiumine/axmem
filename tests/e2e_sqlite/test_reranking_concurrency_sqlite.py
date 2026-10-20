@@ -1,30 +1,28 @@
-"""Check shared-model result isolation through REST, not database throughput."""
+"""Check shared-engine result isolation through REST, not database throughput."""
 import asyncio
 from threading import Barrier, Lock
 
 import pytest
-from fastembed.rerank.cross_encoder import TextCrossEncoder
 
 from app.config.settings import settings
-from app.repositories.embeddings.reranker_adapter import FastEmbedCrossEncoderAdapter
+from app.repositories.embeddings.tensorrt_reranker import TensorRTRerankAdapter
+from app.repositories.embeddings.tensorrt_runtime import TensorRTEngine
+
+
+@pytest.fixture(scope="module")
+def two_worker_reranker(tensorrt_reranker):
+    """A real TensorRT reranker with two execution contexts (same engine as the session's: a cache hit)."""
+    adapter = TensorRTRerankAdapter(workers=2)
+    yield adapter
+    adapter.close()
 
 
 @pytest.fixture
-def reranker_adapter(monkeypatch):
-    """Use a known local model even when the environment configures an HTTP model.
-
-    Configuration wiring is covered by test_local_reranker_concurrency.py.
-    """
+def reranker_adapter(monkeypatch, two_worker_reranker):
     monkeypatch.setattr(settings, "RERANKING_ENABLED", True)
-    monkeypatch.setattr(settings, "RERANKING_PROVIDER", "FastEmbed")
     monkeypatch.setattr(settings, "DENSE_SEARCH_CANDIDATES", 20)
     monkeypatch.setattr(settings, "MEMORY_NUM_AUTO_LINK", 0)
-    return FastEmbedCrossEncoderAdapter(
-        model="Xenova/ms-marco-MiniLM-L-12-v2",
-        threads=4,
-        workers=2,
-        cache_dir=settings.FASTEMBED_CACHE_DIR,
-    )
+    return two_worker_reranker
 
 
 async def test_concurrent_searches_match_sequential_rankings(http_client, monkeypatch):
@@ -76,9 +74,9 @@ async def test_concurrent_searches_match_sequential_rankings(http_client, monkey
     rendezvous = Barrier(2, timeout=5)
     lock = Lock()
     started = 0
-    real_rerank = TextCrossEncoder.rerank
+    real_infer = TensorRTEngine.infer
 
-    def synchronized_rerank(model, *args, **kwargs):
+    def synchronized_infer(engine, arrays):
         nonlocal started
         with lock:
             paired = started < 2
@@ -86,12 +84,12 @@ async def test_concurrent_searches_match_sequential_rankings(http_client, monkey
         if paired:
             rendezvous.wait()
         try:
-            return list(real_rerank(model, *args, **kwargs))
+            return real_infer(engine, arrays)
         finally:
             if paired:
                 rendezvous.wait()
 
-    monkeypatch.setattr(TextCrossEncoder, "rerank", synchronized_rerank)
+    monkeypatch.setattr(TensorRTEngine, "infer", synchronized_infer)
     concurrent = await asyncio.gather(*(search(request) for request in requests))
 
     for (expected_ids, expected_scores), (actual_ids, actual_scores) in zip(

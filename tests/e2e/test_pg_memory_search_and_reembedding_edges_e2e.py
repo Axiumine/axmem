@@ -1,7 +1,7 @@
 """PostgreSQL memory repository: search filters, reranking input and targeted re-embedding.
 
-Searches run against pgvector with a deterministic embedder; the cross-encoder is a recording
-stand-in. Re-embedding is checked through the memories the repository reports back.
+Searches run against pgvector with a deterministic embedder; the cross-encoder is the real
+TensorRT reranker behind a recorder that passes every call through. Re-embedding is checked through the memories the repository reports back.
 """
 import pytest
 import pytest_asyncio
@@ -23,16 +23,15 @@ UNKNOWN_ID = 987654
 
 
 class RecordingReranker:
-    """Cross-encoder stand-in that prefers later documents and records every query."""
+    """The real reranker, which also records every query it is asked about."""
 
-    def __init__(self):
+    def __init__(self, real):
+        self.real = real
         self.queries = []
 
     async def rerank(self, query, documents):
         self.queries.append(query)
-        return sorted(
-            ((index, float(index)) for index in range(len(documents))), key=lambda pair: -pair[1],
-        )
+        return await self.real.rerank(query, documents)
 
 
 @pytest_asyncio.fixture(loop_scope="session")
@@ -41,8 +40,8 @@ async def owner(db_adapter):
 
 
 @pytest_asyncio.fixture(loop_scope="session")
-async def memories(db_adapter):
-    return PostgresMemoryRepository(db_adapter, HashingEmbeddings(), RecordingReranker())
+async def memories(db_adapter, reranker_adapter):
+    return PostgresMemoryRepository(db_adapter, HashingEmbeddings(), RecordingReranker(reranker_adapter))
 
 
 async def _search(memories, owner, **overrides):
@@ -72,11 +71,11 @@ async def test_search_leaves_out_excluded_memory_ids(memories, owner):
 
 
 async def test_reranking_without_query_context_scores_candidates_against_the_bare_query(
-    db_adapter, owner, monkeypatch,
+    db_adapter, owner, reranker_adapter, monkeypatch,
 ):
     monkeypatch.setattr(settings, "RERANKING_ENABLED", True)
     monkeypatch.setattr(settings, "DENSE_SEARCH_CANDIDATES", 5)
-    reranker = RecordingReranker()
+    reranker = RecordingReranker(reranker_adapter)
     memories = PostgresMemoryRepository(db_adapter, HashingEmbeddings(), reranker)
     for title in ("first", "second", "third"):
         await memories.create_memory(owner, memory_data(title))

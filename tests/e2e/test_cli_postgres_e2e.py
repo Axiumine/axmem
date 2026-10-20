@@ -22,12 +22,12 @@ _PATCHED_FIELDS = [
 
 
 @pytest.mark.e2e
-async def test_cli_local_executor_create_and_query_against_postgres(postgres_container):
+async def test_cli_local_executor_create_and_query_against_postgres(postgres_container, tensorrt_reranker):
     original = {name: getattr(settings, name) for name in _PATCHED_FIELDS}
     settings.DATABASE = "Postgres"
     settings.POSTGRES_HOST = "127.0.0.1"
     settings.EMBEDDING_PROVIDER = "FastEmbed"
-    settings.RERANKING_ENABLED = False
+    settings.RERANKING_ENABLED = True  # the runtime shares the session's real TensorRT reranker
     settings.FORGETFUL_SCOPES = "*"
 
     try:

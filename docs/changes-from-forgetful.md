@@ -48,17 +48,17 @@ cross-encoder reranking.
 | Entities | Entities and relationships removed; revision `20261019_drop_entities` | A second free-form graph would drift from the Neo4j one | Done (`5f7f1bd1`) |
 | Activity | Event bus, activity log, SSE stream and the memory access counters removed; revision `20261020_drop_activity` | Metrics and tracing belong to the host's observability stack, and nothing in Axmem reads the log or the counters | Done (`373e7eb5`) |
 | Deployment | Container deployment removed: `docker/`, `.dockerignore`, the image build workflow and offline image test, the Nix OCI image and the self-hosting guide; the environment reference moves to the root `.env.example`; Docker stays for tests | Axmem is deployed natively on hosts with an NVIDIA GPU; the compose files still pulled the upstream image and no Axmem image was published | Done (`36a25494`) |
-| Hardware | NVIDIA GPU required, no CPU path, no skip | One hardware target; the reranker needs the GPU to meet the latency budget | Planned |
+| Hardware | NVIDIA GPU required, no CPU path, no skip | One hardware target; the reranker needs the GPU to meet the latency budget | Done for the reranker and the tests; Planned for embeddings |
 | Embeddings gateway | Optional `gateway` provider (`EMBEDDING_PROVIDER=gateway`) for an HTTP embeddings gateway: batches of up to 256, bounded retries with `Retry-After`, vector count and width checked against `EMBEDDING_DIMENSIONS`; `generate_embeddings` added to every provider and used by re-embedding. The default provider and the Azure, Google, OpenAI and Ollama providers are unchanged | A host that already runs an embeddings gateway can serve Axmem's vectors without a second model on the machine; checking the reply keeps a wrong-width vector out of the store | Done |
 | Embeddings | In-process TensorRT by default; FastEmbed, ONNX Runtime and the local CPU embedder removed | One GPU path instead of a CPU path; remote embeddings stay optional | Planned |
-| Reranking | Local TensorRT 11.x runner, strict fp32 (TF32 off), no fp16 | See "Decisions" below | Planned |
+| Reranking | Local TensorRT 11.x runner, strict fp32 (TF32 off, `RERANKING_TF32` opt-in), no fp16, no CPU path; fingerprinted engine cache, startup warm-up, startup refused with the cause when the GPU or libraries are unusable; FastEmbed cross-encoder, `RERANKING_THREADS`, `RERANKING_ONNX_PROVIDERS` and DirectML removed; `HTTP` provider unchanged | See "Decisions" below. On the reference GPU the engine matches the CPU fp32 scores within 1e-5, scores 20 documents in about 38 ms and loads from the cache in under a second | Done |
 | Store | Qdrant only; SQLite, PostgreSQL, pgvector and Alembic removed | After the cuts only memories, links, a scope and a tenant key remain, so one store is enough | Planned |
 | Ids | Memory ids become UUIDs | Qdrant has no autoincrement | Planned |
 | Auth | JWT, introspection and static bearer tokens (hashes only, constant-time compare); GitHub and Google OAuth and the CLI browser login removed; fails closed: no `AUTH_MODE` means no start, and `AUTH_MODE=none` only on stdio or a loopback bind | Service deployments use tokens or OIDC; the default-user mode exposed every memory to every caller of a network-bound server | Done (`3201a2c3`) |
 | Users, projects | Users become tenants (claim `tenant_id`, else `tenant`, else `sub`); projects become a scope string created on first use; user and project tools, routes and CLI verbs removed | A host system isolates by tenant and owns its project registry | Done (`3201a2c3`) |
 | Backup | Qdrant snapshots plus a JSONL export without vectors | The export can be re-embedded through the router | Planned |
-| Tests | Real GPU models; real Qdrant in a Docker test fixture; contract tests against a fake router; a test-only embedder | No model stubs, so similarity thresholds are tested for real | Planned |
-| CI | Static gates on hosted runners; tests on a self-hosted GPU runner | Hosted runners have no GPU | Planned |
+| Tests | Real GPU models; real Qdrant in a Docker test fixture; contract tests against a fake router; a test-only embedder | No model stubs, so similarity thresholds are tested for real | Done for the reranker (real engine, hard GPU preflight, no skip); Planned for the rest |
+| CI | Static gates on hosted runners; tests on a self-hosted GPU runner | Hosted runners have no GPU | Done (workflows; the runner itself is provisioned outside the repository) |
 
 ## Decisions and the evidence behind them
 
@@ -112,3 +112,11 @@ schema.
   an exclusive lock and waits for the update queue) and runs with an API key are untested.
 - Statements about upstream Forgetful were checked against this fork at `6d0199ed` and `f9d16368`; upstream has
   moved on since.
+- The TensorRT reranker was measured on one GPU (RTX PRO 4000 Blackwell, driver 615.71, CUDA 13.4, compute
+  capability 12.0) with TensorRT 11.4.0.106. Other GPUs, driver branches and TensorRT releases are untested; a bump
+  is checked by the golden-score tests on a GPU host.
+- The hosted CI jobs (static gates without `tensorrt-cu13-libs`, the wheel smoke test that downloads the TensorRT
+  libraries through the PyPI stub package) were checked in a local environment, not on a GitHub-hosted runner, and the
+  self-hosted GPU runner has not been provisioned or run against these workflows.
+- The Nix flake (`flake.nix`, `docs/nix.md`) was not built or run with the TensorRT and CUDA wheels; Nix was not
+  available when the reranker landed.

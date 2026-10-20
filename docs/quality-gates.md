@@ -52,6 +52,15 @@ Gates in the same group run in parallel; groups run left to right and the first 
 stops the stage (cheapest checks first). A gate that cannot run (missing tool, no Docker, nothing
 relevant staged) reports `SKIP` with the reason and does not fail the stage.
 
+**GPU requirement.** Every gate that runs `tests/integration`, `tests/e2e_sqlite` or `tests/e2e` (`snapshots`,
+`tests-fast`, `tests`, `e2e-postgres`, `memray`, `mutation`) needs an NVIDIA GPU with driver R580 or newer
+and about 2.5 GiB of free GPU memory per pytest process. The reranker tests run the real TensorRT engine;
+there is no CPU path, no stub and no skip. Each of these suites starts with a preflight that ends the pytest
+run with exit code 2 and the cause when no GPU is visible, TensorRT cannot be imported, or `-n` (pytest-xdist, if
+installed) asks for more pytest workers than the GPU memory holds. These gates do not report `SKIP` without a GPU: they fail. See
+[GPU reranking](gpu-reranking.md) for the host requirements. The static gates (ruff, imports, bandit, semgrep,
+vulture, radon, mypy, pylint) and `tests/architecture` need no GPU.
+
 | Stage | Pipeline |
 |---|---|
 | `pre-commit` (staged files) | ruff, imports, bandit, semgrep, vulture, radon-cc, radon-mi → mypy, pylint → snapshots, tests-fast → gitnexus |
@@ -68,13 +77,25 @@ across jobs:
 
 | Workflow | What runs | Python |
 |---|---|---|
-| `quality.yml` job `static` | ruff, imports, bandit, semgrep (with `p/python p/security-audit` added), vulture, radon-cc, radon-mi, mypy, pylint, snapshots | 3.14 |
-| `quality.yml` job `coverage` | `tests`, `e2e-postgres` (uses the runner's Docker), `coverage` | 3.14 |
-| `quality.yml` jobs `memory`, `trivy` | `memray`, `trivy` | 3.14 |
-| `quality.yml` job `qodana` | Qodana action with the `QODANA_TOKEN` repository secret; not run for pull requests from forks | n/a |
-| `quality.yml` job `mutation` | `mutation` with `MUTATION=1`, weekly (Mondays 03:17 UTC) and on manual dispatch | 3.14 |
-| `ci.yml` | architecture, integration and SQLite e2e suites plus `ruff` on Ubuntu and Windows; wheel build smoke test | 3.14 (Ubuntu and Windows) |
-| `e2e.yml` | `tests/e2e` against PostgreSQL | 3.14 |
+| `quality.yml` job `static` (hosted runner) | ruff, imports, bandit, semgrep (with `p/python p/security-audit` added), vulture, radon-cc, radon-mi, mypy, pylint; installs without `tensorrt-cu13-libs` | 3.14 |
+| `quality.yml` job `snapshots` (GPU runner) | snapshots | 3.14 |
+| `quality.yml` job `coverage` (GPU runner) | `tests`, `e2e-postgres` (uses the runner's Docker), `coverage` | 3.14 |
+| `quality.yml` job `memory` (GPU runner) | `memray` | 3.14 |
+| `quality.yml` job `trivy` (hosted runner) | `trivy` | 3.14 |
+| `quality.yml` job `qodana` (hosted runner) | Qodana action with the `QODANA_TOKEN` repository secret; not run for pull requests from forks | n/a |
+| `quality.yml` job `mutation` (GPU runner) | `mutation` with `MUTATION=1`, weekly (Mondays 03:17 UTC) and on manual dispatch | 3.14 |
+| `ci.yml` job `lint` (hosted runner) | `ruff` and `tests/architecture` | 3.14 |
+| `ci.yml` job `test` (GPU runner) | architecture, integration and SQLite e2e suites | 3.14 |
+| `ci.yml` job `smoke-test` (hosted runner) | wheel build smoke test | 3.14 |
+| `e2e.yml` (GPU runner) | `tests/e2e` against PostgreSQL | 3.14 |
+
+The GPU runner is a self-hosted GitHub Actions runner carrying the labels `self-hosted`, `linux` and `gpu`
+(`runs-on: [self-hosted, linux, gpu]`). Its host needs an NVIDIA GPU with driver R580 or newer and enough
+free GPU memory for one pytest process (about 2.5 GiB), Docker for the PostgreSQL jobs, `postgresql-client`
+and `uv`. The repository does not install or configure the runner; the driver is the only part of the
+TensorRT stack that belongs to the host, the rest is installed by `uv sync`. Hosted runners cannot run
+these jobs because they have no GPU, and the Windows test matrix was removed because the TensorRT reranker is
+Linux-only (its engine cache locks with `fcntl`).
 
 ## Gates
 
@@ -140,8 +161,8 @@ commit the refreshed files with the change that caused them.
 ### Memory budgets
 
 `tests/e2e_sqlite/test_memory_budget_sqlite.py` (marker `memory`) seeds memories through the MCP tools and
-holds `@pytest.mark.limit_memory` budgets (bulk create, query with reranking). The ONNX models are loaded
-before the measured section, and the budgets are generous multiples of the measured peak so they fail on a
+holds `@pytest.mark.limit_memory` budgets (bulk create, query with reranking). The embedding model and the
+TensorRT reranker engine are loaded before the measured section, and the budgets are generous multiples of the measured peak so they fail on a
 leak or an accidental full-table load, not on noise. Without `--memray` the tests run as ordinary smoke
 tests; on Windows the gate is skipped because memray is not available there. Change a budget only with the
 new measurement in a comment next to it.

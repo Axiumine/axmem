@@ -23,13 +23,13 @@ _PATCHED_FIELDS = [
 
 
 @pytest.fixture
-def cli_sqlite_env(tmp_path, monkeypatch):
+def cli_sqlite_env(tmp_path, monkeypatch, tensorrt_reranker):
     original = {name: getattr(settings, name) for name in _PATCHED_FIELDS}
     settings.DATABASE = "SQLite"
     settings.SQLITE_MEMORY = False
     settings.SQLITE_PATH = str(tmp_path / "cli-verbs-e2e.db")
     settings.EMBEDDING_PROVIDER = "FastEmbed"
-    settings.RERANKING_ENABLED = False
+    settings.RERANKING_ENABLED = True  # the runtime shares the session's real TensorRT reranker
     settings.FORGETFUL_SCOPES = "*"
     settings.FORGETFUL_SERVER = ""
     monkeypatch.delenv("FORGETFUL_TOKEN", raising=False)

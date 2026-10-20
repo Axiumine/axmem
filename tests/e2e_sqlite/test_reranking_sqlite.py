@@ -6,20 +6,14 @@ not just embedding similarity.
 import pytest
 
 from app.config.settings import settings
-from app.repositories.embeddings.reranker_adapter import FastEmbedCrossEncoderAdapter
 
 
-@pytest.fixture
-def reranker_adapter(monkeypatch):
-    """Use local reranking; pytest restores all settings overrides after each test."""
+@pytest.fixture(autouse=True)
+def local_reranking(monkeypatch):
+    """Rerank with the real TensorRT reranker of the session; pytest restores the overrides."""
     monkeypatch.setattr(settings, "RERANKING_ENABLED", True)
-    monkeypatch.setattr(settings, "RERANKING_PROVIDER", "FastEmbed")
     monkeypatch.setattr(settings, "DENSE_SEARCH_CANDIDATES", 20)
     monkeypatch.setattr(settings, "MEMORY_NUM_AUTO_LINK", 0)
-    return FastEmbedCrossEncoderAdapter(
-        model="Xenova/ms-marco-MiniLM-L-12-v2",
-        cache_dir=settings.FASTEMBED_CACHE_DIR,
-    )
 
 
 def _assert_reranked(result):

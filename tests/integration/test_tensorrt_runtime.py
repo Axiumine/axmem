@@ -1,0 +1,235 @@
+"""The TensorRT runner on the real GPU: CUDA helpers, GPU probe, engine execution and failure reporting.
+
+Nothing here is a stub. The engine is built from the real model on the NVIDIA GPU of the machine;
+failures are produced by real inputs (shapes outside the profile, damaged plans, invalid models).
+"""
+import re
+from concurrent.futures import ThreadPoolExecutor
+
+import numpy as np
+import pytest
+from cuda.bindings import runtime as cudart
+
+from app.config.settings import settings
+from app.exceptions import RerankerError, RerankerStartupError
+from app.repositories.embeddings.reranker_model import fetch_model
+from app.repositories.embeddings.tensorrt_reranker import PROFILE
+from app.repositories.embeddings.tensorrt_runtime import (
+    OptimizationProfile,
+    PlanRejectedError,
+    ProfileError,
+    TensorRTEngine,
+    _Slot,
+    build_plan,
+    cuda_check,
+    device_failure,
+    probe_gpu,
+)
+
+INPUTS = ("input_ids", "attention_mask", "token_type_ids")
+
+
+def make_inputs(batch, sequence):
+    ids = np.ones((batch, sequence), dtype=np.int64)
+    return {"input_ids": ids, "attention_mask": ids.copy(), "token_type_ids": np.zeros_like(ids)}
+
+
+@pytest.fixture(scope="module")
+def plan_bytes(tensorrt_reranker):
+    """The serialized plan of the session engine (the engine cache holds it next to its fingerprint)."""
+    return (tensorrt_reranker.startup.engine_dir / "engine.plan").read_bytes()
+
+
+@pytest.fixture(scope="module")
+def engine(plan_bytes):
+    engine = TensorRTEngine(plan_bytes, PROFILE, contexts=1)
+    yield engine
+    engine.close()
+
+
+def test_cuda_check_unpacks_each_kind_of_result():
+    assert cuda_check(cudart.cudaSetDevice(0)) is None
+    pointer = cuda_check(cudart.cudaMalloc(16))
+    assert isinstance(pointer, int)
+    assert cuda_check(cudart.cudaFree(pointer)) is None
+    free, total = cuda_check(cudart.cudaMemGetInfo())
+    assert 0 < free <= total
+
+
+def test_cuda_check_raises_on_a_cuda_error_and_clears_it():
+    with pytest.raises(RerankerError, match="cudaErrorInvalidDevice"):
+        cuda_check(cudart.cudaSetDevice(10_000))
+
+    assert cudart.cudaPeekAtLastError()[0] == cudart.cudaError_t.cudaSuccess
+
+
+@pytest.mark.parametrize(
+    ("error", "cause"),
+    [
+        (cudart.cudaError_t.cudaErrorNoDevice, "no-gpu"),
+        (cudart.cudaError_t.cudaErrorInvalidDevice, "no-gpu"),
+        (cudart.cudaError_t.cudaErrorInsufficientDriver, "driver"),
+        (cudart.cudaError_t.cudaErrorSystemDriverMismatch, "driver"),
+        (cudart.cudaError_t.cudaErrorInvalidValue, "gpu-error"),
+    ],
+)
+def test_device_failure_names_the_cause(error, cause):
+    failure = device_failure(error)
+
+    assert isinstance(failure, RerankerStartupError)
+    assert failure.cause == cause
+    assert error.name in str(failure)
+
+
+def test_probe_gpu_describes_the_device():
+    gpu = probe_gpu()
+
+    assert gpu.name
+    assert re.fullmatch(r"\d+\.\d+", gpu.compute_capability)
+    assert re.fullmatch(r"\d+(\.\d+)*", gpu.driver_version)
+    assert gpu.driver_major == int(gpu.driver_version.split(".")[0]) > 0
+    assert gpu.total_bytes > 1024**3
+
+
+def test_engine_reads_the_input_names_of_the_model(engine):
+    assert sorted(engine.input_names) == sorted(INPUTS)
+
+
+@pytest.mark.parametrize(
+    "shape", [PROFILE.min_shape, PROFILE.opt_shape, PROFILE.max_shape, (7, 33), (1, 512), (64, 2)],
+)
+def test_infer_accepts_every_shape_inside_the_profile(engine, shape):
+    logits = engine.infer(make_inputs(*shape))
+
+    assert logits.shape == (shape[0], 1)
+    assert logits.dtype == np.float32
+    assert np.isfinite(logits).all()
+
+
+@pytest.mark.parametrize("shape", [(65, 16), (1, 1), (2, 513), (200, 8)])
+def test_infer_rejects_shapes_outside_the_profile(engine, shape):
+    with pytest.raises(ProfileError, match="does not satisfy any optimization profiles"):
+        engine.infer(make_inputs(*shape))
+
+    assert engine.infer(make_inputs(3, 10)).shape == (3, 1)  # the engine is still usable
+
+
+def test_infer_rejects_wrong_input_names(engine):
+    with pytest.raises(RerankerError, match="takes the inputs"):
+        engine.infer({"input_ids": np.ones((1, 4), dtype=np.int64)})
+
+
+def test_infer_converts_the_dtype_of_the_inputs(engine):
+    exact = engine.infer(make_inputs(2, 8))
+    as_floats = engine.infer({name: array.astype(np.float64) for name, array in make_inputs(2, 8).items()})
+
+    assert np.array_equal(exact, as_floats)
+
+
+def test_slot_reports_a_refused_launch(plan_bytes):
+    fresh = TensorRTEngine(plan_bytes, PROFILE)
+    try:
+        with fresh._borrowed() as slot, pytest.raises(RerankerError, match="could not run the engine"):
+            slot._enqueue()  # no device addresses are bound on a slot that has not run yet
+    finally:
+        fresh.close()
+
+
+def test_slot_reports_an_engine_that_cannot_create_an_execution_context():
+    """TensorRT returns no context when it cannot reserve the memory; an engine double stands in for that."""
+    class OutOfMemoryEngine:
+        @staticmethod
+        def create_execution_context():
+            return None
+
+    with pytest.raises(RerankerStartupError, match="cannot create an execution context") as raised:
+        _Slot(OutOfMemoryEngine(), list(INPUTS), "logits", PROFILE)
+
+    assert raised.value.cause == "engine-unusable"
+
+
+def test_slot_reports_a_refused_binding(engine):
+    with engine._borrowed() as slot, pytest.raises(RerankerError, match="device address of tensor 'nope'"):
+        slot._bind("nope", 0)
+
+
+def test_concurrent_calls_share_one_slot_without_corrupting_results(engine):
+    inputs = make_inputs(8, 40)
+    expected = engine.infer(inputs)
+
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        results = list(pool.map(lambda _: engine.infer(inputs), range(24)))
+
+    assert all(np.array_equal(result, expected) for result in results)
+
+
+def test_plan_rejected_for_bytes_that_are_not_a_plan():
+    with pytest.raises(PlanRejectedError) as raised:
+        TensorRTEngine(b"not a plan", PROFILE)
+
+    assert raised.value.cause == "engine-unusable"
+
+
+def test_plan_rejected_for_a_truncated_plan(plan_bytes):
+    with pytest.raises(PlanRejectedError):
+        TensorRTEngine(plan_bytes[: len(plan_bytes) // 2], PROFILE)
+
+
+def test_failed_cuda_state_is_reported_then_refuses_all_work(plan_bytes):
+    engine = TensorRTEngine(plan_bytes, PROFILE)
+    engine.verify()  # healthy engine: nothing recorded
+
+    cudart.cudaMemcpy(0, 0, 4, cudart.cudaMemcpyKind.cudaMemcpyHostToDevice)  # a CUDA call that fails
+    with pytest.raises(RerankerError, match="cudaErrorInvalidValue"):
+        engine.verify()
+
+    for call in (engine.verify, lambda: engine.infer(make_inputs(1, 4))):
+        with pytest.raises(RerankerError, match="unusable after an earlier failure"):
+            call()
+    engine.close()
+
+
+def test_closed_engine_refuses_work_and_closing_twice_is_harmless(plan_bytes):
+    engine = TensorRTEngine(plan_bytes, PROFILE, contexts=2)
+    assert engine.infer(make_inputs(1, 4)).shape == (1, 1)
+
+    engine.close()
+    engine.close()
+
+    with pytest.raises(RerankerError, match="closed"):
+        engine.infer(make_inputs(1, 4))
+    with pytest.raises(RerankerError, match="closed"):
+        engine.verify()
+
+
+def test_build_rejects_a_file_that_is_not_onnx(tmp_path):
+    broken = tmp_path / "model.onnx"
+    broken.write_text("this is not an ONNX model")
+
+    with pytest.raises(RerankerStartupError, match="cannot parse .* as an ONNX model") as raised:
+        build_plan(broken, PROFILE, tf32=False)
+
+    assert raised.value.cause == "build-failed"
+
+
+@pytest.fixture(scope="module")
+def model_onnx(tensorrt_reranker):
+    return fetch_model(settings.RERANKING_MODEL, settings.RERANKING_MODEL_DIR).onnx
+
+
+def test_build_rejects_an_invalid_profile(model_onnx):
+    inverted = OptimizationProfile(min_shape=(10, 2), opt_shape=(5, 100), max_shape=(64, 512))
+
+    with pytest.raises(RerankerStartupError, match="rejected the optimisation profile") as raised:
+        build_plan(model_onnx, inverted, tf32=False)
+
+    assert raised.value.cause == "build-failed"
+
+
+def test_build_reports_the_error_tensorrt_logged_when_no_engine_can_be_made(model_onnx):
+    beyond_the_model = OptimizationProfile(min_shape=(1, 2), opt_shape=(1, 4096), max_shape=(1, 4096))
+
+    with pytest.raises(RerankerStartupError, match="could not build an engine.*4096 != 512") as raised:
+        build_plan(model_onnx, beyond_the_model, tf32=False)
+
+    assert raised.value.cause == "build-failed"

@@ -11,7 +11,8 @@ Forgetful uses FastEmbed for local embeddings, which normally auto-downloads mod
 - Package updates from PyPI
 
 **What needs pre-caching:**
-- Embedding and reranking models (normally from HuggingFace, pre-packaged on GitHub)
+- The embedding model (normally from HuggingFace, pre-packaged on GitHub)
+- The reranking model files of the TensorRT reranker (from HuggingFace; see [Reranking model](#reranking-model))
 
 ## Model Cache Location
 
@@ -29,9 +30,12 @@ Forgetful requires two models (total ~193MB):
 
 1. **Embedding Model**: `BAAI/bge-small-en-v1.5` (~65MB)
    - Used for generating vector embeddings from text
+   - Cached by FastEmbed in `FASTEMBED_CACHE_DIR`
 
 2. **Reranking Model**: `Xenova/ms-marco-MiniLM-L-12-v2` (~129MB)
    - Used for reranking search results by relevance
+   - Not part of the FastEmbed cache: the TensorRT reranker keeps its own files in
+     `RERANKING_MODEL_DIR` (see [Reranking model](#reranking-model))
 
 ## Setup Options
 
@@ -68,12 +72,6 @@ tar -xzf fastembed-models.tar.gz -C ~/.local/share/forgetful/models/
 After extraction, verify the directory structure:
 ```
 ~/.local/share/forgetful/models/fastembed/
-├── models--Xenova--ms-marco-MiniLM-L-12-v2/
-│   └── snapshots/
-│       └── [hash]/
-│           ├── config.json
-│           ├── model.onnx
-│           └── tokenizer files...
 └── models--BAAI--bge-small-en-v1.5/
     └── snapshots/
         └── [hash]/
@@ -94,9 +92,9 @@ enable local-files-only mode:
 FASTEMBED_LOCAL_FILES_ONLY=true uvx forgetful-ai
 ```
 
-In this mode, both the embedding model and FastEmbed reranker must already be
-present under `FASTEMBED_CACHE_DIR`. If not, Forgetful exits with an error that
-points to the cache directory and configured model names.
+In this mode the embedding model must already be present under `FASTEMBED_CACHE_DIR`.
+If not, Forgetful exits with an error that points to the cache directory and configured
+model name. The reranker is not affected by this setting (see below).
 
 ### Option 3: Transfer from Another Machine
 
@@ -134,13 +132,35 @@ FASTEMBED_CACHE_DIR=/opt/models/fastembed
 FASTEMBED_LOCAL_FILES_ONLY=true
 ```
 
+## Reranking model
+
+The TensorRT reranker (see [GPU reranking](gpu-reranking.md)) does not use the FastEmbed cache.
+It keeps `onnx/model.onnx` and `tokenizer.json` of `RERANKING_MODEL` in `RERANKING_MODEL_DIR`
+(default: `models/reranker` beside the FastEmbed cache), in a directory named after the
+repository, for example `Xenova--ms-marco-MiniLM-L-12-v2/`. Files that are already there are
+never downloaded, so an offline host needs no HuggingFace access once the directory has been
+copied from a connected host:
+
+```bash
+# On a connected host, after one successful start
+cd ~/.local/share/forgetful/models/
+tar -czf reranker-model.tar.gz reranker/
+
+# On the offline host
+mkdir -p ~/.local/share/forgetful/models/
+tar -xzf reranker-model.tar.gz -C ~/.local/share/forgetful/models/
+```
+
+Copy only the model directory. Built TensorRT engines (`RERANKING_ENGINE_CACHE_DIR`) belong to
+one GPU and driver and are rebuilt on the offline host in a few seconds.
+
 ## Startup without internet
 
 Install Forgetful and its Python dependencies while internet is available (`uv sync` from a
 checkout, or `uvx forgetful-ai`). Starting from an already synced checkout with
 `uv run --no-sync main.py` does not contact PyPI or rebuild the package.
 
-Embedding and reranking models are downloaded separately. Memory queries also use
+The embedding model and the reranking model files are downloaded separately. Memory queries also use
 tiktoken's token-counting data, which uses a separate cache (`TIKTOKEN_CACHE_DIR`, read by
 tiktoken itself). Without it, queries still work but budget tokens with an approximate
 character-based estimate. Keep both caches on persistent storage, for example:
@@ -150,14 +170,14 @@ FASTEMBED_CACHE_DIR=/opt/models/fastembed
 TIKTOKEN_CACHE_DIR=/opt/models/tiktoken
 ```
 
-Normal startup downloads the configured FastEmbed models. While internet is available,
+Normal startup downloads the configured FastEmbed model and the reranking model files. While internet is available,
 populate the token-counting cache too:
 
 ```bash
 uv run python -c 'from app.utils.token_counter import TokenCounter; TokenCounter()'
 ```
 
-After preparation, set `FASTEMBED_LOCAL_FILES_ONLY=true` to require the cached models.
+After preparation, set `FASTEMBED_LOCAL_FILES_ONLY=true` to require the cached embedding model.
 Changing paths does not move existing cached files; copy or download them into the new
 directories first.
 
@@ -174,7 +194,10 @@ find ~/.local/share/forgetful/models/fastembed -name "*.onnx"
 
 # Should show:
 # ~/.local/share/forgetful/models/fastembed/models--BAAI--bge-small-en-v1.5/snapshots/[hash]/model_optimized.onnx
-# ~/.local/share/forgetful/models/fastembed/models--Xenova--ms-marco-MiniLM-L-12-v2/snapshots/[hash]/model.onnx
+
+find ~/.local/share/forgetful/models/reranker -name "*.onnx" -o -name tokenizer.json
+# ~/.local/share/forgetful/models/reranker/Xenova--ms-marco-MiniLM-L-12-v2/onnx/model.onnx
+# ~/.local/share/forgetful/models/reranker/Xenova--ms-marco-MiniLM-L-12-v2/tokenizer.json
 ```
 
 ## Custom Models
@@ -185,7 +208,7 @@ EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
 RERANKING_MODEL=cross-encoder/ms-marco-MiniLM-L-6-v2
 ```
 
-**Note:** Custom models require HuggingFace access for download. Only the default models (BAAI/bge-small-en-v1.5, Xenova/ms-marco-MiniLM-L-12-v2) are available pre-packaged from GitHub.
+**Note:** Custom models require HuggingFace access for download. Only the default embedding model (BAAI/bge-small-en-v1.5) is available pre-packaged from GitHub. A custom `RERANKING_MODEL` must be a HuggingFace repository that holds `onnx/model.onnx` and `tokenizer.json`.
 
 ## Troubleshooting
 
@@ -195,6 +218,7 @@ If Forgetful can't find the models:
 2. Check file permissions (should be readable by your user)
 3. Ensure the directory structure matches the expected format (see Option 2 above)
 4. Check that `FASTEMBED_CACHE_DIR` points to the correct location (if using custom path)
+5. For the reranker, check `RERANKING_MODEL_DIR` and that the repository directory holds `onnx/model.onnx` and `tokenizer.json`
 
 ### Unexpected downloads
 If Forgetful downloads models despite having them cached:

@@ -16,9 +16,10 @@ from typing import Any, cast
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-from app.bootstrap import build_runtime, dispose_runtime
+from app.bootstrap import build_runtime, dispose_runtime, get_reranker_adapter
 from app.config.auth import build_auth_provider
 from app.config.settings import settings
+from app.exceptions import RerankerError
 from app.routes.api import (
     auth,
     health,
@@ -416,6 +417,14 @@ def _serve(transport, host, port):
         ensure_startup_allowed(transport, host)
     except AuthConfigError as exc:
         print(f"Error: {exc}", file=sys.stderr)
+        return 1
+
+    # Build or load the reranker engine before the server reports ready: a server that cannot
+    # rerank refuses to start, and says why, instead of failing inside the lifespan.
+    try:
+        get_reranker_adapter()
+    except RerankerError as exc:
+        print(f"Error: the reranker cannot start: {exc}", file=sys.stderr)
         return 1
 
     if transport == "stdio":

@@ -5,7 +5,8 @@ and the structure re-verified on 2026-10-19 against the `quality-gates` branch (
 removal of the graph REST view and subgraph traversal, of plans and tasks, of skills, of files, of documents and
 code artifacts, of entities, of the activity bus and stream, and of the container deployment, and for tenants,
 fail-closed authentication and projects reduced to a scope string, and for batched embedding with the optional
-`gateway` embeddings provider, on the `axmem` branch.
+`gateway` embeddings provider, and for the direct TensorRT 11 reranker on the NVIDIA GPU (replacing the FastEmbed
+cross-encoder), on the `axmem` branch.
 This is a selective interpretation, not an exhaustive dependency inventory.
 The component groupings below are inferred for readability; the described execution paths
 and wiring were verified against source. Line numbers are inspection starting points and may drift.
@@ -40,6 +41,7 @@ flowchart TD
     Postgres --> PostgresDB["PostgreSQL adapter and pgvector"]
     SQLite --> Providers["Embedding and rerank adapters"]
     Postgres --> Providers
+    Providers --> TensorRT["TensorRT reranker: fp32 engine on the NVIDIA GPU, cached per fingerprint"]
     SQLite --> VectorDDL["vector_ddl: validated vector DDL"]
     Postgres --> VectorDDL
     Lifespan["main.lifespan"] -->|calls| Bootstrap["bootstrap.build_runtime"]
@@ -62,14 +64,14 @@ commands have additional paths omitted here; the diagram does not assert univers
 | Inspection point | Responsibility |
 | --- | --- |
 | [main.py:38](main.py#L38) | Server lifespan configures logging, calls `build_runtime`, attaches services/registry/scopes to the typed `ForgetfulMCP` instance ([server_state.py](app/routes/server_state.py)), then disposes the runtime on normal shutdown. Logging is deferred to protect STDIO transport. |
-| [main.py:86](main.py#L86), [main.py:407](main.py#L407) | Construct the typed FastMCP subclass with the configured authentication provider; `_serve` first asks `ensure_startup_allowed` ([auth.py:146](app/config/auth.py#L146)) and exits with code 1 when the configuration is refused (see "MCP, HTTP, and identity"), then runs the app over STDIO or HTTP. Both HTTP branches run the app under Uvicorn directly so lifespan teardown (`dispose_runtime`) completes before a shutdown signal is re-raised; the CORS branch additionally wraps the app with Starlette middleware. |
+| [main.py:86](main.py#L86), [main.py:408](main.py#L408) | Construct the typed FastMCP subclass with the configured authentication provider; `_serve` first asks `ensure_startup_allowed` ([auth.py:146](app/config/auth.py#L146)) and exits with code 1 when the configuration is refused (see "MCP, HTTP, and identity"), then builds the reranker (`get_reranker_adapter`) and exits with code 1 and `Error: the reranker cannot start: <cause>` when the TensorRT engine cannot run (no GPU, missing libraries, driver, model or build failure; see "Contracts, storage, and implementation variants"), then runs the app over STDIO or HTTP. Both HTTP branches run the app under Uvicorn directly so lifespan teardown (`dispose_runtime`) completes before a shutdown signal is re-raised; the CORS branch additionally wraps the app with Starlette middleware. |
 | [main.py:558](main.py#L558) | Console entry point `cli`: a known subcommand goes to `parser.dispatch`; any other argv falls through to the permanent legacy launcher (`--transport`, `--re-embed`, ...), which rejects the re-embed-only flags when `--re-embed` is absent. |
-| [bootstrap.py:167](app/bootstrap.py#L167) | Composition root: choose providers and database, initialize schema, construct repositories, services, tool registry, and instance scope ceiling. |
-| [bootstrap.py:146](app/bootstrap.py#L146) | `Services` and `Runtime` collect the instances for front doors. This is explicit constructor injection, not a DI container. |
+| [bootstrap.py:190](app/bootstrap.py#L190) | Composition root: choose providers and database, initialize schema, construct repositories, services, tool registry, and instance scope ceiling. |
+| [bootstrap.py:170](app/bootstrap.py#L170) | `Services` and `Runtime` collect the instances for front doors. This is explicit constructor injection, not a DI container. |
 | [parser.py:268](app/routes/cli/parser.py#L268) | Dispatch CLI serve, re-embed, tool discovery/calls, memory verbs (a `-p/--project` scope string, no project resolver), and the `auth login` / `auth status` commands. |
 
 The bootstrap factories select PostgreSQL or SQLite repositories at
-[bootstrap.py:106](app/bootstrap.py#L106), passing embedding and rerank adapters to the memory repository.
+[bootstrap.py:136](app/bootstrap.py#L136), passing embedding and rerank adapters to the memory repository.
 Settings live in [settings.py:78](app/config/settings.py#L78); [canonical_choice:45](app/config/settings.py#L45) resolves provider and
 log-format choices case-insensitively and raises on a typo instead of silently selecting a default.
 
@@ -209,7 +211,7 @@ embedding query ([PostgreSQL:43](app/repositories/postgres/memory_search.py#L43)
 | SQLite | [SqliteDatabaseAdapter:54](app/repositories/sqlite/sqlite_adapter.py#L54) owns file/in-memory connections and sessions, loads sqlite-vec, and creates vector virtual tables. It creates a new data directory `0700` and keeps the database file (and its WAL/SHM) `0600`. Repository queries enforce tenant ownership. Relational tables start at [sqlite_tables.py:56](app/repositories/sqlite/sqlite_tables.py#L56). |
 | Schema lifecycle | Both database adapters run Alembic in-process during `init_db` ([SQLite:157](app/repositories/sqlite/sqlite_adapter.py#L157), [PostgreSQL:85](app/repositories/postgres/postgres_adapter.py#L85)); concurrent first starts are serialised by a SQLite write transaction and a PostgreSQL advisory lock. Backend selection and migration execution live in [alembic/env.py:1](alembic/env.py#L1), with revisions in [alembic/versions](alembic/versions). Vector-storage initialization also has adapter-specific work; the vector DDL that cannot use bound parameters (SQLite `vec0` tables, the pgvector column resize) is built by [vector_ddl.py](app/repositories/vector_ddl.py), which accepts a plain identifier and a positive integer and refuses everything else. |
 | Embeddings | [EmbeddingsAdapter:10](app/protocols/embedding_protocol.py#L10) defines `generate_embedding` (one text, used by the repositories for a memory or a query) and `generate_embeddings` (several texts in order, used by the re-embedding service; a batch is chunked at `EMBEDDING_BATCH_LIMIT` = 256). Implementations: local FastEmbed (native batching), Azure OpenAI, Google, OpenAI and Ollama (one request per text, through a shared base class), and the optional [GatewayEmbeddingsAdapter](app/repositories/embeddings/gateway_adapter.py) (`EMBEDDING_PROVIDER=gateway`), which posts chunks of up to 256 texts to an HTTP gateway with `httpx.AsyncClient`, retries 429/502/503/504 and network errors up to four attempts (honouring `Retry-After`, one idempotency key per chunk), and refuses a reply whose vector count, width (`EMBEDDING_DIMENSIONS`) or numbers are wrong. No `GATEWAY_*` setting is read unless that provider is selected. Selection is explicit in [bootstrap.py:40](app/bootstrap.py#L40) and matches `EMBEDDING_PROVIDER` case-insensitively. |
-| Reranking | [RerankAdapter:20](app/repositories/embeddings/reranker_adapter.py#L20) has local FastEmbed cross-encoder and HTTP implementations. [bootstrap.py:62](app/bootstrap.py#L62) selects one or disables reranking. |
+| Reranking | [RerankAdapter:8](app/repositories/embeddings/reranker_adapter.py#L8) has two implementations. The default `TensorRT` provider is [TensorRTRerankAdapter](app/repositories/embeddings/tensorrt_reranker.py): a direct TensorRT 11 runner in strict fp32 (the TF32 builder flag is cleared unless `RERANKING_TF32`), with no ONNX Runtime, no CPU path and no fallback. [reranker_model.py](app/repositories/embeddings/reranker_model.py) fetches `onnx/model.onnx` and `tokenizer.json` once into `RERANKING_MODEL_DIR` (pinned revision for the default model, SHA-256 manifest). [tensorrt_cache.py](app/repositories/embeddings/tensorrt_cache.py) builds the engine once per fingerprint (model SHA-256, TensorRT version, GPU name and compute capability, driver major, TF32, optimization profile of batch 1..64 and sequence 2..512), stores it atomically under `RERANKING_ENGINE_CACHE_DIR` behind a file lock, rebuilds a damaged entry and prunes sibling fingerprints with a log line. [tensorrt_runtime.py](app/repositories/embeddings/tensorrt_runtime.py) is the only module that touches `tensorrt` and `cuda.bindings` (probe of GPU and driver, engine build, a pool of execution contexts with one CUDA stream each, one per `RERANKING_WORKERS`); a missing library or device raises `RerankerStartupError` with a cause (`no-gpu`, `driver`, `gpu-error`, `tensorrt-missing`, `model-unavailable`, `build-failed`, `engine-unusable`). The constructor is the warm-up (build or load, then one scored pair) and logs duration, cache hit or rebuild reason; `_serve` and the lifespan therefore refuse to start a server that cannot rerank. The second implementation, `HttpRerankAdapter` (`RERANKING_PROVIDER=HTTP`), posts to a `/v1/rerank`-compatible service. [bootstrap.py:97](app/bootstrap.py#L97) selects one or disables reranking and shares one TensorRT adapter per process, released at exit. See [docs/gpu-reranking.md](docs/gpu-reranking.md). |
 
 The two persistence backends implement the same broad contracts but use different SQL/vector
 mechanisms. This source review does not establish complete behavioral parity or transaction equivalence.
@@ -241,7 +243,7 @@ The six contracts in `pyproject.toml` enforce these rules, including indirect im
 | Models, protocols, utilities, settings, logging support, exceptions, version | Services, repositories, routes, bootstrap, authentication middleware/configuration |
 | Services | Repositories, routes, bootstrap, authentication middleware/configuration |
 | Repositories | Services, routes, bootstrap, authentication middleware/configuration |
-| Shared code above and services | `sqlalchemy`, `openai`, `google`, `fastembed`, `httpx`, `ollama`, `subprocess`, `shutil` |
+| Shared code above and services | `sqlalchemy`, `openai`, `google`, `fastembed`, `httpx`, `ollama`, `tensorrt`, `cuda`, `tokenizers`, `huggingface_hub`, `subprocess`, `shutil` |
 | API/MCP routes, the shared server-state type and authentication middleware | Repositories or bootstrap |
 | CLI | Repositories or bootstrap, except the two startup imports below |
 
@@ -266,20 +268,22 @@ The external-library list is explicit, not a complete ban on every possible inte
 
 Run `uv run lint-imports --no-cache` for the rules alone, or
 `uv run pytest tests/architecture/` for the rules, source coverage, and deliberate-violation proofs.
-The CI test job runs the latter; [validation notes](docs/dev/architecture-tests.md) describe the proofs.
+The CI `lint` job runs the latter on a hosted runner; [validation notes](docs/dev/architecture-tests.md) describe the proofs.
 
 ## Tests and validation entry points
 
 | Suite | What to inspect / run |
 | --- | --- |
-| Integration | [tests/integration](tests/integration) uses stubbed I/O for service workflows. Start at [test_memory_service.py:13](tests/integration/test_memory_service.py#L13), [test_bootstrap.py](tests/integration/test_bootstrap.py), the authentication tests ([test_auth.py](tests/integration/test_auth.py), [test_auth_factory.py](tests/integration/test_auth_factory.py), [test_static_token_verifier.py](tests/integration/test_static_token_verifier.py), [test_serve_fail_closed.py](tests/integration/test_serve_fail_closed.py)), and the scope and CLI tests. Run `uv run pytest tests/integration/`. |
+| GPU preflight | The integration, SQLite E2E and PostgreSQL E2E suites run the real TensorRT reranker, so each suite's `conftest.py` calls `require_gpu()` from [tests/gpu_preflight.py](tests/gpu_preflight.py) in `pytest_collection_modifyitems`: with no visible NVIDIA GPU, unimportable TensorRT or CUDA bindings, or an xdist worker count that exceeds GPU memory, the run ends with exit code 2 and the cause instead of skipping. The session fixture `tensorrt_reranker` ([tests/conftest.py](tests/conftest.py)) loads the engine once per process. [test_tensorrt_startup_refusal.py](tests/integration/test_tensorrt_startup_refusal.py) starts the program in subprocesses with `CUDA_VISIBLE_DEVICES=-1` and with the TensorRT libraries hidden to prove it refuses to start. |
+| Integration | [tests/integration](tests/integration) uses stubbed storage and embedding I/O and the real reranker for service workflows. Start at [test_memory_service.py:13](tests/integration/test_memory_service.py#L13), [test_bootstrap.py](tests/integration/test_bootstrap.py), the authentication tests ([test_auth.py](tests/integration/test_auth.py), [test_auth_factory.py](tests/integration/test_auth_factory.py), [test_static_token_verifier.py](tests/integration/test_static_token_verifier.py), [test_serve_fail_closed.py](tests/integration/test_serve_fail_closed.py)), and the scope and CLI tests. Run `uv run pytest tests/integration/`. |
 | SQLite E2E | [tests/e2e_sqlite](tests/e2e_sqlite) exercises the stack with in-memory SQLite; [conftest.py:85](tests/e2e_sqlite/conftest.py#L85) builds the app, and `auth_stack` serves it over HTTP with a real auth provider. [test_auth_modes_sqlite.py](tests/e2e_sqlite/test_auth_modes_sqlite.py) covers every credential mode (valid, invalid, expired, missing token) and [test_tenant_isolation_sqlite.py](tests/e2e_sqlite/test_tenant_isolation_sqlite.py) proves one tenant cannot reach another's memories over REST and MCP (the CLI paths are in `test_cli_verbs.py` and `test_cli_remote.py`). Run `uv run pytest tests/e2e_sqlite/`. |
 | PostgreSQL E2E | [tests/e2e](tests/e2e) exercises the PostgreSQL stack; [conftest.py:268](tests/e2e/conftest.py#L268) starts or reuses the Docker database container (`docker run`, pgvector image). Run `uv run pytest -m e2e` with Docker available. |
 | Snapshots | Syrupy snapshots (`-m snapshot`) pin public surfaces: [test_snapshots.py](tests/integration/test_snapshots.py) covers CLI help, settings defaults and the database schema; [test_snapshots_sqlite.py](tests/e2e_sqlite/test_snapshots_sqlite.py) covers the MCP meta-tool signatures, the discovered tool catalogue and the HTTP route table. A changed snapshot is a contract change; refresh it deliberately with `uv run pytest -m snapshot --snapshot-update`. |
-| Memory budgets | [test_memory_budget_sqlite.py](tests/e2e_sqlite/test_memory_budget_sqlite.py) holds `limit_memory` budgets for bulk create and query; they are enforced only under `--memray` (Linux/macOS) and otherwise run as smoke tests. |
+| Memory budgets | [test_memory_budget_sqlite.py](tests/e2e_sqlite/test_memory_budget_sqlite.py) (reranker engine loaded before the measured section) holds `limit_memory` budgets for bulk create and query; they are enforced only under `--memray` (Linux/macOS) and otherwise run as smoke tests. |
 | Agent walkthroughs | [test_harness/walkthrough.py:227](test_harness/walkthrough.py#L227) orchestrates agent sessions; this is evaluation infrastructure, not a production request path. Generated run workspaces are excluded from the map. |
 
-Backend-sensitive changes should exercise both relevant E2E suites; contract/business-rule changes
+Suites that run tests execute on a self-hosted GPU runner in CI (`runs-on: [self-hosted, linux, gpu]`); only the static gates and
+the architecture tests run on hosted runners. Backend-sensitive changes should exercise both relevant E2E suites; contract/business-rule changes
 should first use the focused integration tests. Source links identify tests, not evidence that those
 suites have passed for any particular revision. Repository lint command: `uv tool run ruff check .`;
 the full set of gates (types, security, complexity, 100% combined coverage, mutation) is described in
@@ -295,7 +299,7 @@ and current source first. The snapshot predates the October 17 boundary changes 
 and rebuild wiring moved), and it shows none of the later restructuring: both memory repositories split into mixin modules, `tool_adapters.py` split
 into `app/routes/mcp/adapters/*`, the typed `ForgetfulMCP` in `app/routes/server_state.py`, and the helper
 modules added since. It also still lists the seven per-category `app/routes/mcp/*_tools.py` modules,
-which were removed because they were never mounted, the graph REST view (`app/routes/api/graph.py`,
+which were removed because they were never mounted, the FastEmbed cross-encoder reranker (`FastEmbedCrossEncoderAdapter`, with the `RERANKING_THREADS` and `RERANKING_ONNX_PROVIDERS` settings and the DirectML handling), the graph REST view (`app/routes/api/graph.py`,
 `GraphService`, `get_subgraph_nodes`, `SubgraphResponse`), and planning (`PlanService`, `TaskService`, their
 repositories, models, routes and MCP adapters, with the `PLANNING_ENABLED` flag), skills (`SkillService`, its
 repositories, models, routes and MCP adapters, with the `SKILLS_ENABLED` flag), and files (`FileService`, its repositories,

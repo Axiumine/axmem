@@ -1,4 +1,4 @@
-"""Embedding and rerank adapters: missing configuration and provider answers that carry no vector.
+"""Embedding adapters: missing configuration and provider answers that carry no vector.
 
 The provider SDK objects are replaced by small in-process fakes, so nothing touches the network
 and no model is downloaded.
@@ -9,7 +9,6 @@ import pytest
 
 from app.config.settings import settings
 from app.repositories.embeddings import embedding_adapter as ea
-from app.repositories.embeddings.reranker_adapter import FastEmbedCrossEncoderAdapter
 
 AZURE_CONFIG = {
     "AZURE_ENDPOINT": "https://my-resource.openai.azure.com/",
@@ -86,22 +85,3 @@ async def test_google_answer_without_a_vector_raises_the_error_a_plain_lookup_wo
 
     with pytest.raises(error, match=f"^{message}$"):
         await google_adapter.generate_embedding("hello")
-
-
-async def test_reranking_no_documents_returns_nothing_without_running_the_model(monkeypatch):
-    calls = []
-
-    class RecordingEncoder:
-        def __init__(self, **_options):
-            pass
-
-        def rerank(self, query, documents):
-            calls.append((query, documents))
-            return []
-
-    monkeypatch.setattr("fastembed.rerank.cross_encoder.TextCrossEncoder", RecordingEncoder)
-    adapter = FastEmbedCrossEncoderAdapter()
-
-    assert await adapter.rerank("anything", []) == []
-
-    assert calls == []

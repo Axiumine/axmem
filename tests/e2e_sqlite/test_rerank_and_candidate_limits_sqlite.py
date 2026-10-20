@@ -1,7 +1,8 @@
 """Reranked search honours ``k`` against the real SQLite repositories (sqlite-vec, no Docker).
 
-Only the embedding provider and the cross-encoder are stubbed, so these tests drive the real
-candidate fetch, rerank hand-off and truncation in ``search_scored``.
+Only the embedding provider is a stand-in and the cross-encoder is the real TensorRT reranker
+(behind a recorder that passes every call through), so these tests drive the real candidate
+fetch, rerank hand-off and truncation in ``search_scored``.
 """
 import json
 import math
@@ -47,17 +48,15 @@ class AngleEmbeddings:
 
 
 class RecordingReranker:
-    """Scores later candidates higher and remembers how many documents it was given."""
+    """The real reranker, which also remembers how many documents it was given."""
 
-    def __init__(self):
+    def __init__(self, real):
+        self.real = real
         self.document_counts = []
 
     async def rerank(self, query, documents):
         self.document_counts.append(len(documents))
-        return sorted(
-            ((index, float(index)) for index in range(len(documents))),
-            key=lambda pair: -pair[1],
-        )
+        return await self.real.rerank(query, documents)
 
 
 @pytest.fixture
@@ -78,8 +77,8 @@ async def sqlite_env(monkeypatch):
 
 
 @pytest.fixture
-def reranker():
-    return RecordingReranker()
+def reranker(tensorrt_reranker):
+    return RecordingReranker(tensorrt_reranker)
 
 
 async def _memories(adapter, user_id, reranker, count, embeddings=None):

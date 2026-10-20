@@ -2,17 +2,25 @@
 
 The stub repositories and test doubles live in ``tests/integration/stubs/`` (one
 module per domain); this module imports them and exposes the fixtures the tests use.
+Only database, HTTP and embedding I/O is stubbed: the reranker is the real TensorRT engine
+on the GPU (``tensorrt_reranker``), and the suite refuses to run without that GPU.
 """
 
 import pytest
 
 from app.services.memory_service import MemoryService
 from app.services.tenant_service import TenantService
+from tests.gpu_preflight import require_gpu
 from tests.integration.stubs import (
     InMemoryMemoryRepository,
     InMemoryUserRepository,
     MockEmbeddingsAdapter,
 )
+
+
+def pytest_collection_modifyitems(config, items):
+    """The reranker runs on the NVIDIA GPU with no CPU path: without one this run ends, it never skips."""
+    require_gpu()
 
 
 @pytest.fixture
@@ -70,11 +78,10 @@ _SQLITE_RUNTIME_FIELDS = [
 
 
 @pytest.fixture
-def sqlite_runtime_settings():
+def sqlite_runtime_settings(tensorrt_reranker):
     """Point the composition root at in-memory SQLite with deterministic feature flags.
 
-    Reranking is disabled to skip the cross-encoder model load; reranker wiring is
-    exercised by the e2e_sqlite suite.
+    Reranking stays enabled: the runtime it builds shares the real TensorRT engine of the session.
     """
     from app.config.settings import settings
 
@@ -82,7 +89,7 @@ def sqlite_runtime_settings():
     settings.DATABASE = "SQLite"
     settings.SQLITE_MEMORY = True
     settings.EMBEDDING_PROVIDER = "FastEmbed"
-    settings.RERANKING_ENABLED = False
+    settings.RERANKING_ENABLED = True
     settings.FORGETFUL_SCOPES = "*"
     yield settings
     for name, value in original.items():

@@ -14,8 +14,6 @@ from contextlib import asynccontextmanager
 import pytest
 from fastmcp import FastMCP
 
-from app.bootstrap import get_reranker_adapter
-
 # Shared imports
 from app.repositories.embeddings.embedding_adapter import (
     AzureOpenAIAdapter,
@@ -41,6 +39,12 @@ from app.routes.mcp.tool_registry import ToolRegistry
 from app.services.memory_service import MemoryService
 from app.services.re_embedding_service import ReEmbeddingService
 from app.services.tenant_service import TenantService
+from tests.gpu_preflight import require_gpu
+
+
+def pytest_collection_modifyitems(config, items):
+    """The reranker runs on the NVIDIA GPU with no CPU path: without one this run ends, it never skips."""
+    require_gpu()
 
 
 @pytest.fixture(scope="module")
@@ -69,13 +73,9 @@ def embedding_adapter():
 
 
 @pytest.fixture(scope="module")
-def reranker_adapter():
-    """Module-scoped reranker adapter to avoid reloading model for each test.
-
-    Uses production provider/thread/worker settings. Model loading is expensive,
-    so we share across tests.
-    """
-    return get_reranker_adapter()
+def reranker_adapter(tensorrt_reranker):
+    """The real TensorRT reranker of the test session (production settings, one engine for all tests)."""
+    return tensorrt_reranker
 
 
 # ============================================================================

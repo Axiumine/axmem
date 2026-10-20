@@ -397,7 +397,7 @@ each request 300 seconds.
 1. Per-invocation flags: `--server URL` / `--local`
 2. Shell environment: `FORGETFUL_SERVER`, `FORGETFUL_TOKEN`
 3. User config file: `~/.config/forgetful/.env` (`forgetful auth login --server URL` saves `FORGETFUL_SERVER` there)
-4. Defaults: local mode, SQLite at the platform data path, FastEmbed embeddings
+4. Defaults: local mode, SQLite at the platform data path, FastEmbed embeddings, TensorRT reranking (needs an NVIDIA GPU; `RERANKING_ENABLED=false` runs without)
 
 ### `forgetful auth`
 
@@ -603,7 +603,7 @@ ENFORCE_ENV_OVERWRITE=true
 - **Default**: (empty string)
 - **Values**: Comma-separated ONNX Runtime execution provider names, in priority order
 - **Description**: Execution providers for the local FastEmbed embedding model
-- **Note**: Only used when `EMBEDDING_PROVIDER=FastEmbed`. Empty keeps FastEmbed's default provider selection. Same runtime requirements as [`RERANKING_ONNX_PROVIDERS`](#reranking_onnx_providers)
+- **Note**: Only used when `EMBEDDING_PROVIDER=FastEmbed`. Empty keeps FastEmbed's default provider selection. Every listed provider must be available in the installed ONNX Runtime package (for example `onnxruntime-directml` for `DmlExecutionProvider`): FastEmbed refuses to load the model when one is missing
 - **Example**: `EMBEDDING_ONNX_PROVIDERS=DmlExecutionProvider,CPUExecutionProvider`
 
 ### `EMBEDDING_REQUEST_TIMEOUT_SECONDS`
@@ -773,73 +773,58 @@ A reply is checked before anything is stored: the number of vectors must equal t
 - **Default**: `true`
 - **Description**: Enable re-ranking of search results for improved relevance
 - **Values**: `true`, `false`
-- **Note**: Improves search quality at the cost of additional processing
+- **Note**: Improves search quality at the cost of additional processing. With the default `TensorRT` provider, `true` means an NVIDIA GPU is required: see [GPU reranking](gpu-reranking.md). `false` needs no GPU and no TensorRT libraries
 - **Example**: `RERANKING_ENABLED=true`
 
 #### `RERANKING_PROVIDER`
-- **Default**: `FastEmbed`
+- **Default**: `TensorRT`
 - **Description**: Re-ranking model provider
-- **Current Support**: `FastEmbed` | `HTTP`
+- **Current Support**: `TensorRT` | `HTTP`
 - **Values**:
-  - `FastEmbed` - Local cross-encoder model via FastEmbed (zero-config, no API key)
+  - `TensorRT` - Local cross-encoder run directly on an NVIDIA GPU with TensorRT, in strict fp32. There is no CPU path and no fallback: a server that cannot start the engine refuses to start and says why
   - `HTTP` - Any server exposing a `/v1/rerank`-compatible endpoint (Jina, Cohere, vLLM, llama.cpp, Infinity, etc.)
-- **Note**: Matched case-insensitively. Any other value stops startup with an error naming the setting; an empty value keeps the default
+- **Note**: Matched case-insensitively. Any other value (including the earlier `FastEmbed`) stops startup with an error naming the setting; an empty value keeps the default
 - **Example**: `RERANKING_PROVIDER=HTTP`
 
 #### `RERANKING_MODEL`
 - **Default**: `Xenova/ms-marco-MiniLM-L-12-v2`
 - **Description**: Re-ranking model identifier
 - **Purpose**: Optimized for search result re-ranking
-- **Note**: For HTTP provider, set to the model name your endpoint expects (e.g., `jina-reranker-v2-base-multilingual`)
+- **Note**: For `TensorRT`, a Hugging Face repository id (`owner/name`) holding `onnx/model.onnx` and `tokenizer.json`; the default is fetched at a pinned revision. For HTTP provider, set to the model name your endpoint expects (e.g., `jina-reranker-v2-base-multilingual`)
 - **Example**: `RERANKING_MODEL=Xenova/ms-marco-MiniLM-L-12-v2`
-
-#### `RERANKING_THREADS`
-- **Default**: `1`
-- **Values**: Positive integers
-- **Description**: Inference threading for the shared local ONNX reranking model
-- **Note**: Only used when `RERANKING_PROVIDER=FastEmbed`; does not affect HTTP rerankers
-- **Example**: `RERANKING_THREADS=4`
 
 #### `RERANKING_WORKERS`
 - **Default**: `1`
 - **Values**: Positive integers
-- **Description**: Maximum reranking jobs running concurrently on one local adapter
-- **Note**: Only used when `RERANKING_PROVIDER=FastEmbed`; does not limit HTTP requests
+- **Description**: Maximum reranking jobs running concurrently on one local adapter. Each worker owns one TensorRT execution context and CUDA stream on the shared engine
+- **Note**: Only used when `RERANKING_PROVIDER=TensorRT`; does not limit HTTP requests. One worker costs about 2.2 GiB of GPU memory per server process and every further worker about 1.8 GiB more, because an execution context reserves memory for the largest shape in the engine profile
 - **Example**: `RERANKING_WORKERS=2`
-
-The defaults preserve serial, single-threaded local reranking. On a multi-core host, try
-`RERANKING_THREADS=4` and `RERANKING_WORKERS=2`, then measure with your actual search workload.
-More threads or workers can increase CPU contention rather than improve latency. Workers share
-one model; these settings are not a guarantee of a dedicated CPU allocation per request.
-Restart the service after changing them. Each server process has its own adapter and limits.
 
 The worker limit bounds active jobs, not the waiting queue. Cancelling a request cannot stop
 inference already running in a thread; that worker stays occupied until inference finishes.
-HTTP reranking already uses asynchronous requests. Its processing capacity and rate limits
-are controlled by the remote service, not these local settings.
+Restart the service after changing it. Each server process has its own adapter, engine and limits,
+so several server processes on one GPU multiply the memory use. HTTP reranking already uses
+asynchronous requests. Its processing capacity and rate limits are controlled by the remote
+service, not this local setting.
 
-#### `RERANKING_ONNX_PROVIDERS`
-- **Default**: (empty string)
-- **Values**: Comma-separated ONNX Runtime execution provider names, in priority order
-- **Description**: Execution providers for the local FastEmbed reranking model
-- **Note**: Only used when `RERANKING_PROVIDER=FastEmbed`; does not affect HTTP rerankers. Empty keeps FastEmbed's default provider selection
-- **Example**: `RERANKING_ONNX_PROVIDERS=DmlExecutionProvider,CPUExecutionProvider`
+#### `RERANKING_TF32`
+- **Default**: `false`
+- **Values**: `true`, `false`
+- **Description**: Let the engine build use TF32 tensor-core math. TF32 keeps the 8-bit exponent of fp32 but only 10 mantissa bits in the multiplications, which is faster on recent NVIDIA GPUs and no longer bit-exact fp32
+- **Note**: Only used when `RERANKING_PROVIDER=TensorRT`. The default builds a strict fp32 engine (the TensorRT TF32 flag is cleared explicitly). fp16 and bf16 are not supported at all. Changing the value changes the engine fingerprint and rebuilds the engine on the next start
+- **Example**: `RERANKING_TF32=true`
 
-The list is passed to FastEmbed as is. Every provider in it must be available in the installed
-ONNX Runtime package: FastEmbed refuses to load the model when one is missing, even if
-`CPUExecutionProvider` comes after it in the list. Check what your environment offers with
-`python -c "import onnxruntime; print(onnxruntime.get_available_providers())"`.
+#### `RERANKING_MODEL_DIR`
+- **Default**: `models/reranker` in the platform user data directory (e.g., `~/.local/share/forgetful/models/reranker`)
+- **Description**: Where the TensorRT reranker keeps the model files (`onnx/model.onnx`, `tokenizer.json`) and a `manifest.json` with their SHA-256
+- **Note**: Only used when `RERANKING_PROVIDER=TensorRT`. Files already present are never downloaded, so an offline host can be seeded by copying the directory (see [Offline Setup Guide](OFFLINE_SETUP.md)). A file that no longer matches its recorded SHA-256 stops startup
+- **Example**: `RERANKING_MODEL_DIR=/var/lib/forgetful/models/reranker`
 
-Forgetful does not install accelerated runtimes. Replace the default `onnxruntime` package in
-Forgetful's environment with the build that ships your provider, for example `onnxruntime-directml`
-for `DmlExecutionProvider` on Windows or `onnxruntime-gpu` for `CUDAExecutionProvider`. See the
-[ONNX Runtime install guide](https://onnxruntime.ai/docs/install/). If you run from a source checkout
-with `uv run`, uv re-syncs the environment to the lock file and puts the default `onnxruntime` back.
-
-DirectML allows only one inference call at a time per session, and local reranking workers share
-one model, so `DmlExecutionProvider` requires `RERANKING_WORKERS=1`. Forgetful refuses to start the
-local reranker otherwise. [DirectML is in sustained engineering](https://onnxruntime.ai/docs/execution-providers/DirectML-ExecutionProvider.html);
-it stays available here as an optional provider. Restart the service after changing providers.
+#### `RERANKING_ENGINE_CACHE_DIR`
+- **Default**: `models/tensorrt` in the platform user data directory (e.g., `~/.local/share/forgetful/models/tensorrt`)
+- **Description**: Where built TensorRT engines are cached, one directory per fingerprint
+- **Note**: Only used when `RERANKING_PROVIDER=TensorRT`. The fingerprint covers the model SHA-256, TensorRT version, GPU name, compute capability, driver major version, `RERANKING_TF32` and the optimization profile; a change in any of them rebuilds the engine, and directories of other fingerprints are removed and logged. See [GPU reranking](gpu-reranking.md#engine-cache)
+- **Example**: `RERANKING_ENGINE_CACHE_DIR=/var/lib/forgetful/models/tensorrt`
 
 #### `RERANKING_URL`
 - **Default**: (empty string)
@@ -878,7 +863,7 @@ it stays available here as an optional provider. Restart the service after chang
 #### `FASTEMBED_LOCAL_FILES_ONLY`
 
 - **Default**: `false`
-- **Description**: Restrict FastEmbed embedding and reranking models to files already present in `FASTEMBED_CACHE_DIR`
+- **Description**: Restrict the FastEmbed embedding model to files already present in `FASTEMBED_CACHE_DIR`. The TensorRT reranker is not affected: it never downloads files that are already in `RERANKING_MODEL_DIR`
 - **Purpose**: Prevents HuggingFace/GCS download attempts in locked-down or offline environments
 - **Note**: When enabled, pre-populate the cache first or startup fails with a local-cache error
 - **Example**: `FASTEMBED_LOCAL_FILES_ONLY=true`
@@ -968,6 +953,10 @@ DENSE_SEARCH_CANDIDATES=100
 ### Port Conflicts
 - Change `SERVER_PORT` and `PGPORT` if defaults conflict
 - Update MCP client configuration
+
+### Reranker Does Not Start
+- The server refuses to start with `Error: the reranker cannot start: <cause>` when `RERANKING_PROVIDER=TensorRT` cannot run: no NVIDIA GPU visible to CUDA, TensorRT or CUDA Python libraries missing, driver too old, model files unavailable, or an engine build failure
+- There is no CPU fallback. Fix the host (see [GPU reranking](gpu-reranking.md)), or set `RERANKING_PROVIDER=HTTP`, or `RERANKING_ENABLED=false`
 
 ### Search Performance
 - Increase `DENSE_SEARCH_CANDIDATES` for better results

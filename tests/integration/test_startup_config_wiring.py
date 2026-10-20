@@ -29,6 +29,7 @@ from app.config.settings import (
     Settings,
     settings,
 )
+from app.exceptions import RerankerError
 from app.repositories.embeddings import embedding_adapter as embedding_module
 from app.repositories.embeddings import gateway_adapter as gateway_module
 from app.repositories.embeddings import reranker_adapter as reranker_module
@@ -61,8 +62,7 @@ def fake_adapters(monkeypatch):
     ):
         monkeypatch.setattr(embedding_module, name, fake(name))
     monkeypatch.setattr(gateway_module, "GatewayEmbeddingsAdapter", fake("GatewayEmbeddingsAdapter"))
-    for name in ("HttpRerankAdapter", "FastEmbedCrossEncoderAdapter"):
-        monkeypatch.setattr(reranker_module, name, fake(name))
+    monkeypatch.setattr(reranker_module, "HttpRerankAdapter", fake("HttpRerankAdapter"))
 
 
 @pytest.mark.parametrize(
@@ -75,7 +75,8 @@ def fake_adapters(monkeypatch):
         ("EMBEDDING_PROVIDER", "fastembed", "FastEmbed"),
         ("EMBEDDING_PROVIDER", " Gateway ", "gateway"),
         ("RERANKING_PROVIDER", "http", "HTTP"),
-        ("RERANKING_PROVIDER", "fastembed", "FastEmbed"),
+        ("RERANKING_PROVIDER", "tensorrt", "TensorRT"),
+        ("RERANKING_PROVIDER", " TENSORRT ", "TensorRT"),
         ("LOG_FORMAT", "JSON", "json"),
         ("LOG_FORMAT", "Console", "console"),
     ],
@@ -91,6 +92,7 @@ def test_choice_settings_are_normalised_to_canonical_spelling(monkeypatch, setti
     [
         ("EMBEDDING_PROVIDER", "Opnai"),
         ("RERANKING_PROVIDER", "Htp"),
+        ("RERANKING_PROVIDER", "FastEmbed"),  # the ONNX Runtime reranker no longer exists
         ("LOG_FORMAT", "jsno"),
     ],
 )
@@ -133,26 +135,46 @@ def test_embedding_factory_rejects_unknown_provider(monkeypatch, fake_adapters):
         bootstrap.get_embedding_adapter()
 
 
-@pytest.mark.parametrize(
-    ("value", "adapter"),
-    [
-        ("HTTP", "HttpRerankAdapter"),
-        ("http", "HttpRerankAdapter"),
-        ("hTTP", "HttpRerankAdapter"),
-        ("fastembed", "FastEmbedCrossEncoderAdapter"),
-        ("FastEmbed", "FastEmbedCrossEncoderAdapter"),
-    ],
-)
-def test_reranker_factory_selects_provider_ignoring_case(monkeypatch, fake_adapters, value, adapter):
+@pytest.mark.parametrize("value", ["HTTP", "http", "hTTP"])
+def test_http_reranker_factory_selects_provider_ignoring_case(monkeypatch, fake_adapters, value):
     monkeypatch.setattr(settings, "RERANKING_ENABLED", True)
     monkeypatch.setattr(settings, "RERANKING_PROVIDER", value)
 
-    assert type(bootstrap.get_reranker_adapter()).__name__ == adapter
+    assert type(bootstrap.get_reranker_adapter()).__name__ == "HttpRerankAdapter"
 
 
-def test_reranker_factory_rejects_unknown_provider(monkeypatch, fake_adapters):
+@pytest.mark.parametrize("value", ["TensorRT", "tensorrt", "TENSORRT"])
+def test_tensorrt_reranker_factory_returns_the_shared_engine_ignoring_case(
+    monkeypatch, tensorrt_reranker, value,
+):
     monkeypatch.setattr(settings, "RERANKING_ENABLED", True)
-    monkeypatch.setattr(settings, "RERANKING_PROVIDER", "Htp")
+    monkeypatch.setattr(settings, "RERANKING_PROVIDER", value)
+
+    assert bootstrap.get_reranker_adapter() is tensorrt_reranker
+    assert bootstrap.get_reranker_adapter() is bootstrap.get_reranker_adapter()
+
+
+def test_shared_rerankers_are_closed_when_the_process_releases_them(monkeypatch, tensorrt_reranker):
+    monkeypatch.setattr(bootstrap, "_TENSORRT_RERANKERS", {})
+    monkeypatch.setattr(settings, "RERANKING_ENABLED", True)
+    monkeypatch.setattr(settings, "RERANKING_PROVIDER", "TensorRT")
+    monkeypatch.setattr(settings, "RERANKING_WORKERS", 2)  # another cache key: a second adapter, same cached engine
+
+    second = bootstrap.get_reranker_adapter()
+    assert second is not tensorrt_reranker
+    assert len(second.score("query", ["document"])) == 1
+
+    bootstrap._release_tensorrt_rerankers()
+
+    assert bootstrap._TENSORRT_RERANKERS == {}
+    with pytest.raises(RerankerError, match="closed"):
+        second.score("query", ["document"])
+
+
+@pytest.mark.parametrize("provider", ["Htp", "FastEmbed"])
+def test_reranker_factory_rejects_unknown_provider(monkeypatch, fake_adapters, provider):
+    monkeypatch.setattr(settings, "RERANKING_ENABLED", True)
+    monkeypatch.setattr(settings, "RERANKING_PROVIDER", provider)
 
     with pytest.raises(ValueError, match="RERANKING_PROVIDER"):
         bootstrap.get_reranker_adapter()

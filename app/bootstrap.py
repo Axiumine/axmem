@@ -6,6 +6,7 @@ stack from one place. Heavy imports stay inside functions to keep module import 
 """
 from __future__ import annotations
 
+import atexit
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -61,24 +62,51 @@ def get_embedding_adapter():
     return FastEmbeddingAdapter(providers=settings.embedding_onnx_providers)
 
 
+_TENSORRT_RERANKERS: dict[tuple, Any] = {}
+
+
+def _shared_tensorrt_reranker():
+    """The process-wide TensorRT reranker for the current settings, built on first use.
+
+    Building one means a GPU probe, a model check and an engine build or load, and every
+    instance holds its own device memory, so runtimes built in one process share the engine.
+    It is released when the process exits.
+    """
+    from app.repositories.embeddings.tensorrt_reranker import TensorRTRerankAdapter
+
+    key = (
+        settings.RERANKING_MODEL,
+        settings.RERANKING_WORKERS,
+        settings.RERANKING_TF32,
+        settings.RERANKING_MODEL_DIR,
+        settings.RERANKING_ENGINE_CACHE_DIR,
+    )
+    if key not in _TENSORRT_RERANKERS:
+        _TENSORRT_RERANKERS[key] = TensorRTRerankAdapter()
+    return _TENSORRT_RERANKERS[key]
+
+
+def _release_tensorrt_rerankers() -> None:
+    while _TENSORRT_RERANKERS:
+        _TENSORRT_RERANKERS.popitem()[1].close()
+
+
+atexit.register(_release_tensorrt_rerankers)
+
+
 def get_reranker_adapter():
-    """Create reranker adapter if enabled."""
+    """Create the reranker adapter if enabled.
+
+    The TensorRT provider needs an NVIDIA GPU and raises ``RerankerStartupError`` when it cannot
+    start; there is no fallback to another provider.
+    """
     if not settings.RERANKING_ENABLED:
         return None
     provider = canonical_choice("RERANKING_PROVIDER", settings.RERANKING_PROVIDER, RERANKING_PROVIDERS)
     if provider == "HTTP":
         from app.repositories.embeddings.reranker_adapter import HttpRerankAdapter
         return HttpRerankAdapter()
-    # Default: FastEmbed
-    from app.repositories.embeddings.reranker_adapter import (
-        FastEmbedCrossEncoderAdapter,
-    )
-    return FastEmbedCrossEncoderAdapter(
-        threads=settings.RERANKING_THREADS,
-        workers=settings.RERANKING_WORKERS,
-        providers=settings.reranking_onnx_providers,
-        cache_dir=settings.FASTEMBED_CACHE_DIR,
-    )
+    return _shared_tensorrt_reranker()
 
 
 def check_first_run_models():
@@ -166,6 +194,8 @@ async def build_runtime() -> Runtime:
     embeddings_adapter = get_embedding_adapter()
     reranker_adapter = get_reranker_adapter()
     logger.info("Embedding adapters initialized")
+    if reranker_adapter is not None and hasattr(reranker_adapter, "startup"):
+        logger.info(reranker_adapter.startup.summary())
 
     db_adapter = create_db_adapter()
 

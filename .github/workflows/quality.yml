@@ -21,10 +21,16 @@ concurrency:
 env:
   FASTEMBED_CACHE_DIR: ${{ github.workspace }}/.cache/fastembed
 
+# GPU runner: a self-hosted runner labelled [self-hosted, linux, gpu] with an NVIDIA GPU (driver R580 or newer).
+# Every job that runs tests/integration, tests/e2e_sqlite or tests/e2e needs it, because the suites run the real
+# TensorRT reranker. See docs/quality-gates.md for the runner requirements.
+
 jobs:
   static:
     name: static (${{ matrix.python }})
     runs-on: ubuntu-latest
+    env:
+      UV_NO_SYNC: "1"  # `uv run` must not install the TensorRT libraries the sync step left out
     strategy:
       fail-fast: false
       matrix:
@@ -39,7 +45,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
-      - run: uv sync --locked --all-extras --dev
+      # The static gates never load TensorRT: leave its 3.8 GB libraries out of the environment.
+      - run: uv sync --locked --all-extras --dev --no-install-package tensorrt-cu13-libs
       - name: ruff
         run: uv run --frozen python -m scripts.quality gate ruff
       - name: import boundaries
@@ -60,12 +67,26 @@ jobs:
         run: uv run --frozen python -m scripts.quality gate mypy
       - name: pylint (>= 8/10)
         run: uv run --frozen python -m scripts.quality gate pylint
-      - name: snapshots
-        run: uv run --frozen python -m scripts.quality gate snapshots
+
+  snapshots:
+    name: snapshots
+    runs-on: [self-hosted, linux, gpu]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - run: uv sync --locked --all-extras --dev
+      - run: uv run --frozen python -m scripts.quality gate snapshots
 
   coverage:
     name: 100% coverage (SQLite + PostgreSQL e2e)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, gpu]
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
@@ -94,7 +115,7 @@ jobs:
 
   memory:
     name: memray budgets
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, gpu]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -136,7 +157,7 @@ jobs:
   mutation:
     name: mutation (weekly)
     if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, gpu]
     timeout-minutes: 360
     steps:
       - uses: actions/checkout@v4

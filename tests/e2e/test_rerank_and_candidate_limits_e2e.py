@@ -1,7 +1,8 @@
 """PostgreSQL reranked search: honour ``k`` and never hold a connection while awaiting providers.
 
 Runs the real PostgreSQL memory repository (pgvector, RLS sessions, default
-connection pool). Only the embedding provider and the cross-encoder are stubbed.
+connection pool). Only the embedding provider is a stand-in; the cross-encoder is the real TensorRT
+reranker behind a spy that records the pool state and passes every call through.
 """
 import asyncio
 
@@ -36,10 +37,11 @@ class SpyEmbeddings:
 
 
 class SpyReranker:
-    """Prefers later candidates; records pooled connections in use and documents per call."""
+    """The real reranker; records pooled connections in use and documents per call."""
 
-    def __init__(self, pool, expected_calls=1):
+    def __init__(self, pool, real, expected_calls=1):
         self.pool = pool
+        self.real = real
         self.checked_out = []
         self.document_counts = []
         self.all_arrived = asyncio.Event()
@@ -50,11 +52,8 @@ class SpyReranker:
         self.document_counts.append(len(documents))
         if len(self.document_counts) >= self._expected_calls:
             self.all_arrived.set()
-        await asyncio.wait_for(self.all_arrived.wait(), timeout=10)
-        return sorted(
-            ((index, float(index)) for index in range(len(documents))),
-            key=lambda pair: -pair[1],
-        )
+        await asyncio.wait_for(self.all_arrived.wait(), timeout=60)
+        return await self.real.rerank(query, documents)
 
 
 @pytest.fixture
@@ -88,12 +87,12 @@ def _search(repo, user_id, query, k):
 
 
 async def test_memory_search_returns_k_when_k_exceeds_dense_candidates(
-    db_adapter, user_id, embeddings, monkeypatch,
+    db_adapter, user_id, embeddings, reranker_adapter, monkeypatch,
 ):
     monkeypatch.setattr(settings, "RERANKING_ENABLED", True)
     monkeypatch.setattr(settings, "DENSE_SEARCH_CANDIDATES", 5)
     monkeypatch.setattr(settings, "MEMORY_NUM_AUTO_LINK", 0)
-    repo = PostgresMemoryRepository(db_adapter, embeddings, SpyReranker(embeddings.pool))
+    repo = PostgresMemoryRepository(db_adapter, embeddings, SpyReranker(embeddings.pool, reranker_adapter))
     for index in range(12):
         await repo.create_memory(user_id, MemoryCreate(
             title=f"memory {index}", content=f"content {index}", context="context",
@@ -109,11 +108,11 @@ async def test_memory_search_returns_k_when_k_exceeds_dense_candidates(
 
 
 async def test_memory_search_releases_connection_before_reranking(
-    db_adapter, user_id, embeddings, monkeypatch,
+    db_adapter, user_id, embeddings, reranker_adapter, monkeypatch,
 ):
     monkeypatch.setattr(settings, "RERANKING_ENABLED", True)
     monkeypatch.setattr(settings, "MEMORY_NUM_AUTO_LINK", 0)
-    reranker = SpyReranker(embeddings.pool)
+    reranker = SpyReranker(embeddings.pool, reranker_adapter)
     repo = PostgresMemoryRepository(db_adapter, embeddings, reranker)
     await _seed_memories(repo, user_id, 6)
 
@@ -125,13 +124,13 @@ async def test_memory_search_releases_connection_before_reranking(
 
 
 async def test_concurrent_reranked_memory_searches_do_not_exhaust_connection_pool(
-    db_adapter, user_id, embeddings, monkeypatch,
+    db_adapter, user_id, embeddings, reranker_adapter, monkeypatch,
 ):
     monkeypatch.setattr(settings, "RERANKING_ENABLED", True)
     monkeypatch.setattr(settings, "MEMORY_NUM_AUTO_LINK", 0)
     # More simultaneous searches than the default pool can hand out (5 + 10 overflow).
     searches = 20
-    reranker = SpyReranker(embeddings.pool, expected_calls=searches)
+    reranker = SpyReranker(embeddings.pool, reranker_adapter, expected_calls=searches)
     repo = PostgresMemoryRepository(db_adapter, embeddings, reranker)
     await _seed_memories(repo, user_id, 6)
 

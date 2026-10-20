@@ -49,6 +49,12 @@ from app.routes.mcp.tool_registry import ToolRegistry
 from app.services.memory_service import MemoryService
 from app.services.re_embedding_service import ReEmbeddingService
 from app.services.tenant_service import TenantService
+from tests.gpu_preflight import require_gpu
+
+
+def pytest_collection_modifyitems(config, items):
+    """The reranker runs on the NVIDIA GPU with no CPU path: without one this run ends, it never skips."""
+    require_gpu()
 
 # Force all async tests in this directory onto the session event loop.
 # Required because asyncpg connections are bound to their creation loop.
@@ -324,11 +330,9 @@ def embedding_adapter():
 
 
 @pytest.fixture(scope="session")
-def reranker_adapter():
-    """Share the production-configured reranker (model loading is expensive ~1-2s)."""
-    from app.bootstrap import get_reranker_adapter
-
-    return get_reranker_adapter()
+def reranker_adapter(tensorrt_reranker):
+    """The real TensorRT reranker of the test session (production settings, one engine for all tests)."""
+    return tensorrt_reranker
 
 
 # ---------------------------------------------------------------------------

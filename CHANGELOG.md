@@ -24,8 +24,25 @@ without the mark, with the commit that landed it, in the commit that lands it.
   that every commit that changes behaviour updates both.
 - Optional `gateway` embeddings provider (`EMBEDDING_PROVIDER=gateway`) that posts JSON to an HTTP embeddings gateway. Settings: `GATEWAY_URL`, `GATEWAY_PATH`, `GATEWAY_TOKEN` (a secret value), `GATEWAY_AUTH_HEADER`, `GATEWAY_TENANT_HEADER`, `GATEWAY_TENANT`, `GATEWAY_BACKEND`, `GATEWAY_MODEL`, `GATEWAY_AGENT_ID`, `GATEWAY_METADATA` (a JSON object of strings) and `GATEWAY_SUPPORTS_DIMENSIONS`; none is read or required unless the provider is selected, and the default provider is unchanged. Texts go out in requests of at most 256, each with a fresh `request_id`, an `X-Idempotency-Key` that a retry of the same chunk reuses and an `X-Correlation-Id` shared by one call. Statuses 429 and 503 are retried after `Retry-After` (at most 30 s), 502, 504 and network errors with a growing wait, four attempts in all; 403, 422 and every other status fail at once, with the status and `code` in the error and never the body. A reply is refused unless it has one finite vector per text and each is `EMBEDDING_DIMENSIONS` wide. Tests run against an in-process fake gateway.
 - `generate_embeddings(texts)` on the `EmbeddingsAdapter` contract and on every provider (FastEmbed embeds a batch natively in groups of 256; Azure, Google, OpenAI and Ollama embed one text per request). `ReEmbeddingService` embeds each batch of memories with one call; a failed batch in `rebuild_embeddings` is retried memory by memory, so one rejected memory is still reported as `embedding_failed` alone.
-- **(planned)** Direct TensorRT reranker (TensorRT 11.x, strict fp32), with a fingerprinted engine cache,
-  a warm-up before the service is ready and a startup check that refuses to run on anything else.
+- Direct TensorRT 11 reranker (`RERANKING_PROVIDER=TensorRT`, the default), strict fp32, run on the NVIDIA GPU with
+  the CUDA Python bindings and no ONNX Runtime. It fetches `onnx/model.onnx` and `tokenizer.json` once into
+  `RERANKING_MODEL_DIR` (pinned revision for the default model, SHA-256 manifest) and builds one engine per
+  fingerprint (model SHA-256, TensorRT version, GPU name, compute capability, driver major version, TF32, optimization
+  profile of batch 1 to 64 and sequence 2 to 512) in `RERANKING_ENGINE_CACHE_DIR`, behind a file lock, with sibling
+  fingerprints pruned and logged. Startup warms the engine with one scored pair and logs the duration and whether the
+  cache was hit or why it was rebuilt. New settings: `RERANKING_TF32` (default `false`; fp16 is not supported at all),
+  `RERANKING_MODEL_DIR`, `RERANKING_ENGINE_CACHE_DIR`; `RERANKING_WORKERS` now sets the execution contexts, each
+  about 1.8 GiB of GPU memory beyond the first. A server or CLI command that cannot run the engine refuses to start
+  with `Error: the reranker cannot start: <cause>` and exit code 1 (no GPU, driver older than R580, TensorRT or CUDA
+  libraries missing, model unavailable, build failure). New [docs/gpu-reranking.md](docs/gpu-reranking.md) (host
+  requirements, TensorRT pin and bump policy, TF32, engine cache, GPU memory); dependencies `tensorrt-cu13`,
+  `tensorrt-cu13-bindings`, `tensorrt-cu13-libs` (11.4.0.106, from the NVIDIA index), `cuda-python`, `tokenizers`,
+  `huggingface-hub` and `numpy`.
+- GPU preflight for the integration, SQLite e2e and PostgreSQL e2e suites (`tests/gpu_preflight.py`): the pytest run
+  ends with exit code 2 and the cause when no GPU is visible, TensorRT cannot be imported, or an xdist worker count
+  exceeds the GPU memory. New tests run the real engine: golden scores, chunking, concurrent workers, engine cache
+  rebuild and pruning, damaged plans, and subprocess runs with `CUDA_VISIBLE_DEVICES=-1` and with the TensorRT
+  libraries hidden.
 - Tenants and static bearer tokens (`3201a2c3`). `AUTH_MODE=static` maps a fixed bearer token to one tenant: `AUTH_STATIC_TOKEN_HASHES` holds only the SHA-256 hash per tenant (never the token), a presented token is hashed and compared with every hash in constant time, one token belongs to one tenant, and a token never reaches a log line. For `jwt` and `introspection` the tenant is the claim `tenant_id`, else `tenant`, else `sub`; a blank claim falls through, and a claim of another type or over 255 characters is refused. `DEFAULT_TENANT` names the tenant of `AUTH_MODE=none`. Tests cover each mode (valid, invalid, expired and missing token), the claim order, the hash comparison and tenant isolation over REST, MCP and the CLI.
 - `project` argument (a free-form string, trimmed, 1 to 500 characters, created on first use) on `create_memory`, `update_memory` (an empty string clears it), `query_memory`, `get_recent_memories` and `rebuild_embeddings`, the `project` field and query parameter of the REST memory routes, and `-p/--project` on the CLI memory verbs.
 - **(planned)** Qdrant as the only store, authenticated with a Qdrant API key.
@@ -49,10 +66,26 @@ without the mark, with the commit that landed it, in the commit that lands it.
   because `parallel = true` makes every measured process write its own `.coverage.*` fragment, and interrupted
   runs left them behind. `.coverage-data/` is ignored by Git, semgrep, trivy, Qodana and radon.
 - **(planned)** NVIDIA GPU is a hard requirement for development and runtime; there is no CPU path and no skip.
+  Landed for the reranker and the test suites; embeddings still have a CPU path until the embedder is replaced.
 - **(planned)** Embeddings come only from the router (`gateway`); reranking runs locally on the GPU.
 - Users become tenants and projects become an optional scope string created on first use. The stored `users` row is the tenant record (matched by name in `external_id`) and `projects` is the table behind the scope, because the storage layer is replaced later and not migrated; no revision touches either table. A scope belongs to one tenant, so two tenants that use the same label have two scopes. Memory responses carry `project` (a string or null) instead of `project_ids`, and `ObsoleteMatch` does the same. The `AUTH_MODE` setting replaces `FASTMCP_SERVER_AUTH`, `DEFAULT_TENANT` replaces `DEFAULT_USER_ID`, `DEFAULT_USER_NAME` and `DEFAULT_USER_EMAIL`; an existing deployment keeps its memories by setting `DEFAULT_TENANT` to the old `DEFAULT_USER_ID` value. `GET /api/v1/auth/info` reports `authMode` as `disabled`, `jwt`, `introspection` or `static`. The tool scopes `users` and `projects` no longer exist (`read:memories` and `write:memories` remain). `.env.example` now sets `AUTH_MODE=none` and `SERVER_HOST=127.0.0.1`. The stdio and the HTTP examples in the README and the connectivity guide pass `AUTH_MODE=none` or a bearer token. The tool count goes from 17 to 10. The test harness server runs with `AUTH_MODE=none` on its loopback bind.
 - **(planned)** Memory ids become UUIDs.
-- **(planned)** Tests use the real GPU models and a real Qdrant; hosted CI keeps only the static gates.
+- The integration and end-to-end suites run the real TensorRT reranker on the GPU, with no stub reranker, fake module,
+  `gpu` marker or skip; HTTP mock transports, embedding stubs, spies that delegate to the real reranker and fault
+  injection (a barrier around `TensorRTEngine.infer`, hidden libraries in a subprocess, one invalid `cudaMemcpy`)
+  remain. Every CI job that runs tests or coverage (`ci.yml` `test`, `e2e.yml`, and the `snapshots`, `coverage`,
+  `memory` and `mutation` jobs of `quality.yml`) moves to `runs-on: [self-hosted, linux, gpu]`; the static gates,
+  the architecture tests, `trivy`, `qodana` and the wheel smoke test stay on hosted runners, and the static job
+  installs without the TensorRT libraries. The runner is not provisioned by the repository. The Windows leg of
+  `ci.yml` is gone.
+- **(planned)** Tests use a real Qdrant.
+- `RERANKING_PROVIDER` accepts `TensorRT` (default) and `HTTP`; `FastEmbed` is now rejected at startup with an error
+  naming the setting. The reranker needs an NVIDIA GPU; `RERANKING_ENABLED=false` or `RERANKING_PROVIDER=HTTP` runs
+  without one. The reranker is Linux-only (the engine cache locks with `fcntl`) and the package classifier reads
+  `Operating System :: POSIX :: Linux`. `docs/OFFLINE_SETUP.md`, `docs/configuration.md`, `docs/search.md`,
+  `docs/contributors.md`, `docs/quality-gates.md`, `.env.example`, `README.md` and `architecture.md` describe the new
+  reranker; the reranker model no longer lives in the FastEmbed cache and `FASTEMBED_LOCAL_FILES_ONLY` does not
+  affect it.
 - **(planned)** The package, CLI, environment variables and docs are renamed from `forgetful` to `axmem`.
 
 ### Removed
@@ -114,6 +147,9 @@ without the mark, with the commit that landed it, in the commit that lands it.
   change.
 - **(planned)** SQLite, PostgreSQL, pgvector and Alembic.
 - User and project tools, routes and CLI verbs: the MCP tools `get_current_user`, `update_user_notes`, `create_project`, `list_projects`, `get_project`, `update_project` and `delete_project`, the `user` and `project` tool categories, the REST routes `/api/v1/projects`, `ProjectService`, `UserService`, the project and patch models, the user notes and `idp_metadata` handling, the `PROJECT_DESCRIPTION_MAX_LENGTH` and `PROJECT_NOTES_MAX_LENGTH` settings, `project_ids` on the memory tools and routes, the `forgetful project list` command and the CLI project name resolver. The GitHub and Google OAuth providers, the `FASTMCP_SERVER_AUTH`, `FASTMCP_SERVER_AUTH_GITHUB_*`, `FASTMCP_SERVER_AUTH_GOOGLE_*`, `OAUTH_STORAGE_PATH` and `DEFAULT_USER_*` settings, the CLI browser login with its token cache, `forgetful auth logout`, and the `py-key-value-aio` dependency that stored the OAuth state. Agent commands, prompts, the connectivity guide and the files in the `skills/` catalogue that taught these tools are edited; the catalogue stays. No schema change and no migration: the `users` and `projects` tables stay.
+- FastEmbed cross-encoder reranker: `FastEmbedCrossEncoderAdapter`, its DirectML handling, the `RERANKING_THREADS` and
+  `RERANKING_ONNX_PROVIDERS` settings and the tests of that adapter and of its worker pool. Older environment files
+  that still set the removed settings keep working, because unknown settings are ignored.
 - **(planned)** FastEmbed, ONNX Runtime and the local CPU embedder.
 
 ### Fixed

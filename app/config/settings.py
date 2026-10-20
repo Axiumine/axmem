@@ -25,7 +25,7 @@ _default_config_dir = Path(user_config_dir("forgetful", ensure_exists=False))
 # Accepted values of the enumerated settings; the first entry is the default. Matching is
 # case-insensitive and the spelling below is the canonical one the rest of the code compares to.
 EMBEDDING_PROVIDERS = ("FastEmbed", "Azure", "Google", "OpenAI", "Ollama", "gateway")
-RERANKING_PROVIDERS = ("FastEmbed", "HTTP")
+RERANKING_PROVIDERS = ("TensorRT", "HTTP")
 LOG_FORMATS = ("console", "json")
 # AUTH_MODE has no default choice: a blank value stays blank and the server refuses to start
 AUTH_MODES = ("none", "jwt", "introspection", "static")
@@ -225,15 +225,16 @@ class Settings(BaseSettings):
 
     # RERANKING
     RERANKING_ENABLED: bool = True
-    RERANKING_PROVIDER: str = "FastEmbed"        # FastEmbed | HTTP
+    RERANKING_PROVIDER: str = "TensorRT"         # TensorRT | HTTP
     RERANKING_URL: str = ""                      # custom endpoints (e.g. http://localhost:8080/v1/rerank)
     RERANKING_API_KEY: str = ""
     RERANKING_TIMEOUT: float = Field(default=60.0, gt=0, allow_inf_nan=False)  # HTTP rerank request timeout (seconds)
     RERANKING_MODEL: str = "Xenova/ms-marco-MiniLM-L-12-v2"
-    # Local FastEmbed only; HTTP concurrency is controlled by the remote server.
-    RERANKING_THREADS: int = Field(default=1, ge=1)  # ONNX inference threads
-    RERANKING_WORKERS: int = Field(default=1, ge=1)  # Concurrent reranking jobs per adapter
-    RERANKING_ONNX_PROVIDERS: str = ""  # Comma-separated ONNX Runtime providers, empty = FastEmbed default
+    # Local TensorRT only; HTTP concurrency is controlled by the remote server.
+    RERANKING_WORKERS: int = Field(default=1, ge=1)  # Concurrent reranking jobs (one execution context each)
+    RERANKING_TF32: bool = False                 # True lets the engine use TF32 tensor cores (faster, not exact fp32)
+    RERANKING_MODEL_DIR: str = str(_default_data_dir / "models" / "reranker")  # model.onnx and tokenizer.json, fetched once
+    RERANKING_ENGINE_CACHE_DIR: str = str(_default_data_dir / "models" / "tensorrt")  # built engines, one directory per fingerprint
     DENSE_SEARCH_CANDIDATES: int = 20 # number of candidates to retrieve from the dense search
 
     # FASTEMBED CACHE CONFIGURATION
@@ -303,7 +304,7 @@ class Settings(BaseSettings):
             raise ValueError(f"{field_name} must be at most {limit} characters (got {len(value)})")
         return value
 
-    @field_validator("RERANKING_ONNX_PROVIDERS", "EMBEDDING_ONNX_PROVIDERS")
+    @field_validator("EMBEDDING_ONNX_PROVIDERS")
     @classmethod
     def _validate_onnx_providers(cls, value: str) -> str:
         parse_onnx_providers(value)
@@ -312,10 +313,6 @@ class Settings(BaseSettings):
     @property
     def embedding_onnx_providers(self) -> list[str] | None:
         return parse_onnx_providers(self.EMBEDDING_ONNX_PROVIDERS)
-
-    @property
-    def reranking_onnx_providers(self) -> list[str] | None:
-        return parse_onnx_providers(self.RERANKING_ONNX_PROVIDERS)
 
     """Pydantic Configuration"""
 

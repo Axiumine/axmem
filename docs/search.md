@@ -33,14 +33,16 @@ cross-encoder reranking.
 
 `query_memory` searches by vector similarity. When reranking is enabled and more
 than `k` candidates are returned, a cross-encoder reranks them using `query` and
-`query_context`. There is no sparse full-text search or reciprocal rank fusion.
+`query_context`. The local reranker runs on an NVIDIA GPU with TensorRT in strict fp32 (see
+[GPU reranking](gpu-reranking.md)); `RERANKING_PROVIDER=HTTP` sends the candidates to a rerank service
+instead. There is no sparse full-text search or reciprocal rank fusion.
 
 ---
 
 ## Embedding Providers
 
 ### [FastEmbed](https://github.com/qdrant/fastembed)
-For local embeddings and re-ranking we support the use of the excellent embedding solution developed by Qdrant. 
+For local embeddings we support the use of the excellent embedding solution developed by Qdrant. Local re-ranking does not use FastEmbed: it runs a cross-encoder on the GPU through TensorRT, see [GPU reranking](gpu-reranking.md).
 
 
 ### [Google](https://ai.google.dev/gemini-api/docs/embeddings)
