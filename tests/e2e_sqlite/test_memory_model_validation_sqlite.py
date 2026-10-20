@@ -304,11 +304,11 @@ class TestBlankSearchQuery:
         try:
             scored = await memory_repo.search_scored(
                 user_id=uuid4(), query="   ", query_context="ctx", k=3,
-                importance_threshold=None, project_ids=None, exclude_ids=None,
+                importance_threshold=None, project=None, exclude_ids=None,
             )
             semantic = await memory_repo.semantic_search_scored(
                 user_id=uuid4(), query="\n\t ", k=3,
-                importance_threshold=None, project_ids=None, exclude_ids=None,
+                importance_threshold=None, project=None, exclude_ids=None,
             )
         finally:
             adapter.generate_embedding = original

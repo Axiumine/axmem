@@ -383,7 +383,7 @@ async def test_list_memories_with_project_filter(test_memory_service):
         keywords=["projectA"],
         tags=["project"],
         importance=7,
-        project_ids=[1],
+        project="alpha",
     )
     memory1, _ = await test_memory_service.create_memory(user_id, memory1_data)
 
@@ -394,7 +394,7 @@ async def test_list_memories_with_project_filter(test_memory_service):
         keywords=["projectB"],
         tags=["project"],
         importance=7,
-        project_ids=[2],
+        project="beta",
     )
     memory2, _ = await test_memory_service.create_memory(user_id, memory2_data)
 
@@ -405,21 +405,60 @@ async def test_list_memories_with_project_filter(test_memory_service):
         keywords=["projectA"],
         tags=["project"],
         importance=7,
-        project_ids=[1],
+        project="alpha",
     )
     memory3, _ = await test_memory_service.create_memory(user_id, memory3_data)
 
-    # Get recent memories for project 1 only
+    # Get recent memories for project "alpha" only
     recent_project_a, total = await test_memory_service.list_memories(
         user_id,
         limit=10,
-        project_ids=[1],
+        project="alpha",
     )
 
     assert len(recent_project_a) == 2
     assert total == 2  # Total count for filtered results
     # Should only have Project A memories
     assert all("Project A" in m.title for m in recent_project_a)
+    assert {m.project for m in recent_project_a} == {"alpha"}
+    assert memory2.project == "beta"
+
+
+@pytest.mark.asyncio
+async def test_memory_without_a_project_belongs_to_no_scope(test_memory_service):
+    user_id = uuid4()
+    memory, _ = await test_memory_service.create_memory(
+        user_id,
+        MemoryCreate(
+            title="Unscoped", content="c", context="c", keywords=["k"], tags=["t"], importance=5,
+        ),
+    )
+
+    assert memory.project is None
+    scoped, total = await test_memory_service.list_memories(user_id, limit=10, project="alpha")
+    assert (scoped, total) == ([], 0)
+
+
+@pytest.mark.asyncio
+async def test_update_sets_changes_and_clears_the_project(test_memory_service):
+    user_id = uuid4()
+    memory, _ = await test_memory_service.create_memory(
+        user_id,
+        MemoryCreate(
+            title="Scoped", content="c", context="c", keywords=["k"], tags=["t"], importance=5,
+            project="alpha",
+        ),
+    )
+
+    moved = await test_memory_service.update_memory(
+        user_id, memory.id, MemoryUpdate(project="beta"),
+    )
+    assert moved.project == "beta"
+
+    cleared = await test_memory_service.update_memory(
+        user_id, memory.id, MemoryUpdate(project=""),
+    )
+    assert cleared.project is None
 
 
 @pytest.mark.asyncio

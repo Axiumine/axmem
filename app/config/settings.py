@@ -1,5 +1,6 @@
 """Configuration Management For the Service
 """
+import re
 from pathlib import Path
 from typing import cast
 
@@ -26,11 +27,17 @@ _default_config_dir = Path(user_config_dir("forgetful", ensure_exists=False))
 EMBEDDING_PROVIDERS = ("FastEmbed", "Azure", "Google", "OpenAI", "Ollama")
 RERANKING_PROVIDERS = ("FastEmbed", "HTTP")
 LOG_FORMATS = ("console", "json")
+# AUTH_MODE has no default choice: a blank value stays blank and the server refuses to start
+AUTH_MODES = ("none", "jwt", "introspection", "static")
 _CHOICES = {
     "EMBEDDING_PROVIDER": EMBEDDING_PROVIDERS,
     "RERANKING_PROVIDER": RERANKING_PROVIDERS,
     "LOG_FORMAT": LOG_FORMATS,
 }
+
+# The longest tenant name the tenant record can hold (users.external_id is VARCHAR(255))
+TENANT_MAX_LENGTH = 255
+_SHA256_HEX = re.compile(r"[0-9a-f]{64}")
 
 # ENCODING_* / AGENT_* defaults are copied into the Create/Update models of every object type,
 # whose provenance fields enforce these maximum lengths.
@@ -112,26 +119,18 @@ class Settings(BaseSettings):
 
     DB_LOGGING: bool = False
 
-    # Auth Configuration
-    DEFAULT_USER_ID: str = "default-user-id"
-    DEFAULT_USER_NAME: str = "default-user-name"
-    DEFAULT_USER_EMAIL: str = "default-user-email"
+    # Authentication. The server fails closed: with AUTH_MODE unset it refuses to start.
+    #   none          one local tenant (DEFAULT_TENANT) for every request; accepted only on stdio
+    #                 or when the HTTP server binds a loopback address
+    #   jwt           signed bearer tokens; the tenant is the claim tenant_id, else tenant, else sub
+    #   introspection bearer tokens checked at an RFC 7662 endpoint; same tenant claims
+    #   static        fixed bearer tokens, one per tenant, configured as SHA-256 hashes
+    AUTH_MODE: str = ""
+    DEFAULT_TENANT: str = Field(default="default", min_length=1, max_length=TENANT_MAX_LENGTH)
 
-    # FastMCP Auth Provider Configuration
-    # Set FASTMCP_SERVER_AUTH to enable authentication (omit for no-auth default user mode)
-    FASTMCP_SERVER_AUTH: str = ""              # Fully-qualified provider class path
-
-    # GitHub OAuth Provider
-    FASTMCP_SERVER_AUTH_GITHUB_CLIENT_ID: str = ""
-    FASTMCP_SERVER_AUTH_GITHUB_CLIENT_SECRET: str = ""
-    FASTMCP_SERVER_AUTH_GITHUB_BASE_URL: str = ""
-    FASTMCP_SERVER_AUTH_GITHUB_REQUIRED_SCOPES: str = ""
-
-    # Google OAuth Provider
-    FASTMCP_SERVER_AUTH_GOOGLE_CLIENT_ID: str = ""
-    FASTMCP_SERVER_AUTH_GOOGLE_CLIENT_SECRET: str = ""
-    FASTMCP_SERVER_AUTH_GOOGLE_BASE_URL: str = ""
-    FASTMCP_SERVER_AUTH_GOOGLE_REQUIRED_SCOPES: str = ""
+    # Static bearer tokens (AUTH_MODE=static): tenant -> SHA-256 hex digest of that tenant's token.
+    # Set it as a JSON object, e.g. '{"acme": "<64 hex characters>"}'. The plain token is never configured.
+    AUTH_STATIC_TOKEN_HASHES: dict[str, str] = {}
 
     # JWT Verification
     FASTMCP_SERVER_AUTH_JWT_JWKS_URI: str = ""
@@ -146,16 +145,13 @@ class Settings(BaseSettings):
     FASTMCP_SERVER_AUTH_INTROSPECTION_CLIENT_SECRET: str = ""
     FASTMCP_SERVER_AUTH_INTROSPECTION_REQUIRED_SCOPES: str = ""
 
-    # OAuth Storage Configuration
-    OAUTH_STORAGE_PATH: str = str(_default_data_dir / "oauth")  # Platform-specific path for OAuth tokens
-
     # Token Cache Configuration (for HTTP/REST auth performance)
     TOKEN_CACHE_ENABLED: bool = True           # Enable/disable token caching
     TOKEN_CACHE_TTL_SECONDS: int = 300         # 5 minutes default
     TOKEN_CACHE_MAX_SIZE: int = 1000           # Maximum cached tokens
 
     # Scoped Permissions Configuration
-    FORGETFUL_SCOPES: str = "*"               # Comma-separated scopes (e.g. "read", "write:memories", "read,write:projects")
+    FORGETFUL_SCOPES: str = "*"               # Comma-separated scopes (e.g. "read", "write:memories", "read:memories,write:memories")
 
     # CLI Remote Mode Configuration
     FORGETFUL_SERVER: str = ""                # Remote deployment URL for the CLI (empty = local mode)
@@ -178,10 +174,6 @@ class Settings(BaseSettings):
     MEMORY_SIMILARITY_THRESHOLD: float = 0.7  # minimum cosine similarity for auto-links
     OBSOLETE_WARNING_ENABLED: bool = True  # create_memory warns when content matches superseded memories
     OBSOLETE_WARNING_THRESHOLD: float = 0.89  # minimum cosine similarity for obsolete-memory warnings
-
-    # Project Configuration
-    PROJECT_DESCRIPTION_MAX_LENGTH: int = 5000  # Text field, no DB limit - reasonable cap
-    PROJECT_NOTES_MAX_LENGTH: int = 4000        # Text field, no DB limit - reasonable cap
 
     # Provenance Defaults (auto-applied to all writes when set via MCP env config)
     ENCODING_AGENT: str = ""        # Software running the agent (e.g., "OpenCode")
@@ -248,6 +240,47 @@ class Settings(BaseSettings):
         field_name = _field_name(info)
         return canonical_choice(field_name, value, _CHOICES[field_name])
 
+    @field_validator("AUTH_MODE")
+    @classmethod
+    def _validate_auth_mode(cls, value: str) -> str:
+        # Blank means "not configured" and must stay blank: there is no default mode to fall back to
+        if not value.strip():
+            return ""
+        return canonical_choice("AUTH_MODE", value, AUTH_MODES)
+
+    @field_validator("DEFAULT_TENANT")
+    @classmethod
+    def _validate_default_tenant(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("DEFAULT_TENANT must not be blank")
+        return value.strip()
+
+    @field_validator("AUTH_STATIC_TOKEN_HASHES")
+    @classmethod
+    def _validate_static_token_hashes(cls, value: dict[str, str]) -> dict[str, str]:
+        # Messages never repeat a configured value: a plain token pasted here by mistake must not be echoed
+        hashes: dict[str, str] = {}
+        for tenant, digest in value.items():
+            name = tenant.strip()
+            if not name or len(name) > TENANT_MAX_LENGTH:
+                raise ValueError(
+                    f"AUTH_STATIC_TOKEN_HASHES tenant names must be 1 to {TENANT_MAX_LENGTH} characters",
+                )
+            if name in hashes:
+                raise ValueError("AUTH_STATIC_TOKEN_HASHES names the same tenant twice")
+            normalised = digest.strip().lower()
+            if not _SHA256_HEX.fullmatch(normalised):
+                raise ValueError(
+                    "AUTH_STATIC_TOKEN_HASHES values must be 64-character hexadecimal SHA-256 "
+                    "digests of the tokens, never the tokens themselves",
+                )
+            hashes[name] = normalised
+        if len(set(hashes.values())) != len(hashes):
+            raise ValueError(
+                "AUTH_STATIC_TOKEN_HASHES gives two tenants the same token: one token belongs to one tenant",
+            )
+        return hashes
+
     @field_validator(*PROVENANCE_MAX_LENGTHS)
     @classmethod
     def _validate_provenance_length(cls, value: str, info: ValidationInfo) -> str:
@@ -280,6 +313,8 @@ class Settings(BaseSettings):
         ],
         env_file_encoding="utf-8",
         extra="ignore",
+        # Settings hold credentials (API keys, token hashes): validation errors must not echo them
+        hide_input_in_errors=True,
     )
 
 settings = Settings()

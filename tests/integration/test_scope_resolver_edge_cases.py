@@ -45,3 +45,20 @@ def test_unknown_scope_token_does_not_change_what_the_known_ones_grant(registry)
     permitted = resolve_permitted_tools(frozenset({"admin", "read:memories"}), registry)
 
     assert permitted == {"get_memory"}
+
+
+def test_a_tool_category_without_a_scope_category_is_granted_by_no_category_scope(registry, monkeypatch):
+    """A category scope grants only the tool categories mapped to it, so a new category stays denied until mapped."""
+    from app.routes.mcp import scope_resolver
+
+    async def noop(**kwargs):
+        return {}
+
+    registry.register(
+        name="link_memories", category=ToolCategory.LINKING, description="Link", parameters=[],
+        returns="Links", implementation=noop, mutates=True,
+    )
+    monkeypatch.setattr(scope_resolver, "_SCOPE_TO_CATEGORIES", {"memories": ["memory"]})
+
+    assert resolve_permitted_tools(frozenset({"write:memories"}), registry) == {"create_memory"}
+    assert resolve_permitted_tools(frozenset({"write"}), registry) == {"create_memory", "link_memories"}

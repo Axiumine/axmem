@@ -23,7 +23,6 @@ from app.routes.api import (
     auth,
     health,
     memories,
-    projects,
 )
 from app.routes.mcp import meta_tools
 from app.routes.server_state import ForgetfulMCP
@@ -53,10 +52,9 @@ async def lifespan(app):
     runtime = await build_runtime()
     services = runtime.services
 
-    mcp.user_service = services.user
+    mcp.tenant_service = services.tenant
     mcp.memory_service = services.memory
     mcp.re_embedding_service = services.re_embedding
-    mcp.project_service = services.project
 
     logger.info("Services initialized and attached to FastMCP instance")
 
@@ -105,7 +103,6 @@ async def root(request: Request) -> JSONResponse:
 health.register(mcp)
 auth.register(mcp)
 memories.register(mcp)
-projects.register(mcp)
 
 meta_tools.register(mcp)
 
@@ -405,7 +402,19 @@ async def _run_reembed(args):
 
 
 def _serve(transport, host, port):
-    """Run the MCP server on the given transport (shared by legacy and new spellings)."""
+    """Run the MCP server on the given transport (shared by legacy and new spellings).
+
+    Fails closed first: a server without a configured authentication mode, or one that
+    would serve anonymous requests on a non-loopback address, does not start.
+    """
+    from app.config.auth import AuthConfigError, ensure_startup_allowed
+
+    try:
+        ensure_startup_allowed(transport, host)
+    except AuthConfigError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+
     if transport == "stdio":
         import warnings
         warnings.filterwarnings("ignore", category=DeprecationWarning)
@@ -469,9 +478,8 @@ def _legacy_launcher(argv):
             "  memory    Curated memory commands (search, save, get, recent)\n"
             "  tools     Inspect the available Forgetful tools (list, info)\n"
             "  call      Execute any Forgetful tool by name\n"
-            "  auth      Authenticate against a remote deployment "
-            "(login, status, logout)\n"
-            "  project   Curated project commands (list)\n"
+            "  auth      Connect to a remote deployment "
+            "(login, status)\n"
             "  serve     Run the Forgetful MCP server\n"
             "  re-embed  Re-embed all memories with the configured provider\n"
         ),

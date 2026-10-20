@@ -8,12 +8,7 @@ pytestmark = pytest.mark.asyncio(loop_scope="session")
 @pytest.mark.e2e
 async def test_importance_filter_applies_before_pagination(http_client):
     """GET /api/v1/memories filters by importance before paginating."""
-    project_response = await http_client.post("/api/v1/projects", json={
-        "name": "Importance filter project",
-        "description": "Project for testing importance filtering",
-        "project_type": "development",
-    })
-    project_id = project_response.json()["id"]
+    project = "Importance filter project"
 
     await http_client.post("/api/v1/memories", json={
         "title": "High importance memory",
@@ -22,7 +17,7 @@ async def test_importance_filter_applies_before_pagination(http_client):
         "keywords": ["filter"],
         "tags": ["test"],
         "importance": 9,
-        "project_ids": [project_id],
+        "project": project,
     })
     await http_client.post("/api/v1/memories", json={
         "title": "Low importance memory",
@@ -31,11 +26,11 @@ async def test_importance_filter_applies_before_pagination(http_client):
         "keywords": ["filter"],
         "tags": ["test"],
         "importance": 3,
-        "project_ids": [project_id],
+        "project": project,
     })
 
     response = await http_client.get(
-        f"/api/v1/memories?project_id={project_id}&importance_min=8&limit=1",
+        "/api/v1/memories", params={"project": project, "importance_min": 8, "limit": 1},
     )
 
     assert response.status_code == 200

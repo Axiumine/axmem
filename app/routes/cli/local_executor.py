@@ -16,7 +16,7 @@ from app.routes.mcp.meta_tools import (
 
 
 class LocalExecutor:
-    """ToolExecutor over an in-process runtime (default user, instance scope ceiling)."""
+    """ToolExecutor over an in-process runtime (the DEFAULT_TENANT tenant, instance scope ceiling)."""
 
     def __init__(self, runtime: Runtime):
         self._runtime = runtime

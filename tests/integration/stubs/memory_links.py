@@ -6,18 +6,18 @@ from app.models.memory_models import Memory
 from tests.integration.stubs.helpers import find_item
 
 
-def _in_projects(memory: Memory, project_ids: list[int] | None) -> bool:
-    """True when no project filter is given or the memory belongs to one of them."""
-    return not project_ids or any(pid in memory.project_ids for pid in project_ids)
+def _in_project(memory: Memory, project: str | None) -> bool:
+    """True when no project filter is given or the memory is in that project scope."""
+    return not project or memory.project == project
 
 
 def _is_linkable(
-    memory: Memory | None, project_ids: list[int] | None, excluded: set[int],
+    memory: Memory | None, project: str | None, excluded: set[int],
 ) -> bool:
     """True for a live (not obsolete), non-excluded memory inside the project filter."""
     if memory is None or memory.is_obsolete or memory.id in excluded:
         return False
-    return _in_projects(memory, project_ids)
+    return _in_project(memory, project)
 
 
 class MemoryLinkMixin:
@@ -60,7 +60,7 @@ class MemoryLinkMixin:
         self,
         user_id: UUID,
         memory_id: int,
-        project_ids: list[int] | None,
+        project: str | None,
         max_links: int = 5,
         exclude_ids: list[int] | None = None,
     ) -> list[Memory]:
@@ -70,7 +70,7 @@ class MemoryLinkMixin:
         for linked_id in self._links.get(memory_id, set()):
             memory = find_item(self._memories, user_id, linked_id)
             # Obsolete memories are soft-deleted and never returned
-            if _is_linkable(memory, project_ids, excluded):
+            if _is_linkable(memory, project, excluded):
                 memories.append(memory)
 
             if len(memories) >= max_links:

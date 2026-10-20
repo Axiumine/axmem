@@ -1,30 +1,34 @@
 """E2E tests: the throwaway server boots and takes writes whatever the host looks like.
 
 Boots the real `forgetful serve` console script as an OS subprocess (file-backed SQLite,
-no auth) from hosts that used to break the harness: a shell or user-config dotenv file
+AUTH_MODE=none) from hosts that used to break the harness: a shell or user-config dotenv file
 restricting the instance's scopes, and an un-activated venv with a proxy configured for
-every non-loopback request. A write tool call (create_project) is the canary - it needs
+every non-loopback request. A write tool call (create_memory) is the canary - it needs
 the write scopes and a working harness-to-server connection.
 """
 import pytest
 
 from test_harness.server import ThrowawayForgetful, _ephemeral_port
 
-PROJECT = "harness-canary"
+TITLE = "harness-canary"
 
 
 async def _boot_and_write(run_dir) -> str:
     server = ThrowawayForgetful(run_dir=run_dir)
     server.start()
     try:
-        created = await server.execute("create_project", {
-            "name": PROJECT,
-            "description": "Written by the harness canary",
-            "project_type": "development",
+        created = await server.execute("create_memory", {
+            "title": TITLE,
+            "content": "Written by the harness canary",
+            "context": "Harness canary",
+            "keywords": ["harness"],
+            "tags": ["e2e"],
+            "importance": 5,
         })
+        stored = await server.execute("get_memory", {"memory_id": created["id"]})
     finally:
         server.stop()
-    return created["name"]
+    return stored["title"]
 
 
 @pytest.fixture
@@ -45,8 +49,8 @@ async def test_scopes_exported_in_the_shell_do_not_restrict_the_instance(
     # Act
     written = await _boot_and_write(run_dir)
 
-    # Assert: create_project needs write:projects, so the instance is unrestricted
-    assert written == PROJECT
+    # Assert: create_memory needs a write scope, so the instance is unrestricted
+    assert written == TITLE
 
 
 @pytest.mark.asyncio
@@ -65,7 +69,7 @@ async def test_scopes_in_the_user_config_do_not_restrict_the_instance(
     written = await _boot_and_write(run_dir)
 
     # Assert
-    assert written == PROJECT
+    assert written == TITLE
 
 
 @pytest.mark.asyncio
@@ -86,4 +90,4 @@ async def test_boots_and_takes_writes_from_an_unactivated_venv_behind_a_proxy(
     written = await _boot_and_write(run_dir)
 
     # Assert
-    assert written == PROJECT
+    assert written == TITLE

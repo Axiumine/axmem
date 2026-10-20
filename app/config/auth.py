@@ -1,20 +1,26 @@
-"""Auth provider factory for FastMCP v3.
+"""Authentication mode selection for FastMCP v3, failing closed.
 
-FastMCP v3 removed automatic auth provider construction from environment
-variables. This factory reads the same FASTMCP_SERVER_AUTH + FASTMCP_SERVER_AUTH_*
-settings that users already configure and constructs providers explicitly.
+``AUTH_MODE`` names how requests are authenticated:
+
+- ``jwt``: signed bearer tokens (JWT verification)
+- ``introspection``: bearer tokens checked at an RFC 7662 introspection endpoint
+- ``static``: fixed bearer tokens, one per tenant, configured as SHA-256 hashes
+- ``none``: no credential; every request is the one local tenant
+
+There is no default mode. ``ensure_startup_allowed`` refuses to start the server when the
+mode is unset, and accepts ``none`` only on stdio or when the HTTP server is bound to a
+loopback address, so a server reachable from the network can never run without a credential.
 
 All auth settings flow through settings.py for consistency with the rest of
-the codebase (supports .env and platform config .env files).
-
-Users change nothing — same env vars, same behavior.
+the codebase (supports env files and platform config env files).
 """
 from __future__ import annotations
 
+import ipaddress
 import logging
 from typing import TYPE_CHECKING
 
-from app.config.settings import settings
+from app.config.settings import AUTH_MODES, settings
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -25,14 +31,18 @@ logger = logging.getLogger(__name__)
 
 type _ProviderFactory = Callable[[], AuthProvider]
 
-# Map of recognized provider class paths to their factory functions
+# Factory of the auth provider of each mode that needs one
 _PROVIDER_FACTORIES: dict[str, _ProviderFactory] = {}
 
 
-def _register(class_path: str) -> Callable[[_ProviderFactory], _ProviderFactory]:
-    """Decorator to register a provider factory for a given class path."""
+class AuthConfigError(ValueError):
+    """The authentication configuration does not allow the server to start."""
+
+
+def _register(mode: str) -> Callable[[_ProviderFactory], _ProviderFactory]:
+    """Decorator to register a provider factory for an AUTH_MODE value."""
     def wrapper(fn: _ProviderFactory) -> _ProviderFactory:
-        _PROVIDER_FACTORIES[class_path] = fn
+        _PROVIDER_FACTORIES[mode] = fn
         return fn
     return wrapper
 
@@ -53,31 +63,7 @@ def _scopes(raw: str) -> list[str] | None:
     return [s.strip() for s in raw.split(",") if s.strip()]
 
 
-@_register("fastmcp.server.auth.providers.github.GitHubProvider")
-def _build_github() -> AuthProvider:
-    from fastmcp.server.auth.providers.github import GitHubProvider
-
-    return GitHubProvider(
-        client_id=_required(settings.FASTMCP_SERVER_AUTH_GITHUB_CLIENT_ID, "FASTMCP_SERVER_AUTH_GITHUB_CLIENT_ID"),
-        client_secret=_required(settings.FASTMCP_SERVER_AUTH_GITHUB_CLIENT_SECRET, "FASTMCP_SERVER_AUTH_GITHUB_CLIENT_SECRET"),
-        base_url=_required(settings.FASTMCP_SERVER_AUTH_GITHUB_BASE_URL, "FASTMCP_SERVER_AUTH_GITHUB_BASE_URL"),
-        required_scopes=_scopes(settings.FASTMCP_SERVER_AUTH_GITHUB_REQUIRED_SCOPES),
-    )
-
-
-@_register("fastmcp.server.auth.providers.google.GoogleProvider")
-def _build_google() -> AuthProvider:
-    from fastmcp.server.auth.providers.google import GoogleProvider
-
-    return GoogleProvider(
-        client_id=_required(settings.FASTMCP_SERVER_AUTH_GOOGLE_CLIENT_ID, "FASTMCP_SERVER_AUTH_GOOGLE_CLIENT_ID"),
-        client_secret=_required(settings.FASTMCP_SERVER_AUTH_GOOGLE_CLIENT_SECRET, "FASTMCP_SERVER_AUTH_GOOGLE_CLIENT_SECRET"),
-        base_url=_required(settings.FASTMCP_SERVER_AUTH_GOOGLE_BASE_URL, "FASTMCP_SERVER_AUTH_GOOGLE_BASE_URL"),
-        required_scopes=_scopes(settings.FASTMCP_SERVER_AUTH_GOOGLE_REQUIRED_SCOPES),
-    )
-
-
-@_register("fastmcp.server.auth.providers.jwt.JWTVerifier")
+@_register("jwt")
 def _build_jwt() -> AuthProvider:
     from fastmcp.server.auth.providers.jwt import JWTVerifier
 
@@ -99,7 +85,7 @@ def _build_jwt() -> AuthProvider:
     )
 
 
-@_register("fastmcp.server.auth.providers.introspection.IntrospectionTokenVerifier")
+@_register("introspection")
 def _build_introspection() -> AuthProvider:
     from fastmcp.server.auth.providers.introspection import IntrospectionTokenVerifier
 
@@ -114,26 +100,82 @@ def _build_introspection() -> AuthProvider:
     )
 
 
+@_register("static")
+def _build_static() -> AuthProvider:
+    from app.middleware.static_token import StaticTokenVerifier
+
+    if not settings.AUTH_STATIC_TOKEN_HASHES:
+        raise ValueError(
+            "AUTH_STATIC_TOKEN_HASHES is required when AUTH_MODE=static: "
+            "a JSON object of tenant -> SHA-256 hex digest of the tenant's token",
+        )
+    return StaticTokenVerifier(settings.AUTH_STATIC_TOKEN_HASHES)
+
+
 def build_auth_provider() -> AuthProvider | None:
-    """Build auth provider from FASTMCP_SERVER_AUTH setting.
+    """Build the auth provider of the configured AUTH_MODE.
 
-    Returns None when FASTMCP_SERVER_AUTH is not set (no auth mode).
-    Raises ValueError for unrecognized provider class paths.
+    Returns None when AUTH_MODE is ``none`` or unset; an unset mode is refused separately,
+    when the server starts (``ensure_startup_allowed``), and again for every request
+    (``app.middleware.auth``), so None never means "open".
+    Raises ValueError when the selected mode is missing its settings.
     """
-    auth_class_path = settings.FASTMCP_SERVER_AUTH
+    mode = settings.AUTH_MODE
 
-    if not auth_class_path:
-        logger.info("No auth provider configured (FASTMCP_SERVER_AUTH not set)")
+    if mode in ("", "none"):
+        logger.info("No auth provider configured (AUTH_MODE=%s)", mode or "unset")
         return None
 
-    factory = _PROVIDER_FACTORIES.get(auth_class_path)
-    if factory is None:
-        supported = ", ".join(sorted(_PROVIDER_FACTORIES.keys()))
-        raise ValueError(
-            f"Unrecognized auth provider: {auth_class_path}. "
-            f"Supported providers: {supported}",
+    provider = _PROVIDER_FACTORIES[mode]()
+    logger.info("Auth provider constructed: %s", mode)
+    return provider
+
+
+def is_loopback_host(host: str) -> bool:
+    """Whether the HTTP bind address is a loopback IP address (127.0.0.0/8 or ::1).
+
+    Host names are refused, ``localhost`` included: what a name resolves to is not
+    something this check can vouch for.
+    """
+    try:
+        return ipaddress.ip_address(host.strip().strip("[]")).is_loopback
+    except ValueError:
+        return False
+
+
+def ensure_startup_allowed(transport: str, host: str) -> None:
+    """Refuse to start the server unless its authentication configuration is safe.
+
+    Args:
+        transport: ``stdio`` or ``http``
+        host: HTTP bind address (not used on stdio)
+
+    Raises:
+        AuthConfigError: AUTH_MODE is unset, ``none`` is combined with a bind address that
+            is not loopback, or a credential-based mode is combined with stdio, which
+            carries no credential
+    """
+    mode = settings.AUTH_MODE
+
+    if not mode:
+        raise AuthConfigError(
+            "No authentication mode is configured, so the server will not start. "
+            f"Set AUTH_MODE to one of: {', '.join(AUTH_MODES)}. "
+            "AUTH_MODE=none is accepted only on stdio or when the HTTP server is bound "
+            "to a loopback address (--host 127.0.0.1 or ::1).",
         )
 
-    provider = factory()
-    logger.info(f"Auth provider constructed: {auth_class_path}")
-    return provider
+    if transport == "stdio":
+        if mode != "none":
+            raise AuthConfigError(
+                f"AUTH_MODE={mode} needs a bearer token, which the stdio transport does not carry. "
+                "Use AUTH_MODE=none on stdio, or serve over HTTP.",
+            )
+        return
+
+    if mode == "none" and not is_loopback_host(host):
+        raise AuthConfigError(
+            f"AUTH_MODE=none is accepted only when the HTTP server is bound to a loopback address "
+            f"(127.0.0.1 or ::1), not {host!r}. Bind to a loopback address or choose "
+            "AUTH_MODE=jwt, introspection or static.",
+        )

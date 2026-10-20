@@ -28,7 +28,7 @@ class MemoryRepository(Protocol):
             query_context: str,
             k: int,
             importance_threshold: int | None,
-            project_ids: list[int] | None,
+            project: str | None,
             exclude_ids: list[int] | None,
     ) -> list[Memory]:
         ...
@@ -40,7 +40,7 @@ class MemoryRepository(Protocol):
             query_context: str,
             k: int,
             importance_threshold: int | None,
-            project_ids: list[int] | None,
+            project: str | None,
             exclude_ids: list[int] | None,
     ) -> list[tuple[Memory, MemoryScore]]:
         ...
@@ -91,7 +91,7 @@ class MemoryRepository(Protocol):
             self,
             user_id: UUID,
             memory_id: int,
-            project_ids: list[int] | None,
+            project: str | None,
             max_links: int = 5,
             exclude_ids: list[int] | None = None,
     ) -> list[Memory]:
@@ -126,7 +126,7 @@ class MemoryRepository(Protocol):
             user_id: UUID,
             limit: int,
             offset: int = 0,
-            project_ids: list[int] | None = None,
+            project: str | None = None,
             include_obsolete: bool = False,
             sort_by: str = "created_at",
             sort_order: str = "desc",
@@ -140,7 +140,7 @@ class MemoryRepository(Protocol):
             user_id: User ID
             limit: Max results to return
             offset: Skip N results for pagination
-            project_ids: Filter by project (optional)
+            project: Filter by project scope (optional)
             include_obsolete: Include soft-deleted memories
             sort_by: Sort field - created_at, updated_at, importance
             sort_order: Sort direction - asc, desc
@@ -189,7 +189,7 @@ class MemoryRepository(Protocol):
             self,
             user_id: UUID,
             memory_ids: list[int] | None = None,
-            project_id: int | None = None,
+            project: str | None = None,
     ) -> int:
         """Count memories eligible for a *user-scoped, targeted* embedding rebuild.
 
@@ -200,7 +200,7 @@ class MemoryRepository(Protocol):
         Args:
             user_id: Authenticated user id; ownership filter, never optional.
             memory_ids: Restrict to explicit ids (already user-scoped server-side).
-            project_id: Restrict to a single project owned by `user_id`.
+            project: Restrict to one project scope of `user_id`.
 
         Returns:
             Number of non-obsolete memories matching the filters and owned by
@@ -214,7 +214,7 @@ class MemoryRepository(Protocol):
             limit: int,
             after_id: int | None = None,
             memory_ids: list[int] | None = None,
-            project_id: int | None = None,
+            project: str | None = None,
     ) -> list[Memory]:
         """Page through memories selected by `count_memories_for_targeted_rebuild`.
 
@@ -252,8 +252,8 @@ class MemoryRepository(Protocol):
         """
         ...
 
-    async def project_exists_for_user(self, user_id: UUID, project_id: int) -> bool:
-        """Return True only if `project_id` exists and is owned by `user_id`."""
+    async def project_exists_for_user(self, user_id: UUID, project: str) -> bool:
+        """Return True only if `user_id` has used the project scope `project` before."""
         ...
 
     async def reset_embedding_storage(self) -> None:

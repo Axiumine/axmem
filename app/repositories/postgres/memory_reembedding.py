@@ -12,6 +12,7 @@ from app.repositories.postgres.memory_base import (
     MemoryRepositoryBase,
     affected_rows,
     memory_load_options,
+    project_membership_filter,
 )
 from app.repositories.postgres.postgres_tables import MemoryTable, ProjectsTable
 from app.repositories.vector_ddl import resize_pgvector_column_sql
@@ -97,7 +98,7 @@ class MemoryReembeddingMixin(MemoryRepositoryBase):
         self,
         user_id: UUID,
         memory_ids: list[int] | None,
-        project_id: int | None,
+        project: str | None,
     ) -> Select[tuple[MemoryTable]]:
         conditions = [
             MemoryTable.user_id == user_id,
@@ -106,33 +107,30 @@ class MemoryReembeddingMixin(MemoryRepositoryBase):
         if memory_ids:
             conditions.append(MemoryTable.id.in_(memory_ids))
         stmt = select(MemoryTable).where(*conditions)
-        if project_id is not None:
-            stmt = stmt.join(MemoryTable.projects).where(
-                ProjectsTable.id == project_id,
-                ProjectsTable.user_id == user_id,
-            )
+        if project is not None:
+            stmt = stmt.where(project_membership_filter(project))
         return stmt
 
     async def count_memories_for_targeted_rebuild(
         self,
         user_id: UUID,
         memory_ids: list[int] | None = None,
-        project_id: int | None = None,
+        project: str | None = None,
     ) -> int:
         async with self.db_adapter.system_session() as session:
             base = self._build_targeted_rebuild_filter(
                 user_id=user_id,
                 memory_ids=memory_ids,
-                project_id=project_id,
+                project=project,
             )
             count_stmt = select(func.count()).select_from(base.subquery())
             return (await session.execute(count_stmt)).scalar() or 0
 
-    async def project_exists_for_user(self, user_id: UUID, project_id: int) -> bool:
+    async def project_exists_for_user(self, user_id: UUID, project: str) -> bool:
         async with self.db_adapter.system_session() as session:
             found = await session.execute(
                 select(ProjectsTable.id).where(
-                    ProjectsTable.id == project_id,
+                    ProjectsTable.name == project,
                     ProjectsTable.user_id == user_id,
                 ),
             )
@@ -144,13 +142,13 @@ class MemoryReembeddingMixin(MemoryRepositoryBase):
         limit: int,
         after_id: int | None = None,
         memory_ids: list[int] | None = None,
-        project_id: int | None = None,
+        project: str | None = None,
     ) -> list[Memory]:
         async with self.db_adapter.system_session() as session:
             stmt = self._build_targeted_rebuild_filter(
                 user_id=user_id,
                 memory_ids=memory_ids,
-                project_id=project_id,
+                project=project,
             )
             if after_id is not None:
                 stmt = stmt.where(MemoryTable.id > after_id)

@@ -9,7 +9,6 @@ from types import SimpleNamespace
 from app.bootstrap import build_runtime, dispose_runtime
 from app.config.settings import settings
 from app.models.memory_models import MemoryCreate
-from app.models.user_models import UserCreate
 
 
 async def test_build_runtime_wires_registry_and_memory_service(sqlite_runtime_settings):
@@ -19,15 +18,9 @@ async def test_build_runtime_wires_registry_and_memory_service(sqlite_runtime_se
     try:
         assert len(runtime.registry.list_all_tools()) > 0
 
-        user = await runtime.services.user.get_or_create_user(
-            user=UserCreate(
-                external_id=settings.DEFAULT_USER_ID,
-                name=settings.DEFAULT_USER_NAME,
-                email=settings.DEFAULT_USER_EMAIL,
-            ),
-        )
+        tenant = await runtime.services.tenant.get_or_create_tenant(settings.DEFAULT_TENANT)
         memory, _ = await runtime.services.memory.create_memory(
-            user_id=user.id,
+            user_id=tenant.id,
             memory_data=MemoryCreate(
                 title="Bootstrap smoke memory",
                 content="Created through a runtime wired by app.bootstrap.build_runtime",
@@ -40,7 +33,7 @@ async def test_build_runtime_wires_registry_and_memory_service(sqlite_runtime_se
         assert memory.id is not None
         assert memory.title == "Bootstrap smoke memory"
         ctx = SimpleNamespace(
-            fastmcp=SimpleNamespace(auth=None, user_service=runtime.services.user),
+            fastmcp=SimpleNamespace(auth=None, tenant_service=runtime.services.tenant),
         )
         rebuilt = await runtime.registry.execute(
             "rebuild_embeddings", {"memory_ids": [memory.id]}, ctx=ctx,

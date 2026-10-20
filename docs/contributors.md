@@ -81,14 +81,14 @@ Clone the repository and install the locked dependencies (Python 3.14 and [uv](h
 git clone https://github.com/ScottRBK/forgetful.git
 cd forgetful
 uv sync --locked --all-extras --dev
-uv run main.py
+AUTH_MODE=none uv run main.py   # the server refuses to start without AUTH_MODE
 ```
 
 **Optional**: Customize configuration by copying the example environment file:
 
 ```bash
 cp .env.example .env
-# Edit .env with your custom values
+# Edit .env with your custom values; the example sets AUTH_MODE=none and SERVER_HOST=127.0.0.1
 uv run main.py --transport http
 ```
 

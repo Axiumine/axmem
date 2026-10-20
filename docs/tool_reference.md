@@ -8,9 +8,8 @@ This guide provides comprehensive documentation for all tools available in the F
 
 - [Meta-Tools Pattern](#meta-tools-pattern)
 - [Tool Categories Overview](#tool-categories-overview)
-- [User Tools](#user-tools)
 - [Memory Tools](#memory-tools)
-- [Project Tools](#project-tools)
+- [Project Scope](#project-scope)
 - [Cross-Category Workflows](#cross-category-workflows)
 
 ---
@@ -27,7 +26,7 @@ scopes.
 List available tools, optionally filtered by category.
 
 **Parameters:**
-- `category` (optional): Filter by category (`user`, `memory`, `project`) or by `linking`, which is not a category of its own but selects the link and unlink tools of the memory category. An unknown value is rejected with the list of valid categories
+- `category` (optional): Filter by category (`memory`) or by `linking`, which is not a category of its own but selects the link and unlink tools of the memory category. An unknown value is rejected with the list of valid categories
 
 **Returns:**
 - `tools_by_category`: Tools grouped by category
@@ -95,51 +94,18 @@ execute_forgetful_tool(
 
 ## Tool Categories Overview
 
-The catalog covers users, memories and projects. Call
+The catalog covers memories only: tools to store, search, link and retire them. Every tool
+acts on the memories of the calling tenant and no other (see [Tenants](#tenants)). Call
 `discover_forgetful_tools()` for the exact catalog exposed by the running server.
 
----
+### Tenants
 
-## User Tools
-
-Manage user authentication and profile information.
-
-### `get_current_user`
-
-Returns information about the currently authenticated user.
-
-**Parameters:** None
-
-**Returns:**
-- `user_id`: Unique user identifier
-- `username`: User's username
-- `email`: User's email
-- `notes`: User profile notes
-- `created_at`: Account creation timestamp
-
-**Example:**
-```python
-user = execute_forgetful_tool("get_current_user", {})
-# Returns: {"user_id": 1, "username": "alex_smith", "email": "alex@example.com", ...}
-```
-
-### `update_user_notes`
-
-Update the notes field for the current user's profile.
-
-**Parameters:**
-- `notes`: Text content for user notes
-
-**Returns:**
-- Updated user object
-
-**Example:**
-```python
-execute_forgetful_tool(
-    "update_user_notes",
-    {"notes": "Prefers TypeScript over JavaScript. Works on microservices architecture."}
-)
-```
+A tenant is the owner of a set of memories. With a credential mode (`AUTH_MODE=jwt`, `introspection` or
+`static`) the tenant is named by the bearer token; with `AUTH_MODE=none` it is `DEFAULT_TENANT`. A memory id
+that belongs to another tenant behaves exactly like an id that does not exist: `get_memory`,
+`update_memory`, `mark_memory_obsolete`, `unobsolete_memory` and the link tools answer "not found",
+and search and listing never return it. See the
+[Configuration Guide](configuration.md#authentication-configuration).
 
 ---
 
@@ -158,7 +124,7 @@ Create an atomic memory with automatic linking to related memories.
 - `context` (required): Why the memory matters (max 500 chars)
 - `keywords` (required): Search keywords (max 10, each max 100 chars)
 - `tags` (required): Categorization tags (max 10, each max 100 chars)
-- `project_ids` (optional): Project IDs to link
+- `project` (optional): Project scope, a free-form label (trimmed, 1 to 500 chars). Created on first use
 
 **Provenance Tracking (optional):**
 - `source_repo` (optional): Repository source (e.g., 'owner/repo', max 200 chars)
@@ -174,9 +140,10 @@ encoded as UTF-8 (for example a lone surrogate).
 **Returns:**
 - `id`: Created memory ID
 - `title`: Created memory title
+- `project`: The memory's project scope, or `null`
 - `linked_memory_ids`: Automatically linked memory IDs
 - `similar_memories`: Summaries of the automatic-link candidates; each entry includes `similarity` (cosine similarity to the new memory)
-- `obsolete_matches`: Up to 3 obsolete memories similar to the new content (on by default via `OBSOLETE_WARNING_ENABLED`); each match includes `id`, `title`, `similarity`, `obsolete_reason`, `superseded_by`, `obsoleted_at`, `project_ids`. Warning-only; never blocks creation. Empty when the feature is disabled.
+- `obsolete_matches`: Up to 3 obsolete memories similar to the new content (on by default via `OBSOLETE_WARNING_ENABLED`); each match includes `id`, `title`, `similarity`, `obsolete_reason`, `superseded_by`, `obsoleted_at`, `project`. Warning-only; never blocks creation. Empty when the feature is disabled.
 
 **Example:**
 ```python
@@ -189,7 +156,7 @@ memory = execute_forgetful_tool(
         "context": "Performance and security discussion during API redesign",
         "keywords": ["rate-limiting", "api", "redis", "performance"],
         "tags": ["api", "security", "performance"],
-        "project_ids": [12]
+        "project": "api-gateway"
     }
 )
 # Returns: {"id": 156, "linked_memory_ids": [142, 148, 151], ...}
@@ -228,8 +195,8 @@ Semantic search across all memories with context-aware ranking.
 - `include_links` (optional): Include linked memories (default: true)
 - `max_links_per_primary` (optional): Linked memories per primary result (default: 5)
 - `importance_threshold` (optional): Minimum importance score
-- `project_ids` (optional): Project IDs to search
-- `strict_project_filter` (optional): Apply the project filter to linked memories
+- `project` (optional): Only search memories in this project scope
+- `strict_project_filter` (optional): Apply the project scope to linked memories as well
 
 **Returns:**
 - List of memories ranked by semantic relevance
@@ -243,7 +210,7 @@ results = execute_forgetful_tool(
     {
         "query": "how do we handle authentication",
         "query_context": "Implementing authentication for the API",
-        "project_ids": [12],
+        "project": "api-gateway",
         "importance_threshold": 7,
         "k": 5
     }
@@ -278,6 +245,7 @@ Update existing memory fields (PATCH semantics - only updates provided fields).
 - `context` (optional): Updated context (must not be blank)
 - `keywords` (optional): Updated keywords (each max 100 chars)
 - `tags` (optional): Updated tags (each max 100 chars)
+- `project` (optional): New project scope label, replacing the old one; an empty string clears the scope
 
 **Provenance Tracking (optional):**
 - `source_repo` (optional): Repository source (e.g., 'owner/repo')
@@ -326,7 +294,7 @@ Manually create bidirectional links between memories.
 - `memory_ids` (optional, List[int]): Pair/list of memory IDs `[src, target1, target2, ...]`
 
 **Returns:**
-- Dict with `linked_memory_ids` (list of target IDs newly linked). Target IDs that do not exist, belong to another user, or are already linked are skipped.
+- Dict with `linked_memory_ids` (list of target IDs newly linked). Target IDs that do not exist, belong to another tenant, or are already linked are skipped.
 
 **Examples:**
 ```python
@@ -445,7 +413,7 @@ Retrieve most recent memories sorted by creation timestamp.
 
 **Parameters:**
 - `limit` (optional): Max memories to return (default: 10)
-- `project_ids` (optional): Scope to specific projects
+- `project` (optional): Only memories in this project scope
 
 **Returns:**
 - An object (not a bare list) with two keys:
@@ -457,7 +425,7 @@ Retrieve most recent memories sorted by creation timestamp.
 ```python
 result = execute_forgetful_tool(
     "get_recent_memories",
-    {"limit": 10, "project_ids": [12]}
+    {"limit": 10, "project": "api-gateway"}
 )
 recent = result["memories"]     # the list of memories
 total = result["total_count"]   # how many matched in total
@@ -480,130 +448,38 @@ total = result["total_count"]   # how many matched in total
 
 ---
 
-## Project Tools
+## Project Scope
 
-Organize memories by project context.
+A project is not a record to create and manage: it is an optional, free-form scope label on a memory.
+There are no project tools (`create_project`, `list_projects`, `get_project`, `update_project` and
+`delete_project` are removed).
 
-### Project Types
-- `personal`, `work`, `learning`, `development`, `infrastructure`
-- `template`, `product`, `marketing`, `finance`, `documentation`
-- `development-environment`, `third-party-library`, `open-source`
+- `create_memory` and `update_memory` take `project` to put a memory in a scope. The label is trimmed and
+  must be 1 to 500 characters. A scope is created automatically the first time it is used.
+- `query_memory` and `get_recent_memories` take `project` to return only memories in that scope. Without it
+  they return the tenant's memories from every scope.
+- `update_memory` with `project: ""` removes the memory from its scope.
+- Scopes belong to a tenant. Two tenants who use the same label have two separate scopes, and neither can see the other's.
+- The REST list route takes `?project=<label>`, and the CLI takes `-p/--project <label>`.
 
-### Project Statuses
-- `active`, `archived`, `completed`
-
-### `create_project`
-
-Create a new project for organizing knowledge.
-
-**Parameters:**
-- `name` (required): Project name
-- `project_type` (optional): Project type (see list above)
-- `description` (optional): Project description
-- `status` (optional): Project status (default: `active`)
-- `repository_url` (optional): Git repository URL
-- `metadata` (optional): Additional JSON metadata
-- `last_encoding_point` (optional): Opaque caller-managed encoding checkpoint (e.g. a Git commit SHA). The server never infers or advances it; the encoding client updates it only after a successful run.
-
-**Returns:**
-- Created project with `project_id`
-
-**Example:**
 ```python
-project = execute_forgetful_tool(
-    "create_project",
-    {
-        "name": "E-Commerce Platform Redesign",
-        "project_type": "work",
-        "description": "Complete redesign of checkout and payment flows",
-        "status": "active",
-        "repository_url": "https://github.com/company/ecommerce-v2"
-    }
-)
-# Returns: {"project_id": 22, "name": "E-Commerce Platform Redesign", ...}
-```
-
-### `list_projects`
-
-List projects with optional filtering.
-
-**Parameters:**
-- `project_type` (optional): Filter by project type
-- `status` (optional): Filter by status
-- `repository_url` (optional): Filter by repository
-
-**Returns:**
-- List of matching projects
-
-**Example:**
-```python
-# Get all active work projects
-active_work = execute_forgetful_tool(
-    "list_projects",
-    {"project_type": "work", "status": "active"}
-)
-```
-
-### `get_project`
-
-Retrieve complete project details by ID.
-
-**Parameters:**
-- `project_id` (required): Project ID
-
-**Returns:**
-- Complete project object
-
-**Errors:**
-- Raises an error (not `null`) when `project_id` does not exist or is not visible to the caller
-
-**Example:**
-```python
-project = execute_forgetful_tool("get_project", {"project_id": 22})
-```
-
-### `update_project`
-
-Update project metadata (PATCH semantics).
-
-**Parameters:**
-- `project_id` (required): Project ID
-- `name` (optional): Updated name
-- `description` (optional): Updated description
-- `status` (optional): Updated status
-- `repository_url` (optional): Updated repository URL
-- `metadata` (optional): Updated metadata
-- `last_encoding_point` (optional): Opaque caller-managed encoding checkpoint (e.g. a Git commit SHA). The server never infers or advances it; the encoding client updates it only after a successful run. Unchanged if omitted; set to empty string to clear.
-
-**Returns:**
-- Updated project object
-
-**Example:**
-```python
-# Mark project as completed
 execute_forgetful_tool(
-    "update_project",
+    "create_memory",
     {
-        "project_id": 22,
-        "status": "completed",
-        "metadata": {"completion_date": "2025-01-15", "outcome": "shipped to production"}
+        "title": "Invoice rounding rule",
+        "content": "Round each line to 2 decimals before summing, never the total.",
+        "context": "Billing correctness decision",
+        "keywords": ["billing", "rounding"],
+        "tags": ["decision"],
+        "importance": 8,
+        "project": "billing"
     }
 )
-```
 
-### `delete_project`
-
-Delete project while preserving linked memories.
-
-**Parameters:**
-- `project_id` (required): Project ID
-
-**Returns:**
-- Confirmation of deletion
-
-**Example:**
-```python
-execute_forgetful_tool("delete_project", {"project_id": 22})
+execute_forgetful_tool(
+    "query_memory",
+    {"query": "how do we round invoices", "query_context": "Fixing a rounding bug", "project": "billing"}
+)
 ```
 
 ---
@@ -617,16 +493,8 @@ Real-world scenarios demonstrating how tools work together.
 **Context:** You've implemented a new authentication system and want to capture all knowledge.
 
 ```python
-# 1. Create project
-project = execute_forgetful_tool(
-    "create_project",
-    {
-        "name": "Authentication System V2",
-        "project_type": "development",
-        "status": "active"
-    }
-)
-project_id = project["id"]
+# 1. Put every memory of this feature in one project scope (created on first use)
+project = "authentication-v2"
 
 # 2. Store the key decision as an atomic memory
 decision_memory = execute_forgetful_tool(
@@ -638,7 +506,7 @@ decision_memory = execute_forgetful_tool(
         "keywords": ["authentication", "oauth2", "jwt"],
         "tags": ["authentication", "decision"],
         "importance": 10,
-        "project_ids": [project_id]
+        "project": project
     }
 )
 
@@ -652,7 +520,7 @@ middleware_memory = execute_forgetful_tool(
         "keywords": ["authentication", "jwt", "middleware", "fastapi"],
         "tags": ["authentication", "jwt", "middleware"],
         "importance": 8,
-        "project_ids": [project_id]
+        "project": project
     }
 )
 execute_forgetful_tool(
@@ -666,7 +534,7 @@ results = execute_forgetful_tool(
     {
         "query": "authentication implementation",
         "query_context": "Reviewing the authentication implementation",
-        "project_ids": [project_id]
+        "project": project
     }
 )
 # Returns decision_memory + auto-linked memories + linked memories
@@ -753,16 +621,8 @@ execute_forgetful_tool(
 **Context:** Researching database options, recording findings, and making a decision.
 
 ```python
-# 1. Create research project
-research_project = execute_forgetful_tool(
-    "create_project",
-    {
-        "name": "Database Technology Evaluation 2025",
-        "project_type": "learning",
-        "status": "active"
-    }
-)
-project_id = research_project["id"]
+# 1. Use one project scope for the whole evaluation
+project = "database-evaluation-2025"
 
 # 2. Capture atomic insights as memories
 insight1 = execute_forgetful_tool(
@@ -774,7 +634,7 @@ insight1 = execute_forgetful_tool(
         "keywords": ["pgvector", "postgresql", "vector-database"],
         "tags": ["database", "pgvector", "vectors"],
         "importance": 8,
-        "project_ids": [project_id]
+        "project": project
     }
 )
 
@@ -787,7 +647,7 @@ insight2 = execute_forgetful_tool(
         "keywords": ["qdrant", "vector-database", "performance"],
         "tags": ["database", "qdrant", "vectors"],
         "importance": 8,
-        "project_ids": [project_id]
+        "project": project
     }
 )
 
@@ -801,7 +661,7 @@ decision = execute_forgetful_tool(
         "keywords": ["pgvector", "postgresql", "database-decision"],
         "tags": ["decision", "database", "pgvector", "forgetful"],
         "importance": 10,
-        "project_ids": [project_id]
+        "project": project
     }
 )
 
@@ -814,16 +674,6 @@ execute_forgetful_tool(
 execute_forgetful_tool(
     "link_memories",
     {"memory_id": decision["id"], "related_ids": [insight2["id"]]}
-)
-
-# 5. Mark project as completed
-execute_forgetful_tool(
-    "update_project",
-    {
-        "project_id": project_id,
-        "status": "completed",
-        "notes": "Selected pgvector; evaluation completed 2025-01-15"
-    }
 )
 ```
 
@@ -838,11 +688,10 @@ execute_forgetful_tool(
 - **Always provide context** - Future you will thank past you
 - **Tag consistently** - Develop a tagging taxonomy for your knowledge domain
 
-### Project Organization
-- **Scope queries to projects** - Dramatically improves search relevance
-- **Use project types consistently** - Helps with filtering and organization
-- **Archive completed projects** - Don't delete - preserve knowledge with context
-- **Link related projects** - Create memories that reference multiple projects
+### Project Scope
+- **Scope queries to a project** - Dramatically improves search relevance
+- **Use one spelling per project** - `billing` and `Billing` are two scopes
+- **Leave a memory unscoped when it applies everywhere** - An unscoped query still finds scoped memories
 
 ### Knowledge Graph
 - **Build links as you learn** - Don't wait to build complete graphs
@@ -857,7 +706,7 @@ execute_forgetful_tool(
 ### Search & Retrieval
 - **Query early and often** - Check existing knowledge before creating duplicates
 - **Use natural language** - Semantic search works better than keyword matching
-- **Filter by project for focus** - Especially in multi-project environments
+- **Pass `project` for focus** - Especially when one tenant keeps several projects
 - **Check auto-linked memories** - Often find related context you didn't know existed
 
 ---

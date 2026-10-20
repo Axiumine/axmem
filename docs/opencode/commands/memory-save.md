@@ -109,7 +109,7 @@ Context: "Architecture decision for shipping Forgetful as a Claude Code plugin"
 Keywords: [claude-code, plugin, forgetful, mcp, architecture]
 Tags: [decision, architecture]
 Importance: 8 (major architectural decision)
-Project: [from list_projects] (ID: <discovered>)
+Project: <scope label, for example the repository name; optional>
 
 Curation actions:
 - Mark #89 obsolete (superseded by new memory)

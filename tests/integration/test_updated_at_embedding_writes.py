@@ -34,7 +34,7 @@ def _make_repo(memories: list[Memory]) -> AsyncMock:
     repo = AsyncMock()
     repo.count_memories_for_targeted_rebuild.return_value = len(memories)
 
-    async def get_batch(user_id, limit, after_id=None, memory_ids=None, project_id=None):
+    async def get_batch(user_id, limit, after_id=None, memory_ids=None, project=None):
         eligible = [memory for memory in memories if after_id is None or memory.id > after_id]
         return eligible[:limit]
 
@@ -160,17 +160,17 @@ async def test_project_scope_must_exist_and_be_owned_even_without_memory_ids():
     repo.project_exists_for_user.return_value = False
     service = ReEmbeddingService(repo, _make_adapter())
 
-    with pytest.raises(ValueError, match=r"project_id=42 not found or not owned"):
-        await service.validate_targeted_scope(user_id, None, 42)
+    with pytest.raises(ValueError, match=r"project='atlas' not found"):
+        await service.validate_targeted_scope(user_id, None, "atlas")
 
-    repo.project_exists_for_user.assert_awaited_once_with(user_id=user_id, project_id=42)
+    repo.project_exists_for_user.assert_awaited_once_with(user_id=user_id, project="atlas")
 
 
 async def test_owned_project_scope_is_accepted_without_memory_ids():
     repo = _make_repo([])
     service = ReEmbeddingService(repo, _make_adapter())
 
-    await service.validate_targeted_scope(uuid4(), None, 42)
+    await service.validate_targeted_scope(uuid4(), None, "atlas")
 
 
 async def test_global_scope_does_not_look_up_a_project():

@@ -1,8 +1,9 @@
 """E2E tests for memory REST route error mapping and obsolete-state validation.
 
 Uses in-memory SQLite for test isolation. Covers:
-- POST/PUT /api/v1/memories with association ids that do not exist
-- POST /api/v1/memories reporting linked project ids
+- POST/PUT /api/v1/memories with a project scope, which is created on first use and never
+  shared between tenants
+- POST /api/v1/memories reporting the project scope
 - DELETE /api/v1/memories/{id} (soft delete) for unknown memories, bad
   ``superseded_by`` values, self-supersede and repeated deletes
 """
@@ -23,10 +24,6 @@ MEMORY = {
     "importance": 5,
 }
 
-ASSOCIATION_FIELDS = [
-    ("project_ids", "Projects"),
-]
-
 
 async def _create_memory(http_client, **overrides) -> int:
     response = await http_client.post(API, json={**MEMORY, **overrides})
@@ -38,81 +35,54 @@ async def _obsolete(http_client, memory_id, body=None):
     return await http_client.request("DELETE", f"{API}/{memory_id}", json=body)
 
 
-class TestCreateMemoryUnknownAssociations:
-    """POST /api/v1/memories with ids that reference nothing."""
+class TestCreateMemoryProjectScope:
+    """POST /api/v1/memories with a project scope."""
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize(("field", "label"), ASSOCIATION_FIELDS)
-    async def test_unknown_association_id_is_404_naming_the_ids(self, http_client, field, label):
-        response = await http_client.post(API, json={**MEMORY, field: [999]})
-
-        assert response.status_code == 404, response.text
-        error = response.json()["error"]
-        assert error.startswith(f"{label} not found"), error
-        assert "999" in error
-
-        # Nothing was persisted for the rejected request.
-        listing = await http_client.get(API)
-        assert listing.json()["total"] == 0
-
-    @pytest.mark.asyncio
-    async def test_another_users_project_is_404(self, http_client, monkeypatch):
-        with monkeypatch.context() as other_user:
-            other_user.setattr(settings, "DEFAULT_USER_ID", "memories-route-other-user")
-            other_user.setattr(settings, "DEFAULT_USER_EMAIL", "memories-route-other@example.test")
-            project = await http_client.post("/api/v1/projects", json={
-                "name": "Private project",
-                "description": "Belongs to another user",
-                "project_type": "development",
-            })
-            assert project.status_code == 201
-            foreign_project_id = project.json()["id"]
-
-        response = await http_client.post(API, json={**MEMORY, "project_ids": [foreign_project_id]})
-
-        assert response.status_code == 404, response.text
-        assert response.json()["error"].startswith("Projects not found")
-
-
-class TestCreateMemoryResponse:
-    """POST /api/v1/memories response mirrors the associations that were linked."""
-
-    @pytest.mark.asyncio
-    async def test_response_reports_linked_project_ids(self, http_client):
-        project = await http_client.post("/api/v1/projects", json={
-            "name": "Memory route project",
-            "description": "Project linked from a memory",
-            "project_type": "development",
-        })
-        assert project.status_code == 201, project.text
-
-        response = await http_client.post(API, json={
-            **MEMORY,
-            "project_ids": [project.json()["id"]],
-        })
+    async def test_unknown_project_is_created_on_first_use(self, http_client):
+        response = await http_client.post(API, json={**MEMORY, "project": "Brand new project"})
 
         assert response.status_code == 201, response.text
-        body = response.json()
-        assert body["project_ids"] == [project.json()["id"]]
+        assert response.json()["project"] == "Brand new project"
+
+    @pytest.mark.asyncio
+    async def test_another_tenants_project_of_the_same_name_is_a_separate_scope(
+        self, http_client, monkeypatch,
+    ):
+        with monkeypatch.context() as other_tenant:
+            other_tenant.setattr(settings, "DEFAULT_TENANT", "memories-route-other-tenant")
+            foreign_id = await _create_memory(http_client, project="Shared name")
+
+        own_id = await _create_memory(http_client, project="Shared name")
+
+        scoped = await http_client.get(API, params={"project": "Shared name"})
+
+        assert scoped.status_code == 200, scoped.text
+        assert [m["id"] for m in scoped.json()["memories"]] == [own_id]
+        assert foreign_id != own_id
+
+    @pytest.mark.asyncio
+    async def test_response_reports_the_project(self, http_client):
+        response = await http_client.post(API, json={**MEMORY, "project": "Memory route project"})
+
+        assert response.status_code == 201, response.text
+        assert response.json()["project"] == "Memory route project"
 
 
 class TestUpdateMemoryErrors:
-    """PUT /api/v1/memories/{id} tells a missing memory from a missing association."""
+    """PUT /api/v1/memories/{id} reports a missing memory as not found."""
 
     @pytest.mark.asyncio
-    async def test_unknown_project_names_the_association_not_the_memory(self, http_client):
+    async def test_update_to_a_new_project_creates_it_and_keeps_the_memory(self, http_client):
         memory_id = await _create_memory(http_client)
 
-        response = await http_client.put(f"{API}/{memory_id}", json={"title": "New title", "project_ids": [999]})
+        response = await http_client.put(
+            f"{API}/{memory_id}", json={"title": "New title", "project": "Fresh project"},
+        )
 
-        assert response.status_code == 404, response.text
-        error = response.json()["error"]
-        assert error.startswith("Projects not found"), error
-        assert "Memory not found" not in error
-
-        # The memory itself is untouched by the rejected update.
-        unchanged = await http_client.get(f"{API}/{memory_id}")
-        assert unchanged.json()["title"] == MEMORY["title"]
+        assert response.status_code == 200, response.text
+        assert response.json()["project"] == "Fresh project"
+        assert response.json()["title"] == "New title"
 
     @pytest.mark.asyncio
     async def test_missing_memory_still_reports_memory_not_found(self, http_client):
@@ -133,10 +103,9 @@ class TestDeleteMemoryErrors:
         assert response.json() == {"error": "Memory not found"}
 
     @pytest.mark.asyncio
-    async def test_another_users_memory_is_404_and_untouched(self, http_client, monkeypatch):
+    async def test_another_tenants_memory_is_404_and_untouched(self, http_client, monkeypatch):
         with monkeypatch.context() as other_user:
-            other_user.setattr(settings, "DEFAULT_USER_ID", "memories-route-other-user")
-            other_user.setattr(settings, "DEFAULT_USER_EMAIL", "memories-route-other@example.test")
+            other_user.setattr(settings, "DEFAULT_TENANT", "memories-route-other-tenant")
             foreign_id = await _create_memory(http_client, title="Someone else's memory")
 
         response = await _obsolete(http_client, foreign_id, {"reason": "not mine"})
@@ -144,8 +113,7 @@ class TestDeleteMemoryErrors:
         assert response.json() == {"error": "Memory not found"}
 
         with monkeypatch.context() as owner:
-            owner.setattr(settings, "DEFAULT_USER_ID", "memories-route-other-user")
-            owner.setattr(settings, "DEFAULT_USER_EMAIL", "memories-route-other@example.test")
+            owner.setattr(settings, "DEFAULT_TENANT", "memories-route-other-tenant")
             still_active = await http_client.get(f"{API}/{foreign_id}")
             assert still_active.json()["is_obsolete"] is False
 
@@ -286,11 +254,5 @@ class TestObsoleteStateValidationViaMcpTool:
 
 
 async def _default_user_id(sqlite_app):
-    from app.models.user_models import UserCreate
-
-    user = await sqlite_app.user_service.get_or_create_user(user=UserCreate(
-        external_id=settings.DEFAULT_USER_ID,
-        name=settings.DEFAULT_USER_NAME,
-        email=settings.DEFAULT_USER_EMAIL,
-    ))
-    return user.id
+    tenant = await sqlite_app.tenant_service.get_or_create_tenant(settings.DEFAULT_TENANT)
+    return tenant.id

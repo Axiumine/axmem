@@ -26,8 +26,8 @@ without the mark, with the commit that landed it, in the commit that lands it.
   batches of up to 256 texts, retries, `Retry-After` handling and dimension validation.
 - **(planned)** Direct TensorRT reranker (TensorRT 11.x, strict fp32), with a fingerprinted engine cache,
   a warm-up before the service is ready and a startup check that refuses to run on anything else.
-- **(planned)** Static bearer-token authentication that maps a token to a tenant, and tenant mapping from the
-  `tenant_id` / `tenant` JWT claim.
+- Tenants and static bearer tokens. `AUTH_MODE=static` maps a fixed bearer token to one tenant: `AUTH_STATIC_TOKEN_HASHES` holds only the SHA-256 hash per tenant (never the token), a presented token is hashed and compared with every hash in constant time, one token belongs to one tenant, and a token never reaches a log line. For `jwt` and `introspection` the tenant is the claim `tenant_id`, else `tenant`, else `sub`; a blank claim falls through, and a claim of another type or over 255 characters is refused. `DEFAULT_TENANT` names the tenant of `AUTH_MODE=none`. Tests cover each mode (valid, invalid, expired and missing token), the claim order, the hash comparison and tenant isolation over REST, MCP and the CLI.
+- `project` argument (a free-form string, trimmed, 1 to 500 characters, created on first use) on `create_memory`, `update_memory` (an empty string clears it), `query_memory`, `get_recent_memories` and `rebuild_embeddings`, the `project` field and query parameter of the REST memory routes, and `-p/--project` on the CLI memory verbs.
 - **(planned)** Qdrant as the only store, authenticated with a Qdrant API key.
 - **(planned)** Backups as Qdrant snapshots plus a JSONL export of the memories without vectors.
 
@@ -50,7 +50,7 @@ without the mark, with the commit that landed it, in the commit that lands it.
   runs left them behind. `.coverage-data/` is ignored by Git, semgrep, trivy, Qodana and radon.
 - **(planned)** NVIDIA GPU is a hard requirement for development and runtime; there is no CPU path and no skip.
 - **(planned)** Embeddings come only from the router (`gateway`); reranking runs locally on the GPU.
-- **(planned)** Users become tenants; projects become an optional scope string created on first use.
+- Users become tenants and projects become an optional scope string created on first use. The stored `users` row is the tenant record (matched by name in `external_id`) and `projects` is the table behind the scope, because the storage layer is replaced later and not migrated; no revision touches either table. A scope belongs to one tenant, so two tenants that use the same label have two scopes. Memory responses carry `project` (a string or null) instead of `project_ids`, and `ObsoleteMatch` does the same. The `AUTH_MODE` setting replaces `FASTMCP_SERVER_AUTH`, `DEFAULT_TENANT` replaces `DEFAULT_USER_ID`, `DEFAULT_USER_NAME` and `DEFAULT_USER_EMAIL`; an existing deployment keeps its memories by setting `DEFAULT_TENANT` to the old `DEFAULT_USER_ID` value. `GET /api/v1/auth/info` reports `authMode` as `disabled`, `jwt`, `introspection` or `static`. The tool scopes `users` and `projects` no longer exist (`read:memories` and `write:memories` remain). `.env.example` now sets `AUTH_MODE=none` and `SERVER_HOST=127.0.0.1`. The stdio and the HTTP examples in the README and the connectivity guide pass `AUTH_MODE=none` or a bearer token. The tool count goes from 17 to 10. The test harness server runs with `AUTH_MODE=none` on its loopback bind.
 - **(planned)** Memory ids become UUIDs.
 - **(planned)** Tests use the real GPU models and a real Qdrant; hosted CI keeps only the static gates.
 - **(planned)** The package, CLI, environment variables and docs are renamed from `forgetful` to `axmem`.
@@ -113,8 +113,8 @@ without the mark, with the commit that landed it, in the commit that lands it.
   (the PostgreSQL e2e fixture, the quality gates that fall back to a tool image, the test harness image). No schema
   change.
 - **(planned)** SQLite, PostgreSQL, pgvector and Alembic.
-- **(planned)** FastEmbed, ONNX Runtime and the local CPU embedder; GitHub and Google OAuth and the CLI browser
-  login; the user and project CRUD tools.
+- User and project tools, routes and CLI verbs: the MCP tools `get_current_user`, `update_user_notes`, `create_project`, `list_projects`, `get_project`, `update_project` and `delete_project`, the `user` and `project` tool categories, the REST routes `/api/v1/projects`, `ProjectService`, `UserService`, the project and patch models, the user notes and `idp_metadata` handling, the `PROJECT_DESCRIPTION_MAX_LENGTH` and `PROJECT_NOTES_MAX_LENGTH` settings, `project_ids` on the memory tools and routes, the `forgetful project list` command and the CLI project name resolver. The GitHub and Google OAuth providers, the `FASTMCP_SERVER_AUTH`, `FASTMCP_SERVER_AUTH_GITHUB_*`, `FASTMCP_SERVER_AUTH_GOOGLE_*`, `OAUTH_STORAGE_PATH` and `DEFAULT_USER_*` settings, the CLI browser login with its token cache, `forgetful auth logout`, and the `py-key-value-aio` dependency that stored the OAuth state. Agent commands, prompts, the connectivity guide and the files in the `skills/` catalogue that taught these tools are edited; the catalogue stays. No schema change and no migration: the `users` and `projects` tables stay.
+- **(planned)** FastEmbed, ONNX Runtime and the local CPU embedder.
 
 ### Fixed
 
@@ -137,9 +137,9 @@ Fixes to features that are removed above are moot once those features go.
 
 ### Security
 
-- **(planned)** Authentication fails closed: no configuration means no start, unless `AUTH_MODE=none` is set on a
-  loopback address. Fixes the finding that, without `FASTMCP_SERVER_AUTH`, every request is the same default
-  user (`app/middleware/auth.py`).
+- Authentication fails closed. A server with no `AUTH_MODE` refuses to start (exit code 1), `AUTH_MODE=none` is accepted only on stdio or on a loopback bind (`127.0.0.1`, `::1`; a hostname such as `localhost` does not count), and the credential modes are refused on stdio, which carries no bearer token. A request-level check refuses to serve when no provider is attached and the mode is not `none`. Fixes the finding that, without `FASTMCP_SERVER_AUTH`, every request was the same default user (`app/middleware/auth.py`), so any caller of a network-bound server read and changed every memory. Existing deployments that relied on that default must set `AUTH_MODE` (and bind to a loopback address if it is `none`) before the next start.
+- Tenant isolation is tested on every access path: tenant A cannot read, update, delete, link, unlink, search or list tenant B's memories over the MCP tools, the REST routes and the CLI (local and remote), and another tenant's id answers exactly like an id that does not exist.
+- Static tokens are stored as SHA-256 hashes only, compared in constant time, and never logged; the settings validator refuses a value that is not a 64-character hexadecimal digest without repeating it, so a token pasted by mistake is not echoed. A static token has no expiry: revoke it by removing its hash and restarting.
 - PostgreSQL has no row-level security: there is no `CREATE POLICY` in `app/` or `alembic/`, isolation is a
   `user_id` predicate in each query, and a role that connects as the PostgreSQL bootstrap superuser (as the removed
   Docker deployment did) would bypass row-level security anyway. This goes away with the move to Qdrant, where isolation is a tenant

@@ -64,9 +64,9 @@ followed or ruled out.
 
 ## Phase 4 — Widen across projects
 
-`list_projects`, then `query_memory` with `project_ids` for each project that could hold
-related knowledge — this surfaces memories the unscoped entry query ranked too low. Expand
-new hits the same way as in phases 2–3.
+Read the `project` of the memories found so far, then `query_memory` with `project` for each
+scope that could hold related knowledge — this surfaces memories the unscoped entry query
+ranked too low. Expand new hits the same way as in phases 2–3.
 
 Done when: every relevant project has been queried or ruled out.
 

@@ -23,22 +23,22 @@ twice and the second pass updates — never duplicates.
 
 ## Invoking operations
 
-Operations are named by registry name (`create_project`, `create_memory`, ...). Invoke via
+Operations are named by registry name (`query_memory`, `create_memory`, ...). Invoke via
 whichever surface this agent has:
 
-- **MCP**: `execute_forgetful_tool(tool_name="create_project", arguments={...})`
-- **CLI**: `forgetful call create_project --args '{"name": "..."}' --json`
+- **MCP**: `execute_forgetful_tool(tool_name="create_memory", arguments={...})`
+- **CLI**: `forgetful call create_memory --args '{"title": "..."}' --json`
 
 Get any operation's schema at runtime: `how_to_use_forgetful_tool` (MCP) or
 `forgetful tools info <operation>` (CLI) — schemas are deliberately not repeated here.
 
-## Step 1 — Resolve the project
+## Step 1 — Resolve the project scope
 
-`git remote get-url origin` → `owner/repo` → `list_projects` with `repo_name`. Existing
-project means this run is a refresh; otherwise `create_project` with the repo name and a
-description of what the codebase is for.
+`git remote get-url origin` → `owner/repo`, used as the `project` label of every memory in this
+run. A project is only a label, so there is nothing to create: `get_recent_memories` with that
+`project` shows what the scope already holds. Memories present means this run is a refresh.
 
-Done when: a project_id exists and the run knows whether it is a first encode or a refresh.
+Done when: the project label is fixed and the run knows whether it is a first encode or a refresh.
 
 ## Step 2 — Survey the sources
 

@@ -29,9 +29,9 @@ def _assert_get_memory_fields(data, memory_id):
 
 
 def _assert_get_memory_link_lists(data):
-    """Relationship ID collections must always be lists."""
+    """Link collections must always be lists."""
     assert isinstance(data["linked_memory_ids"], list)
-    assert isinstance(data["project_ids"], list)
+    assert data["project"] is None
 
 
 @pytest.mark.e2e

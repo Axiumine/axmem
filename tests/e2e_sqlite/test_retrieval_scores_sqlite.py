@@ -104,7 +104,7 @@ async def test_no_results_empty_scores(mcp_client):
                 "query_context": "empty scores",
                 "k": 3,
                 "include_links": False,
-                "project_ids": [999999],
+                "project": "no-such-project",
             },
         },
     )

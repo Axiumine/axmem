@@ -1,7 +1,14 @@
-"""Authentication Middleware helpers for integrating with FastMCP and FastAPI
+"""Authentication helpers: resolve the tenant behind each MCP and HTTP request
+
+A tenant is the isolation key of the data. It is taken from the validated credential, never
+from a request argument: the claim ``tenant_id``, else ``tenant``, else ``sub``. Static bearer
+tokens carry the tenant they were configured for.
+
+The module fails closed. Without an auth provider a request is the one local tenant
+(``DEFAULT_TENANT``) only when ``AUTH_MODE=none``; any other setting, including an unset
+one, rejects the request instead of silently serving the default tenant.
 """
 import hashlib
-import json
 import logging
 import time
 from asyncio import Lock
@@ -14,12 +21,15 @@ from fastmcp.server.auth import AuthProvider
 from fastmcp.server.dependencies import AccessToken, get_access_token
 from starlette.requests import Request
 
-from app.config.settings import settings
-from app.models.user_models import User, UserCreate
+from app.config.settings import TENANT_MAX_LENGTH, settings
+from app.models.user_models import User
 from app.routes.server_state import ForgetfulMCP, server_of
-from app.services.user_service import UserService
+from app.services.tenant_service import TenantService
 
 logger = logging.getLogger(__name__)
+
+# Token claims that name the tenant, in order of precedence
+TENANT_CLAIMS = ("tenant_id", "tenant", "sub")
 
 
 @dataclass
@@ -30,11 +40,11 @@ class CacheEntry:
 
 
 class TokenCache:
-    """LRU cache for validated OAuth tokens with TTL expiration.
+    """LRU cache for validated bearer tokens with TTL expiration.
 
     Security considerations:
     - Stores SHA-256 hash of tokens, never raw tokens
-    - Caches User objects only, not sensitive token data
+    - Caches tenant records only, not sensitive token data
     - TTL prevents stale sessions
     - Size limit prevents memory exhaustion
     """
@@ -52,7 +62,7 @@ class TokenCache:
         return hashlib.sha256(token.encode()).hexdigest()
 
     async def get(self, token: str) -> User | None:
-        """Get cached user for token, or None if not cached/expired."""
+        """Get cached tenant for token, or None if not cached/expired."""
         key = self._hash_token(token)
         async with self._lock:
             if key not in self._cache:
@@ -72,11 +82,11 @@ class TokenCache:
             return entry.user
 
     async def set(self, token: str, user: User, token_expires_at: float | None = None) -> None:
-        """Cache user for token.
+        """Cache the tenant for token.
 
         Args:
             token: Raw bearer token (only its hash is stored)
-            user: Provisioned user to cache
+            user: Provisioned tenant record to cache
             token_expires_at: Expiry (epoch seconds) reported by the token itself, if any.
                 The entry never outlives the token: its lifetime is the sooner of the
                 configured TTL and this value, and an already-expired token is not cached.
@@ -120,85 +130,84 @@ class TokenCache:
         }
 
 
-def _default_user_create() -> UserCreate:
-    """The configured default user, used when no auth provider is attached"""
-    return UserCreate(
-        external_id=settings.DEFAULT_USER_ID,
-        name=settings.DEFAULT_USER_NAME,
-        email=settings.DEFAULT_USER_EMAIL,
-    )
-
-
-def _user_create_from_claims(claims: dict[str, Any], missing_sub_message: str) -> UserCreate:
-    """Build the user to provision from validated token claims
+def _claim_text(name: str, value: Any) -> str | None:
+    """The text of one tenant claim, or None when the claim is absent or blank
 
     Raises:
-        ValueError: With ``missing_sub_message`` if the token carries no ``sub`` claim
+        ValueError: If the claim holds something that cannot name a tenant. Such a claim is
+            refused instead of skipped: falling through to a lower-precedence claim could
+            put the caller in a tenant the issuer never meant.
     """
-    sub = claims.get("sub")
-    name = claims.get("name") or claims.get("preferred_username") or claims.get("login") or f"User {sub}"
-
-    if not sub:
-        raise ValueError(missing_sub_message)
-
-    email = claims.get("email") or f"{sub}@oauth.local"
-
-    # Some IdPs emit non-string claims (e.g. a numeric sub); UserCreate requires strings
-    return UserCreate(
-        external_id=str(sub),
-        name=str(name),
-        email=str(email),
-    )
+    if value is None:
+        return None
+    # Some IdPs emit a numeric sub; a bool or a container is never a tenant name
+    if isinstance(value, bool) or not isinstance(value, str | int):
+        raise ValueError(f"Token claim '{name}' is not a valid tenant name")
+    return str(value).strip() or None
 
 
-async def _provision_user(user_service: UserService, user: UserCreate) -> User:
-    """Fetch or create the user for a request's identity
+def tenant_from_claims(claims: dict[str, Any]) -> str:
+    """The tenant named by validated token claims: ``tenant_id``, else ``tenant``, else ``sub``
 
     Raises:
-        RuntimeError: If the user could not be provisioned, because ``get_or_create_user``
-            returned no user (a concurrent request removed the row it had just found).
-            Deliberately not a ``ValueError``: that is the authentication-failure type
-            and would turn a server-side race into a 401.
+        ValueError: If no claim names a tenant, or the name is longer than a tenant record holds
     """
-    provisioned = await user_service.get_or_create_user(user=user)
-    if provisioned is None:
-        raise RuntimeError("User could not be provisioned")
-    return provisioned
+    for name in TENANT_CLAIMS:
+        tenant = _claim_text(name, claims.get(name))
+        if tenant is None:
+            continue
+        if len(tenant) > TENANT_MAX_LENGTH:
+            raise ValueError(f"Token claim '{name}' is longer than {TENANT_MAX_LENGTH} characters")
+        return tenant
+    raise ValueError("Token contains no 'tenant_id', 'tenant' or 'sub' claim")
 
 
-async def get_user_from_auth(ctx: Context) -> User:
-    """Provides user context for MCP and API interaction.
+def _local_tenant(trusted_local: bool = False) -> str:
+    """The tenant of a request that carries no credential
 
-    Detects auth mode via ctx.fastmcp.auth (the auth provider passed to FastMCP)
-    and provisions users accordingly:
-    - When auth is not configured: Uses default user (no auth)
-    - When auth is configured: Extracts user from validated access token
+    Only ``AUTH_MODE=none`` (stdio, or an HTTP server bound to a loopback address) and the
+    in-process CLI, which has no network input at all, are allowed to be anonymous.
+
+    Raises:
+        ValueError: If neither applies, which fails the request closed
+    """
+    if settings.AUTH_MODE != "none" and not trusted_local:
+        raise ValueError("Authentication is not configured: set AUTH_MODE")
+    return settings.DEFAULT_TENANT
+
+
+async def get_tenant_from_auth(ctx: Context) -> User:
+    """Provides the tenant of an MCP or CLI tool call.
+
+    Detects auth mode via ctx.fastmcp.auth (the auth provider passed to FastMCP):
+    - When no provider is attached: the local tenant, if AUTH_MODE=none (or the call
+      comes from the in-process CLI); otherwise the call is refused
+    - When a provider is attached: the tenant named by the validated access token
 
     Args:
         ctx: FastMCP Context object (automatically injected by FastMCP)
 
     Returns:
-        User: full user model with internal ids and meta data plus external ids, name, email, idp_metadata and notes
+        User: the tenant record, whose ``id`` is the key every repository filters on
+
+    Raises:
+        ValueError: If authentication is required and the token is missing or names no tenant
     """
     server = server_of(ctx)
-    user_service: UserService = server.user_service
+    tenant_service: TenantService = server.tenant_service
 
     if not server.auth:
-        logger.info("Authentication disabled (no auth provider configured) - using default user")
-        return await _provision_user(user_service, _default_user_create())
+        logger.debug("No auth provider attached - using the local tenant")
+        tenant = _local_tenant(trusted_local=getattr(server, "trusted_local", False))
+        return await tenant_service.get_or_create_tenant(tenant)
 
-    logger.info(f"Authentication enabled ({type(server.auth).__name__}) - extracting user from token")
     token: AccessToken | None = get_access_token()
-
     if token is None:
         raise ValueError("Authentication required but no bearer token provided")
 
-    claims = token.claims
-
-    logger.debug(f"Token claims received: {json.dumps(claims, indent=2, default=str)}")
-
-    user = _user_create_from_claims(claims, "Token contains no 'sub' claim")
-    return await _provision_user(user_service, user)
+    tenant = tenant_from_claims(token.claims)
+    logger.debug("Authenticated tenant resolved", extra={"tenant": tenant})
+    return await tenant_service.get_or_create_tenant(tenant)
 
 
 def _bearer_token(request: Request) -> str:
@@ -216,20 +225,20 @@ def _bearer_token(request: Request) -> str:
 
 
 async def _cached_user(cache: TokenCache | None, token: str) -> User | None:
-    """The user cached for a token, or None on a miss or when caching is off"""
+    """The tenant cached for a token, or None on a miss or when caching is off"""
     if not (cache and settings.TOKEN_CACHE_ENABLED):
         return None
 
     cached_user = await cache.get(token)
     if cached_user:
-        logger.debug("Token cache HIT - returning cached user")
+        logger.debug("Token cache HIT - returning cached tenant")
         return cached_user
     logger.debug("Token cache MISS - validating token")
     return None
 
 
 async def _cache_user(cache: TokenCache | None, token: str, user: User, access_token: AccessToken) -> None:
-    """Cache a validated user, when caching is on"""
+    """Cache a validated tenant, when caching is on"""
     if cache and settings.TOKEN_CACHE_ENABLED:
         # Cap the entry at the token's own expiry so a cache hit never outlives the token
         await cache.set(token, user, token_expires_at=getattr(access_token, "expires_at", None))
@@ -251,14 +260,14 @@ async def _verify_bearer_token(auth: AuthProvider, token: str) -> AccessToken:
     return access_token
 
 
-async def get_user_from_request(request: Request, mcp: ForgetfulMCP) -> User:
-    """Get user for HTTP routes (non-MCP endpoints).
+async def get_tenant_from_request(request: Request, mcp: ForgetfulMCP) -> User:
+    """Get the tenant for HTTP routes (non-MCP endpoints).
 
-    This is the HTTP equivalent of get_user_from_auth() for MCP tools.
+    This is the HTTP equivalent of get_tenant_from_auth() for MCP tools.
     Used by REST API endpoints that receive Starlette Request instead of FastMCP Context.
 
-    Uses the same auth provider as MCP routes via mcp.auth.verify_token(),
-    supporting all FastMCP auth providers (JWT, OAuth2, GitHub, Google, Azure, etc.).
+    Uses the same auth provider as MCP routes via mcp.auth.verify_token(), so every
+    provider (JWT, introspection, static tokens) answers the same way on both paths.
 
     Uses token caching to avoid expensive upstream validation on every request.
     Cache behavior controlled by TOKEN_CACHE_* settings.
@@ -268,18 +277,18 @@ async def get_user_from_request(request: Request, mcp: ForgetfulMCP) -> User:
         mcp: FastMCP instance with attached services
 
     Returns:
-        User: full user model with internal ids and metadata
+        User: the tenant record, whose ``id`` is the key every repository filters on
 
     Raises:
-        ValueError: If auth is enabled but token is missing, invalid, or lacks required claims
+        ValueError: If authentication is required but the token is missing, invalid, or names no tenant,
+            or if no auth provider is attached and AUTH_MODE is not ``none``
     """
-    user_service: UserService = mcp.user_service
+    tenant_service: TenantService = mcp.tenant_service
 
     # Check if auth is configured via mcp.auth (more reliable than env var)
     if not mcp.auth:
-        # No auth configured - use default user (no caching needed)
-        logger.debug("HTTP auth disabled (mcp.auth not configured) - using default user")
-        return await _provision_user(user_service, _default_user_create())
+        logger.debug("HTTP auth disabled (mcp.auth not configured) - using the local tenant")
+        return await tenant_service.get_or_create_tenant(_local_tenant())
 
     # Auth is configured - extract Bearer token from Authorization header
     token = _bearer_token(request)
@@ -293,14 +302,11 @@ async def get_user_from_request(request: Request, mcp: ForgetfulMCP) -> User:
     # Cache miss or disabled - validate token via provider
     access_token = await _verify_bearer_token(mcp.auth, token)
 
-    # Extract claims and provision user (same pattern as MCP auth)
-    claims = access_token.claims
-    logger.debug(f"Token claims received: {json.dumps(claims, indent=2, default=str)}")
+    tenant = tenant_from_claims(access_token.claims)
+    logger.debug("Authenticated tenant resolved", extra={"tenant": tenant})
+    user = await tenant_service.get_or_create_tenant(tenant)
 
-    user_data = _user_create_from_claims(claims, "Token missing 'sub' claim")
-    user = await _provision_user(user_service, user_data)
-
-    # Cache the validated user
+    # Cache the validated tenant
     await _cache_user(cache, token, user, access_token)
 
     return user

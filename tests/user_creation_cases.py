@@ -4,8 +4,8 @@ import pytest
 from sqlalchemy.exc import IntegrityError
 
 from app.exceptions import ConflictError
-from app.models.user_models import UserCreate, UserUpdate
-from app.services.user_service import UserService
+from app.models.user_models import UserCreate
+from app.services.tenant_service import TenantService
 
 
 class UserCreationCases:
@@ -32,12 +32,8 @@ class UserCreationCases:
         other = await user_repository.create_user(user.model_copy(update={"external_id": "other"}))
         assert other.id != existing.id
 
-    @pytest.mark.parametrize("operation", ["get_or_create_user", "update_user"])
-    async def test_creation_race_returns_existing_user(
-        self, user_repository, monkeypatch, operation,
-    ):
-        user = UserCreate(external_id="racing", name="Winner", email="winner@example.com")
-        service = UserService(user_repository)
+    async def test_creation_race_returns_existing_tenant(self, user_repository, monkeypatch):
+        service = TenantService(user_repository)
         original_get = user_repository.get_user_by_external_id
         winner = None
 
@@ -48,16 +44,28 @@ class UserCreationCases:
                 assert result is None
                 # Another request commits after this lookup but before the service's insert.
                 # The service's INSERT and the database's duplicate error are both real.
-                winner = await user_repository.create_user(user)
+                winner = await user_repository.create_user(
+                    UserCreate(external_id="racing", name="racing", email=""),
+                )
             return result
 
         monkeypatch.setattr(
             user_repository, "get_user_by_external_id", lookup_with_competing_insert,
         )
-        request = user if operation == "get_or_create_user" else UserUpdate(**user.model_dump())
 
-        result = await getattr(service, operation)(request)
+        result = await service.get_or_create_tenant("racing")
 
         assert winner is not None
         assert result == winner
-        assert await original_get(user.external_id) == winner
+        assert await original_get("racing") == winner
+
+    async def test_tenant_is_provisioned_once_and_found_again(self, user_repository):
+        service = TenantService(user_repository)
+
+        first = await service.get_or_create_tenant("tenant-a")
+        again = await service.get_or_create_tenant("tenant-a")
+        other = await service.get_or_create_tenant("tenant-b")
+
+        assert first == again
+        assert first.external_id == "tenant-a"
+        assert other.id != first.id

@@ -13,11 +13,9 @@ from uuid import UUID
 
 from app.config.settings import settings
 from app.models.memory_models import Memory, MemoryCreate
-from app.models.project_models import ProjectCreate, ProjectType
 from app.models.user_models import UserCreate
 from app.repositories.postgres.memory_repository import PostgresMemoryRepository
 from app.repositories.postgres.postgres_adapter import PostgresDatabaseAdapter
-from app.repositories.postgres.project_repository import PostgresProjectRepository
 from app.repositories.postgres.user_repository import PostgresUserRepository
 
 # Fits the INTEGER id columns and is never reached by the sequences of a test run
@@ -51,13 +49,12 @@ class ConstantEmbeddings:
 
 @dataclass
 class RepositoryWorld:
-    """Two users and one real repository per aggregate, all on the session database."""
+    """Two users and the real memory repository, all on the session database."""
 
     db_adapter: PostgresDatabaseAdapter
     owner: UUID
     stranger: UUID
     memories: PostgresMemoryRepository
-    projects: PostgresProjectRepository
 
 
 async def build_world(db_adapter: PostgresDatabaseAdapter) -> RepositoryWorld:
@@ -74,7 +71,6 @@ async def build_world(db_adapter: PostgresDatabaseAdapter) -> RepositoryWorld:
         owner=owner.id,
         stranger=stranger.id,
         memories=PostgresMemoryRepository(db_adapter, embeddings),
-        projects=PostgresProjectRepository(db_adapter),
     )
 
 
@@ -93,11 +89,3 @@ async def new_memory(
             **fields,
         ),
     )
-
-
-async def new_project(world: RepositoryWorld, user_id: UUID, name: str = "Project") -> int:
-    project = await world.projects.create_project(
-        user_id,
-        ProjectCreate(name=name, description="d", project_type=ProjectType.DEVELOPMENT),
-    )
-    return project.id

@@ -130,7 +130,7 @@ class ToolRegistry:
         """List tools filtered by category AND permitted set.
 
         ``ToolCategory.LINKING`` is a cross-cutting filter: link tools are registered under
-        the category that owns them (memory, entity) and carry the "linking" tag, so
+        the category that owns them (memory) and carry the "linking" tag, so
         that category selects by tag instead.
 
         Args:

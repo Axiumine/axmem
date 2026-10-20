@@ -216,7 +216,7 @@ def _make_targeted_repo(memories: list[Memory], owned_by_user: bool = True):
     repo.count_memories_for_targeted_rebuild.return_value = len(memories)
 
     async def get_batch(user_id, limit, after_id=None, memory_ids=None,
-                        project_id=None):
+                        project=None):
         eligible = memories
         if after_id is not None:
             eligible = [memory for memory in eligible if memory.id > after_id]
@@ -276,7 +276,7 @@ async def test_rebuild_targeted_skips_unowned_ids():
     repo.count_memories_for_targeted_rebuild.return_value = len(memories)
 
     async def get_batch(user_id, limit, after_id=None, memory_ids=None,
-                        project_id=None):
+                        project=None):
         eligible = memories
         if after_id is not None:
             eligible = [memory for memory in eligible if memory.id > after_id]

@@ -11,6 +11,7 @@ from app.models.memory_models import Memory
 from app.repositories.sqlite.memory_base import SqliteMemoryBase
 from app.repositories.sqlite.memory_queries import (
     affected_rows,
+    in_project,
     insert_embedding,
     with_relationships,
 )
@@ -23,7 +24,7 @@ logger = logging.getLogger(__name__)
 def _targeted_rebuild_statement(
     user_id: UUID,
     memory_ids: list[int] | None,
-    project_id: int | None,
+    project: str | None,
 ) -> Select[tuple[MemoryTable]]:
     """Shared SQLAlchemy filter for targeted rebuild count/select queries."""
     conditions = [
@@ -33,11 +34,8 @@ def _targeted_rebuild_statement(
     if memory_ids:
         conditions.append(MemoryTable.id.in_(memory_ids))
     stmt = select(MemoryTable).where(*conditions)
-    if project_id is not None:
-        stmt = stmt.join(MemoryTable.projects).where(
-            ProjectsTable.id == project_id,
-            ProjectsTable.user_id == str(user_id),
-        )
+    if project is not None:
+        stmt = stmt.where(in_project(project))
     return stmt
 
 
@@ -95,22 +93,22 @@ class SqliteMemoryReembeddingMixin(SqliteMemoryBase):
         self,
         user_id: UUID,
         memory_ids: list[int] | None = None,
-        project_id: int | None = None,
+        project: str | None = None,
     ) -> int:
         async with self.db_adapter.system_session() as session:
             base = _targeted_rebuild_statement(
                 user_id=user_id,
                 memory_ids=memory_ids,
-                project_id=project_id,
+                project=project,
             )
             count_stmt = select(func.count()).select_from(base.subquery())
             return (await session.execute(count_stmt)).scalar() or 0
 
-    async def project_exists_for_user(self, user_id: UUID, project_id: int) -> bool:
+    async def project_exists_for_user(self, user_id: UUID, project: str) -> bool:
         async with self.db_adapter.system_session() as session:
             found = await session.execute(
                 select(ProjectsTable.id).where(
-                    ProjectsTable.id == project_id,
+                    ProjectsTable.name == project,
                     ProjectsTable.user_id == str(user_id),
                 ),
             )
@@ -122,13 +120,13 @@ class SqliteMemoryReembeddingMixin(SqliteMemoryBase):
         limit: int,
         after_id: int | None = None,
         memory_ids: list[int] | None = None,
-        project_id: int | None = None,
+        project: str | None = None,
     ) -> list[Memory]:
         async with self.db_adapter.system_session() as session:
             stmt = _targeted_rebuild_statement(
                 user_id=user_id,
                 memory_ids=memory_ids,
-                project_id=project_id,
+                project=project,
             )
             if after_id is not None:
                 stmt = stmt.where(MemoryTable.id > after_id)

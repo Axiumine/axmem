@@ -36,7 +36,7 @@ async def _memory(stack: RepositoryStack, title: str, *, owner: str = "user") ->
 
 async def _neighbour_ids(stack: RepositoryStack, memory_id: int, **filters) -> list[int]:
     linked = await stack.memories.get_linked_memories(
-        stack.user_id, memory_id, project_ids=None, **filters,
+        stack.user_id, memory_id, project=None, **filters,
     )
     return sorted(m.id for m in linked)
 
@@ -113,11 +113,11 @@ async def test_search_leaves_out_excluded_memory_ids(stack):
 
     everything = await stack.memories.search(
         stack.user_id, "memory", "", k=5,
-        importance_threshold=None, project_ids=None, exclude_ids=None,
+        importance_threshold=None, project=None, exclude_ids=None,
     )
     filtered = await stack.memories.search(
         stack.user_id, "memory", "", k=5,
-        importance_threshold=None, project_ids=None, exclude_ids=[excluded],
+        importance_threshold=None, project=None, exclude_ids=[excluded],
     )
 
     assert sorted(m.id for m in everything) == sorted([kept, excluded])

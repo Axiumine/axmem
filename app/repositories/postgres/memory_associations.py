@@ -1,60 +1,43 @@
-"""Memory associations with projects."""
-from dataclasses import dataclass
+"""Association of a memory with its project scope."""
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.exceptions import AssociationNotFoundError
 from app.models.memory_models import MemoryCreate, MemoryUpdate
 from app.repositories.postgres.postgres_tables import (
     MemoryTable,
     ProjectsTable,
 )
 
-AssociatedTable = ProjectsTable
-
-
-@dataclass(frozen=True)
-class AssociationKind:
-    """One kind of item a memory can be associated with."""
-
-    ids_field: str  # field of MemoryCreate / MemoryUpdate holding the ids
-    relationship: str  # MemoryTable relationship that stores the association
-    table: type[AssociatedTable]
-    label: str  # plural name used in the not-found error
-
-
-# Order in which associations are written
-ASSOCIATION_KINDS: tuple[AssociationKind, ...] = (
-    AssociationKind("project_ids", "projects", ProjectsTable, "Projects"),
-)
-
 # MemoryCreate / MemoryUpdate fields that are stored as associations, not as memory columns
-ASSOCIATION_ID_FIELDS = frozenset(kind.ids_field for kind in ASSOCIATION_KINDS)
+ASSOCIATION_ID_FIELDS = frozenset({"project"})
 
 
-async def link_associations(
-        session: AsyncSession,
-        memory: MemoryTable,
-        kind: AssociationKind,
-        ids: list[int],
-        user_id: UUID,
-) -> None:
-    """Link the memory to the user's items of one kind, all of which must exist."""
-    stmt = select(kind.table).where(
-        kind.table.id.in_(ids),
-        kind.table.user_id == user_id,
+async def _scope_row(session: AsyncSession, user_id: UUID, name: str) -> ProjectsTable:
+    """The tenant's project row of that name, created on first use.
+
+    Rows are per tenant, so two tenants using the same scope name never share one. Two
+    first uses racing each other can create the row twice; scopes are matched by name, so
+    the duplicate is harmless.
+    """
+    result = await session.execute(
+        select(ProjectsTable)
+        .where(ProjectsTable.user_id == user_id, ProjectsTable.name == name)
+        .order_by(ProjectsTable.id)
+        .limit(1),
     )
-    result = await session.execute(stmt)
-    entities = result.scalars().all()
+    row = result.scalars().first()
+    if row is None:
+        row = ProjectsTable(user_id=user_id, name=name, description="", status="active")
+        session.add(row)
+        await session.flush()
+    return row
 
-    found_ids = {entity.id for entity in entities}
-    missing_ids = set(ids) - found_ids
-    if missing_ids:
-        raise AssociationNotFoundError(f"{kind.label} not found: {missing_ids}")
 
-    await session.run_sync(lambda _: getattr(memory, kind.relationship).extend(entities))
+async def _link(session: AsyncSession, memory: MemoryTable, user_id: UUID, name: str) -> None:
+    row = await _scope_row(session, user_id, name)
+    await session.run_sync(lambda _: memory.projects.append(row))
 
 
 async def attach_associations(
@@ -63,11 +46,9 @@ async def attach_associations(
         data: MemoryCreate,
         user_id: UUID,
 ) -> None:
-    """Link a new memory to every kind of item the creation data names."""
-    for kind in ASSOCIATION_KINDS:
-        ids = getattr(data, kind.ids_field)
-        if ids:
-            await link_associations(session, memory, kind, ids, user_id)
+    """Put a new memory in the scope its creation data names."""
+    if data.project:
+        await _link(session, memory, user_id, data.project)
 
 
 async def replace_associations(
@@ -76,13 +57,11 @@ async def replace_associations(
         data: MemoryUpdate,
         user_id: UUID,
 ) -> None:
-    """Replace the associations of each kind the update data names (an empty list clears them)."""
-    for kind in ASSOCIATION_KINDS:
-        ids = getattr(data, kind.ids_field)
-        if ids is None:
-            continue
-        # Load the relationship for manipulation (must include 'id' for refresh to work)
-        await session.refresh(memory, attribute_names=["id", kind.relationship])
-        getattr(memory, kind.relationship).clear()
-        if ids:
-            await link_associations(session, memory, kind, ids, user_id)
+    """Replace the scope when the update data names one (an empty name clears it)."""
+    if data.project is None:
+        return
+    # Load the relationship for manipulation (must include 'id' for refresh to work)
+    await session.refresh(memory, attribute_names=["id", "projects"])
+    memory.projects.clear()
+    if data.project:
+        await _link(session, memory, user_id, data.project)

@@ -24,24 +24,12 @@ from app.routes.mcp.tool_registry import ToolRegistry
 
 @pytest.fixture
 def registry_with_tools():
-    """Create a registry with a mix of read and write tools across categories."""
+    """Create a registry with read and write memory tools."""
     registry = ToolRegistry()
     params = [ToolParameter(name="ctx", type="Context", description="ctx", required=True)]
 
-    # User tools
     async def noop(**kwargs):
         return {}
-
-    registry.register(
-        name="get_current_user", category=ToolCategory.USER,
-        description="Read user", parameters=params, returns="User",
-        implementation=noop, mutates=False,
-    )
-    registry.register(
-        name="update_user_notes", category=ToolCategory.USER,
-        description="Update notes", parameters=params, returns="User",
-        implementation=noop, mutates=True,
-    )
 
     # Memory tools
     registry.register(
@@ -62,18 +50,6 @@ def registry_with_tools():
     registry.register(
         name="update_memory", category=ToolCategory.MEMORY,
         description="Update memory", parameters=params, returns="Memory",
-        implementation=noop, mutates=True,
-    )
-
-    # Project tools
-    registry.register(
-        name="list_projects", category=ToolCategory.PROJECT,
-        description="List projects", parameters=params, returns="Projects",
-        implementation=noop, mutates=False,
-    )
-    registry.register(
-        name="create_project", category=ToolCategory.PROJECT,
-        description="Create project", parameters=params, returns="Project",
         implementation=noop, mutates=True,
     )
 
@@ -140,8 +116,8 @@ class TestParseScopes:
             parse_scopes("read,foobar")
 
     def test_combined_scopes(self):
-        result = parse_scopes("read:memories,write:projects,read:users")
-        assert result == frozenset({"read:memories", "write:projects", "read:users"})
+        result = parse_scopes("read:memories,write:memories")
+        assert result == frozenset({"read:memories", "write:memories"})
 
 
 # ============================================================================
@@ -160,18 +136,14 @@ class TestResolvePermittedTools:
         permitted = resolve_permitted_tools(scopes, registry_with_tools)
         assert "query_memory" in permitted
         assert "get_memory" in permitted
-        assert "get_current_user" in permitted
-        assert "list_projects" in permitted
         assert "create_memory" not in permitted
         assert "update_memory" not in permitted
-        assert "create_project" not in permitted
 
     def test_write_returns_mutating_only(self, registry_with_tools):
         scopes = frozenset({"write"})
         permitted = resolve_permitted_tools(scopes, registry_with_tools)
         assert "create_memory" in permitted
         assert "update_memory" in permitted
-        assert "update_user_notes" in permitted
         assert "query_memory" not in permitted
         assert "get_memory" not in permitted
 
@@ -191,26 +163,8 @@ class TestResolvePermittedTools:
         # All reads + memory writes
         assert "query_memory" in permitted
         assert "get_memory" in permitted
-        assert "get_current_user" in permitted
-        assert "list_projects" in permitted
         assert "create_memory" in permitted
         assert "update_memory" in permitted
-        # No non-memory writes
-        assert "create_project" not in permitted
-        assert "update_user_notes" not in permitted
-
-    def test_read_projects(self, registry_with_tools):
-        scopes = frozenset({"read:projects"})
-        permitted = resolve_permitted_tools(scopes, registry_with_tools)
-        assert permitted == {"list_projects"}
-
-    def test_empty_result_for_unused_category(self, registry_with_tools):
-        # All tools are accounted for, but let's test a scope combination
-        # that results in an empty set
-        scopes = frozenset({"write:users"})
-        permitted = resolve_permitted_tools(scopes, registry_with_tools)
-        assert "update_user_notes" in permitted
-        assert len(permitted) == 1
 
 
 # ============================================================================
@@ -225,14 +179,6 @@ class TestGetRequiredScope:
     def test_write_tool(self, registry_with_tools):
         scope = get_required_scope("create_memory", registry_with_tools)
         assert scope == "write:memories"
-
-    def test_user_read_tool(self, registry_with_tools):
-        scope = get_required_scope("get_current_user", registry_with_tools)
-        assert scope == "read:users"
-
-    def test_user_write_tool(self, registry_with_tools):
-        scope = get_required_scope("update_user_notes", registry_with_tools)
-        assert scope == "write:users"
 
     def test_nonexistent_tool(self, registry_with_tools):
         scope = get_required_scope("nonexistent", registry_with_tools)
@@ -324,6 +270,10 @@ class TestCategoryMapping:
         """Linking category should map to memories scope."""
         assert CATEGORY_TO_SCOPE["linking"] == "memories"
 
-    def test_entities_is_no_longer_a_scope_category(self):
-        with pytest.raises(ValueError, match="Invalid scope category 'entities'"):
-            parse_scopes("read:entities")
+    @pytest.mark.parametrize("removed", ["entities", "users", "projects"])
+    def test_removed_categories_are_no_longer_scope_categories(self, removed):
+        with pytest.raises(ValueError, match=f"Invalid scope category '{removed}'"):
+            parse_scopes(f"read:{removed}")
+
+    def test_memories_is_the_only_scope_category(self):
+        assert VALID_CATEGORIES == frozenset({"memories"})

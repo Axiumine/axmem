@@ -7,7 +7,7 @@ factory (app/config/auth.py) with stubbed verifiers and an in-memory user reposi
 - TOKEN_CACHE_MAX_SIZE <= 0 disables caching instead of crashing
 - refreshing a cached key at capacity does not evict an unrelated entry
 - TOKEN_CACHE_ENABLED=false also disables the introspection verifier's own cache
-- non-string identity claims (e.g. a numeric sub) are normalised to strings
+- a numeric sub is normalised to a tenant name, and an unusable tenant claim is refused
 """
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
@@ -19,7 +19,11 @@ from starlette.requests import Request
 from app.config.auth import build_auth_provider
 from app.config.settings import settings
 from app.middleware import auth as auth_middleware
-from app.middleware.auth import TokenCache, get_user_from_auth, get_user_from_request
+from app.middleware.auth import (
+    TokenCache,
+    get_tenant_from_auth,
+    get_tenant_from_request,
+)
 from app.models.user_models import User
 
 INTROSPECTION_CLASS = "fastmcp.server.auth.providers.introspection.IntrospectionTokenVerifier"
@@ -27,8 +31,8 @@ INTROSPECTION_CLASS = "fastmcp.server.auth.providers.introspection.Introspection
 
 class MockFastMCP:
     """Mock FastMCP instance for testing"""
-    def __init__(self, user_service, auth_provider=None, token_cache=None):
-        self.user_service = user_service
+    def __init__(self, tenant_service, auth_provider=None, token_cache=None):
+        self.tenant_service = tenant_service
         self.auth = auth_provider
         self.token_cache = token_cache
 
@@ -100,27 +104,27 @@ async def test_already_expired_token_is_not_cached():
 
 
 @pytest.mark.asyncio
-async def test_get_user_from_request_revalidates_after_token_expiry(test_user_service):
+async def test_get_tenant_from_request_revalidates_after_token_expiry(test_tenant_service):
     """Cache hit while the token is valid; verifier is consulted again (and rejects) once it expired"""
     verifier = AsyncMock()
     verifier.verify_token = AsyncMock(
         return_value=make_access_token({"sub": "short-user", "name": "Short", "email": "s@example.com"}, expires_at=1010),
     )
-    mcp = MockFastMCP(test_user_service, auth_provider=verifier, token_cache=TokenCache(ttl_seconds=300, max_size=100))
+    mcp = MockFastMCP(test_tenant_service, auth_provider=verifier, token_cache=TokenCache(ttl_seconds=300, max_size=100))
     request = create_mock_request("short-token")
 
     with patch.object(settings, "TOKEN_CACHE_ENABLED", True), patch("app.middleware.auth.time") as clock:
         clock.time.return_value = 1000.0
-        await get_user_from_request(request, mcp)
+        await get_tenant_from_request(request, mcp)
         clock.time.return_value = 1005.0
-        await get_user_from_request(request, mcp)
+        await get_tenant_from_request(request, mcp)
         assert verifier.verify_token.await_count == 1  # second call was a cache hit
 
         # Token expired: the issuer-side verifier now rejects it, so the cache must not mask that
         clock.time.return_value = 1011.0
         verifier.verify_token.return_value = None
         with pytest.raises(ValueError, match="Invalid or expired token"):
-            await get_user_from_request(request, mcp)
+            await get_tenant_from_request(request, mcp)
 
         assert verifier.verify_token.await_count == 2
 
@@ -142,17 +146,17 @@ async def test_non_positive_max_size_disables_caching(max_size):
 
 
 @pytest.mark.asyncio
-async def test_get_user_from_request_with_zero_max_size_still_authenticates(test_user_service):
+async def test_get_tenant_from_request_with_zero_max_size_still_authenticates(test_tenant_service):
     """TOKEN_CACHE_MAX_SIZE=0 must not turn a successful validation into an error"""
     verifier = AsyncMock()
     verifier.verify_token = AsyncMock(
         return_value=make_access_token({"sub": "zero-user", "name": "Zero", "email": "z@example.com"}),
     )
-    mcp = MockFastMCP(test_user_service, auth_provider=verifier, token_cache=TokenCache(ttl_seconds=300, max_size=0))
+    mcp = MockFastMCP(test_tenant_service, auth_provider=verifier, token_cache=TokenCache(ttl_seconds=300, max_size=0))
 
     with patch.object(settings, "TOKEN_CACHE_ENABLED", True):
-        user = await get_user_from_request(create_mock_request("zero-token"), mcp)
-        again = await get_user_from_request(create_mock_request("zero-token"), mcp)
+        user = await get_tenant_from_request(create_mock_request("zero-token"), mcp)
+        again = await get_tenant_from_request(create_mock_request("zero-token"), mcp)
 
     assert user.external_id == "zero-user"
     assert again.external_id == "zero-user"
@@ -193,7 +197,7 @@ async def test_refreshed_key_becomes_most_recently_used():
 
 
 def _introspection_settings(mock_settings, enabled: bool) -> None:
-    mock_settings.FASTMCP_SERVER_AUTH = INTROSPECTION_CLASS
+    mock_settings.AUTH_MODE = "introspection"
     mock_settings.FASTMCP_SERVER_AUTH_INTROSPECTION_URL = "https://auth.example.com/introspect"
     mock_settings.FASTMCP_SERVER_AUTH_INTROSPECTION_CLIENT_ID = "intro-client"
     mock_settings.FASTMCP_SERVER_AUTH_INTROSPECTION_CLIENT_SECRET = "intro-secret"
@@ -228,46 +232,43 @@ def test_introspection_cache_configured_when_token_cache_enabled(MockIntrospecti
 
 
 # ============================================
-# Non-string identity claims
+# Tenant claims that are not plain strings
 # ============================================
 
 
 @pytest.mark.asyncio
-async def test_get_user_from_request_accepts_numeric_claims(test_user_service):
+async def test_get_tenant_from_request_names_the_tenant_by_a_numeric_sub(test_tenant_service):
     verifier = AsyncMock()
-    verifier.verify_token = AsyncMock(
-        return_value=make_access_token({"sub": 12345, "name": 678, "email": 9}),
-    )
-    mcp = MockFastMCP(test_user_service, auth_provider=verifier)
+    verifier.verify_token = AsyncMock(return_value=make_access_token({"sub": 12345, "name": 678, "email": 9}))
+    mcp = MockFastMCP(test_tenant_service, auth_provider=verifier)
 
-    user = await get_user_from_request(create_mock_request("numeric-token"), mcp)
+    tenant = await get_tenant_from_request(create_mock_request("numeric-token"), mcp)
 
-    assert user.external_id == "12345"
-    assert user.name == "678"
-    assert user.email == "9"
+    assert tenant.external_id == "12345"
+    assert tenant.name == "12345"
+    assert tenant.email == ""
 
 
 @pytest.mark.asyncio
-async def test_get_user_from_request_numeric_sub_derives_default_name_and_email(test_user_service):
-    verifier = AsyncMock()
-    verifier.verify_token = AsyncMock(return_value=make_access_token({"sub": 12345}))
-    mcp = MockFastMCP(test_user_service, auth_provider=verifier)
-
-    user = await get_user_from_request(create_mock_request("numeric-token"), mcp)
-
-    assert user.external_id == "12345"
-    assert user.name == "User 12345"
-    assert user.email == "12345@oauth.local"
-
-
-@pytest.mark.asyncio
-async def test_get_user_from_auth_accepts_numeric_claims(test_user_service):
-    ctx = SimpleNamespace(fastmcp=SimpleNamespace(user_service=test_user_service, auth=object()))
-    token = make_access_token({"sub": 12345, "name": 678, "email": 9})
+async def test_get_tenant_from_auth_names_the_tenant_by_a_numeric_sub(test_tenant_service):
+    ctx = SimpleNamespace(fastmcp=SimpleNamespace(tenant_service=test_tenant_service, auth=object()))
+    token = make_access_token({"sub": 12345})
 
     with patch.object(auth_middleware, "get_access_token", return_value=token):
-        user = await get_user_from_auth(ctx)
+        tenant = await get_tenant_from_auth(ctx)
 
-    assert user.external_id == "12345"
-    assert user.name == "678"
-    assert user.email == "9"
+    assert tenant.external_id == "12345"
+
+
+@pytest.mark.asyncio
+async def test_a_rejected_tenant_claim_is_never_cached(test_tenant_service):
+    verifier = AsyncMock()
+    verifier.verify_token = AsyncMock(return_value=make_access_token({"tenant_id": {"a": 1}, "sub": "u"}))
+    cache = TokenCache(ttl_seconds=300, max_size=100)
+    mcp = MockFastMCP(test_tenant_service, auth_provider=verifier, token_cache=cache)
+
+    with patch.object(settings, "TOKEN_CACHE_ENABLED", True):
+        with pytest.raises(ValueError, match="not a valid tenant name"):
+            await get_tenant_from_request(create_mock_request("odd-token"), mcp)
+
+    assert cache.stats["size"] == 0

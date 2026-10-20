@@ -10,10 +10,10 @@ from alembic import command
 from app.bootstrap import create_repositories
 from app.config.settings import settings
 from app.models.memory_models import MemoryCreate
-from app.models.project_models import ProjectCreate, ProjectType
 from app.models.user_models import UserCreate
 from tests.migration_helpers import (
     alembic_config,
+    create_project_row,
     read_shapes,
     run_migration,
     stored_event_types,
@@ -118,10 +118,7 @@ async def store_removed_rows_and_events(db: Any) -> dict[str, Any]:
         UserCreate(external_id="entities-removal", name="Entities", email="entities@example.test"),
     )
     owner = user.id
-    project = await repos["project"].create_project(
-        owner,
-        ProjectCreate(name="Kept", description="Survives the migration", project_type=ProjectType.WORK),
-    )
+    project_id = await create_project_row(db, owner)
     first = await repos["memory"].create_memory(
         owner,
         MemoryCreate(title="Kept memory", content="c", context="x", keywords=["k"], tags=["t"], importance=7),
@@ -143,7 +140,7 @@ async def store_removed_rows_and_events(db: Any) -> dict[str, Any]:
         "INSERT INTO entity_project_association (entity_id, project_id) VALUES (1, :project)",
         "INSERT INTO memory_entity_association (memory_id, entity_id) VALUES (:memory, 1)",
     ]
-    parameters = {"owner": str(owner), "project": project.id, "memory": first.id}
+    parameters = {"owner": str(owner), "project": project_id, "memory": first.id}
     async with db.system_session() as session:
         for entity_id, name in ((1, "Anthropic"), (2, "Partner")):
             await session.execute(insert_entity, {"id": entity_id, "owner": str(owner), "name": name})

@@ -6,20 +6,16 @@ and the shared request helpers every route module uses.
 The sweeps enumerate every route registered by the covered API modules, so a
 new route that forgets the shared request helpers fails here.
 """
+import json
 import re
 
 import pytest
 from fastmcp import Client, FastMCP
 from httpx import ASGITransport, AsyncClient
 
-from app.routes.api import (
-    memories,
-    projects,
-)
+from app.routes.api import memories
 
-API_MODULES = (
-    memories, projects,
-)
+API_MODULES = (memories,)
 IGNORED_METHODS = {"HEAD", "OPTIONS"}
 BAD_IDS = [
     "abc",
@@ -49,6 +45,14 @@ NON_FINITE_BODIES = [
     b'{"title": -1e999}',
 ]
 JSON_HEADERS = {"content-type": "application/json"}
+MEMORY = {
+    "title": "Well formed",
+    "content": "A memory the sweeps can create.",
+    "context": "malformed request tests",
+    "keywords": ["rest"],
+    "tags": ["e2e"],
+    "importance": 5,
+}
 
 
 def _inventory() -> list[tuple[str, str]]:
@@ -90,8 +94,8 @@ async def client(sqlite_app):
 
 def test_inventory_covers_the_rest_api():
     """Guard the sweeps below: they must actually see the routes."""
-    assert len(ROUTES_WITH_IDS) > 8
-    assert len(ROUTES_WITH_BODY) > 5
+    assert len(ROUTES_WITH_IDS) > 4
+    assert len(ROUTES_WITH_BODY) > 3
 
 
 class TestPathIds:
@@ -109,16 +113,13 @@ class TestPathIds:
         assert not failures, "\n".join(failures)
 
     async def test_valid_missing_id_is_still_a_plain_not_found(self, client):
-        response = await client.get("/api/v1/projects/999999")
+        response = await client.get("/api/v1/memories/999999")
         assert response.status_code == 404
-        assert response.json() == {"error": "Project not found"}
+        assert response.json() == {"error": "Memory not found"}
 
     async def test_leading_zero_id_is_accepted(self, client):
-        project = (await client.post(
-            "/api/v1/projects",
-            json={"name": "zero", "description": "p", "project_type": "development"},
-        )).json()
-        response = await client.get(f"/api/v1/projects/00{project['id']}")
+        memory = (await client.post("/api/v1/memories", json=MEMORY)).json()
+        response = await client.get(f"/api/v1/memories/00{memory['id']}")
         assert response.status_code == 200
 
 
@@ -147,25 +148,20 @@ class TestJsonBodies:
         assert not failures, "\n".join(failures)
 
     async def test_finite_floats_are_still_accepted(self, client):
-        response = await client.post(
-            "/api/v1/projects",
-            content=b'{"name": "f", "description": "p", "project_type": "development", "x": 1.5e3}',
-        )
+        body = json.dumps({**MEMORY, "confidence": 0.5}).replace("0.5", "5e-1").encode()
+        response = await client.post("/api/v1/memories", content=body, headers=JSON_HEADERS)
         assert response.status_code == 201
 
     async def test_non_object_body_message(self, client):
-        response = await client.post("/api/v1/projects", content=b"[1, 2]")
+        response = await client.post("/api/v1/memories", content=b"[1, 2]")
         assert response.status_code == 400
-        assert response.json() == {"error": "Request body must be a JSON object"}
+        assert response.json() == {"error": "Invalid request body: Request body must be a JSON object"}
 
     async def test_invalid_json_message(self, client):
-        response = await client.post("/api/v1/projects", content=b"{bad")
+        response = await client.post("/api/v1/memories", content=b"{bad")
         assert response.status_code == 400
-        assert response.json() == {"error": "Invalid JSON body"}
+        assert response.json() == {"error": "Invalid request body: Invalid JSON body"}
 
     async def test_valid_object_body_still_works(self, client):
-        response = await client.post(
-            "/api/v1/projects",
-            json={"name": "ok", "description": "p", "project_type": "development"},
-        )
+        response = await client.post("/api/v1/memories", json=MEMORY)
         assert response.status_code == 201

@@ -13,7 +13,7 @@ from app.version import get_version
 # Tokens that route to the subcommand tree. Bare invocations and legacy flags
 # (--transport, --re-embed, --version) never appear here, so they fall through
 # to the legacy launcher permanently.
-KNOWN = {"serve", "re-embed", "tools", "call", "auth", "memory", "project"}
+KNOWN = {"serve", "re-embed", "tools", "call", "auth", "memory"}
 
 
 def _json_object(value: str) -> dict:
@@ -116,7 +116,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     tools_list.add_argument(
         "--category",
-        help="Filter by tool category (e.g. memory, project)",
+        help="Filter by tool category (e.g. memory, linking)",
     )
     tools_info = tools_sub.add_parser(
         "info",
@@ -158,7 +158,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Maximum number of memories to return",
     )
-    memory_search.add_argument("-p", "--project", help="Project id or name to scope the search")
+    memory_search.add_argument("-p", "--project", help="Project scope (a free-form label) to search in")
 
     memory_save = memory_sub.add_parser(
         "save",
@@ -173,7 +173,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=5,
         help="Importance 1-10 (default: 5)",
     )
-    memory_save.add_argument("-p", "--project", help="Project id or name to attach the memory to")
+    memory_save.add_argument("-p", "--project", help="Project scope (a free-form label) to save the memory in")
 
     memory_get = memory_sub.add_parser(
         "get",
@@ -193,21 +193,16 @@ def build_parser() -> argparse.ArgumentParser:
         default=10,
         help="Number of memories to show (default: 10)",
     )
-    memory_recent.add_argument("-p", "--project", help="Project id or name filter")
+    memory_recent.add_argument("-p", "--project", help="Project scope (a free-form label) to list")
 
-    project = subparsers.add_parser("project", help="Curated project commands")
-    project_sub = project.add_subparsers(dest="project_command", required=True)
-    project_sub.add_parser("list", parents=[output_flags], help="List all projects")
-
-    auth = subparsers.add_parser("auth", help="Authenticate against a remote deployment")
+    auth = subparsers.add_parser("auth", help="Connect to a remote deployment")
     auth_sub = auth.add_subparsers(dest="auth_command", required=True)
     auth_login = auth_sub.add_parser(
         "login",
-        help="Browser OAuth login; saves FORGETFUL_SERVER to the user config",
+        help="Check the connection (with FORGETFUL_TOKEN, if set); saves FORGETFUL_SERVER to the user config",
     )
     auth_login.add_argument("--server", metavar="URL", required=True, help="Server URL")
-    auth_sub.add_parser("status", help="Show the active server and authenticated user")
-    auth_sub.add_parser("logout", help="Clear the local OAuth token cache")
+    auth_sub.add_parser("status", help="Show the active server and prove the credentials work")
 
     return parser
 
@@ -215,9 +210,9 @@ def build_parser() -> argparse.ArgumentParser:
 async def _build_executor(args):
     """Construct the ToolExecutor: --local > --server > FORGETFUL_SERVER > local default.
 
-    FORGETFUL_SERVER merges shell env and ~/.config/forgetful/.env with the right
-    precedence via pydantic-settings; FORGETFUL_TOKEN (headless/CI bearer) is shell
-    env only, deliberately kept out of config files.
+    FORGETFUL_SERVER merges shell env and the user config file with the right
+    precedence via pydantic-settings; FORGETFUL_TOKEN (the bearer token sent to a remote
+    server) is shell env only, deliberately kept out of config files.
     """
     from app.config.settings import settings
 
@@ -249,7 +244,7 @@ async def _run_tool_command(args) -> int:
         return 1
 
     try:
-        if args.command in {"memory", "project"}:
+        if args.command == "memory":
             from app.routes.cli import verbs
 
             payload, human = await verbs.run(executor, args)
@@ -279,7 +274,7 @@ def dispatch(argv, *, serve_runner, reembed_runner):
         return serve_runner(transport=args.transport, host=args.host, port=args.port)
     if args.command == "re-embed":
         return asyncio.run(reembed_runner(args))
-    if args.command in {"tools", "call", "memory", "project"}:
+    if args.command in {"tools", "call", "memory"}:
         return asyncio.run(_run_tool_command(args))
     # The subparsers are required and KNOWN lists every one of them: "auth" is what is left
     return asyncio.run(_run_auth_command(args))
@@ -295,9 +290,7 @@ async def _run_auth_command(args) -> int:
     try:
         if args.auth_command == "login":
             return await auth_commands.login(args.server)
-        if args.auth_command == "status":
-            return await auth_commands.status()
-        return auth_commands.logout()
+        return await auth_commands.status()
     except ValueError as exc:
         emit_error(str(exc), as_json=False)
         return 1

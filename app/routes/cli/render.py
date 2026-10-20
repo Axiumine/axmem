@@ -130,15 +130,3 @@ def render_memory_detail(memory: dict) -> str:
         sanitize_text(memory.get("content") or ""),
     ])
     return "\n".join(lines)
-
-
-def render_project_lines(projects: list[dict]) -> str:
-    """Compact one-line-per-project listing."""
-    if not projects:
-        return "No projects found."
-    return "\n".join(
-        f"#{project['id']}  {sanitize_line(project['name'])}  "
-        f"({sanitize_line(project.get('project_type', '?'))}, "
-        f"{sanitize_line(project.get('status', '?'))})"
-        for project in projects
-    )

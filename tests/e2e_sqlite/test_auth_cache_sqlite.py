@@ -1,18 +1,18 @@
 """End-to-end tests for token caching with SQLite backend
 
 Tests complete token cache flow with real SQLite database to validate
-cache integration doesn't interfere with user provisioning.
+cache integration doesn't interfere with tenant provisioning.
 
 Note: The token cache itself is in-memory and doesn't persist to SQLite.
 These tests validate that the cache works correctly alongside the real
-database for user management.
+database for tenant provisioning.
 """
 from unittest.mock import AsyncMock, patch
 
 import pytest
 from starlette.requests import Request
 
-from app.middleware.auth import TokenCache, get_user_from_request
+from app.middleware.auth import TokenCache, get_tenant_from_request
 
 
 class MockAccessToken:
@@ -38,8 +38,8 @@ async def test_token_cache_with_real_database(http_client, sqlite_app):
 
     Validates:
     - Cache reduces verify_token calls
-    - User is still correctly provisioned in SQLite on first call
-    - Subsequent calls return same user from cache without DB query
+    - The tenant is still correctly provisioned in SQLite on first call
+    - Subsequent calls return same tenant from cache without DB query
     """
     from app.config.settings import settings
 
@@ -66,17 +66,17 @@ async def test_token_cache_with_real_database(http_client, sqlite_app):
     with patch.object(settings, "TOKEN_CACHE_ENABLED", True):
         request = create_mock_request("e2e-cache-test-token")
 
-        # First call - should verify token and provision user to SQLite
-        user1 = await get_user_from_request(request, sqlite_app)
+        # First call - should verify token and provision the tenant in SQLite
+        user1 = await get_tenant_from_request(request, sqlite_app)
         assert call_count == 1
         assert user1.external_id == "sqlite-cache-e2e-user"
-        assert user1.name == "SQLite Cache E2E"
+        assert user1.name == "sqlite-cache-e2e-user"
 
         # Second call - should use cache (no verify_token call)
-        user2 = await get_user_from_request(request, sqlite_app)
+        user2 = await get_tenant_from_request(request, sqlite_app)
         assert call_count == 1  # Still 1, cache hit!
 
-        # Same user returned
+        # Same tenant returned
         assert user2.external_id == user1.external_id
         assert user2.id == user1.id
 
@@ -92,7 +92,7 @@ async def test_sequential_requests_use_cache(http_client, sqlite_app):
     """Test that sequential requests with same token use cache
 
     Validates:
-    - First request provisions user and populates cache
+    - First request provisions the tenant and populates cache
     - Subsequent requests use cache (no verify_token call)
     - All requests return same user
     """
@@ -117,15 +117,15 @@ async def test_sequential_requests_use_cache(http_client, sqlite_app):
     sqlite_app.token_cache = cache
 
     with patch.object(settings, "TOKEN_CACHE_ENABLED", True):
-        # First request - provisions user and populates cache
+        # First request - provisions the tenant and populates cache
         request1 = create_mock_request("sequential-token")
-        user1 = await get_user_from_request(request1, sqlite_app)
+        user1 = await get_tenant_from_request(request1, sqlite_app)
         assert call_count == 1
 
         # Subsequent requests should use cache
         for i in range(4):
             request = create_mock_request("sequential-token")
-            user = await get_user_from_request(request, sqlite_app)
+            user = await get_tenant_from_request(request, sqlite_app)
             assert user.external_id == user1.external_id
 
         # Only 1 verify_token call (first request)
@@ -136,13 +136,13 @@ async def test_sequential_requests_use_cache(http_client, sqlite_app):
 
 
 @pytest.mark.asyncio
-async def test_cache_expiration_re_provisions_user(http_client, sqlite_app):
+async def test_cache_expiration_revalidates_the_tenant(http_client, sqlite_app):
     """Test that expired cache entries trigger re-validation
 
     Validates:
     - Expired entries are evicted
     - Re-validation creates new cache entry
-    - User still retrieved correctly from database
+    - The tenant is still retrieved correctly from the database
     """
     import time
 
@@ -171,19 +171,19 @@ async def test_cache_expiration_re_provisions_user(http_client, sqlite_app):
         request = create_mock_request("expiry-test-token")
 
         # First call
-        user1 = await get_user_from_request(request, sqlite_app)
+        user1 = await get_tenant_from_request(request, sqlite_app)
         assert call_count == 1
 
         # Second call - should be cached
-        user2 = await get_user_from_request(request, sqlite_app)
+        user2 = await get_tenant_from_request(request, sqlite_app)
         assert call_count == 1  # Cache hit
 
         # Wait for expiration
         time.sleep(1.1)
 
         # Third call - cache expired, should re-validate
-        user3 = await get_user_from_request(request, sqlite_app)
+        user3 = await get_tenant_from_request(request, sqlite_app)
         assert call_count == 2  # New validation
 
-        # All should be same user
+        # All should be the same tenant
         assert user1.external_id == user2.external_id == user3.external_id

@@ -9,12 +9,19 @@ from uuid import uuid4
 
 import pytest
 
-from app.models.memory_models import MemoryCreate
-from app.models.project_models import ProjectCreate, ProjectType, ProjectUpdate
+from app.models.memory_models import MemoryCreate, MemoryUpdate
 from app.utils.provenance import (
     apply_provenance_defaults,
     apply_provenance_defaults_for_update,
 )
+
+
+def _create(**provenance) -> MemoryCreate:
+    return MemoryCreate(
+        title="test", content="test content", context="test context",
+        keywords=["k"], tags=["t"], importance=7, **provenance,
+    )
+
 
 # ============================================================================
 # apply_provenance_defaults() unit tests
@@ -26,9 +33,7 @@ class TestApplyProvenanceDefaults:
 
     def test_no_env_vars_set_returns_unchanged(self):
         """When no env vars configured, provenance fields remain None."""
-        data = ProjectCreate(
-            name="test", description="test project", project_type=ProjectType.DEVELOPMENT,
-        )
+        data = _create()
         result = apply_provenance_defaults(data)
         assert result.encoding_agent is None
         assert result.encoding_version is None
@@ -38,9 +43,7 @@ class TestApplyProvenanceDefaults:
 
     def test_env_defaults_fill_none_fields(self):
         """When env vars set and fields are None, defaults are applied."""
-        data = ProjectCreate(
-            name="test", description="test project", project_type=ProjectType.DEVELOPMENT,
-        )
+        data = _create()
         with patch("app.utils.provenance.settings") as mock_settings:
             mock_settings.ENCODING_AGENT = "OpenCode"
             mock_settings.ENCODING_VERSION = "1.3.13"
@@ -59,10 +62,7 @@ class TestApplyProvenanceDefaults:
 
     def test_agent_values_take_precedence_without_enforce(self):
         """When ENFORCE_ENV_OVERWRITE=False, agent-provided values win."""
-        data = ProjectCreate(
-            name="test", description="test project", project_type=ProjectType.DEVELOPMENT,
-            encoding_agent="MyAgent", agent_id="my-agent-id",
-        )
+        data = _create(encoding_agent="MyAgent", agent_id="my-agent-id")
         with patch("app.utils.provenance.settings") as mock_settings:
             mock_settings.ENCODING_AGENT = "EnvAgent"
             mock_settings.ENCODING_VERSION = "2.0"
@@ -83,10 +83,7 @@ class TestApplyProvenanceDefaults:
 
     def test_enforce_overwrite_overrides_agent_values(self):
         """When ENFORCE_ENV_OVERWRITE=True, env values always win."""
-        data = ProjectCreate(
-            name="test", description="test project", project_type=ProjectType.DEVELOPMENT,
-            encoding_agent="MyAgent", agent_id="my-agent-id",
-        )
+        data = _create(encoding_agent="MyAgent", agent_id="my-agent-id")
         with patch("app.utils.provenance.settings") as mock_settings:
             mock_settings.ENCODING_AGENT = "EnvAgent"
             mock_settings.ENCODING_VERSION = "2.0"
@@ -106,9 +103,7 @@ class TestApplyProvenanceDefaults:
 
     def test_partial_env_vars_only_fills_set_fields(self):
         """Only env vars that are non-empty get applied."""
-        data = ProjectCreate(
-            name="test", description="test project", project_type=ProjectType.DEVELOPMENT,
-        )
+        data = _create()
         with patch("app.utils.provenance.settings") as mock_settings:
             mock_settings.ENCODING_AGENT = "OpenCode"
             mock_settings.ENCODING_VERSION = ""
@@ -125,65 +120,10 @@ class TestApplyProvenanceDefaults:
         assert result.agent_version is None
         assert result.agent_model == "claude-sonnet-4-6"
 
-    def test_works_with_all_create_model_types(self):
-        """Verify apply_provenance_defaults works on every Create model type."""
-        models = [
-            MemoryCreate(
-                title="test", content="test content", context="test context",
-                keywords=["k"], tags=["t"], importance=7,
-            ),
-            ProjectCreate(
-                name="test", description="test", project_type=ProjectType.DEVELOPMENT,
-            ),
-        ]
-
-        with patch("app.utils.provenance.settings") as mock_settings:
-            mock_settings.ENCODING_AGENT = "TestAgent"
-            mock_settings.ENCODING_VERSION = ""
-            mock_settings.AGENT_ID = "test-id"
-            mock_settings.AGENT_VERSION = ""
-            mock_settings.AGENT_MODEL = ""
-            mock_settings.ENFORCE_ENV_OVERWRITE = False
-
-            for model in models:
-                result = apply_provenance_defaults(model)
-                assert result.encoding_agent == "TestAgent", f"Failed for {type(model).__name__}"
-                assert result.agent_id == "test-id", f"Failed for {type(model).__name__}"
-
 
 # ============================================================================
 # Service-level provenance tests (via in-memory stubs)
 # ============================================================================
-
-
-@pytest.mark.asyncio
-async def test_project_service_applies_provenance_defaults(test_project_service):
-    """Project service should apply env provenance defaults on create."""
-    user_id = uuid4()
-
-    with patch("app.services.project_service.apply_provenance_defaults", wraps=apply_provenance_defaults) as mock_apply:
-        with patch("app.utils.provenance.settings") as mock_settings:
-            mock_settings.ENCODING_AGENT = "TestAgent"
-            mock_settings.ENCODING_VERSION = "1.0"
-            mock_settings.AGENT_ID = "test-id"
-            mock_settings.AGENT_VERSION = "1.0"
-            mock_settings.AGENT_MODEL = "test-model"
-            mock_settings.ENFORCE_ENV_OVERWRITE = False
-
-            project = await test_project_service.create_project(
-                user_id=user_id,
-                project_data=ProjectCreate(
-                    name="provenance-test",
-                    description="Testing provenance defaults",
-                    project_type=ProjectType.DEVELOPMENT,
-                ),
-            )
-
-        mock_apply.assert_called_once()
-
-    assert project.encoding_agent == "TestAgent"
-    assert project.agent_id == "test-id"
-    assert project.agent_model == "test-model"
 
 
 @pytest.mark.asyncio
@@ -227,7 +167,7 @@ class TestApplyProvenanceDefaultsForUpdate:
 
     def test_no_change_without_enforce(self):
         """When ENFORCE_ENV_OVERWRITE=False, update models pass through unchanged."""
-        data = ProjectUpdate(encoding_agent="AgentFromCaller", agent_id="caller-id")
+        data = MemoryUpdate(encoding_agent="AgentFromCaller", agent_id="caller-id")
         with patch("app.utils.provenance.settings") as mock_settings:
             mock_settings.ENCODING_AGENT = "EnvAgent"
             mock_settings.ENCODING_VERSION = "2.0"
@@ -244,7 +184,7 @@ class TestApplyProvenanceDefaultsForUpdate:
 
     def test_enforce_overrides_explicitly_set_fields(self):
         """When ENFORCE_ENV_OVERWRITE=True, env values override agent-provided update fields."""
-        data = ProjectUpdate(encoding_agent="AgentFromCaller", agent_id="caller-id")
+        data = MemoryUpdate(encoding_agent="AgentFromCaller", agent_id="caller-id")
         with patch("app.utils.provenance.settings") as mock_settings:
             mock_settings.ENCODING_AGENT = "EnvAgent"
             mock_settings.ENCODING_VERSION = "2.0"
@@ -262,7 +202,7 @@ class TestApplyProvenanceDefaultsForUpdate:
     def test_enforce_does_not_inject_unset_fields(self):
         """ENFORCE only overrides fields explicitly in the update, not unset fields."""
         # Only setting encoding_agent, not agent_id
-        data = ProjectUpdate(encoding_agent="AgentFromCaller")
+        data = MemoryUpdate(encoding_agent="AgentFromCaller")
         with patch("app.utils.provenance.settings") as mock_settings:
             mock_settings.ENCODING_AGENT = "EnvAgent"
             mock_settings.ENCODING_VERSION = "2.0"
@@ -281,7 +221,7 @@ class TestApplyProvenanceDefaultsForUpdate:
 
     def test_no_env_vars_returns_unchanged(self):
         """When no env vars configured, update models pass through unchanged even with enforce."""
-        data = ProjectUpdate(encoding_agent="AgentFromCaller")
+        data = MemoryUpdate(encoding_agent="AgentFromCaller")
         with patch("app.utils.provenance.settings") as mock_settings:
             mock_settings.ENCODING_AGENT = ""
             mock_settings.ENCODING_VERSION = ""
@@ -301,42 +241,32 @@ class TestApplyProvenanceDefaultsForUpdate:
 # ============================================================================
 
 
-@pytest.mark.asyncio
-async def test_project_service_enforces_provenance_on_update(test_project_service):
-    """Project update with ENFORCE_ENV_OVERWRITE=True should override agent provenance."""
-    user_id = uuid4()
-
-    # Create project first
-    project = await test_project_service.create_project(
-        user_id=user_id,
-        project_data=ProjectCreate(
-            name="enforce-update-test",
-            description="Testing enforce on update",
-            project_type=ProjectType.DEVELOPMENT,
-            encoding_agent="OriginalAgent",
-        ),
+async def _stored_memory(test_memory_service, user_id, **provenance):
+    memory, _similar = await test_memory_service.create_memory(
+        user_id=user_id, memory_data=_create(**provenance),
     )
+    return memory
 
-    # Update with agent-provided provenance under ENFORCE mode
-    with patch("app.services.project_service.apply_provenance_defaults_for_update", wraps=apply_provenance_defaults_for_update) as mock_apply:
-        with patch("app.utils.provenance.settings") as mock_settings:
-            mock_settings.ENCODING_AGENT = "EnvAgent"
-            mock_settings.ENCODING_VERSION = ""
-            mock_settings.AGENT_ID = "EnvAgentId"
-            mock_settings.AGENT_VERSION = ""
-            mock_settings.AGENT_MODEL = ""
-            mock_settings.ENFORCE_ENV_OVERWRITE = True
 
-            updated = await test_project_service.update_project(
-                user_id=user_id,
-                project_id=project.id,
-                project_data=ProjectUpdate(
-                    encoding_agent="HackerAgent",
-                    agent_id="hacker-id",
-                ),
-            )
+@pytest.mark.asyncio
+async def test_memory_service_enforces_provenance_on_update(test_memory_service):
+    """Memory update with ENFORCE_ENV_OVERWRITE=True should override agent provenance."""
+    user_id = uuid4()
+    memory = await _stored_memory(test_memory_service, user_id, encoding_agent="OriginalAgent")
 
-        mock_apply.assert_called_once()
+    with patch("app.utils.provenance.settings") as mock_settings:
+        mock_settings.ENCODING_AGENT = "EnvAgent"
+        mock_settings.ENCODING_VERSION = ""
+        mock_settings.AGENT_ID = "EnvAgentId"
+        mock_settings.AGENT_VERSION = ""
+        mock_settings.AGENT_MODEL = ""
+        mock_settings.ENFORCE_ENV_OVERWRITE = True
+
+        updated = await test_memory_service.update_memory(
+            user_id=user_id,
+            memory_id=memory.id,
+            updated_memory=MemoryUpdate(encoding_agent="HackerAgent", agent_id="hacker-id"),
+        )
 
     # Env values should win over agent-provided values
     assert updated.encoding_agent == "EnvAgent"
@@ -344,18 +274,10 @@ async def test_project_service_enforces_provenance_on_update(test_project_servic
 
 
 @pytest.mark.asyncio
-async def test_project_service_no_enforce_allows_update(test_project_service):
-    """Project update with ENFORCE_ENV_OVERWRITE=False should allow agent provenance changes."""
+async def test_memory_service_no_enforce_allows_update(test_memory_service):
+    """Memory update with ENFORCE_ENV_OVERWRITE=False should allow agent provenance changes."""
     user_id = uuid4()
-
-    project = await test_project_service.create_project(
-        user_id=user_id,
-        project_data=ProjectCreate(
-            name="no-enforce-update",
-            description="Testing no enforce on update",
-            project_type=ProjectType.DEVELOPMENT,
-        ),
-    )
+    memory = await _stored_memory(test_memory_service, user_id)
 
     with patch("app.utils.provenance.settings") as mock_settings:
         mock_settings.ENCODING_AGENT = "EnvAgent"
@@ -365,12 +287,10 @@ async def test_project_service_no_enforce_allows_update(test_project_service):
         mock_settings.AGENT_MODEL = ""
         mock_settings.ENFORCE_ENV_OVERWRITE = False
 
-        updated = await test_project_service.update_project(
+        updated = await test_memory_service.update_memory(
             user_id=user_id,
-            project_id=project.id,
-            project_data=ProjectUpdate(
-                encoding_agent="CallerAgent",
-            ),
+            memory_id=memory.id,
+            updated_memory=MemoryUpdate(encoding_agent="CallerAgent"),
         )
 
     # Without enforce, agent values should go through
@@ -378,34 +298,28 @@ async def test_project_service_no_enforce_allows_update(test_project_service):
 
 
 @pytest.mark.asyncio
-async def test_provenance_fields_preserved_on_create(test_project_service):
+async def test_provenance_fields_preserved_on_create(test_memory_service):
     """Explicit provenance fields should be preserved through create."""
-    user_id = uuid4()
-
-    project = await test_project_service.create_project(
-        user_id=user_id,
-        project_data=ProjectCreate(
-            name="provenance-explicit",
-            description="Testing explicit provenance",
-            project_type=ProjectType.DEVELOPMENT,
-            source_repo="owner/repo",
-            source_files=["src/main.py", "src/utils.py"],
-            source_url="https://example.com",
-            confidence=0.95,
-            encoding_agent="ExplicitAgent",
-            encoding_version="2.0",
-            agent_id="explicit-id",
-            agent_version="3.0",
-            agent_model="claude-opus-4-6",
-        ),
+    memory = await _stored_memory(
+        test_memory_service,
+        uuid4(),
+        source_repo="owner/repo",
+        source_files=["src/main.py", "src/utils.py"],
+        source_url="https://example.com",
+        confidence=0.95,
+        encoding_agent="ExplicitAgent",
+        encoding_version="2.0",
+        agent_id="explicit-id",
+        agent_version="3.0",
+        agent_model="claude-opus-4-6",
     )
 
-    assert project.source_repo == "owner/repo"
-    assert project.source_files == ["src/main.py", "src/utils.py"]
-    assert project.source_url == "https://example.com"
-    assert project.confidence == 0.95
-    assert project.encoding_agent == "ExplicitAgent"
-    assert project.encoding_version == "2.0"
-    assert project.agent_id == "explicit-id"
-    assert project.agent_version == "3.0"
-    assert project.agent_model == "claude-opus-4-6"
+    assert memory.source_repo == "owner/repo"
+    assert memory.source_files == ["src/main.py", "src/utils.py"]
+    assert memory.source_url == "https://example.com"
+    assert memory.confidence == 0.95
+    assert memory.encoding_agent == "ExplicitAgent"
+    assert memory.encoding_version == "2.0"
+    assert memory.agent_id == "explicit-id"
+    assert memory.agent_version == "3.0"
+    assert memory.agent_model == "claude-opus-4-6"

@@ -28,15 +28,14 @@ Before starting, ensure:
 
 **Before creating any memories, discover what already exists:**
 
-#### Step 1: Check for Existing Project
+#### Step 1: Check for Existing Project Memories
+A project is a scope label on memories, not a record: use "owner/repo" as the `project` value of every memory in this run.
 ```
-1. Use list_projects or query_memory to search for "[PROJECT_NAME]"
-2. If project exists:
-   - Note the project_id (required for linking)
-   - Review description, project_type, status
-   - Check notes field for operational details
-3. If project doesn't exist:
-   - Plan to create in Phase 1 (name: "owner/repo", description, notes, repo_name)
+1. Use get_recent_memories or query_memory with project="[PROJECT_NAME]" to see what the scope already holds
+2. If memories exist:
+   - Review them; this run is a refresh
+3. If none exist:
+   - This is a first encode; nothing needs to be created first, the scope appears when the first memory uses it
 ```
 
 #### Step 2: Assess Project Size & Scope
@@ -66,10 +65,10 @@ Determine project characteristics to adjust memory targets:
 #### Step 3: Assess Current KB Coverage
 ```
 Query the knowledge base for existing content:
-1. query_memory: "[project-name] architecture" with project_ids filter
+1. query_memory: "[project-name] architecture" with the project filter
 2. query_memory: "[project-name] overview" with include_links=true
 3. query_memory: "[project-name] patterns" to check pattern coverage
-4. list_memories: Filter by project_id to count total memories
+4. get_recent_memories: Filter by project to count total memories (total_count)
 5. Note: Check auto-linking quality (similarity ≥0.7 by default)
 ```
 
@@ -188,7 +187,7 @@ Rationale: [gap analysis summary and why these targets]"
 **Why Phase 0 matters:**
 - Prevents duplicate memories with slightly different titles
 - Identifies outdated information that needs updating, not duplication
-- Respects existing project structure and IDs
+- Respects the existing project scope and memory IDs
 - Ensures codebase exploration reflects CURRENT state, not KB assumptions
 - Focuses effort on actual gaps, not redundant work
 
@@ -196,28 +195,9 @@ Rationale: [gap analysis summary and why these targets]"
 
 ### Phase 1: Project Foundation (Create 5-10 memories)
 
-**First: Create/Update the Project**
+**Project scope**
 
-If project doesn't exist, use `create_project`:
-```
-name: "owner/repo-name" format
-description: 2-3 paragraphs covering:
-  - What problem it solves
-  - Key features and capabilities
-  - Technology stack and architecture style
-project_type: Choose from available types (open-source, development, work, etc.)
-repo_name: "owner/repo" format
-notes: Operational details (max 4000 chars):
-  - Architecture overview (layered, hexagonal, microservices, etc.)
-  - How to run/debug (all variants: dev, test, prod)
-  - Testing instructions (commands, types, coverage requirements)
-  - Dependency management (package manager, key dependencies)
-  - Key configuration (env vars, config files, feature flags)
-  - Development workflow (git flow, CI/CD, deployment)
-  - Important files/directories (entry points, configs, key modules)
-```
-
-**Save the project_id** - required for linking all memories.
+There is no project record to create. Use the label `"owner/repo-name"` as the `project` value of every memory below. The operational details a project record used to hold (architecture overview, how to run, test and debug, dependency management, key configuration, development workflow, important files) belong in the foundation memories that follow.
 
 ---
 
@@ -615,30 +595,30 @@ After completing bootstrap phases, validate your work using `query_memory`:
 query_memory({
   "query": "How do I add a new API endpoint?",
   "include_links": true,
-  "project_ids": [project_id]
+  "project": "owner/repo-name"
 })
 
 query_memory({
   "query": "How does authentication work?",
   "include_links": true,
-  "project_ids": [project_id]
+  "project": "owner/repo-name"
 })
 
 query_memory({
   "query": "How do I deploy this?",
   "query_context": "Testing deployment documentation coverage",
-  "project_ids": [project_id]
+  "project": "owner/repo-name"
 })
 
 query_memory({
   "query": "What database patterns are used?",
   "include_links": true,
-  "project_ids": [project_id]
+  "project": "owner/repo-name"
 })
 
 query_memory({
   "query": "How are errors handled?",
-  "project_ids": [project_id]
+  "project": "owner/repo-name"
 })
 ```
 

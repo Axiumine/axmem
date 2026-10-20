@@ -1,19 +1,16 @@
 """PATCH-style update models: cleaning of list and text inputs.
 
 Covers how every update model cleans padded or blank source file paths, and that an update
-that was already built validates to itself. Complements the null-handling tests in
-test_null_update_resources.py.
+that was already built validates to itself.
 """
 
 import pytest
 from pydantic import ValidationError
 
 from app.models.memory_models import MemoryUpdate
-from app.models.project_models import ProjectUpdate
 
 UPDATE_MODELS = [
     MemoryUpdate,
-    ProjectUpdate,
 ]
 
 

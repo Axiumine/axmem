@@ -13,7 +13,7 @@ async def test_health_endpoint_accessible(mcp_client):
     result = await mcp_client.call_tool(
         "execute_forgetful_tool",
         {
-            "tool_name": "get_current_user",
+            "tool_name": "get_recent_memories",
             "arguments": {},
         },
     )

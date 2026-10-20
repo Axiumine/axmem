@@ -60,7 +60,7 @@ class InMemoryMemoryRepository(MemorySearchMixin, MemoryLinkMixin, MemoryReposit
             keywords=memory.keywords,
             tags=memory.tags,
             importance=memory.importance,
-            project_ids=memory.project_ids or [],
+            project=memory.project,
             linked_memory_ids=[],
             **provenance_kwargs(memory),
             created_at=now,
@@ -87,7 +87,11 @@ class InMemoryMemoryRepository(MemorySearchMixin, MemoryLinkMixin, MemoryReposit
         if not memory:
             return None
 
-        return patch_item(memory, updated_memory.model_dump(exclude_unset=True))
+        changes = updated_memory.model_dump(exclude_unset=True)
+        if "project" in changes:
+            # an empty string clears the scope, as in the real repositories
+            changes["project"] = changes["project"] or None
+        return patch_item(memory, changes)
 
     async def mark_obsolete(
         self,
@@ -124,7 +128,7 @@ class InMemoryMemoryRepository(MemorySearchMixin, MemoryLinkMixin, MemoryReposit
         user_id: UUID,
         limit: int,
         offset: int = 0,
-        project_ids: list[int] | None = None,
+        project: str | None = None,
         include_obsolete: bool = False,
         sort_by: str = "created_at",
         sort_order: str = "desc",
@@ -136,7 +140,7 @@ class InMemoryMemoryRepository(MemorySearchMixin, MemoryLinkMixin, MemoryReposit
         memories = filter_items(
             self._memories.get(user_id, {}).values(),
             (not include_obsolete, lambda m: not m.is_obsolete),
-            (project_ids, shares_any("project_ids", project_ids or [])),
+            (project, lambda m: m.project == project),
             (tags, shares_any("tags", tags or [])),
             (importance_min is not None, lambda m: m.importance >= importance_min),
             (created_since is not None, lambda m: m.created_at >= created_since),

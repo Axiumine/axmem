@@ -21,18 +21,16 @@ if TYPE_CHECKING:
     from app.middleware.auth import TokenCache
     from app.routes.mcp.tool_registry import ToolRegistry
     from app.services.memory_service import MemoryService
-    from app.services.project_service import ProjectService
     from app.services.re_embedding_service import ReEmbeddingService
-    from app.services.user_service import UserService
+    from app.services.tenant_service import TenantService
 
 
 class ForgetfulMCP(FastMCP[Any]):
     """FastMCP server with the services and registry that ``main.lifespan`` attaches."""
 
-    user_service: UserService
+    tenant_service: TenantService
     memory_service: MemoryService
     re_embedding_service: ReEmbeddingService
-    project_service: ProjectService
 
     token_cache: TokenCache | None
     registry: ToolRegistry

@@ -53,8 +53,8 @@ cross-encoder reranking.
 | Reranking | Local TensorRT 11.x runner, strict fp32 (TF32 off), no fp16 | See "Decisions" below | Planned |
 | Store | Qdrant only; SQLite, PostgreSQL, pgvector and Alembic removed | After the cuts only memories, links, a scope and a tenant key remain, so one store is enough | Planned |
 | Ids | Memory ids become UUIDs | Qdrant has no autoincrement | Planned |
-| Auth | JWT, introspection and static bearer tokens; GitHub and Google OAuth and the CLI browser login removed; fails closed | Service deployments use tokens or OIDC; the default-user mode exposes every memory to every caller | Planned |
-| Users, projects | Users become tenants; projects become a scope string created on first use | A host system isolates by tenant and owns its project registry | Planned |
+| Auth | JWT, introspection and static bearer tokens (hashes only, constant-time compare); GitHub and Google OAuth and the CLI browser login removed; fails closed: no `AUTH_MODE` means no start, and `AUTH_MODE=none` only on stdio or a loopback bind | Service deployments use tokens or OIDC; the default-user mode exposed every memory to every caller of a network-bound server | Done |
+| Users, projects | Users become tenants (claim `tenant_id`, else `tenant`, else `sub`); projects become a scope string created on first use; user and project tools, routes and CLI verbs removed | A host system isolates by tenant and owns its project registry | Done |
 | Backup | Qdrant snapshots plus a JSONL export without vectors | The export can be re-embedded through the router | Planned |
 | Tests | Real GPU models; real Qdrant in a Docker test fixture; contract tests against a fake router; a test-only embedder | No model stubs, so similarity thresholds are tested for real | Planned |
 | CI | Static gates on hosted runners; tests on a self-hosted GPU runner | Hosted runners have no GPU | Planned |

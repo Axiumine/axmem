@@ -59,14 +59,15 @@ In this sense **Axmem** becomes a little like Obsidian for AI agents, where the 
 
 We find, [as do others (A-MEM: Agentic Memory for LLM Agents)](https://arxiv.org/abs/2502.12110), all this helps in ensuring that when the agent requires relevant information from the memory system later, the correct information is returned.
 
-In addition to memories, **Axmem** also has projects, which can be associated with one or more memories.
+Memories belong to a **tenant**, the owner of a set of memories, and a tenant never sees another tenant's memories. A memory can also carry an optional **project** scope, a free-form label that groups memories and narrows a search.
 
 
 ![Architecture](docs/images/Forgetful%20Architecture.drawio_transparent.png)
 
 ## Features
 - Configure either **STDIO** or **HTTP** transport mechanism (or stand up two services to support both)
-- Multiple authentication flows supported; see the [FastMCP docs](https://github.com/jlowin/fastmcp/tree/main/docs/servers/auth) for the full list
+- Fail-closed authentication: JWT, token introspection or static bearer tokens, one tenant per credential; a server with no `AUTH_MODE` refuses to start
+- Tenant isolation: a tenant reads and changes only its own memories, over MCP, REST and the CLI
 - Meta-tool discovery: only three tools are exposed to the client application to preserve the context window.
 - Flexible storage – SQLite (default, zero-config; slated for removal, see the note above) or PostgreSQL (for scale and production deployments)
 - Stores memories as vectors so they can be retrieved with natural-language queries from AI agents.
@@ -89,12 +90,14 @@ cd axmem
 # Install dependencies with uv
 uv sync
 
-# Run the server (uses SQLite by default)
-uv run main.py
+# Run the server (uses SQLite by default). The server fails closed: with no AUTH_MODE it
+# refuses to start. AUTH_MODE=none serves one local tenant and is accepted only on stdio or
+# when the HTTP server binds a loopback address (127.0.0.1 or ::1)
+AUTH_MODE=none uv run main.py
 ```
 Data stored in platform-appropriate locations (`~/.local/share/forgetful` on Linux/Mac, `AppData` on Windows).
 
-The server starts with stdio transport, which is what MCP clients expect. For HTTP: `uv run main.py --transport http --port 8020`
+The server starts with stdio transport, which is what MCP clients expect. For HTTP on this machine: `AUTH_MODE=none uv run main.py --transport http --host 127.0.0.1 --port 8020`. To keep `AUTH_MODE=none` out of every command, put it in `~/.config/forgetful/.env`.
 
 > **Note**: Axmem is not published to PyPI. `uvx forgetful-ai` installs the upstream Forgetful package, not Axmem.
 
@@ -119,16 +122,33 @@ cp .env.example .env
 #   DATABASE=Postgres
 #   POSTGRES_HOST=127.0.0.1   PGPORT=5099   POSTGRES_DB=forgetful
 #   POSTGRES_USER=...         POSTGRES_PASSWORD=...
+#   AUTH_MODE=jwt | introspection | static   (a shared server needs a credential, see below)
 
-# Run the HTTP server (stdio is the default transport)
+# Run the HTTP server (stdio is the default transport). Bound to all interfaces by default, it
+# needs AUTH_MODE=jwt, introspection or static; AUTH_MODE=none needs SERVER_HOST=127.0.0.1
 uv run main.py --transport http --port 8020
 ```
 
 Run it under your service manager of choice (for example a systemd unit whose `WorkingDirectory` is the clone and whose
 `ExecStart` is `uv run main.py --transport http`). Environment variables set in the unit take precedence over `.env`.
 
-**Note**: If no `.env` file exists, the application uses defaults from `app/config/settings.py`.
-For all configuration options, see [Configuration Guide](docs/configuration.md).
+**Note**: If no `.env` file exists, the application uses defaults from `app/config/settings.py`, except
+`AUTH_MODE`, which has no default. For all configuration options, see [Configuration Guide](docs/configuration.md).
+
+### Authentication and tenants
+
+Every request acts as one tenant. `AUTH_MODE` decides how the tenant is found, and the server will not start without it:
+
+| `AUTH_MODE` | Credential | Tenant |
+|---|---|---|
+| `jwt` | Signed JWT as `Authorization: Bearer` | Claim `tenant_id`, else `tenant`, else `sub` |
+| `introspection` | Opaque bearer token checked at an RFC 7662 endpoint | Same claim order |
+| `static` | Fixed bearer token per tenant; only its SHA-256 hash is configured (`AUTH_STATIC_TOKEN_HASHES`) | The tenant the token is configured for |
+| `none` | None | `DEFAULT_TENANT` |
+
+`AUTH_MODE=none` is accepted only on stdio or on a loopback bind (`127.0.0.1`, `::1`); on any other address the server refuses to
+start. The GitHub and Google OAuth providers and the CLI browser login are removed. See the
+[Configuration Guide](docs/configuration.md#authentication-configuration) for the details and for generating a static token hash.
 
 ### Connecting to an Agent
 
@@ -151,7 +171,8 @@ Add Axmem to your MCP client configuration (replace `/path/to/axmem` with your c
     "axmem": {
       "type": "stdio",
       "command": "uv",
-      "args": ["run", "--directory", "/path/to/axmem", "main.py"]
+      "args": ["run", "--directory", "/path/to/axmem", "main.py"],
+      "env": { "AUTH_MODE": "none" }
     }
   }
 }
@@ -163,11 +184,14 @@ Add Axmem to your MCP client configuration (replace `/path/to/axmem` with your c
   "mcpServers": {
     "axmem": {
       "type": "http",
-      "url": "http://localhost:8020/mcp"
+      "url": "https://axmem.example.com/mcp",
+      "headers": { "Authorization": "Bearer <token>" }
     }
   }
 }
 ```
+
+A local HTTP server started with `AUTH_MODE=none` needs no header (`http://localhost:8020/mcp`).
 
 
 ---
@@ -175,8 +199,8 @@ Add Axmem to your MCP client configuration (replace `/path/to/axmem` with your c
 ## CLI
 
 The `forgetful` command is also a full terminal client over the same tool registry the
-MCP meta-tools use - against your local database by default, or a remote deployment
-after `auth login`.
+MCP meta-tools use - against your local database by default (as the `DEFAULT_TENANT` tenant), or a remote
+deployment after `auth login`, as the tenant that `FORGETFUL_TOKEN` names.
 
 ```bash
 # From the repository root (the command is still named forgetful)
@@ -188,14 +212,14 @@ forgetful memory save "Set generateResolvConf false to fix WSL2 DNS" \
 forgetful memory search "wsl dns" -c "wsl networking" -n 5
 forgetful memory get 812
 forgetful memory recent -n 10 -p my-project
-forgetful project list
 
 # Generic passthrough to any available tool
 forgetful tools list --category memory
 forgetful tools info query_memory
-forgetful call create_project --args '{"name": "Homelab", "description": "...", "project_type": "personal"}'
+forgetful call get_recent_memories --args '{"limit": 5, "project": "homelab"}'
 
-# Remote deployment (browser OAuth; saves FORGETFUL_SERVER to ~/.config/forgetful/.env)
+# Remote deployment (bearer token from the environment; saves FORGETFUL_SERVER to ~/.config/forgetful/.env)
+export FORGETFUL_TOKEN="<token>"
 forgetful auth login --server https://forgetful.example.com
 forgetful auth status
 forgetful memory search "wsl dns" -c "wsl networking"          # now runs remotely
@@ -208,8 +232,8 @@ forgetful memory search "wsl dns" -c "wsl networking" --json | jq '.primary_memo
 `forgetful serve` is the canonical way to run the MCP server (`forgetful serve
 --transport http --port 8020`); the bare `forgetful` invocation and
 the legacy `--transport`/`--re-embed` flags keep working indefinitely, so existing MCP
-client configurations are unaffected. Headless environments can set `FORGETFUL_TOKEN`
-(bearer) instead of the OAuth flow. See the
+client configurations are unaffected. A remote deployment is reached with the bearer token in
+`FORGETFUL_TOKEN`; there is no browser login. See the
 [Configuration Guide](docs/configuration.md#cli-configuration) for precedence rules, or walk
 through the [`forgetful-cli-setup`](skills/forgetful-cli-setup/SKILL.md) skill for install,
 auth, and verification steps end-to-end.
@@ -225,20 +249,11 @@ Axmem exposes only three meta-tools to MCP clients. The tools available through
 
 ### Example 1: Project-Scoped Memory
 
-Create a memory linked to a project for better organization and scoped retrieval.
+Give a memory a project scope for better organization and scoped retrieval. A project is just a label;
+it is created the first time it is used, so there is nothing to set up first.
 
 ```python
-# Create project for organizing related knowledge
-project = execute_forgetful_tool(
-    "create_project",
-    {
-        "name": "E-Commerce Platform Redesign",
-        "project_type": "work",
-        "status": "active"
-    }
-)
-
-# Create memory linked to project
+# Create a memory in the "ecommerce-redesign" project scope
 memory = execute_forgetful_tool(
     "create_memory",
     {
@@ -248,7 +263,7 @@ memory = execute_forgetful_tool(
         "keywords": ["payment", "stripe", "paypal"],
         "tags": ["payment", "decision"],
         "importance": 9,
-        "project_ids": [project["id"]]
+        "project": "ecommerce-redesign"
     }
 )
 
@@ -258,7 +273,7 @@ results = execute_forgetful_tool(
     {
         "query": "payment processing implementation",
         "query_context": "Implementing payments for the redesign",
-        "project_ids": [project["id"]]
+        "project": "ecommerce-redesign"
     }
 )
 # Returns: Stripe decision + auto-linked related memories
@@ -266,7 +281,7 @@ results = execute_forgetful_tool(
 
 ### Tool Categories
 
-The catalog covers users, memories and projects.
+The catalog covers memories, with an optional project scope on create, update, query and recent.
 
 For complete documentation with extensive examples, see [Complete Tool Reference](docs/tool_reference.md).
 
@@ -318,6 +333,7 @@ For vector search and optional cross-encoder reranking, see
 - `MEMORY_NUM_AUTO_LINK` – Auto-link count (default: `3`, set `0` to disable)
 - `MEMORY_SIMILARITY_THRESHOLD` – Minimum cosine similarity for auto-links (default: `0.7`)
 - `SERVER_PORT` – HTTP server port (default: `8020`)
+- `AUTH_MODE` – `none`, `jwt`, `introspection` or `static`; no default, the server will not start without it
 
 For all environment variables with detailed explanations, see [Configuration Guide](docs/configuration.md).
 
@@ -327,7 +343,7 @@ For all environment variables with detailed explanations, see [Configuration Gui
 
 ### Guides
 
-- [Core Concepts](docs/concepts.md) – Memories and projects explained
+- [Core Concepts](docs/concepts.md) – Memories, tenants and project scopes explained
 - [Complete Tool Reference](docs/tool_reference.md) – Runtime tools and examples
 - [REST API Reference](docs/api_reference.md) – HTTP endpoints for web UI integration
 - [Configuration Guide](docs/configuration.md) – All environment variables explained

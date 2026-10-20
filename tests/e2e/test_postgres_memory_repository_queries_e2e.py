@@ -15,7 +15,6 @@ from tests.e2e.pg_repository_world_e2e_helpers import (
     RepositoryWorld,
     build_world,
     new_memory,
-    new_project,
 )
 
 pytestmark = [pytest.mark.e2e, pytest.mark.asyncio(loop_scope="session")]
@@ -44,7 +43,7 @@ async def _search(world: RepositoryWorld, **overrides):
         "query_context": "",
         "k": 10,
         "importance_threshold": None,
-        "project_ids": None,
+        "project": None,
         "exclude_ids": None,
     }
     return await world.memories.search(**{**arguments, **overrides})
@@ -75,7 +74,7 @@ async def test_search_without_context_reranks_the_candidates_it_returns(
         query_context="",
         k=2,
         importance_threshold=None,
-        project_ids=None,
+        project=None,
         exclude_ids=None,
     )
 
@@ -129,16 +128,16 @@ async def test_obsolete_matches_of_a_memory_without_embedding_are_empty(world, c
 
 async def test_targeted_rebuild_can_be_scoped_to_a_project_without_memory_ids(world):
     owner = world.owner
-    project = await new_project(world, owner)
-    in_project = await new_memory(world, owner, "In project", project_ids=[project])
+    project = "Rebuild project"
+    in_project = await new_memory(world, owner, "In project", project=project)
     await new_memory(world, owner, "Outside project")
-    obsolete = await new_memory(world, owner, "Obsolete in project", project_ids=[project])
+    obsolete = await new_memory(world, owner, "Obsolete in project", project=project)
     await world.memories.mark_obsolete(owner, obsolete.id, "outdated")
 
     everything = await world.memories.count_memories_for_targeted_rebuild(owner)
-    scoped = await world.memories.count_memories_for_targeted_rebuild(owner, project_id=project)
+    scoped = await world.memories.count_memories_for_targeted_rebuild(owner, project=project)
     batch = await world.memories.get_memories_for_targeted_rebuild(
-        owner, limit=10, project_id=project,
+        owner, limit=10, project=project,
     )
 
     assert (everything, scoped) == (2, 1)

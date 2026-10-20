@@ -8,11 +8,14 @@ from app.config.logging_config import logging
 from app.exceptions import NotFoundError
 from app.models.memory_models import Memory
 from app.repositories.sqlite.memory_base import SqliteMemoryBase
-from app.repositories.sqlite.memory_queries import affected_rows, with_relationships
+from app.repositories.sqlite.memory_queries import (
+    affected_rows,
+    in_project,
+    with_relationships,
+)
 from app.repositories.sqlite.sqlite_tables import (
     MemoryLinkTable,
     MemoryTable,
-    ProjectsTable,
 )
 
 logger = logging.getLogger(__name__)
@@ -25,7 +28,7 @@ class SqliteMemoryLinkMixin(SqliteMemoryBase):
         self,
         user_id: UUID,
         memory_id: int,
-        project_ids: list[int] | None,
+        project: str | None,
         max_links: int = 5,
         exclude_ids: list[int] | None = None,
     ) -> list[Memory]:
@@ -35,7 +38,7 @@ class SqliteMemoryLinkMixin(SqliteMemoryBase):
             user_id: User ID,
             memory_id: Memory ID of the memory to retrieve linked memories for
             max_links: Maximum number of linked memories to return
-            project_ids: Optional to filter linked memories for projects
+            project: Optional project scope to keep linked memories to
             exclude_ids: Optional memory IDs to leave out, applied before max_links
 
         Returns:
@@ -59,8 +62,8 @@ class SqliteMemoryLinkMixin(SqliteMemoryBase):
         if exclude_ids:
             stmt = stmt.where(MemoryTable.id.not_in(exclude_ids))
 
-        if project_ids:
-            stmt = stmt.join(MemoryTable.projects).where(ProjectsTable.id.in_(project_ids)).distinct()
+        if project:
+            stmt = stmt.where(in_project(project))
 
         stmt = stmt.order_by(MemoryTable.importance.desc()).limit(max_links)
 

@@ -51,15 +51,6 @@ def invoke_cli(monkeypatch, capsys, argv):
     return exit_code or 0, captured.out, captured.err
 
 
-def _create_project(monkeypatch, capsys, name):
-    arguments = json.dumps({"name": name, "description": "d", "project_type": "development"})
-    code, out, err = invoke_cli(
-        monkeypatch, capsys, ["call", "create_project", "--args", arguments, "--json"],
-    )
-    assert code == 0, err
-    return json.loads(out)["id"]
-
-
 def _call_json(monkeypatch, capsys, tool, arguments):
     code, out, err = invoke_cli(
         monkeypatch, capsys, ["call", tool, "--args", json.dumps(arguments), "--json"],
@@ -68,60 +59,33 @@ def _call_json(monkeypatch, capsys, tool, arguments):
     return json.loads(out)
 
 
-def test_exact_case_project_name_is_reachable_by_name(cli_env, monkeypatch, capsys):
-    upper_id = _create_project(monkeypatch, capsys, "Alpha")
-    lower_id = _create_project(monkeypatch, capsys, "alpha")
-    assert upper_id != lower_id
-
+def test_project_scopes_are_matched_with_exact_case(cli_env, monkeypatch, capsys):
     code, out, err = invoke_cli(
         monkeypatch, capsys, ["memory", "save", "exact case body", "--title", "t", "-p", "Alpha", "--json"],
     )
-
     assert code == 0, err
-    assert json.loads(out)["project_ids"] == [upper_id]
+    assert json.loads(out)["project"] == "Alpha"
+
+    code, out, err = invoke_cli(monkeypatch, capsys, ["memory", "recent", "-p", "Alpha", "--json"])
+    assert code == 0, err
+    assert [m["title"] for m in json.loads(out)["memories"]] == ["t"]
+
+    code, out, err = invoke_cli(monkeypatch, capsys, ["memory", "recent", "-p", "alpha", "--json"])
+    assert code == 0, err
+    assert json.loads(out)["memories"] == []
 
 
-def test_identical_project_names_are_reported_as_ambiguous(cli_env, monkeypatch, capsys):
-    first = _create_project(monkeypatch, capsys, "Twin")
-    second = _create_project(monkeypatch, capsys, "Twin")
-
-    code, out, err = invoke_cli(
-        monkeypatch, capsys, ["memory", "save", "body", "--title", "t", "-p", "Twin"],
-    )
-
-    assert code == 1
-    assert out == ""
-    assert "Ambiguous project 'Twin'" in err
-    assert str(first) in err and str(second) in err
-
-
-def test_digit_only_project_name_resolves_by_name(cli_env, monkeypatch, capsys):
-    project_id = _create_project(monkeypatch, capsys, "2024")
-    assert project_id != 2024
-
+@pytest.mark.parametrize("scope", ["2024", "²", "名前"])
+def test_project_scope_is_a_plain_string_whatever_it_looks_like(cli_env, monkeypatch, capsys, scope):
     code, out, err = invoke_cli(
         monkeypatch, capsys,
-        ["memory", "save", "numeric project body", "--title", "Numeric project memory", "-p", "2024"],
+        ["memory", "save", "numeric project body", "--title", "Odd scope memory", "-p", scope],
     )
     assert code == 0, err
 
-    code, out, err = invoke_cli(monkeypatch, capsys, ["memory", "recent", "-p", "2024"])
+    code, out, err = invoke_cli(monkeypatch, capsys, ["memory", "recent", "-p", scope])
     assert code == 0, err
-    assert "Numeric project memory" in out
-
-    code, out, err = invoke_cli(monkeypatch, capsys, ["memory", "recent", "-p", str(project_id)])
-    assert code == 0, err
-    assert "Numeric project memory" in out
-
-
-def test_non_ascii_digit_project_value_reports_unknown_project(cli_env, monkeypatch, capsys):
-    _create_project(monkeypatch, capsys, "Real project")
-
-    code, out, err = invoke_cli(monkeypatch, capsys, ["memory", "recent", "-p", "²"])
-
-    assert code == 1
-    assert "Unknown project" in err
-    assert "invalid literal" not in err
+    assert "Odd scope memory" in out
 
 
 @pytest.mark.parametrize(
@@ -133,13 +97,11 @@ def test_non_ascii_digit_project_value_reports_unknown_project(cli_env, monkeypa
     ],
 )
 def test_empty_project_value_is_rejected_and_nothing_is_saved(cli_env, monkeypatch, capsys, argv):
-    _create_project(monkeypatch, capsys, "Alpha")
-
     code, out, err = invoke_cli(monkeypatch, capsys, argv)
 
     assert code == 1
     assert out == ""
-    assert "Unknown project ''" in err
+    assert "project" in err
     _, recent_out, _ = invoke_cli(monkeypatch, capsys, ["memory", "recent", "--json"])
     assert json.loads(recent_out)["memories"] == []
 

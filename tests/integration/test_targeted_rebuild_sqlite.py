@@ -89,45 +89,18 @@ async def _create_user(db_adapter, user_id):
         )
 
 
-async def _create_project(db_adapter, user_id, name="Test Project"):
-    now = datetime.now(UTC).isoformat()
-    async with db_adapter.system_session() as session:
-        result = await session.execute(
-            text(
-                "INSERT INTO projects (user_id, name, description, project_type, status, created_at, updated_at) "
-                "VALUES (:user_id, :name, :description, :project_type, :status, :created_at, :updated_at) "
-                "RETURNING id",
-            ),
-            {
-                "user_id": str(user_id),
-                "name": name,
-                "description": "Test project",
-                "project_type": "development",
-                "status": "active",
-                "created_at": now,
-                "updated_at": now,
-            },
-        )
-        return result.scalar_one()
-
-
 def _make_ctx(user_id):
-    class FakeUserService:
-        async def get_or_create_user(self, user):
-            return User(
-                id=user_id,
-                external_id=user.external_id,
-                name=user.name,
-                email=user.email,
-            )
+    class FakeTenantService:
+        async def get_or_create_tenant(self, tenant_id):
+            return User(id=user_id, external_id=tenant_id, name=tenant_id, email="")
 
-    user_service = FakeUserService()
+    tenant_service = FakeTenantService()
     return SimpleNamespace(
         fastmcp=SimpleNamespace(
             auth=None,
-            user_service=user_service,
+            tenant_service=tenant_service,
         ),
-    ), user_service
+    )
 
 
 async def _seed_memories(repo, db_adapter, count=3):
@@ -350,11 +323,10 @@ async def test_rebuild_targeted_recomputes_links_after_upsert(sqlite_repo, monke
 async def test_rebuild_embeddings_rejects_empty_memory_ids(sqlite_repo):
     repo, _db_adapter, _embedding_adapter = sqlite_repo
     user_id = uuid4()
-    ctx, user_service = _make_ctx(user_id)
+    ctx = _make_ctx(user_id)
     adapters = MemoryToolAdapters(
         memory_service=SimpleNamespace(),
         re_embedding_service=ReEmbeddingService(repo, _embedding_adapter),
-        user_service=user_service,
     )
 
     with pytest.raises(ToolError, match="memory_ids must be non-empty"):
@@ -362,12 +334,10 @@ async def test_rebuild_embeddings_rejects_empty_memory_ids(sqlite_repo):
 
 
 @pytest.mark.asyncio
-async def test_rebuild_embeddings_rejects_mismatched_memory_ids_and_project_id(sqlite_repo):
+async def test_rebuild_embeddings_rejects_mismatched_memory_ids_and_project(sqlite_repo):
     repo, db_adapter, _embedding_adapter = sqlite_repo
     user_id = uuid4()
     await _create_user(db_adapter, user_id)
-    project_a = await _create_project(db_adapter, user_id, name="A")
-    project_b = await _create_project(db_adapter, user_id, name="B")
     memory = await repo.create_memory(
         user_id=user_id,
         memory=MemoryCreate(
@@ -377,21 +347,20 @@ async def test_rebuild_embeddings_rejects_mismatched_memory_ids_and_project_id(s
             keywords=["k"],
             tags=["t"],
             importance=5,
-            project_ids=[project_a],
+            project="A",
         ),
     )
-    ctx, user_service = _make_ctx(user_id)
+    ctx = _make_ctx(user_id)
     adapters = MemoryToolAdapters(
         memory_service=SimpleNamespace(),
         re_embedding_service=ReEmbeddingService(repo, _embedding_adapter),
-        user_service=user_service,
     )
 
     with pytest.raises(ToolError, match="do not all belong"):
         await adapters.rebuild_embeddings(
             ctx=ctx,
             memory_ids=[memory.id],
-            project_id=project_b,
+            project="B",
         )
 
 

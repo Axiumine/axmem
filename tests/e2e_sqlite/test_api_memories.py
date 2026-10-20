@@ -3,6 +3,8 @@
 Uses in-memory SQLite for test isolation.
 Tests the /api/v1/memories endpoints.
 """
+from urllib.parse import quote
+
 import pytest
 
 MEMORIES_URL = "/api/v1/memories"
@@ -124,12 +126,7 @@ class TestMemoryAPIList:
     @pytest.mark.asyncio
     async def test_importance_filter_applies_before_pagination(self, http_client):
         """GET /api/v1/memories filters by importance before paginating."""
-        project_response = await http_client.post("/api/v1/projects", json={
-            "name": "Importance filter project",
-            "description": "Project for testing importance filtering",
-            "project_type": "development",
-        })
-        project_id = project_response.json()["id"]
+        project = "Importance filter project"
 
         await _create_memory(
             http_client,
@@ -139,7 +136,7 @@ class TestMemoryAPIList:
             ["filter"],
             ["test"],
             importance=9,
-            project_ids=[project_id],
+            project=project,
         )
         await _create_memory(
             http_client,
@@ -149,11 +146,11 @@ class TestMemoryAPIList:
             ["filter"],
             ["test"],
             importance=3,
-            project_ids=[project_id],
+            project=project,
         )
 
         response = await http_client.get(
-            f"{MEMORIES_URL}?project_id={project_id}&importance_min=8&limit=1",
+            f"{MEMORIES_URL}?project={quote(project)}&importance_min=8&limit=1",
         )
 
         assert response.status_code == 200
@@ -185,8 +182,20 @@ class TestMemoryAPICreate:
 
     @pytest.mark.asyncio
     async def test_create_memory_with_optional_project(self, http_client):
-        """POST /api/v1/memories accepts project_ids field."""
-        # Create memory without project (project_ids is optional)
+        """POST /api/v1/memories accepts the optional project scope."""
+        scoped = await _create_memory(
+            http_client,
+            "Memory with Project",
+            "This memory is scoped.",
+            "Testing the project scope",
+            ["project"],
+            ["test"],
+            project="Atlas",
+        )
+        assert scoped.status_code == 201
+        assert scoped.json()["project"] == "Atlas"
+
+        # A memory without a project has no scope
         response = await _create_memory(
             http_client,
             "Memory without Project",
@@ -194,11 +203,10 @@ class TestMemoryAPICreate:
             "Testing project linking as optional",
             ["project"],
             ["test"],
-            project_ids=[],  # Empty list is valid
         )
         assert response.status_code == 201
         data = response.json()
-        assert data["project_ids"] == []
+        assert data["project"] is None
 
     @pytest.mark.asyncio
     async def test_create_memory_invalid_body(self, http_client):

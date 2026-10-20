@@ -8,10 +8,8 @@ import pytest_asyncio
 from sqlalchemy import select
 
 from app.config.settings import settings
-from app.models.project_models import ProjectCreate, ProjectType
 from app.repositories.postgres.memory_repository import PostgresMemoryRepository
 from app.repositories.postgres.postgres_tables import MemoryTable
-from app.repositories.postgres.project_repository import PostgresProjectRepository
 from tests.e2e.pg_memory_repository_helpers import (
     HashingEmbeddings,
     create_user,
@@ -50,7 +48,7 @@ async def memories(db_adapter):
 async def _search(memories, owner, **overrides):
     arguments = {
         "query": "shared topic", "query_context": "", "k": 10,
-        "importance_threshold": None, "project_ids": None, "exclude_ids": None,
+        "importance_threshold": None, "project": None, "exclude_ids": None,
     }
     return await memories.search(owner, **{**arguments, **overrides})
 
@@ -85,7 +83,7 @@ async def test_reranking_without_query_context_scores_candidates_against_the_bar
 
     scored = await memories.search_scored(
         owner, query="shared topic", query_context="", k=2,
-        importance_threshold=None, project_ids=None, exclude_ids=None,
+        importance_threshold=None, project=None, exclude_ids=None,
     )
 
     assert reranker.queries == ["shared topic"]
@@ -111,16 +109,13 @@ async def test_targeted_rebuild_counts_every_active_memory_without_filters(memor
     assert await memories.count_memories_for_targeted_rebuild(owner) == 2
 
 
-async def test_targeted_rebuild_can_be_limited_to_one_project(db_adapter, memories, owner):
-    project = await PostgresProjectRepository(db_adapter).create_project(
-        owner, ProjectCreate(name="p", description="d", project_type=ProjectType.DEVELOPMENT),
-    )
-    inside = await memories.create_memory(owner, memory_data("inside", project_ids=[project.id]))
+async def test_targeted_rebuild_can_be_limited_to_one_project(memories, owner):
+    inside = await memories.create_memory(owner, memory_data("inside", project="p"))
     await memories.create_memory(owner, memory_data("outside"))
 
-    count = await memories.count_memories_for_targeted_rebuild(owner, project_id=project.id)
+    count = await memories.count_memories_for_targeted_rebuild(owner, project="p")
     batch = await memories.get_memories_for_targeted_rebuild(
-        owner, limit=10, project_id=project.id,
+        owner, limit=10, project="p",
     )
 
     assert count == 1

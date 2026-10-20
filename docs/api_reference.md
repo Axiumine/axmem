@@ -6,45 +6,43 @@ Forgetful exposes a REST API for web UI integration and external access.
 
 ## Authentication
 
-The REST API uses the **same authentication provider** as MCP routes. This means:
+The REST API uses the **same authentication provider** as the MCP routes, chosen by `AUTH_MODE`. The
+server fails closed: with `AUTH_MODE` unset it does not start (see the
+[Configuration Reference](./configuration.md#authentication-configuration)).
 
-- If you've configured OAuth2/OIDC for MCP, the same tokens work for REST
-- If auth is disabled (`FASTMCP_SERVER_AUTH` not set), REST endpoints use a default user
-- All FastMCP auth providers are supported (JWT, OAuth2, GitHub, Google, Azure, etc.)
+| `AUTH_MODE` | What the REST API requires |
+|---|---|
+| `jwt` | `Authorization: Bearer <JWT>`; signature, issuer, audience and expiry are checked |
+| `introspection` | `Authorization: Bearer <opaque token>`; the token must be active at the introspection endpoint |
+| `static` | `Authorization: Bearer <token>`; the token must match a configured tenant's SHA-256 hash |
+| `none` | Nothing; every request is the `DEFAULT_TENANT` tenant. Accepted only on a loopback bind |
 
-### When Auth is Enabled
+### Tenants
 
-Include a Bearer token in the Authorization header:
+Every request acts as one **tenant**, read from the verified token: the claim `tenant_id`, else `tenant`,
+else `sub`. For a static token it is the tenant that token is configured for. A tenant reads and changes only
+its own memories: another tenant's memory id answers `404 Memory not found`, exactly like an id that does not
+exist, and listing and search never return it.
+
+### Bearer tokens
 
 ```
-Authorization: Bearer <your-oauth-token>
+Authorization: Bearer <token>
 ```
 
-The token is validated using `mcp.auth.verify_token()` - the same mechanism used for MCP tool authentication. User identity is extracted from the token's `sub` claim.
+A missing header, a malformed header, and a token that is invalid, expired or inactive all answer `401`
+with `{"error": "..."}`. A token that names no tenant (none of the three claims) is refused as well. Tokens
+are never logged or echoed back.
 
-### When Auth is Disabled (Default)
+### GET /api/v1/auth/info
 
-If `FASTMCP_SERVER_AUTH` is not set, all requests use a default user. No Authorization header is required.
+Public endpoint (no credential) for clients to detect the mode before sending one:
 
-### Configuration
-
-Authentication is configured via FastMCP environment variables:
-
-```bash
-# Example: GitHub OAuth (the provider is selected by its class path)
-FASTMCP_SERVER_AUTH=fastmcp.server.auth.providers.github.GitHubProvider
-FASTMCP_SERVER_AUTH_GITHUB_CLIENT_ID=your_client_id
-FASTMCP_SERVER_AUTH_GITHUB_CLIENT_SECRET=your_client_secret
-FASTMCP_SERVER_AUTH_GITHUB_BASE_URL=https://forgetful.example.com
-
-# Example: JWT bearer tokens
-FASTMCP_SERVER_AUTH=fastmcp.server.auth.providers.jwt.JWTVerifier
-FASTMCP_SERVER_AUTH_JWT_JWKS_URI=https://auth.example.com/.well-known/jwks.json
+```json
+{"authEnabled": true, "authMode": "static"}
 ```
 
-The supported providers are the GitHub, Google, JWT and token-introspection classes; any other value
-stops startup with an error listing them. See the [Configuration Reference](./configuration.md) for every
-variable, and the [FastMCP Auth Documentation](https://fastmcp.wiki/en/servers/auth/authentication) for provider details.
+`authMode` is `disabled` (`AUTH_MODE=none`, `authEnabled` is `false`), `jwt`, `introspection` or `static`.
 
 ## Common Response Codes
 
@@ -53,22 +51,21 @@ variable, and the [FastMCP Auth Documentation](https://fastmcp.wiki/en/servers/a
 | 200 | Success |
 | 201 | Created |
 | 400 | Bad Request (validation error, malformed or non-object JSON body, `NaN`/infinite numbers in a body, invalid query parameter) |
-| 401 | Unauthorized (missing/invalid token) |
-| 404 | Not Found (including a path id that is not an integer id, such as `/api/v1/memories/abc`, and a referenced `project_id` that does not exist or belongs to another user) |
+| 401 | Unauthorized (missing, invalid or expired token) |
+| 404 | Not Found (including a path id that is not an integer id, such as `/api/v1/memories/abc`, and a memory that belongs to another tenant) |
 | 422 | Unprocessable Entity (`InvalidStateTransitionError` -- for example marking an already obsolete memory obsolete) |
 | 500 | Internal Server Error |
 
 ## Update Requests (PUT)
 
-`PUT` endpoints for projects
-use PATCH semantics: send only the fields you want to change.
+`PUT /api/v1/memories/{id}` uses PATCH semantics: send only the fields you want to change.
 
 - A field that is omitted or sent as `null` is left unchanged. A body that changes nothing returns
   the current record and does not modify `updated_at`.
-- `null` never clears a field. Fields such as `project_id`, `source_url` and `confidence` therefore cannot
+- `null` never clears a field. Fields such as `source_url` and `confidence` therefore cannot
   be reset through a `PUT`.
-- Optional text fields that can be cleared, such as a project's `notes`, are cleared by sending an empty
-  string. Lists (`tags`) are replaced by what you send, so `[]` clears them.
+- The `project` scope is cleared by sending an empty string. Lists (`tags`) are replaced by what you
+  send, so `[]` clears them.
 
 ---
 
@@ -104,7 +101,7 @@ List memories with pagination, sorting, and filtering.
 | `offset` | int | 0 | Skip N results |
 | `sort_by` | string | created_at | Sort field: `created_at`, `updated_at`, `importance` |
 | `sort_order` | string | desc | Sort direction: `asc`, `desc` |
-| `project_id` | int | - | Filter by project (32-bit id; outside -2147483648 to 2147483647 returns 400) |
+| `project` | string | - | Only memories in this project scope (trimmed, 1 to 500 characters; a blank or longer value returns 400) |
 | `importance_min` | int | - | Minimum importance (1-10) |
 | `tags` | string | - | Comma-separated tags |
 | `include_obsolete` | bool | false | Include obsolete memories |
@@ -122,7 +119,7 @@ List memories with pagination, sorting, and filtering.
       "created_at": "2024-12-05T10:00:00Z",
       "updated_at": "2024-12-05T10:00:00Z",
       "linked_memory_ids": [2, 3],
-      "project_ids": [1],
+      "project": "billing",
       "source_repo": "owner/repo",
       "source_files": ["path/to/file.py"],
       "source_url": "https://example.com/source",
@@ -156,7 +153,7 @@ Create a new memory.
   "keywords": ["keyword1", "keyword2"],
   "tags": ["tag1"],
   "importance": 7,
-  "project_ids": [1],
+  "project": "billing",
   "source_repo": "owner/repo",
   "source_files": ["path/to/file.py"],
   "source_url": "https://example.com/source",
@@ -165,6 +162,9 @@ Create a new memory.
   "encoding_version": "1.0.0"
 }
 ```
+
+**Project scope (optional):** `project` is a free-form label, trimmed, 1 to 500 characters. The scope is
+created the first time it is used, and each tenant has its own scopes. A blank or longer label returns `400`.
 
 **Provenance Fields (all optional):**
 
@@ -190,12 +190,10 @@ blank `context`.
   "id": 1,
   "title": "Memory title",
   "linked_memory_ids": [],
-  "project_ids": [1],
+  "project": "billing",
   "similar_memories": []
 }
 ```
-
-**Errors:** `404` with a message such as `Projects not found: {999}` when an id in `project_ids` does not exist (or belongs to another user). Nothing is created in that case.
 
 ### PUT /api/v1/memories/{id}
 
@@ -208,6 +206,7 @@ Update an existing memory.
   "content": "Updated content",
   "importance": 8,
   "tags": ["updated-tag"],
+  "project": "billing",
   "source_repo": "owner/repo",
   "source_files": ["path/to/file.py"],
   "source_url": "https://example.com/source",
@@ -219,11 +218,11 @@ Update an existing memory.
 
 Provenance fields can be added or updated after memory creation. See POST /api/v1/memories for field descriptions.
 
-A field that is omitted or `null` is left unchanged. The link list `project_ids` replaces the existing links when provided, and an empty list removes them all.
+A field that is omitted or `null` is left unchanged. `project` replaces the memory's scope when provided, and an empty string removes the memory from its scope.
 
 **Response:** Updated memory object
 
-**Errors:** `404` with `Memory not found` when the memory does not exist, or with a message such as `Projects not found: {999}` when an associated id does not exist.
+**Errors:** `404` with `Memory not found` when the memory does not exist or belongs to another tenant.
 
 ### DELETE /api/v1/memories/{id}
 
@@ -261,7 +260,7 @@ Semantic search across memories. A blank (whitespace-only) `query` is rejected w
   "k": 10,
   "include_links": true,
   "importance_threshold": 5,
-  "project_ids": [1, 2],
+  "project": "billing",
   "token_context_threshold": 4000
 }
 ```
@@ -331,96 +330,10 @@ Remove a link between two memories (bidirectional).
 
 ## Projects
 
-### GET /api/v1/projects
-
-List all projects.
-
-**Query Parameters:**
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `status` | string | Filter by status: `active`, `archived`, `completed` |
-| `repo_name` | string | Match equivalent repository addresses or literal identifiers |
-
-Repository lookup recognises equivalent HTTPS, SSH, and host-qualified addresses. For example,
-`github.com/ScottRBK/forgetful`, `https://github.com/ScottRBK/forgetful.git`, and
-`git@github.com:ScottRBK/forgetful.git` match each other. A trailing slash is optional.
-Hostnames are case-insensitive; repository paths and explicit ports remain significant.
-Hostless paths such as `group/subgroup/repo` do not imply GitHub or another host.
-Unsupported or ambiguous forms use literal matching. Lookup returns every matching project and
-can be combined with the status filter; it does not perform partial-name or fuzzy search.
-
-**Response:** `ProjectSummary` items (lightweight; no `description` or `notes`).
-
-```json
-{
-  "projects": [
-    {
-      "id": 1,
-      "name": "Project Name",
-      "project_type": "development",
-      "status": "active",
-      "repo_name": "owner/repo",
-      "last_encoding_point": "5d41402abc4b2a76b9719d911017c592",
-      "memory_count": 12,
-      "created_at": "2024-12-05T10:00:00Z",
-      "updated_at": "2024-12-05T10:00:00Z"
-    }
-  ],
-  "total": 5
-}
-```
-
-### GET /api/v1/projects/{id}
-
-Get a single project by ID.
-
-**Response:** Full `Project` object (includes `description`, `notes`, provenance fields, `memory_count`, and `last_encoding_point` when set). Shape differs from list `ProjectSummary` items.
-
-### POST /api/v1/projects
-
-Create a new project.
-
-`repo_name` is an optional Git repository identifier or address (maximum 255 characters).
-Nested paths, host-qualified identifiers, HTTPS/SSH addresses, and opaque values are accepted.
-Surrounding whitespace is trimmed; the supplied format is otherwise preserved in responses.
-An empty string clears the repository when updating a project. Invalid project fields return
-HTTP 400 with JSON field locations and error messages.
-
-**Request Body:**
-```json
-{
-  "name": "Project Name",
-  "description": "Project description",
-  "project_type": "development",
-  "repo_name": "owner/repo",
-  "last_encoding_point": "5d41402abc4b2a76b9719d911017c592"
-}
-```
-
-**Project Types:** `personal`, `work`, `learning`, `development`, `infrastructure`, `template`, `product`, `documentation`, `open-source`
-
-**`last_encoding_point`:** Opaque, caller-managed checkpoint through which memories were last encoded for this project (e.g. a Git commit SHA). The server never infers or advances it; the encoding client updates it only after a successful run.
-
-### PUT /api/v1/projects/{id}
-
-Update an existing project.
-
-**Request Body:** (all fields optional)
-```json
-{
-  "name": "Updated Name",
-  "description": "Updated description",
-  "status": "completed",
-  "last_encoding_point": "7d793037a0760186574b0282f2ebc2eb"
-}
-```
-
-Omit `last_encoding_point` to leave the stored value unchanged; send an empty string to clear it.
-
-### DELETE /api/v1/projects/{id}
-
-Delete a project (preserves associated memories).
+There are no project routes. A project is an optional scope label on a memory (the `project` field of
+`POST /api/v1/memories`, `PUT /api/v1/memories/{id}` and `POST /api/v1/memories/search`, and the `project`
+query parameter of `GET /api/v1/memories`). The routes `GET`, `POST`, `PUT` and `DELETE` under
+`/api/v1/projects` are removed.
 
 ---
 

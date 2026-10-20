@@ -175,7 +175,7 @@ batch). A memory edited while the rebuild is running is reported in `skipped_ids
 embedding generated for its new content. An edit that arrives during the short write itself waits
 for it. `failed` entries carry a short reason code (`embedding_failed`, `persistence_failed`,
 `auto_link_failed`, `not_found_or_not_owned`); the underlying error is written to the server log.
-An unknown or foreign `project_id` is rejected with a validation error.
+An unknown project scope, or one that holds none of your memories, is rejected with a validation error.
 
 ---
 

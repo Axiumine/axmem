@@ -47,7 +47,7 @@ def _targeted_repo(memories: list[Memory]) -> AsyncMock:
     repo = AsyncMock()
     repo.count_memories_for_targeted_rebuild.return_value = len(memories)
 
-    async def batch(user_id, limit, after_id=None, memory_ids=None, project_id=None):
+    async def batch(user_id, limit, after_id=None, memory_ids=None, project=None):
         return [m for m in memories if after_id is None or m.id > after_id][:limit]
 
     async def upsert(user_id, updates, expected_updated_at=None):
@@ -80,8 +80,8 @@ def _scoped_repo(matched_in_project: int) -> AsyncMock:
     """A repository that finds ``matched_in_project`` of the memories inside the project."""
     repo = AsyncMock()
 
-    async def count(user_id, memory_ids, project_id=None):
-        return matched_in_project if project_id is not None else len(memory_ids)
+    async def count(user_id, memory_ids, project=None):
+        return matched_in_project if project is not None else len(memory_ids)
 
     repo.count_memories_for_targeted_rebuild.side_effect = count
     return repo
@@ -91,18 +91,18 @@ async def test_targeted_scope_accepts_memories_that_all_belong_to_the_project():
     repo = _scoped_repo(matched_in_project=2)
 
     assert await ReEmbeddingService(repo, _adapter()).validate_targeted_scope(
-        uuid4(), [1, 2], project_id=7,
+        uuid4(), [1, 2], project="atlas",
     ) is None
 
     # counted once inside the project and once overall, and both counts agreed
-    assert [call.kwargs.get("project_id") for call in repo.count_memories_for_targeted_rebuild.await_args_list] == [7, None]
+    assert [call.kwargs.get("project") for call in repo.count_memories_for_targeted_rebuild.await_args_list] == ["atlas", None]
 
 
 async def test_targeted_scope_rejects_a_memory_outside_the_project():
     service = ReEmbeddingService(_scoped_repo(matched_in_project=2), _adapter())
 
-    with pytest.raises(ValueError, match=r"memory_ids do not all belong to project_id=7.*matched_in_project=2"):
-        await service.validate_targeted_scope(uuid4(), [1, 2, 3], project_id=7)
+    with pytest.raises(ValueError, match=r"memory_ids do not all belong to project='atlas'.*matched_in_project=2"):
+        await service.validate_targeted_scope(uuid4(), [1, 2, 3], project="atlas")
 
 
 async def test_targeted_rebuild_reports_progress_after_every_batch():

@@ -9,6 +9,7 @@ import socket
 import sys
 import threading
 import time
+from contextlib import contextmanager
 
 import pytest
 import uvicorn
@@ -16,6 +17,7 @@ import uvicorn
 import main
 from app.config.settings import settings
 from app.routes.cli import paths
+from tests.e2e_sqlite.conftest import TENANT_TOKENS, static_token_verifier
 
 _PATCHED_FIELDS = [
     "DATABASE",
@@ -47,9 +49,9 @@ def cli_remote_env(tmp_path, monkeypatch):
         setattr(settings, name, value)
 
 
-@pytest.fixture
-def http_server_url(cli_remote_env):
-    """Run the real server on an ephemeral port in a background thread."""
+@contextmanager
+def running_server():
+    """Run the real server (main.mcp as configured now) on an ephemeral port in a background thread."""
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
         port = sock.getsockname()[1]
@@ -79,6 +81,21 @@ def http_server_url(cli_remote_env):
     thread.join(timeout=15)
     if thread.is_alive():
         raise RuntimeError("in-process Forgetful server failed to shut down in time")
+
+
+@pytest.fixture
+def http_server_url(cli_remote_env):
+    """The real server with no authentication (AUTH_MODE=none on the loopback bind)."""
+    with running_server() as url:
+        yield url
+
+
+@pytest.fixture
+def token_server_url(cli_remote_env, monkeypatch):
+    """The real server with static-token authentication for the tenants alice and bob."""
+    monkeypatch.setattr(main.mcp, "auth", static_token_verifier())
+    with running_server() as url:
+        yield url
 
 
 def invoke_cli(monkeypatch, capsys, argv):
@@ -139,11 +156,11 @@ def test_remote_server_url_without_mcp_path_is_normalized(http_server_url, monke
 
     code, out, _ = invoke_cli(
         monkeypatch, capsys,
-        ["call", "get_current_user", "--args", "{}", "--server", base_url],
+        ["call", "get_recent_memories", "--args", "{}", "--server", base_url],
     )
 
     assert code == 0
-    assert json.loads(out)["name"] == settings.DEFAULT_USER_NAME
+    assert json.loads(out)["memories"] == []
 
 
 def test_remote_recent_memories_returns_envelope_matching_local(
@@ -223,3 +240,67 @@ def test_remote_unknown_tool_maps_to_exit_one(http_server_url, monkeypatch, caps
     assert code == 1
     assert out == ""
     assert "not found in registry" in err
+
+
+def _as(monkeypatch, token):
+    if token is None:
+        monkeypatch.delenv("FORGETFUL_TOKEN", raising=False)
+    else:
+        monkeypatch.setenv("FORGETFUL_TOKEN", token)
+
+
+def test_remote_tenants_cannot_see_each_others_memories(token_server_url, monkeypatch, capsys):
+    """Over HTTP the FORGETFUL_TOKEN bearer token names the tenant; the other tenant sees nothing."""
+    create_args = json.dumps({
+        "title": "Alice remote private",
+        "content": "Only alice may read this over the remote CLI",
+        "context": "Remote tenant isolation",
+        "keywords": ["isolation"],
+        "tags": ["tenant"],
+        "importance": 6,
+        "project": "shared-scope",
+    })
+    _as(monkeypatch, TENANT_TOKENS["alice"])
+    code, out, _ = invoke_cli(
+        monkeypatch, capsys, ["call", "create_memory", "--args", create_args, "--server", token_server_url],
+    )
+    assert code == 0
+    memory_id = json.loads(out)["id"]
+
+    _as(monkeypatch, TENANT_TOKENS["bob"])
+    get_args = json.dumps({"memory_id": memory_id})
+    code, out, err = invoke_cli(
+        monkeypatch, capsys, ["call", "get_memory", "--args", get_args, "--server", token_server_url],
+    )
+    assert code == 1
+    assert "not found" in err.lower()
+    assert "Alice remote private" not in out + err
+
+    code, out, _ = invoke_cli(
+        monkeypatch, capsys,
+        ["call", "get_recent_memories", "--args", json.dumps({"project": "shared-scope"}),
+         "--server", token_server_url],
+    )
+    assert code == 0
+    assert json.loads(out)["memories"] == []
+
+    _as(monkeypatch, TENANT_TOKENS["alice"])
+    code, out, _ = invoke_cli(
+        monkeypatch, capsys, ["call", "get_memory", "--args", get_args, "--server", token_server_url],
+    )
+    assert code == 0
+    assert json.loads(out)["title"] == "Alice remote private"
+
+
+@pytest.mark.parametrize("token", [None, "not-a-configured-token"], ids=["no-token", "wrong-token"])
+def test_remote_call_without_a_valid_token_is_refused(token_server_url, monkeypatch, capsys, token):
+    _as(monkeypatch, token)
+
+    code, out, err = invoke_cli(
+        monkeypatch, capsys,
+        ["call", "get_recent_memories", "--args", "{}", "--server", token_server_url],
+    )
+
+    assert code != 0
+    assert "memories" not in out
+    assert err

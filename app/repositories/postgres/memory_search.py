@@ -27,7 +27,7 @@ class MemorySearchMixin(MemoryRepositoryBase):
             query_context: str,
             k: int,
             importance_threshold: int | None,
-            project_ids: list[int] | None,
+            project: str | None,
             exclude_ids: list[int] | None,
     ) -> list[Memory]:
         return [memory for memory, _ in await self.search_scored(
@@ -36,7 +36,7 @@ class MemorySearchMixin(MemoryRepositoryBase):
             query_context=query_context,
             k=k,
             importance_threshold=importance_threshold,
-            project_ids=project_ids,
+            project=project,
             exclude_ids=exclude_ids,
         )]
 
@@ -47,7 +47,7 @@ class MemorySearchMixin(MemoryRepositoryBase):
             query_context: str,
             k: int,
             importance_threshold: int | None,
-            project_ids: list[int] | None,
+            project: str | None,
             exclude_ids: list[int] | None,
     ) -> list[tuple[Memory, MemoryScore]]:
         if settings.RERANKING_ENABLED:
@@ -61,7 +61,7 @@ class MemorySearchMixin(MemoryRepositoryBase):
             query=query,
             k=candidates_to_return,
             importance_threshold=importance_threshold,
-            project_ids=project_ids,
+            project=project,
             exclude_ids=exclude_ids,
         )
 
@@ -103,7 +103,7 @@ class MemorySearchMixin(MemoryRepositoryBase):
             query: str,
             k: int,
             importance_threshold: int | None,
-            project_ids: list[int] | None,
+            project: str | None,
             exclude_ids: list[int] | None,
     ) -> list[tuple[Memory, float]]:
         query_text = query.strip()
@@ -127,8 +127,8 @@ class MemorySearchMixin(MemoryRepositoryBase):
         if importance_threshold:
             stmt = stmt.where(MemoryTable.importance >= importance_threshold)
 
-        if project_ids:
-            stmt = stmt.where(project_membership_filter(project_ids))
+        if project:
+            stmt = stmt.where(project_membership_filter(project))
 
         if exclude_ids:
             stmt = stmt.where(MemoryTable.id.not_in(exclude_ids))

@@ -9,9 +9,7 @@ import pytest_asyncio
 from sqlalchemy.exc import IntegrityError
 
 from app.exceptions import InvalidStateTransitionError, NotFoundError
-from app.models.project_models import ProjectCreate, ProjectType
 from app.repositories.postgres.memory_repository import PostgresMemoryRepository
-from app.repositories.postgres.project_repository import PostgresProjectRepository
 from tests.e2e.pg_memory_repository_helpers import (
     HashingEmbeddings,
     create_user,
@@ -34,14 +32,6 @@ async def memories(db_adapter):
     return PostgresMemoryRepository(db_adapter, HashingEmbeddings())
 
 
-@pytest_asyncio.fixture(loop_scope="session")
-async def project_id(db_adapter, owner):
-    project = await PostgresProjectRepository(db_adapter).create_project(
-        owner, ProjectCreate(name="p", description="d", project_type=ProjectType.DEVELOPMENT),
-    )
-    return project.id
-
-
 async def test_getting_an_unknown_memory_raises_not_found(memories, owner):
     with pytest.raises(NotFoundError, match=f"Memory with id {UNKNOWN_ID} not found"):
         await memories.get_memory_by_id(owner, UNKNOWN_ID)
@@ -59,20 +49,20 @@ async def test_linked_memories_come_back_most_important_first(memories, owner):
     ]
 
     linked = await memories.get_linked_memories(
-        owner, center.id, project_ids=None, max_links=5, exclude_ids=None,
+        owner, center.id, project=None, max_links=5, exclude_ids=None,
     )
 
     assert [m.title for m in linked] == ["major", "minor"]
 
 
-async def test_linked_memories_can_be_restricted_to_projects(memories, owner, project_id):
+async def test_linked_memories_can_be_restricted_to_a_project(memories, owner):
     center = await memories.create_memory(owner, memory_data("center"))
-    inside = await memories.create_memory(owner, memory_data("inside", project_ids=[project_id]))
+    inside = await memories.create_memory(owner, memory_data("inside", project="p"))
     outside = await memories.create_memory(owner, memory_data("outside"))
     await memories.create_links_batch(owner, center.id, [inside.id, outside.id])
 
     linked = await memories.get_linked_memories(
-        owner, center.id, project_ids=[project_id], max_links=5,
+        owner, center.id, project="p", max_links=5,
     )
 
     assert [m.id for m in linked] == [inside.id]
@@ -103,7 +93,7 @@ async def test_batch_linking_skips_self_links_unknown_and_unstorable_ids(memorie
     )
 
     assert created == [target.id]
-    linked = await memories.get_linked_memories(owner, source.id, project_ids=None)
+    linked = await memories.get_linked_memories(owner, source.id, project=None)
     assert [m.id for m in linked] == [target.id]
 
 

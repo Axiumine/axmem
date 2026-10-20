@@ -24,7 +24,7 @@ Use these parameters for the search:
 }
 ```
 
-If the query mentions a specific project, add `project_ids` filter.
+If the query mentions a specific project, add a `project` filter (the project scope label).
 
 ## Response Format
 

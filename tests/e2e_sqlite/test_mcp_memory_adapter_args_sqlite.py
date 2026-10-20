@@ -4,7 +4,7 @@
 adapters themselves must validate or coerce them. These tests drive the real stack
 (FastMCP client -> registry -> adapter -> service -> SQLite) and cover:
 
-- id lists given as a bare string/int, and tag filters given as a bare string
+- project scopes given as text that looks like a number, and tag filters given as a bare string
 - numeric string / float / null values for limit, offset, k and importance
 - boolean strings for include_obsolete
 - unknown (misspelled) parameters on adapters that accept **kwargs
@@ -53,18 +53,6 @@ async def _create_memory(client, title, **extra):
     return _payload(await _exec(client, "create_memory", arguments))["id"]
 
 
-async def _create_projects(client, count):
-    ids = []
-    for i in range(count):
-        result = await _exec(client, "create_project", {
-            "name": f"adapter-args-project-{i}",
-            "description": f"project {i}",
-            "project_type": "development",
-        })
-        ids.append(_payload(result)["id"])
-    return ids
-
-
 async def _recent_ids(client, **arguments):
     result = await _exec(client, "get_recent_memories", arguments)
     return [m["id"] for m in _payload(result)["memories"]]
@@ -74,71 +62,50 @@ async def _recent_ids(client, **arguments):
 # id lists / tag filters must never be iterated character by character
 # ---------------------------------------------------------------------------
 
-async def test_string_project_id_is_coerced_not_split_into_characters(mcp_client):
-    project_ids = await _create_projects(mcp_client, 12)
-    assert project_ids == list(range(1, 13))
-
+async def test_numeric_looking_project_is_kept_as_the_text_it_was_given(mcp_client):
     created = await _exec(mcp_client, "create_memory", {
-        "title": "string project id",
-        "content": "created with project_ids given as the string '12'",
+        "title": "numeric project scope",
+        "content": "created with a project that looks like a number",
         "context": "adapter argument handling",
         "keywords": ["adapter-args"],
         "tags": ["adapter-args"],
         "importance": 5,
-        "project_ids": "12",
+        "project": "12",
     })
 
-    assert _payload(created)["project_ids"] == [12]
+    assert _payload(created)["project"] == "12"
 
 
-async def test_scalar_int_project_id_is_coerced(mcp_client):
-    project_ids = await _create_projects(mcp_client, 3)
-
-    created = await _exec(mcp_client, "create_memory", {
-        "title": "scalar project id",
-        "content": "created with project_ids given as a bare integer",
-        "context": "adapter argument handling",
-        "keywords": ["adapter-args"],
-        "tags": ["adapter-args"],
-        "importance": 5,
-        "project_ids": project_ids[2],
-    })
-
-    assert _payload(created)["project_ids"] == [project_ids[2]]
-
-
-async def test_non_numeric_project_ids_are_rejected(mcp_client):
-    with pytest.raises(ToolError, match="project_ids"):
+async def test_project_that_is_not_a_string_is_rejected(mcp_client):
+    with pytest.raises(ToolError, match="project"):
         await _exec(mcp_client, "create_memory", {
-            "title": "bad project id",
-            "content": "project_ids is not a number",
+            "title": "bad project",
+            "content": "project is a number, not text",
             "context": "adapter argument handling",
             "keywords": ["adapter-args"],
             "tags": ["adapter-args"],
             "importance": 5,
-            "project_ids": "abc",
+            "project": 12,
         })
 
 
-async def test_get_recent_memories_string_project_id_filters_on_that_project(mcp_client):
-    project_ids = await _create_projects(mcp_client, 12)
-    in_project_12 = await _create_memory(mcp_client, "in 12", project_ids=[project_ids[11]])
-    await _create_memory(mcp_client, "in 1", project_ids=[project_ids[0]])
-    await _create_memory(mcp_client, "in 2", project_ids=[project_ids[1]])
+async def test_get_recent_memories_project_filters_on_that_project(mcp_client):
+    in_project_12 = await _create_memory(mcp_client, "in 12", project="12")
+    await _create_memory(mcp_client, "in 1", project="1")
+    await _create_memory(mcp_client, "in 2", project="2")
 
-    assert await _recent_ids(mcp_client, project_ids="12") == [in_project_12]
+    assert await _recent_ids(mcp_client, project="12") == [in_project_12]
 
 
-async def test_query_memory_string_project_id_filters_on_that_project(mcp_client):
-    project_ids = await _create_projects(mcp_client, 12)
-    in_project_12 = await _create_memory(mcp_client, "in 12", project_ids=[project_ids[11]])
-    in_project_1 = await _create_memory(mcp_client, "in 1", project_ids=[project_ids[0]])
+async def test_query_memory_project_filters_on_that_project(mcp_client):
+    in_project_12 = await _create_memory(mcp_client, "in 12", project="12")
+    in_project_1 = await _create_memory(mcp_client, "in 1", project="1")
 
     result = await _exec(mcp_client, "query_memory", {
         "query": "content for in",
         "query_context": "adapter argument handling",
         "k": 10,
-        "project_ids": "12",
+        "project": "12",
         "strict_project_filter": True,
     })
 

@@ -83,7 +83,7 @@ async def _seed_memories(repo, user_id, count):
 def _search(repo, user_id, query, k):
     return repo.search_scored(
         user_id=user_id, query=query, query_context="", k=k,
-        importance_threshold=None, project_ids=None, exclude_ids=None,
+        importance_threshold=None, project=None, exclude_ids=None,
     )
 
 
@@ -102,7 +102,7 @@ async def test_memory_search_returns_k_when_k_exceeds_dense_candidates(
 
     found = await repo.search_scored(
         user_id=user_id, query="q", query_context="", k=8,
-        importance_threshold=None, project_ids=None, exclude_ids=None,
+        importance_threshold=None, project=None, exclude_ids=None,
     )
 
     assert len(found) == 8

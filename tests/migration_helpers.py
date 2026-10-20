@@ -132,3 +132,20 @@ async def original_chain_shapes(
             return await connection.run_sync(build)
     finally:
         await engine.dispose()
+
+
+async def create_project_row(db: Any, owner: Any, name: str = "Kept") -> int:
+    """Insert the storage row that backs a project scope label and return its id.
+
+    The removal tests need a row that the dropped tables point at and that must survive the
+    migration; plain SQL keeps them independent of the repositories' current behaviour.
+    """
+    async with db.system_session() as session:
+        result = await session.execute(
+            text(
+                "INSERT INTO projects (user_id, name, description, status, created_at, updated_at) "
+                "VALUES (:owner, :name, '', 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP) RETURNING id",
+            ),
+            {"owner": str(owner), "name": name},
+        )
+        return int(result.scalar_one())

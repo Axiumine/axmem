@@ -12,7 +12,7 @@ Scope tokens:
   read:<category>  -> category read tools only
   write:<category> -> category write tools only
 
-Categories: users, memories, projects
+Categories: memories
 """
 from __future__ import annotations
 
@@ -31,9 +31,7 @@ logger = logging.getLogger(__name__)
 
 # Map ToolCategory enum values to scope category names (plural)
 CATEGORY_TO_SCOPE: dict[str, str] = {
-    ToolCategory.USER.value: "users",
     ToolCategory.MEMORY.value: "memories",
-    ToolCategory.PROJECT.value: "projects",
     ToolCategory.LINKING.value: "memories",  # linking tools are memory-scoped
 }
 
@@ -147,7 +145,7 @@ def get_required_scope(tool_name: str, registry: ToolRegistry) -> str:
         registry: ToolRegistry instance
 
     Returns:
-        Scope string like "write:memories" or "read:users"
+        Scope string like "write:memories" or "read:memories"
     """
     tool = registry.get_tool(tool_name)
     if not tool:

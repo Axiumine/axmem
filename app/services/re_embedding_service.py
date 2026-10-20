@@ -10,7 +10,7 @@ from datetime import datetime
 from uuid import UUID
 
 from app.config.settings import settings
-from app.models.memory_models import Memory
+from app.models.memory_models import Memory, clean_scope
 from app.protocols.embedding_protocol import EmbeddingsAdapter
 from app.protocols.memory_protocol import MemoryRepository, ValidationResult
 from app.utils.embedding_helpers import build_embedding_text
@@ -132,9 +132,10 @@ class ReEmbeddingService:
         self,
         user_id: UUID,
         memory_ids: list[int] | None,
-        project_id: int | None,
+        project: str | None,
     ) -> None:
         """Validate rebuild scope before running embedding work."""
+        project = clean_scope(project)
         if memory_ids is not None and len(memory_ids) == 0:
             raise ValueError(
                 "memory_ids must be non-empty if provided; "
@@ -142,33 +143,33 @@ class ReEmbeddingService:
             )
 
         if memory_ids is None:
-            if project_id is not None and not await self.memory_repository.project_exists_for_user(
+            if project is not None and not await self.memory_repository.project_exists_for_user(
                 user_id=user_id,
-                project_id=project_id,
+                project=project,
             ):
-                # One message for missing and foreign projects: do not reveal which ids exist.
-                raise ValueError(f"project_id={project_id} not found or not owned")
+                # One message for missing and foreign projects: do not reveal which exist.
+                raise ValueError(f"project={project!r} not found")
             return
 
-        if project_id is None:
+        if project is None:
             return
 
         requested_count = len(set(memory_ids))
         repo = self.memory_repository
-        count_with_project = await repo.count_memories_for_targeted_rebuild(
+        count_in_project = await repo.count_memories_for_targeted_rebuild(
             user_id=user_id,
             memory_ids=memory_ids,
-            project_id=project_id,
+            project=project,
         )
         count_without_project = await repo.count_memories_for_targeted_rebuild(
             user_id=user_id,
             memory_ids=memory_ids,
         )
-        if count_with_project != count_without_project or count_without_project != requested_count:
+        if count_in_project != count_without_project or count_without_project != requested_count:
             raise ValueError(
                 "memory_ids do not all belong to "
-                f"project_id={project_id} (or some are not owned/obsolete). "
-                f"expected={requested_count}, matched_in_project={count_with_project}, "
+                f"project={project!r} (or some are not owned/obsolete). "
+                f"expected={requested_count}, matched_in_project={count_in_project}, "
                 f"owned_total={count_without_project}",
             )
 
@@ -176,7 +177,7 @@ class ReEmbeddingService:
         self,
         user_id: UUID,
         memory_ids: list[int] | None = None,
-        project_id: int | None = None,
+        project: str | None = None,
         progress_callback: Callable[[int, int], None] | None = None,
     ) -> TargetedRebuildResult:
         """User-scoped, *non-destructive* embedding rebuild for a memory subset.
@@ -191,22 +192,23 @@ class ReEmbeddingService:
         Args:
             user_id: Authenticated user id; ownership filter, never optional.
             memory_ids: Restrict to explicit memory ids (already user-scoped).
-            project_id: Restrict to a single project owned by `user_id`.
+            project: Restrict to one project scope of `user_id`.
             progress_callback: Optional `(processed, total)` callback per batch.
 
         Returns:
             `TargetedRebuildResult` with per-memory outcome lists.
         """
+        project = clean_scope(project)
         total = await self.memory_repository.count_memories_for_targeted_rebuild(
             user_id=user_id,
             memory_ids=memory_ids,
-            project_id=project_id,
+            project=project,
         )
         result = TargetedRebuildResult()
         if total == 0:
             self._record_unresolved_memory_ids(
                 memory_ids=memory_ids,
-                project_id=project_id,
+                project=project,
                 result=result,
             )
             logger.info(
@@ -214,7 +216,7 @@ class ReEmbeddingService:
                 extra={
                     "user_id": str(user_id),
                     "memory_ids": memory_ids,
-                    "project_id": project_id,
+                    "project": project,
                 },
             )
             return result
@@ -227,7 +229,7 @@ class ReEmbeddingService:
                 limit=self.batch_size,
                 after_id=last_seen_id,
                 memory_ids=memory_ids,
-                project_id=project_id,
+                project=project,
             )
             if not memories:
                 break
@@ -241,7 +243,7 @@ class ReEmbeddingService:
 
         self._record_unresolved_memory_ids(
             memory_ids=memory_ids,
-            project_id=project_id,
+            project=project,
             result=result,
         )
         logger.info(
@@ -376,11 +378,11 @@ class ReEmbeddingService:
     def _record_unresolved_memory_ids(
         self,
         memory_ids: list[int] | None,
-        project_id: int | None,
+        project: str | None,
         result: TargetedRebuildResult,
     ) -> None:
         """Surface explicit IDs hidden by user/obsolete filters as failures."""
-        if memory_ids is None or project_id is not None:
+        if memory_ids is None or project is not None:
             return
 
         resolved_ids = set(result.rebuilt_ids) | set(result.skipped_ids)

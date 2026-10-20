@@ -1,12 +1,12 @@
 """End-to-end tests (in-memory SQLite) for token cache lifetime and identity claims
 
 Drives the real REST routes with real verifiers (JWT signature checking, the FastMCP
-introspection verifier talking to a fake IdP) and the real UserService on SQLite:
+introspection verifier talking to a fake IdP) and the real TenantService on SQLite:
 
 - a JWT that expires before TOKEN_CACHE_TTL_SECONDS is rejected once expired, cache or not
 - TOKEN_CACHE_ENABLED=false makes a revoked introspected token fail on the very next request
 - TOKEN_CACHE_MAX_SIZE=0 does not break authenticated requests
-- a signature-verified token with a numeric `sub` provisions a user instead of returning 401
+- a signature-verified token with a numeric `sub` provisions a tenant instead of returning 401
 """
 import asyncio
 from unittest.mock import patch
@@ -20,7 +20,6 @@ from app.middleware.auth import TokenCache
 
 ISSUER = "https://idp.example.test"
 AUDIENCE = "forgetful-test"
-INTROSPECTION_CLASS = "fastmcp.server.auth.providers.introspection.IntrospectionTokenVerifier"
 
 
 @pytest.fixture
@@ -135,7 +134,7 @@ def fake_async_client(idp: FakeIdP):
 def build_introspection_verifier(idp: FakeIdP, cache_enabled: bool):
     """Build the real introspection verifier through the factory; only the IdP network edge is faked"""
     with (
-        patch.object(settings, "FASTMCP_SERVER_AUTH", INTROSPECTION_CLASS),
+        patch.object(settings, "AUTH_MODE", "introspection"),
         patch.object(settings, "FASTMCP_SERVER_AUTH_INTROSPECTION_URL", "https://idp.example.test/introspect"),
         patch.object(settings, "FASTMCP_SERVER_AUTH_INTROSPECTION_CLIENT_ID", "forgetful"),
         patch.object(settings, "FASTMCP_SERVER_AUTH_INTROSPECTION_CLIENT_SECRET", "secret"),
@@ -210,13 +209,57 @@ async def test_zero_max_size_cache_does_not_break_authenticated_requests(http_cl
 
 
 @pytest.mark.asyncio
-async def test_numeric_sub_token_provisions_a_user_instead_of_401(http_client, jwt_app, jwt_keys):
+async def test_numeric_sub_token_provisions_a_tenant_instead_of_401(http_client, jwt_app, jwt_keys):
     headers = bearer(mint(jwt_keys, 12345))
 
     response = await http_client.get("/api/v1/memories", headers=headers)
 
     assert response.status_code == 200, response.text
-    user = await jwt_app.user_service.user_repo.get_user_by_external_id("12345")
-    assert user is not None
-    assert user.name == "User 12345"
-    assert user.email == "12345@oauth.local"
+    tenant = await jwt_app.tenant_service.user_repo.get_user_by_external_id("12345")
+    assert tenant is not None
+    assert tenant.name == "12345"
+
+
+@pytest.mark.asyncio
+async def test_tenant_claim_in_a_signed_token_names_the_tenant(http_client, jwt_app, jwt_keys):
+    headers = bearer(mint(jwt_keys, "user-1", tenant_id="globex", tenant="ignored"))
+
+    response = await http_client.get("/api/v1/memories", headers=headers)
+
+    assert response.status_code == 200, response.text
+    repo = jwt_app.tenant_service.user_repo
+    assert await repo.get_user_by_external_id("globex") is not None
+    assert await repo.get_user_by_external_id("ignored") is None
+    assert await repo.get_user_by_external_id("user-1") is None
+
+
+@pytest.mark.asyncio
+async def test_a_token_naming_no_tenant_is_rejected(http_client, jwt_app, jwt_keys):
+    token = jwt_keys.create_token(
+        subject="", issuer=ISSUER, audience=AUDIENCE, additional_claims={"sub": ""},
+    )
+
+    response = await http_client.get("/api/v1/memories", headers=bearer(token))
+
+    assert response.status_code == 401
+    assert "no 'tenant_id', 'tenant' or 'sub' claim" in response.json()["error"]
+
+
+@pytest.mark.asyncio
+async def test_a_token_with_a_wrong_signature_is_rejected(http_client, jwt_app):
+    other_keys = RSAKeyPair.generate()
+
+    response = await http_client.get(
+        "/api/v1/memories", headers=bearer(mint(other_keys, "intruder")),
+    )
+
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_a_token_for_another_audience_is_rejected(http_client, jwt_app, jwt_keys):
+    token = jwt_keys.create_token(subject="user-1", issuer=ISSUER, audience="someone-else")
+
+    response = await http_client.get("/api/v1/memories", headers=bearer(token))
+
+    assert response.status_code == 401

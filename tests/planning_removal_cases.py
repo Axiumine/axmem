@@ -5,10 +5,10 @@ from typing import Any
 from sqlalchemy import text
 
 from app.bootstrap import create_repositories
-from app.models.project_models import ProjectCreate, ProjectType
 from app.models.user_models import UserCreate
 from tests.migration_helpers import (
     alembic_config,
+    create_project_row,
     run_migration,
     stored_event_types,
     table_shapes,
@@ -37,10 +37,7 @@ async def store_planning_rows_and_events(db: Any) -> str:
     user = await repos["user"].create_user(
         UserCreate(external_id="planning-removal", name="Planning", email="planning@example.test"),
     )
-    project = await repos["project"].create_project(
-        user.id,
-        ProjectCreate(name="Kept", description="Survives the migration", project_type=ProjectType.WORK),
-    )
+    project_id = await create_project_row(db, user.id)
     owner = str(user.id)
     statements = [
         "INSERT INTO plans (id, user_id, project_id, title) VALUES (1, :owner, :project, 'plan')",
@@ -54,7 +51,7 @@ async def store_planning_rows_and_events(db: Any) -> str:
     )
     async with db.system_session() as session:
         for statement in statements:
-            await session.execute(text(statement), {"owner": owner, "project": project.id})
+            await session.execute(text(statement), {"owner": owner, "project": project_id})
         for entity_type in (*PLANNING_EVENT_TYPES, *KEPT_EVENT_TYPES):
             await session.execute(event, {"owner": owner, "entity_type": entity_type})
     return owner

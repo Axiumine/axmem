@@ -47,6 +47,7 @@ def _args(argv):
 class StubResult:
     def __init__(self, data):
         self.data = data
+        self.content = []
         self.is_error = False
 
 
@@ -55,17 +56,13 @@ class StubClient:
 
     def __init__(self, error=None, data=None):
         self._error = error
-        self._data = data if data is not None else {"name": "carol"}
+        self._data = data if data is not None else {"tools_by_category": {}}
 
     async def __aenter__(self):
         return self
 
     async def __aexit__(self, *exc_info):
         return False
-
-    async def ping(self):
-        if self._error:
-            raise self._error
 
     async def call_tool(self, name, arguments):
         if self._error:
@@ -213,14 +210,13 @@ async def test_login_neither_persists_nor_echoes_url_credentials(tmp_path, capsy
     env_file.write_text("LOG_LEVEL=DEBUG\n")
     seen = []
 
-    def factory(url, token_dir):
+    def factory(url, token):
         seen.append(url)
         return StubClient()
 
     code = await auth_commands.login(
         URL_WITH_SECRET,
         env_file=env_file,
-        token_dir=tmp_path / "tokens",
         client_factory=factory,
     )
 
@@ -234,8 +230,7 @@ async def test_login_neither_persists_nor_echoes_url_credentials(tmp_path, capsy
         "LOG_LEVEL=DEBUG",
         "FORGETFUL_SERVER=http://127.0.0.1:18765/mcp",
     ]
-    # The OAuth client (and so the token cache key) uses the same credential-free URL
-    # that is persisted, so later commands find the cached tokens again.
+    # The client uses the same credential-free URL that is persisted.
     assert seen == ["http://127.0.0.1:18765/mcp"]
     assert "FORGETFUL_TOKEN" in out.err  # tells the user where credentials belong
 
@@ -244,8 +239,7 @@ async def test_login_without_credentials_prints_no_credentials_notice(tmp_path, 
     code = await auth_commands.login(
         "http://remote:8020",
         env_file=tmp_path / ".env",
-        token_dir=tmp_path / "tokens",
-        client_factory=lambda url, token_dir: StubClient(),
+        client_factory=lambda url, token: StubClient(),
     )
 
     assert code == 0
@@ -259,8 +253,7 @@ async def test_login_failure_message_does_not_echo_credentials(tmp_path, capsys)
     code = await auth_commands.login(
         f"http://{USER}:{SECRET}@remote:8020",
         env_file=env_file,
-        token_dir=tmp_path / "tokens",
-        client_factory=lambda url, token_dir: failing,
+        client_factory=lambda url, token: failing,
     )
 
     assert code == 1
@@ -270,8 +263,7 @@ async def test_login_failure_message_does_not_echo_credentials(tmp_path, capsys)
 
 
 @pytest.fixture
-def status_env(monkeypatch, tmp_path):
-    monkeypatch.setattr(auth_commands, "token_cache_dir", lambda: tmp_path / "tokens")
+def status_env(monkeypatch):
     monkeypatch.setattr(settings, "FORGETFUL_SERVER", URL_WITH_SECRET)
     monkeypatch.delenv("FORGETFUL_TOKEN", raising=False)
 
@@ -283,7 +275,7 @@ async def test_status_redacts_url_credentials(status_env, monkeypatch, capsys):
         seen.append(url)
         return StubClient()
 
-    monkeypatch.setattr(auth_commands, "_plain_client_factory", factory)
+    monkeypatch.setattr(remote_executor, "_default_client_factory", factory)
 
     code = await _run_auth_command(_args(["auth", "status"]))
 
@@ -299,7 +291,7 @@ async def test_status_redacts_url_credentials(status_env, monkeypatch, capsys):
 async def test_status_error_path_redacts_url_credentials(status_env, monkeypatch, capsys):
     error = RuntimeError(f"Client error '401 Unauthorized' for url '{URL_WITH_SECRET}/mcp'")
     monkeypatch.setattr(
-        auth_commands, "_plain_client_factory", lambda url, _t=None: StubClient(error=error),
+        remote_executor, "_default_client_factory", lambda url, _t=None: StubClient(error=error),
     )
 
     code = await _run_auth_command(_args(["auth", "status"]))
@@ -340,7 +332,7 @@ async def test_tool_command_error_does_not_echo_url_credentials(
 # Client timeouts
 # =============================================================================
 @pytest.fixture
-def recorded_clients(monkeypatch, tmp_path):
+def recorded_clients(monkeypatch):
     """Replace fastmcp.Client with a recorder of constructor kwargs."""
     import fastmcp
 
@@ -351,7 +343,6 @@ def recorded_clients(monkeypatch, tmp_path):
             calls.append(kwargs)
 
     monkeypatch.setattr(fastmcp, "Client", Recorder)
-    monkeypatch.setattr("app.routes.cli.paths.token_cache_dir", lambda: tmp_path / "t")
     return calls
 
 
@@ -363,7 +354,7 @@ def _assert_bounded(kwargs):
 
 def test_bearer_and_plain_clients_have_a_short_handshake_bound(recorded_clients):
     remote_executor._default_client_factory("http://h:1/mcp", "token")
-    auth_commands._plain_client_factory("http://h:1/mcp")
+    remote_executor._default_client_factory("http://h:1/mcp", None)
 
     assert len(recorded_clients) == 2
     for kwargs in recorded_clients:
@@ -371,17 +362,13 @@ def test_bearer_and_plain_clients_have_a_short_handshake_bound(recorded_clients)
         assert kwargs["init_timeout"] <= 60
 
 
-def test_oauth_clients_leave_room_for_the_browser_login(recorded_clients, tmp_path):
-    # fastmcp's OAuth callback waits up to 300s inside the first request; the
-    # handshake bound must not cut an interactive login short.
+def test_only_the_bearer_client_carries_a_credential(recorded_clients):
+    remote_executor._default_client_factory("http://h:1/mcp", "token")
     remote_executor._default_client_factory("http://h:1/mcp", None)
-    auth_commands._oauth_client_factory("http://h:1/mcp", tmp_path / "tokens")
 
-    assert len(recorded_clients) == 2
-    for kwargs in recorded_clients:
-        _assert_bounded(kwargs)
-        assert kwargs["init_timeout"] > 300
-        assert kwargs["timeout"] > 300
+    with_token, without_token = recorded_clients
+    assert with_token["auth"] == "token"
+    assert "auth" not in without_token
 
 
 def _free_port() -> int:
@@ -421,7 +408,6 @@ def html_server():
 def short_timeouts(monkeypatch):
     monkeypatch.setattr(remote_executor, "CLIENT_INIT_TIMEOUT_SECONDS", 1.0)
     monkeypatch.setattr(remote_executor, "CLIENT_REQUEST_TIMEOUT_SECONDS", 2.0)
-    monkeypatch.setattr(remote_executor, "INTERACTIVE_CLIENT_TIMEOUT_SECONDS", 2.0)
 
 
 async def _fails_within_bound(awaitable):
@@ -483,10 +469,9 @@ async def test_tool_command_against_a_non_mcp_200_exits_one(
 
 
 async def test_auth_status_against_a_non_mcp_200_exits_one(
-    html_server, short_timeouts, monkeypatch, tmp_path, capsys,
+    html_server, short_timeouts, monkeypatch, capsys,
 ):
     url, _ = html_server
-    monkeypatch.setattr(auth_commands, "token_cache_dir", lambda: tmp_path / "tokens")
     monkeypatch.setattr(settings, "FORGETFUL_SERVER", url)
     monkeypatch.delenv("FORGETFUL_TOKEN", raising=False)
 
@@ -505,7 +490,7 @@ async def test_auth_login_against_a_non_mcp_200_exits_one_and_saves_nothing(
     env_file = tmp_path / ".env"
 
     code = await asyncio.wait_for(
-        auth_commands.login(url, env_file=env_file, token_dir=tmp_path / "tokens"),
+        auth_commands.login(url, env_file=env_file),
         timeout=GUARD_SECONDS,
     )
 

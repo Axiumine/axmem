@@ -175,7 +175,7 @@ Trace all connections from the payment processing decision
 Bootstrap a new project into Forgetful:
 
 ```
-Analyze this repository and create a project in Forgetful with key architectural decisions and patterns as memories
+Analyze this repository and store its key architectural decisions and patterns as memories
 ```
 
 ## Agent Format

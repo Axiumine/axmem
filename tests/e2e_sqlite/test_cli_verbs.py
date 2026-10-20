@@ -1,7 +1,7 @@
 """E2E tests for the curated CLI verbs (docs/dev/cli_plan.md phase 5)
 
 Full-stack cli() invocations over a file-backed SQLite database: memory save/get/
-search/recent and project list, including project name resolution.
+search/recent, including the project scope flag.
 """
 import json
 import sys
@@ -113,73 +113,47 @@ def test_memory_recent_orders_newest_first_and_respects_limit(
     assert "Recent memory 2" in lines[2]
 
 
-def test_project_list_outputs_projects(cli_sqlite_env, monkeypatch, capsys):
-    project_args = json.dumps({
-        "name": "Verbs project",
-        "description": "Project for CLI verb tests",
-        "project_type": "development",
-    })
-    code, _, _ = invoke_cli(
-        monkeypatch, capsys, ["call", "create_project", "--args", project_args],
-    )
-    assert code == 0
-
-    code, out, _ = invoke_cli(monkeypatch, capsys, ["project", "list"])
-    assert code == 0
-    assert "Verbs project" in out
-
-    code, out, _ = invoke_cli(monkeypatch, capsys, ["project", "list", "--json"])
-    assert code == 0
-    payload = json.loads(out)
-    assert any(p["name"] == "Verbs project" for p in payload["projects"])
-
-
-def test_project_name_flag_resolves_and_scopes_search(cli_sqlite_env, monkeypatch, capsys):
-    project_args = json.dumps({
-        "name": "Scoped project",
-        "description": "Target for -p name resolution",
-        "project_type": "development",
-    })
-    code, out, _ = invoke_cli(
-        monkeypatch, capsys, ["call", "create_project", "--args", project_args],
-    )
-    assert code == 0
-
+def test_project_flag_scopes_save_search_and_recent(cli_sqlite_env, monkeypatch, capsys):
     code, out, _ = _save(
         monkeypatch, capsys,
         "Memory that belongs to the scoped project", "Scoped memory",
         "-p", "Scoped project",
     )
     assert code == 0
+    _save(monkeypatch, capsys, "Memory that belongs to no project", "Unscoped memory")
 
     code, out, _ = invoke_cli(
         monkeypatch, capsys,
-        ["memory", "search", "scoped project memory", "-p", "Scoped project",
+        ["memory", "search", "memory that belongs", "-p", "Scoped project",
          "-c", "checking project scoping"],
     )
     assert code == 0
     assert "Scoped memory" in out
 
+    code, out, _ = invoke_cli(
+        monkeypatch, capsys, ["memory", "recent", "-p", "Scoped project", "--json"],
+    )
+    assert code == 0
+    assert [m["title"] for m in json.loads(out)["memories"]] == ["Scoped memory"]
 
-def test_unknown_project_name_exits_one_with_available_names(
-    cli_sqlite_env, monkeypatch, capsys,
-):
-    project_args = json.dumps({
-        "name": "Only project",
-        "description": "The one project that exists",
-        "project_type": "development",
-    })
-    invoke_cli(monkeypatch, capsys, ["call", "create_project", "--args", project_args])
 
-    code, out, err = invoke_cli(
-        monkeypatch, capsys,
-        ["memory", "search", "anything", "-p", "no-such-project", "-c", "sanity check"],
+def test_project_flag_creates_the_scope_on_first_use(cli_sqlite_env, monkeypatch, capsys):
+    code, out, _ = invoke_cli(
+        monkeypatch, capsys, ["memory", "recent", "-p", "never used before", "--json"],
     )
 
-    assert code == 1
-    assert out == ""
-    assert "no-such-project" in err
-    assert "Only project" in err
+    assert code == 0
+    assert json.loads(out)["memories"] == []
+
+
+def test_project_commands_are_gone(cli_sqlite_env, monkeypatch, capsys):
+    monkeypatch.setattr(sys, "argv", ["forgetful", "project", "list"])
+
+    with pytest.raises(SystemExit) as excinfo:
+        main.cli()
+
+    assert excinfo.value.code == 2
+    assert "unrecognized arguments: project list" in capsys.readouterr().err
 
 
 def test_memory_search_without_context_exits_two(cli_sqlite_env, monkeypatch, capsys):
@@ -192,3 +166,58 @@ def test_memory_search_without_context_exits_two(cli_sqlite_env, monkeypatch, ca
     captured = capsys.readouterr()
     assert captured.out == ""
     assert "--context" in captured.err
+
+
+@pytest.fixture
+def alices_memory(cli_sqlite_env, monkeypatch, capsys):
+    """A memory saved by the tenant alice in a scope that bob also uses; returns its id."""
+    monkeypatch.setattr(settings, "DEFAULT_TENANT", "alice")
+    code, out, _ = _save(
+        monkeypatch, capsys, "Alice keeps this to herself", "Alice private", "-p", "shared-scope",
+    )
+    assert code == 0
+    return int(out.split("memory ")[1].split(":")[0])
+
+
+def test_another_tenant_cannot_get_a_memory(alices_memory, monkeypatch, capsys):
+    """Local mode serves the DEFAULT_TENANT tenant; another tenant gets 'not found', exactly as for an unknown id."""
+    monkeypatch.setattr(settings, "DEFAULT_TENANT", "bob")
+
+    code, out, err = invoke_cli(monkeypatch, capsys, ["memory", "get", str(alices_memory)])
+
+    assert code == 1
+    assert "not found" in err.lower()
+    assert "Alice private" not in out + err
+
+
+@pytest.mark.parametrize("scope_args", [["-p", "shared-scope"], []], ids=["same-scope-name", "no-scope"])
+def test_another_tenant_sees_none_of_the_memories_when_listing(alices_memory, monkeypatch, capsys, scope_args):
+    monkeypatch.setattr(settings, "DEFAULT_TENANT", "bob")
+
+    code, out, _ = invoke_cli(monkeypatch, capsys, ["memory", "recent", *scope_args, "--json"])
+
+    assert code == 0
+    assert json.loads(out)["memories"] == []
+
+
+def test_another_tenant_does_not_find_the_memory_by_searching(alices_memory, monkeypatch, capsys):
+    monkeypatch.setattr(settings, "DEFAULT_TENANT", "bob")
+
+    code, out, _ = invoke_cli(
+        monkeypatch, capsys,
+        ["memory", "search", "Alice keeps this", "-p", "shared-scope", "-c", "probing another tenant", "--json"],
+    )
+
+    assert code == 0
+    assert "Alice private" not in out
+
+
+def test_the_owner_still_reads_the_memory_after_another_tenant_probed_it(alices_memory, monkeypatch, capsys):
+    monkeypatch.setattr(settings, "DEFAULT_TENANT", "bob")
+    invoke_cli(monkeypatch, capsys, ["memory", "get", str(alices_memory)])
+
+    monkeypatch.setattr(settings, "DEFAULT_TENANT", "alice")
+    code, out, _ = invoke_cli(monkeypatch, capsys, ["memory", "get", str(alices_memory)])
+
+    assert code == 0
+    assert "Alice private" in out

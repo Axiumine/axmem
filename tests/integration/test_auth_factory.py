@@ -1,13 +1,22 @@
 """Integration tests for auth provider factory (app/config/auth.py)
 
 Tests the build_auth_provider() factory and its helpers (_required, _scopes)
-that construct FastMCP v3 auth providers from settings.
+that construct FastMCP v3 auth providers from settings, plus the startup rules that make the
+server fail closed (ensure_startup_allowed, is_loopback_host).
 """
 from unittest.mock import patch
 
 import pytest
 
-from app.config.auth import _required, _scopes, build_auth_provider
+from app.config.auth import (
+    AuthConfigError,
+    _required,
+    _scopes,
+    build_auth_provider,
+    ensure_startup_allowed,
+    is_loopback_host,
+)
+from app.middleware.static_token import StaticTokenVerifier, hash_token
 
 # ============================================
 # _required() helper tests
@@ -77,124 +86,12 @@ def test_scopes_all_empty_returns_empty_list():
 # ============================================
 
 
+@pytest.mark.parametrize("mode", ["", "none"])
 @patch("app.config.auth.settings")
-def test_build_returns_none_when_not_configured(mock_settings):
-    """No auth provider when FASTMCP_SERVER_AUTH is empty"""
-    mock_settings.FASTMCP_SERVER_AUTH = ""
+def test_build_returns_none_without_a_credential_mode(mock_settings, mode):
+    """No auth provider for AUTH_MODE=none or unset (an unset mode is refused at startup)"""
+    mock_settings.AUTH_MODE = mode
     assert build_auth_provider() is None
-
-
-@patch("app.config.auth.settings")
-def test_build_raises_for_unrecognized_provider(mock_settings):
-    """Unrecognized class path raises ValueError with supported list"""
-    mock_settings.FASTMCP_SERVER_AUTH = "some.fake.Provider"
-
-    with pytest.raises(ValueError, match="Unrecognized auth provider: some.fake.Provider") as exc_info:
-        build_auth_provider()
-
-    # Error message should list all supported providers
-    assert "github.GitHubProvider" in str(exc_info.value)
-    assert "google.GoogleProvider" in str(exc_info.value)
-    assert "jwt.JWTVerifier" in str(exc_info.value)
-    assert "introspection.IntrospectionTokenVerifier" in str(exc_info.value)
-
-
-# ============================================
-# GitHub provider factory tests
-# ============================================
-
-
-@patch("app.config.auth.settings")
-@patch("fastmcp.server.auth.providers.github.GitHubProvider")
-def test_build_github_provider(MockGitHub, mock_settings):
-    """GitHub factory passes correct settings to constructor"""
-    mock_settings.FASTMCP_SERVER_AUTH = "fastmcp.server.auth.providers.github.GitHubProvider"
-    mock_settings.FASTMCP_SERVER_AUTH_GITHUB_CLIENT_ID = "gh-client-id"
-    mock_settings.FASTMCP_SERVER_AUTH_GITHUB_CLIENT_SECRET = "gh-secret"
-    mock_settings.FASTMCP_SERVER_AUTH_GITHUB_BASE_URL = "https://github.example.com"
-    mock_settings.FASTMCP_SERVER_AUTH_GITHUB_REQUIRED_SCOPES = "read:user,repo"
-
-    result = build_auth_provider()
-
-    MockGitHub.assert_called_once_with(
-        client_id="gh-client-id",
-        client_secret="gh-secret",
-        base_url="https://github.example.com",
-        required_scopes=["read:user", "repo"],
-    )
-    assert result == MockGitHub.return_value
-
-
-@patch("app.config.auth.settings")
-@patch("fastmcp.server.auth.providers.github.GitHubProvider")
-def test_build_github_no_scopes(MockGitHub, mock_settings):
-    """GitHub factory passes None for empty scopes"""
-    mock_settings.FASTMCP_SERVER_AUTH = "fastmcp.server.auth.providers.github.GitHubProvider"
-    mock_settings.FASTMCP_SERVER_AUTH_GITHUB_CLIENT_ID = "gh-client-id"
-    mock_settings.FASTMCP_SERVER_AUTH_GITHUB_CLIENT_SECRET = "gh-secret"
-    mock_settings.FASTMCP_SERVER_AUTH_GITHUB_BASE_URL = "https://github.example.com"
-    mock_settings.FASTMCP_SERVER_AUTH_GITHUB_REQUIRED_SCOPES = ""
-
-    build_auth_provider()
-
-    MockGitHub.assert_called_once_with(
-        client_id="gh-client-id",
-        client_secret="gh-secret",
-        base_url="https://github.example.com",
-        required_scopes=None,
-    )
-
-
-@patch("app.config.auth.settings")
-def test_build_github_missing_required_field(mock_settings):
-    """GitHub factory raises when required field is empty"""
-    mock_settings.FASTMCP_SERVER_AUTH = "fastmcp.server.auth.providers.github.GitHubProvider"
-    mock_settings.FASTMCP_SERVER_AUTH_GITHUB_CLIENT_ID = ""  # Missing!
-    mock_settings.FASTMCP_SERVER_AUTH_GITHUB_CLIENT_SECRET = "gh-secret"
-    mock_settings.FASTMCP_SERVER_AUTH_GITHUB_BASE_URL = "https://github.example.com"
-    mock_settings.FASTMCP_SERVER_AUTH_GITHUB_REQUIRED_SCOPES = ""
-
-    with pytest.raises(ValueError, match="FASTMCP_SERVER_AUTH_GITHUB_CLIENT_ID is required"):
-        build_auth_provider()
-
-
-# ============================================
-# Google provider factory tests
-# ============================================
-
-
-@patch("app.config.auth.settings")
-@patch("fastmcp.server.auth.providers.google.GoogleProvider")
-def test_build_google_provider(MockGoogle, mock_settings):
-    """Google factory passes correct settings to constructor"""
-    mock_settings.FASTMCP_SERVER_AUTH = "fastmcp.server.auth.providers.google.GoogleProvider"
-    mock_settings.FASTMCP_SERVER_AUTH_GOOGLE_CLIENT_ID = "google-client-id"
-    mock_settings.FASTMCP_SERVER_AUTH_GOOGLE_CLIENT_SECRET = "google-secret"
-    mock_settings.FASTMCP_SERVER_AUTH_GOOGLE_BASE_URL = "https://accounts.google.com"
-    mock_settings.FASTMCP_SERVER_AUTH_GOOGLE_REQUIRED_SCOPES = "openid,email,profile"
-
-    result = build_auth_provider()
-
-    MockGoogle.assert_called_once_with(
-        client_id="google-client-id",
-        client_secret="google-secret",
-        base_url="https://accounts.google.com",
-        required_scopes=["openid", "email", "profile"],
-    )
-    assert result == MockGoogle.return_value
-
-
-@patch("app.config.auth.settings")
-def test_build_google_missing_required_field(mock_settings):
-    """Google factory raises when required field is empty"""
-    mock_settings.FASTMCP_SERVER_AUTH = "fastmcp.server.auth.providers.google.GoogleProvider"
-    mock_settings.FASTMCP_SERVER_AUTH_GOOGLE_CLIENT_ID = "google-client-id"
-    mock_settings.FASTMCP_SERVER_AUTH_GOOGLE_CLIENT_SECRET = ""  # Missing!
-    mock_settings.FASTMCP_SERVER_AUTH_GOOGLE_BASE_URL = "https://accounts.google.com"
-    mock_settings.FASTMCP_SERVER_AUTH_GOOGLE_REQUIRED_SCOPES = ""
-
-    with pytest.raises(ValueError, match="FASTMCP_SERVER_AUTH_GOOGLE_CLIENT_SECRET is required"):
-        build_auth_provider()
 
 
 # ============================================
@@ -206,7 +103,7 @@ def test_build_google_missing_required_field(mock_settings):
 @patch("fastmcp.server.auth.providers.jwt.JWTVerifier")
 def test_build_jwt_with_jwks_uri(MockJWT, mock_settings):
     """JWT factory passes JWKS URI when provided"""
-    mock_settings.FASTMCP_SERVER_AUTH = "fastmcp.server.auth.providers.jwt.JWTVerifier"
+    mock_settings.AUTH_MODE = "jwt"
     mock_settings.FASTMCP_SERVER_AUTH_JWT_JWKS_URI = "https://auth.example.com/.well-known/jwks.json"
     mock_settings.FASTMCP_SERVER_AUTH_JWT_PUBLIC_KEY = ""
     mock_settings.FASTMCP_SERVER_AUTH_JWT_ISSUER = "https://auth.example.com"
@@ -229,7 +126,7 @@ def test_build_jwt_with_jwks_uri(MockJWT, mock_settings):
 @patch("fastmcp.server.auth.providers.jwt.JWTVerifier")
 def test_build_jwt_with_public_key(MockJWT, mock_settings):
     """JWT factory passes public key when JWKS URI not provided"""
-    mock_settings.FASTMCP_SERVER_AUTH = "fastmcp.server.auth.providers.jwt.JWTVerifier"
+    mock_settings.AUTH_MODE = "jwt"
     mock_settings.FASTMCP_SERVER_AUTH_JWT_JWKS_URI = ""
     mock_settings.FASTMCP_SERVER_AUTH_JWT_PUBLIC_KEY = "-----BEGIN PUBLIC KEY-----\nMIIB..."
     mock_settings.FASTMCP_SERVER_AUTH_JWT_ISSUER = ""
@@ -251,7 +148,7 @@ def test_build_jwt_with_public_key(MockJWT, mock_settings):
 @patch("app.config.auth.settings")
 def test_build_jwt_missing_both_key_sources(mock_settings):
     """JWT factory raises when neither JWKS URI nor public key provided"""
-    mock_settings.FASTMCP_SERVER_AUTH = "fastmcp.server.auth.providers.jwt.JWTVerifier"
+    mock_settings.AUTH_MODE = "jwt"
     mock_settings.FASTMCP_SERVER_AUTH_JWT_JWKS_URI = ""
     mock_settings.FASTMCP_SERVER_AUTH_JWT_PUBLIC_KEY = ""
 
@@ -268,11 +165,12 @@ def test_build_jwt_missing_both_key_sources(mock_settings):
 @patch("fastmcp.server.auth.providers.introspection.IntrospectionTokenVerifier")
 def test_build_introspection_provider(MockIntrospection, mock_settings):
     """Introspection factory passes correct settings including cache params"""
-    mock_settings.FASTMCP_SERVER_AUTH = "fastmcp.server.auth.providers.introspection.IntrospectionTokenVerifier"
+    mock_settings.AUTH_MODE = "introspection"
     mock_settings.FASTMCP_SERVER_AUTH_INTROSPECTION_URL = "https://auth.example.com/introspect"
     mock_settings.FASTMCP_SERVER_AUTH_INTROSPECTION_CLIENT_ID = "intro-client"
     mock_settings.FASTMCP_SERVER_AUTH_INTROSPECTION_CLIENT_SECRET = "intro-secret"
     mock_settings.FASTMCP_SERVER_AUTH_INTROSPECTION_REQUIRED_SCOPES = "api:read"
+    mock_settings.TOKEN_CACHE_ENABLED = True
     mock_settings.TOKEN_CACHE_TTL_SECONDS = 600
     mock_settings.TOKEN_CACHE_MAX_SIZE = 2000
 
@@ -292,15 +190,41 @@ def test_build_introspection_provider(MockIntrospection, mock_settings):
 @patch("app.config.auth.settings")
 def test_build_introspection_missing_required_field(mock_settings):
     """Introspection factory raises when required field is empty"""
-    mock_settings.FASTMCP_SERVER_AUTH = "fastmcp.server.auth.providers.introspection.IntrospectionTokenVerifier"
+    mock_settings.AUTH_MODE = "introspection"
     mock_settings.FASTMCP_SERVER_AUTH_INTROSPECTION_URL = "https://auth.example.com/introspect"
     mock_settings.FASTMCP_SERVER_AUTH_INTROSPECTION_CLIENT_ID = ""  # Missing!
     mock_settings.FASTMCP_SERVER_AUTH_INTROSPECTION_CLIENT_SECRET = "intro-secret"
     mock_settings.FASTMCP_SERVER_AUTH_INTROSPECTION_REQUIRED_SCOPES = ""
+    mock_settings.TOKEN_CACHE_ENABLED = True
     mock_settings.TOKEN_CACHE_TTL_SECONDS = 300
     mock_settings.TOKEN_CACHE_MAX_SIZE = 1000
 
     with pytest.raises(ValueError, match="FASTMCP_SERVER_AUTH_INTROSPECTION_CLIENT_ID is required"):
+        build_auth_provider()
+
+
+# ============================================
+# Static token verifier factory tests
+# ============================================
+
+
+@patch("app.config.auth.settings")
+def test_build_static_provider_maps_each_tenant_to_its_hash(mock_settings):
+    mock_settings.AUTH_MODE = "static"
+    mock_settings.AUTH_STATIC_TOKEN_HASHES = {"alice": hash_token("alice-token")}
+
+    result = build_auth_provider()
+
+    assert isinstance(result, StaticTokenVerifier)
+
+
+@pytest.mark.parametrize("hashes", [{}, None])
+@patch("app.config.auth.settings")
+def test_build_static_requires_at_least_one_tenant(mock_settings, hashes):
+    mock_settings.AUTH_MODE = "static"
+    mock_settings.AUTH_STATIC_TOKEN_HASHES = hashes
+
+    with pytest.raises(ValueError, match="AUTH_STATIC_TOKEN_HASHES is required when AUTH_MODE=static"):
         build_auth_provider()
 
 
@@ -310,18 +234,90 @@ def test_build_introspection_missing_required_field(mock_settings):
 
 
 def test_all_expected_providers_registered():
-    """Verify all four provider class paths are in the factory registry"""
+    """Every credential mode has a factory, and none for the credential-free mode"""
     from app.config.auth import _PROVIDER_FACTORIES
 
-    expected = [
-        "fastmcp.server.auth.providers.github.GitHubProvider",
-        "fastmcp.server.auth.providers.google.GoogleProvider",
-        "fastmcp.server.auth.providers.jwt.JWTVerifier",
-        "fastmcp.server.auth.providers.introspection.IntrospectionTokenVerifier",
-    ]
+    assert set(_PROVIDER_FACTORIES) == {"jwt", "introspection", "static"}
 
-    for class_path in expected:
-        assert class_path in _PROVIDER_FACTORIES, f"Missing factory for {class_path}"
 
-    # No unexpected entries
-    assert len(_PROVIDER_FACTORIES) == len(expected)
+# ============================================
+# Fail-closed startup
+# ============================================
+
+
+@pytest.mark.parametrize(
+    ("host", "expected"),
+    [
+        ("127.0.0.1", True),
+        ("127.0.0.2", True),
+        ("::1", True),
+        ("[::1]", True),
+        (" 127.0.0.1 ", True),
+        ("::ffff:127.0.0.1", True),
+        ("0.0.0.0", False),  # noqa: S104 - the bind-all address is what the guard must refuse
+        ("::", False),
+        ("192.168.1.10", False),
+        ("10.0.0.5", False),
+        ("8.8.8.8", False),
+        ("localhost", False),
+        ("example.com", False),
+        ("", False),
+        ("127.0.0.1.example.com", False),
+    ],
+)
+def test_is_loopback_host(host, expected):
+    assert is_loopback_host(host) is expected
+
+
+@pytest.mark.parametrize("transport", ["stdio", "http"])
+@patch("app.config.auth.settings")
+def test_unset_auth_mode_refuses_to_start(mock_settings, transport):
+    mock_settings.AUTH_MODE = ""
+
+    with pytest.raises(AuthConfigError, match="No authentication mode is configured"):
+        ensure_startup_allowed(transport, "127.0.0.1")
+
+
+@pytest.mark.parametrize("host", ["127.0.0.1", "::1"])
+@patch("app.config.auth.settings")
+def test_none_mode_is_accepted_on_a_loopback_bind(mock_settings, host):
+    mock_settings.AUTH_MODE = "none"
+
+    ensure_startup_allowed("http", host)
+
+
+@pytest.mark.parametrize(
+    "host",
+    ["0.0.0.0", "::", "192.168.1.10", "localhost", "example.com", ""],  # noqa: S104 - refused binds
+)
+@patch("app.config.auth.settings")
+def test_none_mode_is_refused_on_any_other_bind(mock_settings, host):
+    mock_settings.AUTH_MODE = "none"
+
+    with pytest.raises(AuthConfigError, match="AUTH_MODE=none is accepted only"):
+        ensure_startup_allowed("http", host)
+
+
+@patch("app.config.auth.settings")
+def test_none_mode_is_accepted_on_stdio_whatever_the_host(mock_settings):
+    mock_settings.AUTH_MODE = "none"
+
+    ensure_startup_allowed("stdio", "0.0.0.0")  # noqa: S104 - stdio opens no socket
+
+
+@pytest.mark.parametrize("mode", ["jwt", "introspection", "static"])
+@patch("app.config.auth.settings")
+def test_credential_modes_are_accepted_on_any_http_bind(mock_settings, mode):
+    mock_settings.AUTH_MODE = mode
+
+    ensure_startup_allowed("http", "0.0.0.0")  # noqa: S104 - an authenticated server may bind all interfaces
+    ensure_startup_allowed("http", "127.0.0.1")
+
+
+@pytest.mark.parametrize("mode", ["jwt", "introspection", "static"])
+@patch("app.config.auth.settings")
+def test_credential_modes_are_refused_on_stdio(mock_settings, mode):
+    mock_settings.AUTH_MODE = mode
+
+    with pytest.raises(AuthConfigError, match="stdio transport does not carry"):
+        ensure_startup_allowed("stdio", "127.0.0.1")

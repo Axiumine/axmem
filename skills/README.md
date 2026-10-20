@@ -11,7 +11,7 @@ files rather than maintaining their own copies.
   `how_to_use_forgetful_tool` on MCP, `forgetful tools list` / `forgetful tools info` on the
   CLI — both served fresh from the same registry at runtime.
 - **Surface-neutral bodies.** Operations are referenced by registry name (`query_memory`,
-  `create_project`). Each skill opens with the same two-line invocation mapping for MCP and
+  `create_memory`). Each skill opens with the same two-line invocation mapping for MCP and
   CLI. Only the two setup skills are surface-specific.
 - **Single-file skills.** Every skill is one SKILL.md with no sibling files, so a skill
   can be copied into any client's skills directory as is.

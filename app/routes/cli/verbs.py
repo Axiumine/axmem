@@ -11,7 +11,6 @@ from app.protocols.executor import ToolExecutor
 from app.routes.cli.render import (
     render_memory_detail,
     render_memory_lines,
-    render_project_lines,
     sanitize_line,
     to_jsonable,
 )
@@ -19,76 +18,8 @@ from app.routes.cli.render import (
 DEFAULT_SAVE_CONTEXT = "Saved from the Forgetful CLI"
 
 
-class CliError(Exception):
-    """User-facing verb failure; the command runner maps it onto exit code 1."""
-
-
-def _pick_project(value: str, matches: list[dict]) -> int:
-    """Pick the single project a name resolved to; project names are not unique.
-
-    Several matches narrow to the only active one when there is exactly one, otherwise
-    the choice is ambiguous and the user is asked to pass the numeric id.
-    """
-    if len(matches) > 1:
-        active = [project for project in matches if project.get("status") == "active"]
-        if len(active) == 1:
-            matches = active
-    if len(matches) > 1:
-        candidates = ", ".join(
-            f"#{project['id']} ({project.get('status', '?')})"
-            for project in sorted(matches, key=lambda project: project["id"])
-        )
-        raise CliError(
-            f"Ambiguous project '{sanitize_line(value)}': matches {candidates}. Use the numeric id.",
-        )
-    return matches[0]["id"]
-
-
-def _resolve_by_name(value: str, projects: list[dict]) -> int | None:
-    """Resolve a project name: exact-case matches first, then case-insensitive ones.
-
-    Returns None when no project has that name; several equally good matches raise CliError.
-    """
-    exact = [project for project in projects if project["name"] == value]
-    if exact:
-        return _pick_project(value, exact)
-    folded = [project for project in projects if project["name"].lower() == value.lower()]
-    if folded:
-        return _pick_project(value, folded)
-    return None
-
-
-async def resolve_project(executor: ToolExecutor, value: str) -> int:
-    """Resolve a -p/--project value to a project id.
-
-    A value of ASCII digits is an id when a project has that id; if none does it is
-    tried as a project name, and when no name matches either it passes through so the
-    server reports the missing id. Names match exact-case first, then
-    case-insensitively; several equally good matches raise CliError.
-    """
-    listing = to_jsonable(await executor.execute("list_projects", {}))
-    projects = listing.get("projects", [])
-
-    is_id = value.isascii() and value.isdecimal()
-    if is_id and any(project["id"] == int(value) for project in projects):
-        return int(value)
-
-    by_name = _resolve_by_name(value, projects)
-    if by_name is not None:
-        return by_name
-
-    if is_id:
-        return int(value)
-
-    names = ", ".join(sorted(sanitize_line(project["name"]) for project in projects)) or "none"
-    raise CliError(f"Unknown project '{sanitize_line(value)}'. Available projects: {names}")
-
-
 async def run(executor: ToolExecutor, args) -> tuple[Any, str]:
     """Execute a curated verb; returns (json payload, human rendering)."""
-    if args.command == "project":
-        return await _project_list(executor)
-
     handler = {
         "search": _memory_search,
         "save": _memory_save,
@@ -106,7 +37,7 @@ async def _memory_search(executor: ToolExecutor, args) -> tuple[Any, str]:
     if args.limit is not None:
         arguments["k"] = args.limit
     if args.project is not None:
-        arguments["project_ids"] = [await resolve_project(executor, args.project)]
+        arguments["project"] = args.project
 
     payload = to_jsonable(await executor.execute("query_memory", arguments))
     return payload, render_memory_lines(payload.get("primary_memories", []))
@@ -122,7 +53,7 @@ async def _memory_save(executor: ToolExecutor, args) -> tuple[Any, str]:
         "importance": args.importance,
     }
     if args.project is not None:
-        arguments["project_ids"] = [await resolve_project(executor, args.project)]
+        arguments["project"] = args.project
 
     payload = to_jsonable(await executor.execute("create_memory", arguments))
     return payload, f"Created memory {payload['id']}: {sanitize_line(payload['title'])}"
@@ -136,12 +67,7 @@ async def _memory_get(executor: ToolExecutor, args) -> tuple[Any, str]:
 async def _memory_recent(executor: ToolExecutor, args) -> tuple[Any, str]:
     arguments: dict[str, Any] = {"limit": args.limit}
     if args.project is not None:
-        arguments["project_ids"] = [await resolve_project(executor, args.project)]
+        arguments["project"] = args.project
 
     payload = to_jsonable(await executor.execute("get_recent_memories", arguments))
     return payload, render_memory_lines(payload.get("memories", []))
-
-
-async def _project_list(executor: ToolExecutor) -> tuple[Any, str]:
-    payload = to_jsonable(await executor.execute("list_projects", {}))
-    return payload, render_project_lines(payload.get("projects", []))

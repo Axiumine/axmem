@@ -9,24 +9,15 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from app.config.settings import settings
-from app.models.project_models import ProjectCreate, ProjectType, ProjectUpdate
-from app.models.user_models import UserCreate
+from app.models.memory_models import MemoryCreate, MemoryUpdate
 
-RESOURCES = {
-    "projects": {
-        "name": "UTC project",
-        "description": "Timestamp check",
-        "project_type": "development",
-    },
-    "memories": {
-        "title": "UTC memory",
-        "content": "Timestamp check content.",
-        "context": "Timestamp check",
-        "keywords": ["utc"],
-        "tags": ["utc"],
-        "importance": 7,
-    },
+MEMORY = {
+    "title": "UTC memory",
+    "content": "Timestamp check content.",
+    "context": "Timestamp check",
+    "keywords": ["utc"],
+    "tags": ["utc"],
+    "importance": 7,
 }
 
 
@@ -47,13 +38,12 @@ class TestTimestampsAreAwareUtc:
     """Every read path returns the same aware UTC value that create returned."""
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("resource", sorted(RESOURCES))
-    async def test_get_matches_create(self, http_client, resource):
-        created = await http_client.post(f"/api/v1/{resource}", json=RESOURCES[resource])
+    async def test_get_matches_create(self, http_client):
+        created = await http_client.post("/api/v1/memories", json=MEMORY)
         assert created.status_code == 201
         body = created.json()
 
-        fetched = await http_client.get(f"/api/v1/{resource}/{body['id']}")
+        fetched = await http_client.get(f"/api/v1/memories/{body['id']}")
         assert fetched.status_code == 200
         data = fetched.json()
 
@@ -64,38 +54,29 @@ class TestTimestampsAreAwareUtc:
                 assert read_back == _parse_aware(body[field])
 
     @pytest.mark.asyncio
-    async def test_project_list_and_update_are_aware(self, http_client):
-        created = await http_client.post("/api/v1/projects", json=RESOURCES["projects"])
-        project_id = created.json()["id"]
+    async def test_memory_list_and_update_are_aware(self, http_client):
+        created = await http_client.post("/api/v1/memories", json=MEMORY)
+        memory_id = created.json()["id"]
 
-        updated = await http_client.put(f"/api/v1/projects/{project_id}", json={"name": "Renamed"})
+        updated = await http_client.put(f"/api/v1/memories/{memory_id}", json={"title": "Renamed"})
         assert updated.status_code == 200
-        listed = await http_client.get("/api/v1/projects")
+        listed = await http_client.get("/api/v1/memories")
         assert listed.status_code == 200
 
         _parse_aware(updated.json()["updated_at"])
-        for project in listed.json()["projects"]:
-            _parse_aware(project["created_at"])
-            _parse_aware(project["updated_at"])
+        for memory in listed.json()["memories"]:
+            _parse_aware(memory["created_at"])
+            _parse_aware(memory["updated_at"])
 
     @pytest.mark.asyncio
     async def test_service_results_are_aware(self, app):
         """Same check one layer down, on the model objects the services return."""
-        user = await app.user_service.get_or_create_user(
-            user=UserCreate(
-                external_id=settings.DEFAULT_USER_ID,
-                name=settings.DEFAULT_USER_NAME,
-                email=settings.DEFAULT_USER_EMAIL,
-            ),
-        )
-        service = app.project_service
-        created = await service.create_project(
-            user.id,
-            ProjectCreate(name="p", description="d", project_type=ProjectType.DEVELOPMENT),
-        )
-        fetched = await service.get_project(user.id, created.id)
-        updated = await service.update_project(user.id, created.id, ProjectUpdate(name="p2"))
-        listed = (await service.list_projects(user.id))[0]
+        tenant = await app.tenant_service.get_or_create_tenant("utc-tenant")
+        service = app.memory_service
+        created, _ = await service.create_memory(tenant.id, MemoryCreate(**MEMORY))
+        fetched = await service.get_memory(tenant.id, created.id)
+        updated = await service.update_memory(tenant.id, created.id, MemoryUpdate(title="p2"))
+        listed = (await service.list_memories(tenant.id))[0][0]
 
         for value in (
             created.created_at,

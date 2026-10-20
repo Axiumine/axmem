@@ -72,18 +72,7 @@ async def test_rerank_scores_present_and_ordered(mcp_client):
     prev = settings.RERANKING_ENABLED
     settings.RERANKING_ENABLED = True
     try:
-        project_result = await mcp_client.call_tool(
-            "execute_forgetful_tool",
-            {
-                "tool_name": "create_project",
-                "arguments": {
-                    "name": "Rerank scores isolation project",
-                    "description": "Isolates rerank score e2e memories from other tests",
-                    "project_type": "development",
-                },
-            },
-        )
-        project_id = project_result.data["id"]
+        project = "Rerank scores isolation project"
 
         for title, content, keywords in [
             (
@@ -118,7 +107,7 @@ async def test_rerank_scores_present_and_ordered(mcp_client):
                         "keywords": keywords,
                         "tags": ["pg-scores"],
                         "importance": 7,
-                        "project_ids": [project_id],
+                        "project": project,
                     },
                 },
             )
@@ -131,7 +120,7 @@ async def test_rerank_scores_present_and_ordered(mcp_client):
                     "query_context": "caching sub-millisecond latency session storage",
                     "k": 3,
                     "include_links": False,
-                    "project_ids": [project_id],
+                    "project": project,
                 },
             },
         )

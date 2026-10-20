@@ -1,7 +1,7 @@
 """Filesystem locations for CLI configuration.
 
-One mechanism for server and CLI: ~/.config/forgetful/.env is already in settings.py's
-env_file list, and the OAuth token cache lives beside it.
+One mechanism for server and CLI: the user config file in ~/.config/forgetful is already
+in settings.py's env_file list.
 """
 from pathlib import Path
 
@@ -15,6 +15,3 @@ def config_dir() -> Path:
 def user_env_file() -> Path:
     return config_dir() / ".env"
 
-
-def token_cache_dir() -> Path:
-    return config_dir() / "tokens"

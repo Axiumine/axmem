@@ -6,7 +6,7 @@ Requires:
 
 Tests the complete stack: FastMCP Client -> MCP Protocol -> Service -> Repository
 -> PostgreSQL + embeddings. Sibling modules cover update/get, obsolete handling,
-project links, get_recent_memories and provenance.
+project scopes, get_recent_memories and provenance.
 """
 import pytest
 
@@ -46,7 +46,7 @@ async def test_create_memory_basic_e2e(mcp_client):
     assert result.data["title"] == "Python AsyncIO E2E Test"
     assert isinstance(result.data["linked_memory_ids"], list)
     assert isinstance(result.data["similar_memories"], list)
-    assert isinstance(result.data["project_ids"], list)
+    assert result.data["project"] is None
 
 
 @pytest.mark.e2e

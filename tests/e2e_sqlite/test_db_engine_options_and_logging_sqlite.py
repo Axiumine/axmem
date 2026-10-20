@@ -57,7 +57,7 @@ def _run_stdio_server(tmp_path: Path, db_logging: str) -> tuple[str, str]:
     env = {
         key: value
         for key, value in os.environ.items()
-        if not key.startswith(("DB_", "SQLITE", "DATABASE", "POSTGRES", "FASTMCP"))
+        if not key.startswith(("DB_", "SQLITE", "DATABASE", "POSTGRES", "FASTMCP", "AUTH_"))
     }
     env.update(
         HOME=str(tmp_path),
@@ -68,6 +68,7 @@ def _run_stdio_server(tmp_path: Path, db_logging: str) -> tuple[str, str]:
         DATABASE="SQLite",
         SQLITE_MEMORY="true",
         RERANKING_ENABLED="false",
+        AUTH_MODE="none",
         DB_LOGGING=db_logging,
     )
     proc = subprocess.run(  # noqa: S603 - fixed argv, test-controlled script

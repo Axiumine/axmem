@@ -44,11 +44,13 @@ Done when: exactly one type is chosen, and routed-away types are handled by thei
 
 ## Step 2 — Resolve the project
 
-Every write needs a deliberate project decision. Derive the candidate from the repo:
-`git remote get-url origin` → `owner/repo` → `list_projects` with `repo_name`. When no
-project matches, create one or ask the user; when several could apply, ask.
+Every write needs a deliberate project decision. A project is a free-form label on the memory
+(the `project` argument), created the first time it is used. Derive the candidate from the repo:
+`git remote get-url origin` → `owner/repo`. Reuse the spelling the project already uses
+(`get_recent_memories` with `project` shows it; `billing` and `Billing` are two scopes). When
+several labels could apply, ask; when the knowledge applies everywhere, leave `project` out.
 
-Done when: a real `project_id` is confirmed — discovered or user-chosen, never assumed.
+Done when: the label is confirmed — discovered or user-chosen, or deliberately left out.
 
 ## Step 3 — Query before create
 

@@ -1,7 +1,7 @@
 """Shared building blocks for tests that drive the SQLite repositories directly.
 
 ``open_repository_stack`` wires the real in-memory SQLite adapter (sqlite-vec tables and
-migrations included) to the memory and project repositories, plus two users so ownership
+migrations included) to the memory repository, plus two users so ownership
 checks can be exercised.
 """
 from collections.abc import AsyncIterator
@@ -13,7 +13,6 @@ from uuid import UUID
 from app.config.settings import settings
 from app.models.user_models import UserCreate
 from app.repositories.sqlite.memory_repository import SqliteMemoryRepository
-from app.repositories.sqlite.project_repository import SqliteProjectRepository
 from app.repositories.sqlite.sqlite_adapter import SqliteDatabaseAdapter
 from app.repositories.sqlite.user_repository import SqliteUserRepository
 
@@ -33,12 +32,11 @@ class RepositoryStack:
     user_id: UUID
     other_user_id: UUID
     memories: SqliteMemoryRepository
-    projects: SqliteProjectRepository
 
 
 @asynccontextmanager
 async def open_repository_stack(monkeypatch: Any) -> AsyncIterator[RepositoryStack]:
-    """Open a fresh in-memory SQLite database with all repositories and two users."""
+    """Open a fresh in-memory SQLite database with the repositories and two users."""
     monkeypatch.setattr(settings, "DATABASE", "SQLite")
     monkeypatch.setattr(settings, "SQLITE_MEMORY", True)
     adapter = SqliteDatabaseAdapter()
@@ -57,7 +55,6 @@ async def open_repository_stack(monkeypatch: Any) -> AsyncIterator[RepositorySta
             user_id=owner.id,
             other_user_id=other.id,
             memories=SqliteMemoryRepository(db_adapter=adapter, embedding_adapter=embeddings),
-            projects=SqliteProjectRepository(db_adapter=adapter),
         )
     finally:
         await adapter.dispose()

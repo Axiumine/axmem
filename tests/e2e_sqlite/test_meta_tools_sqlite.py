@@ -56,12 +56,8 @@ async def test_discover_forgetful_tools_all_e2e(mcp_client):
     assert result.data is not None
     _assert_discovery_payload_keys(result.data)
 
-    # Should have at least user and memory categories
-    assert "user" in result.data["categories_available"]
-    assert "memory" in result.data["categories_available"]
-
-    # Should have tools in each category
-    assert len(result.data["tools_by_category"]["user"]) >= 2
+    # The memory category is the only one left
+    assert result.data["categories_available"] == ["memory"]
     assert len(result.data["tools_by_category"]["memory"]) >= 6
 
     # Total count should match sum of all categories
@@ -74,20 +70,28 @@ async def test_discover_forgetful_tools_by_category_e2e(mcp_client):
     """Test discovering tools filtered by category"""
     result = await mcp_client.call_tool(
         "discover_forgetful_tools",
-        {"category": "user"},
+        {"category": "memory"},
     )
 
     assert result.data is not None
-    assert result.data["filtered_by"] == "user"
-    assert "user" in result.data["tools_by_category"]
+    assert result.data["filtered_by"] == "memory"
+    assert list(result.data["tools_by_category"]) == ["memory"]
 
-    # Should only contain user category
-    user_tools = result.data["tools_by_category"]["user"]
-    assert len(user_tools) >= 2
+    memory_tools = result.data["tools_by_category"]["memory"]
+    assert len(memory_tools) >= 6
 
     # Verify tool structure
-    for tool in user_tools:
-        _assert_tool_entry(tool, "user")
+    for tool in memory_tools:
+        _assert_tool_entry(tool, "memory")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("removed_category", ["user", "project"])
+async def test_removed_categories_are_not_discoverable_e2e(mcp_client, removed_category):
+    with pytest.raises(Exception) as exc_info:
+        await mcp_client.call_tool("discover_forgetful_tools", {"category": removed_category})
+
+    assert removed_category in str(exc_info.value)
 
 
 @pytest.mark.asyncio
@@ -121,12 +125,12 @@ async def test_how_to_use_forgetful_tool_e2e(mcp_client):
     """Test getting detailed documentation for a specific tool"""
     result = await mcp_client.call_tool(
         "how_to_use_forgetful_tool",
-        {"tool_name": "get_current_user"},
+        {"tool_name": "query_memory"},
     )
 
     assert result.data is not None
-    assert result.data["name"] == "get_current_user"
-    assert result.data["category"] == "user"
+    assert result.data["name"] == "query_memory"
+    assert result.data["category"] == "memory"
     _assert_tool_doc_fields(result.data)
 
     # Verify JSON schema structure
@@ -150,20 +154,19 @@ async def test_how_to_use_nonexistent_tool_e2e(mcp_client):
 
 
 @pytest.mark.asyncio
-async def test_execute_forgetful_tool_user_e2e(mcp_client):
-    """Test executing a user tool through meta-tools"""
+async def test_execute_forgetful_tool_read_e2e(mcp_client):
+    """Test executing a read tool through meta-tools"""
     result = await mcp_client.call_tool(
         "execute_forgetful_tool",
         {
-            "tool_name": "get_current_user",
+            "tool_name": "get_recent_memories",
             "arguments": {},
         },
     )
 
     assert result.data is not None
-    # Result should be a UserResponse
-    assert _has_field(result.data, "name")
-    assert _has_field(result.data, "created_at")
+    assert _has_field(result.data, "memories")
+    assert _has_field(result.data, "total_count")
 
 
 @pytest.mark.asyncio
@@ -248,32 +251,30 @@ async def test_execute_nonexistent_tool_e2e(mcp_client):
 
 
 @pytest.mark.asyncio
-async def test_execute_tool_preserves_user_context_e2e(mcp_client):
-    """Test that user context is preserved through execute_forgetful_tool across multiple calls"""
-    # First call via meta-tool
-    result1 = await mcp_client.call_tool(
+async def test_execute_tool_preserves_tenant_context_e2e(mcp_client):
+    """Test that the tenant is preserved through execute_forgetful_tool across multiple calls"""
+    created = await mcp_client.call_tool(
         "execute_forgetful_tool",
         {
-            "tool_name": "get_current_user",
-            "arguments": {},
+            "tool_name": "create_memory",
+            "arguments": {
+                "title": "Tenant context memory",
+                "content": "Written by the first call",
+                "context": "Context preservation",
+                "keywords": ["tenant"],
+                "tags": ["e2e"],
+                "importance": 5,
+            },
         },
     )
-    user1 = result1.data
 
-    # Second call via meta-tool
-    result2 = await mcp_client.call_tool(
+    fetched = await mcp_client.call_tool(
         "execute_forgetful_tool",
-        {
-            "tool_name": "get_current_user",
-            "arguments": {},
-        },
+        {"tool_name": "get_memory", "arguments": {"memory_id": created.data["id"]}},
     )
-    user2 = result2.data
 
-    # Both should return the same user (proving context is preserved)
-    user1_name = user1.name if hasattr(user1, "name") else user1["name"]
-    user2_name = user2.name if hasattr(user2, "name") else user2["name"]
-    assert user1_name == user2_name
+    # The second call reads what the first wrote, so both ran as the same tenant
+    assert fetched.data["title"] == "Tenant context memory"
 
 
 @pytest.mark.asyncio
@@ -321,58 +322,36 @@ async def test_meta_tools_workflow_e2e(mcp_client):
 
 
 # ============================================================================
-# Project Tools via Meta-Tools
+# Project scope via Meta-Tools
 # ============================================================================
 
 @pytest.mark.asyncio
-async def test_execute_create_project_via_meta_tools_e2e(mcp_client):
-    """Test creating a project through meta-tools"""
+async def test_execute_create_memory_with_project_via_meta_tools_e2e(mcp_client):
+    """Test scoping a memory to a project through meta-tools"""
     result = await mcp_client.call_tool(
         "execute_forgetful_tool",
         {
-            "tool_name": "create_project",
+            "tool_name": "create_memory",
             "arguments": {
-                "name": "Test Project",
-                "description": "A test project created via meta-tools",
-                "project_type": "development",
+                "title": "Scoped via meta-tools",
+                "content": "A memory scoped to a project created on first use",
+                "context": "Project scope",
+                "keywords": ["project"],
+                "tags": ["e2e"],
+                "importance": 5,
+                "project": "meta-tools-project",
             },
         },
     )
 
     assert result.data is not None
-    assert _has_field(result.data, "id")
-    assert _has_field(result.data, "name")
+    assert result.data["project"] == "meta-tools-project"
 
-
-@pytest.mark.asyncio
-async def test_execute_list_projects_via_meta_tools_e2e(mcp_client):
-    """Test listing projects through meta-tools"""
-    # First create a project
-    create_result = await mcp_client.call_tool(
+    listed = await mcp_client.call_tool(
         "execute_forgetful_tool",
-        {
-            "tool_name": "create_project",
-            "arguments": {
-                "name": "List Test Project",
-                "description": "Project for list test",
-                "project_type": "work",
-            },
-        },
+        {"tool_name": "get_recent_memories", "arguments": {"project": "meta-tools-project"}},
     )
-    assert create_result.data is not None
-
-    # Now list projects
-    list_result = await mcp_client.call_tool(
-        "execute_forgetful_tool",
-        {
-            "tool_name": "list_projects",
-            "arguments": {},
-        },
-    )
-
-    assert list_result.data is not None
-    assert _has_field(list_result.data, "projects")
-    assert _has_field(list_result.data, "count")
+    assert [m["id"] for m in listed.data["memories"]] == [result.data["id"]]
 
 
 @pytest.mark.asyncio
@@ -383,11 +362,8 @@ async def test_discover_all_categories_e2e(mcp_client):
     assert result.data is not None
     categories = result.data["categories_available"]
 
-    # Should have all 3 categories
-    assert "user" in categories
-    assert "memory" in categories
-    assert "project" in categories
-    assert "entity" not in categories
+    # The memory category is the only one left
+    assert categories == ["memory"]
 
     # Should have significant number of total tools
-    assert result.data["total_count"] >= 17  # At least 17 tools total
+    assert result.data["total_count"] >= 10  # At least 10 tools total

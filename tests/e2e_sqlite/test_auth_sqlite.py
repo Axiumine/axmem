@@ -1,6 +1,6 @@
 """End-to-end tests for authentication flow with SQLite backend
 
-Tests complete auth flow: FastMCP → Auth Middleware → User Provisioning → SQLite
+Tests complete auth flow: FastMCP -> Auth Middleware -> Tenant Provisioning -> SQLite
 
 Integration tests (test_auth.py) mock dependencies for fast unit testing.
 These E2E tests validate the full stack with in-process FastMCP and in-memory SQLite.
@@ -9,46 +9,42 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from app.config.settings import settings
+
+
+async def _recent(client):
+    return await client.call_tool(
+        "execute_forgetful_tool",
+        {"tool_name": "get_recent_memories", "arguments": {}},
+    )
+
+
+async def _tenants(app):
+    """external_id of every tenant record in the database."""
+    from sqlalchemy import text
+
+    async with app.tenant_service.user_repo.db_adapter.system_session() as session:
+        rows = await session.execute(text("SELECT external_id FROM users ORDER BY external_id"))
+        return [row[0] for row in rows]
+
 
 @pytest.mark.asyncio
-async def test_default_user_provisioning_sqlite(mcp_client):
-    """Test that default user is provisioned when FASTMCP_SERVER_AUTH not set
+async def test_local_tenant_provisioning_sqlite(sqlite_app, mcp_client, monkeypatch):
+    """With AUTH_MODE=none every call is the one DEFAULT_TENANT tenant, created on first use.
 
     This validates:
-    - get_user_from_auth() detects no auth configured
-    - Default user auto-provisioned on first tool call
-    - Same user returned on subsequent calls (idempotency)
-    - Data persisted to SQLite database
+    - get_tenant_from_auth() detects no auth provider
+    - the local tenant is auto-provisioned on the first tool call
+    - the same tenant is used on subsequent calls (idempotency)
+    - the record is persisted to the SQLite database
     """
-    # First tool call - should auto-create default user
-    result1 = await mcp_client.call_tool(
-        "execute_forgetful_tool",
-        {
-            "tool_name": "get_current_user",
-            "arguments": {},
-        },
-    )
+    monkeypatch.setattr(settings, "DEFAULT_TENANT", "workstation")
+    assert await _tenants(sqlite_app) == []
 
-    assert result1.data is not None
-    user1_name = result1.data["name"]
-    user1_created_at = result1.data["created_at"]
+    await _recent(mcp_client)
+    await _recent(mcp_client)
 
-    # Should match default user settings (name contains "default")
-    assert "default" in user1_name.lower()
-
-    # Second tool call - should return same user (idempotency)
-    result2 = await mcp_client.call_tool(
-        "execute_forgetful_tool",
-        {
-            "tool_name": "get_current_user",
-            "arguments": {},
-        },
-    )
-
-    assert result2.data is not None
-    # Verify it's the same user by comparing name and created_at
-    assert result2.data["name"] == user1_name
-    assert result2.data["created_at"] == user1_created_at
+    assert await _tenants(sqlite_app) == ["workstation"]
 
 
 class MockAccessToken:
@@ -59,51 +55,40 @@ class MockAccessToken:
 
 @pytest.mark.asyncio
 @patch("app.middleware.auth.get_access_token")
-async def test_auth_enabled_user_from_token_sqlite(mock_get_token, sqlite_app, mcp_client):
-    """Test that user is provisioned from bearer token when auth enabled
+async def test_auth_enabled_tenant_from_token_sqlite(mock_get_token, sqlite_app, mcp_client):
+    """Test that the tenant is provisioned from the bearer token when auth is enabled
 
     This validates the complete auth flow with real database:
-    1. get_user_from_auth() detects auth is configured
-    2. Extracts claims from access token
-    3. User auto-provisioned from token claims (sub, name, email) to SQLite
-    4. Tool execution uses the authenticated user
-    5. Multiple calls with same token return same user (from database)
+    1. get_tenant_from_auth() detects auth is configured
+    2. The tenant is named by the claims (tenant_id, else tenant, else sub)
+    3. The tenant is auto-provisioned to SQLite on first use
+    4. Multiple calls with the same token reuse the stored tenant
     """
     # Set auth on the app instance to simulate auth being configured
     sqlite_app.auth = MagicMock()
-
-    # Mock access token with test claims
-    mock_token = MockAccessToken(claims={
+    mock_get_token.return_value = MockAccessToken(claims={
+        "tenant_id": "globex",
+        "tenant": "ignored",
         "sub": "github|sqlite-e2e-test",
-        "name": "SQLite E2E Auth User",
-        "email": "e2e-auth@sqlite.test",
+        "name": "Ignored Profile Name",
+        "email": "ignored@sqlite.test",
     })
-    mock_get_token.return_value = mock_token
 
-    # First tool call - should auto-provision user from token to database
-    result1 = await mcp_client.call_tool(
-        "execute_forgetful_tool",
-        {
-            "tool_name": "get_current_user",
-            "arguments": {},
-        },
-    )
+    await _recent(mcp_client)
+    await _recent(mcp_client)
 
-    assert result1.data is not None
-    # Verify user name from token claim
-    assert result1.data["name"] == "SQLite E2E Auth User"
-    assert result1.data["created_at"] is not None
+    assert await _tenants(sqlite_app) == ["globex"]
 
-    # Second tool call - should return same user from database (idempotency)
-    result2 = await mcp_client.call_tool(
-        "execute_forgetful_tool",
-        {
-            "tool_name": "get_current_user",
-            "arguments": {},
-        },
-    )
 
-    assert result2.data is not None
-    assert result2.data["name"] == "SQLite E2E Auth User"
-    # Same created_at proves it's the same user retrieved from DB, not a duplicate
-    assert result2.data["created_at"] == result1.data["created_at"]
+@pytest.mark.asyncio
+@patch("app.middleware.auth.get_access_token")
+async def test_auth_enabled_without_a_token_is_refused_sqlite(mock_get_token, sqlite_app, mcp_client):
+    from fastmcp.exceptions import ToolError
+
+    sqlite_app.auth = MagicMock()
+    mock_get_token.return_value = None
+
+    with pytest.raises(ToolError, match="Authentication required but no bearer token provided"):
+        await _recent(mcp_client)
+
+    assert await _tenants(sqlite_app) == []

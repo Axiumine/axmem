@@ -2,7 +2,7 @@
 
 Covers, with stubbed services and no database:
 - ``client_error_detail`` keeps authored messages and hides driver details.
-- ``execute_forgetful_tool`` never puts SQL, bound parameters or driver text from a project
+- ``execute_forgetful_tool`` never puts SQL, bound parameters or driver text from a memory
   operation in a ToolError.
 - ``discover_forgetful_tools`` honours the advertised ``linking`` category.
 - ``execute_forgetful_tool`` rejects argument names that cannot be keyword arguments.
@@ -31,17 +31,17 @@ from app.routes.mcp.meta_tools import (
     ensure_tool_executable,
     reject_invalid_argument_names,
 )
-from app.routes.mcp.tool_adapters import create_project_adapters
+from app.routes.mcp.tool_adapters import create_memory_adapters
 from app.routes.mcp.tool_errors import (
     CONSTRAINT_FAILURE,
     GENERIC_FAILURE,
     client_error_detail,
 )
-from app.routes.mcp.tool_metadata_registry import register_project_tools_metadata
+from app.routes.mcp.tool_metadata_registry import register_memory_tools_metadata
 from app.routes.mcp.tool_registry import ToolRegistry
 
 SECRET_USER_ID = "7f1c2b9e-0000-4000-8000-00000000abcd"
-SQL_TEXT = "INSERT INTO projects (user_id, name) VALUES (?, ?)"
+SQL_TEXT = "INSERT INTO memories (user_id, title) VALUES (?, ?)"
 LEAK_MARKERS = (
     "INSERT INTO",
     "[SQL:",
@@ -57,7 +57,7 @@ def _integrity_error() -> IntegrityError:
     return IntegrityError(
         SQL_TEXT,
         (SECRET_USER_ID, 1),
-        Exception("UNIQUE constraint failed: projects.user_id, projects.name"),
+        Exception("UNIQUE constraint failed: memories.user_id, memories.title"),
     )
 
 
@@ -68,11 +68,11 @@ class TestClientErrorDetail:
         "error",
         [
             NotFoundError("Memory 7 not found"),
-            ConflictError("A project with this name already exists."),
+            ConflictError("A memory with this title already exists."),
             InvalidStateTransitionError("memory is already obsolete"),
-            ValueError("project_id must be an integer"),
-            TypeError("create_project() got an unexpected keyword argument 'name'"),
-            ToolError("Project 4 not found"),
+            ValueError("memory_id must be an integer"),
+            TypeError("create_memory() got an unexpected keyword argument 'name'"),
+            ToolError("Memory 4 not found"),
         ],
     )
     def test_authored_messages_are_kept(self, error):
@@ -99,12 +99,12 @@ class TestClientErrorDetail:
         assert client_error_detail(error) == GENERIC_FAILURE
 
 
-class _StubUserService:
-    async def get_or_create_user(self, user):
-        return SimpleNamespace(id=uuid4())
+class _StubTenantService:
+    async def get_or_create_tenant(self, tenant_id):
+        return SimpleNamespace(id=uuid4(), external_id=tenant_id)
 
 
-class _FailingProjectService:
+class _FailingMemoryService:
     """Every service method raises the configured error."""
 
     def __init__(self, error: Exception):
@@ -117,15 +117,15 @@ class _FailingProjectService:
         return _raise
 
 
-def _project_tools_server(error: Exception) -> FastMCP:
-    """The mounted surface (the three meta-tools) over project adapters whose service fails."""
-    user_service = _StubUserService()
+def _memory_tools_server(error: Exception) -> FastMCP:
+    """The mounted surface (the three meta-tools) over memory adapters whose service fails."""
+    tenant_service = _StubTenantService()
     registry = ToolRegistry()
-    register_project_tools_metadata(
-        registry, create_project_adapters(_FailingProjectService(error), user_service),
+    register_memory_tools_metadata(
+        registry, create_memory_adapters(_FailingMemoryService(error), SimpleNamespace()),
     )
-    server = FastMCP("project-tools-error-test")
-    server.user_service = user_service
+    server = FastMCP("memory-tools-error-test")
+    server.tenant_service = tenant_service
     server.registry = registry
     meta_tools.register(server)
     return server
@@ -137,25 +137,35 @@ async def _execute(client: Client, tool_name: str, arguments: dict):
     )
 
 
-PROJECT_TOOL_CALLS = [
-    ("create_project", {"name": "Atlas", "description": "d", "project_type": "development"}),
-    ("get_project", {"project_id": 1}),
-    ("list_projects", {}),
-    ("update_project", {"project_id": 1, "name": "S"}),
-    ("delete_project", {"project_id": 1}),
+MEMORY_TOOL_CALLS = [
+    (
+        "create_memory",
+        {
+            "title": "Atlas",
+            "content": "c",
+            "context": "d",
+            "keywords": ["k"],
+            "tags": ["t"],
+            "importance": 5,
+        },
+    ),
+    ("get_memory", {"memory_id": 1}),
+    ("query_memory", {"query": "atlas", "query_context": "d"}),
+    ("update_memory", {"memory_id": 1, "title": "S"}),
+    ("mark_memory_obsolete", {"memory_id": 1, "reason": "r"}),
 ]
 
 
-class TestProjectToolErrors:
-    """Project operations return a short message for database errors and keep authored ones."""
+class TestMemoryToolErrors:
+    """Memory operations return a short message for database errors and keep authored ones."""
 
     @pytest.mark.parametrize(
         ("tool_name", "arguments"),
-        PROJECT_TOOL_CALLS,
-        ids=[call[0] for call in PROJECT_TOOL_CALLS],
+        MEMORY_TOOL_CALLS,
+        ids=[call[0] for call in MEMORY_TOOL_CALLS],
     )
     async def test_database_error_text_is_not_returned(self, tool_name, arguments):
-        async with Client(_project_tools_server(_integrity_error())) as client:
+        async with Client(_memory_tools_server(_integrity_error())) as client:
             with pytest.raises(ToolError) as caught:
                 await _execute(client, tool_name, arguments)
 
@@ -165,32 +175,28 @@ class TestProjectToolErrors:
         assert not [marker for marker in LEAK_MARKERS if marker in message], message
 
     async def test_unexpected_error_text_is_not_returned(self):
-        server = _project_tools_server(RuntimeError(f"pool exhausted for {SECRET_USER_ID}"))
+        server = _memory_tools_server(RuntimeError(f"pool exhausted for {SECRET_USER_ID}"))
 
         async with Client(server) as client:
             with pytest.raises(ToolError) as caught:
-                await _execute(client, "get_project", {"project_id": 1})
+                await _execute(client, "get_memory", {"memory_id": 1})
 
         assert SECRET_USER_ID not in str(caught.value)
         assert GENERIC_FAILURE in str(caught.value)
 
     async def test_domain_message_is_kept(self):
-        server = _project_tools_server(NotFoundError("Project 1 not found"))
+        server = _memory_tools_server(NotFoundError("Memory 1 not found"))
 
         async with Client(server) as client:
-            with pytest.raises(ToolError, match="Project 1 not found"):
-                await _execute(client, "get_project", {"project_id": 1})
+            with pytest.raises(ToolError, match="Memory 1 not found"):
+                await _execute(client, "get_memory", {"memory_id": 1})
 
     async def test_conflict_message_is_kept(self):
-        server = _project_tools_server(ConflictError("A project with this name already exists."))
+        server = _memory_tools_server(ConflictError("A memory with this title already exists."))
 
         async with Client(server) as client:
-            with pytest.raises(ToolError, match="A project with this name already exists."):
-                await _execute(
-                    client,
-                    "create_project",
-                    {"name": "Atlas", "description": "d", "project_type": "development"},
-                )
+            with pytest.raises(ToolError, match="A memory with this title already exists."):
+                await _execute(client, "mark_memory_obsolete", {"memory_id": 1, "reason": "r"})
 
 
 async def _noop(**_kwargs):
@@ -202,10 +208,10 @@ def _registry_with_link_tools() -> ToolRegistry:
     param = [ToolParameter(name="x", type="int", description="x", required=True)]
     for name, category, tags in [
         ("link_memories", ToolCategory.MEMORY, ["memory", "linking"]),
-        # a stand-in from another category, to show the filter follows the tag, not the category
-        ("tag_project_links", ToolCategory.PROJECT, ["project", "linking"]),
+        # a second linking tool, to show the filter follows the tag
+        ("unlink_memories", ToolCategory.MEMORY, ["memory", "linking"]),
         ("get_memory", ToolCategory.MEMORY, ["memory", "query"]),
-        ("create_project", ToolCategory.PROJECT, ["project", "create"]),
+        ("create_memory", ToolCategory.MEMORY, ["memory", "create"]),
     ]:
         registry.register(
             name=name,
@@ -222,14 +228,14 @@ def _registry_with_link_tools() -> ToolRegistry:
 class TestLinkingCategory:
     """The advertised ``linking`` category lists the tools tagged ``linking``."""
 
-    def test_linking_category_returns_tagged_tools_across_categories(self):
+    def test_linking_category_returns_the_tools_tagged_linking(self):
         registry = _registry_with_link_tools()
         permitted = {meta.name for meta in registry.list_all_tools()}
 
         payload = build_discovery_payload(registry, permitted, "linking")
 
         names = {tool["name"] for tools in payload["tools_by_category"].values() for tool in tools}
-        assert names == {"link_memories", "tag_project_links"}
+        assert names == {"link_memories", "unlink_memories"}
         assert payload["total_count"] == 2
         assert payload["filtered_by"] == "linking"
 
@@ -256,7 +262,7 @@ class TestLinkingCategory:
         payload = build_discovery_payload(registry, permitted, "memory")
 
         names = {tool["name"] for tools in payload["tools_by_category"].values() for tool in tools}
-        assert names == {"link_memories", "get_memory"}
+        assert names == {"link_memories", "unlink_memories", "get_memory", "create_memory"}
         assert "linking" not in payload["categories_available"]
 
 

@@ -25,7 +25,6 @@ from app.repositories.embeddings.embedding_adapter import (
     OpenAIEmbeddingsAdapter,
 )
 from app.repositories.sqlite.memory_repository import SqliteMemoryRepository
-from app.repositories.sqlite.project_repository import SqliteProjectRepository
 
 # SQLite repository imports
 from app.repositories.sqlite.sqlite_adapter import SqliteDatabaseAdapter
@@ -34,16 +33,14 @@ from app.routes.api import (
     auth,
     health,
     memories,
-    projects,
 )
 from app.routes.mcp import meta_tools
 from app.routes.mcp.scope_resolver import parse_scopes, resolve_permitted_tools
 from app.routes.mcp.tool_metadata_registry import register_all_tools_metadata
 from app.routes.mcp.tool_registry import ToolRegistry
 from app.services.memory_service import MemoryService
-from app.services.project_service import ProjectService
 from app.services.re_embedding_service import ReEmbeddingService
-from app.services.user_service import UserService
+from app.services.tenant_service import TenantService
 
 
 @pytest.fixture(scope="module")
@@ -85,12 +82,13 @@ def reranker_adapter():
 # App Builder — the fully-wired in-memory SQLite app behind the sqlite_app fixture
 # ============================================================================
 
-async def build_sqlite_app(embedding_adapter, reranker_adapter):
+async def build_sqlite_app(embedding_adapter, reranker_adapter, auth_provider=None):
     """Build a fully-wired FastMCP app with in-memory SQLite.
 
     Args:
         embedding_adapter: Embedding adapter instance
         reranker_adapter: Reranker adapter instance (or None)
+        auth_provider: FastMCP auth provider (None serves the single local tenant, AUTH_MODE=none)
     """
     from app.config.settings import settings
 
@@ -114,20 +112,17 @@ async def build_sqlite_app(embedding_adapter, reranker_adapter):
             embedding_adapter=embedding_adapter,
             rerank_adapter=reranker_adapter,
         )
-        project_repository = SqliteProjectRepository(db_adapter=db_adapter)
 
         @asynccontextmanager
         async def lifespan(app):
             """Application lifecycle with SQLite initialization"""
             # Services
-            user_service = UserService(user_repository)
+            tenant_service = TenantService(user_repository)
             memory_service = MemoryService(memory_repository)
-            project_service = ProjectService(project_repository)
 
             # Store services on FastMCP instance
-            mcp.user_service = user_service
+            mcp.tenant_service = tenant_service
             mcp.memory_service = memory_service
-            mcp.project_service = project_service
 
             # Create and attach registry
             registry = ToolRegistry()
@@ -136,10 +131,8 @@ async def build_sqlite_app(embedding_adapter, reranker_adapter):
             # Register tools
             register_all_tools_metadata(
                 registry=registry,
-                user_service=user_service,
                 memory_service=memory_service,
                 re_embedding_service=ReEmbeddingService(memory_repository, embedding_adapter),
-                project_service=project_service,
             )
 
             # Resolve instance-level scope ceiling
@@ -150,13 +143,12 @@ async def build_sqlite_app(embedding_adapter, reranker_adapter):
             yield
 
         # Create FastMCP app
-        mcp = FastMCP("Forgetful-SQLite-E2E", lifespan=lifespan)
+        mcp = FastMCP("Forgetful-SQLite-E2E", lifespan=lifespan, auth=auth_provider)
 
         # Routes
         health.register(mcp)
         auth.register(mcp)
         memories.register(mcp)
-        projects.register(mcp)
 
         meta_tools.register(mcp)
 
@@ -250,3 +242,100 @@ async def http_client(sqlite_app):
         transport = ASGITransport(app=asgi_app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             yield client
+
+
+# ============================================================================
+# Static-token app — two tenants, each with its own bearer token
+# ============================================================================
+
+# Plain tokens exist only in the tests; the server is configured with their SHA-256 hashes
+TENANT_TOKENS = {
+    "alice": "alice-test-token-0123456789abcdef0123456789abcdef",
+    "bob": "bob-test-token-fedcba9876543210fedcba9876543210",
+}
+
+
+def static_token_verifier():
+    """The static-token auth provider an AUTH_MODE=static server builds for TENANT_TOKENS."""
+    from app.middleware.static_token import StaticTokenVerifier, hash_token
+
+    return StaticTokenVerifier({tenant: hash_token(token) for tenant, token in TENANT_TOKENS.items()})
+
+
+@pytest.fixture
+async def static_auth_app(embedding_adapter, reranker_adapter):
+    """FastMCP app with static-token auth enabled (tenants alice and bob)."""
+    async for app in build_sqlite_app(embedding_adapter, reranker_adapter, auth_provider=static_token_verifier()):
+        yield app
+
+
+@pytest.fixture
+async def static_auth_http_client(static_auth_app):
+    """HTTP client for the REST routes of the static-token app (no Authorization header preset)."""
+    from fastmcp import Client
+    from httpx import ASGITransport, AsyncClient
+
+    async with Client(static_auth_app) as _:
+        transport = ASGITransport(app=static_auth_app.http_app())
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            yield client
+
+
+# ============================================================================
+# Auth stack — one auth-enabled app, reached over REST and over MCP on HTTP
+# ============================================================================
+
+
+class AuthStack:
+    """An auth-enabled app behind its own HTTP stack, so bearer tokens go through the real checks.
+
+    ``rest(token)`` and ``mcp(token)`` open a REST client and an MCP client that both send
+    ``Authorization: Bearer <token>`` (nothing when the token is None). The calls travel
+    through the app's ASGI application, not around it.
+    """
+
+    def __init__(self, http_app):
+        self.http_app = http_app
+
+    @staticmethod
+    def _headers(token):
+        return {"Authorization": f"Bearer {token}"} if token is not None else {}
+
+    @asynccontextmanager
+    async def rest(self, token=None):
+        from httpx import ASGITransport, AsyncClient
+
+        async with AsyncClient(
+            transport=ASGITransport(app=self.http_app), base_url="http://test", headers=self._headers(token),
+        ) as client:
+            yield client
+
+    @asynccontextmanager
+    async def mcp(self, token=None):
+        from fastmcp import Client
+        from fastmcp.client.transports import StreamableHttpTransport
+        from httpx import ASGITransport, AsyncClient
+
+        def client_factory(headers=None, timeout=None, auth=None, **_ignored):
+            return AsyncClient(
+                transport=ASGITransport(app=self.http_app),
+                base_url="http://test",
+                headers=headers,
+                timeout=timeout,
+                auth=auth,
+            )
+
+        transport = StreamableHttpTransport(
+            "http://test/mcp", headers=self._headers(token), httpx_client_factory=client_factory,
+        )
+        async with Client(transport) as client:
+            yield client
+
+
+@asynccontextmanager
+async def auth_stack(embedding_adapter, reranker_adapter, auth_provider):
+    """An AuthStack over a fresh in-memory SQLite app whose auth provider is ``auth_provider``."""
+    async for app in build_sqlite_app(embedding_adapter, reranker_adapter, auth_provider=auth_provider):
+        http_app = app.http_app()
+        async with http_app.router.lifespan_context(http_app):
+            yield AuthStack(http_app)

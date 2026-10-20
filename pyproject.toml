@@ -29,7 +29,6 @@ dependencies = [
     "pgvector==0.4.2",
     "platformdirs==4.7.0",
     "psycopg2-binary==2.9.11",
-    "py-key-value-aio[filetree]==0.4.4",
     "pydantic==2.12.5",
     "pydantic-settings==2.14.2",
     "pytest==9.0.3",
@@ -111,7 +110,7 @@ source_modules = [
 ]
 forbidden_modules = [
     "app.services", "app.repositories", "app.routes", "app.bootstrap",
-    "app.middleware.auth", "app.config.auth",
+    "app.middleware.auth", "app.middleware.static_token", "app.config.auth",
 ]
 
 [[tool.importlinter.contracts]]
@@ -121,7 +120,7 @@ type = "forbidden"
 source_modules = ["app.services"]
 forbidden_modules = [
     "app.repositories", "app.routes", "app.bootstrap",
-    "app.middleware.auth", "app.config.auth",
+    "app.middleware.auth", "app.middleware.static_token", "app.config.auth",
 ]
 
 [[tool.importlinter.contracts]]
@@ -131,7 +130,7 @@ type = "forbidden"
 source_modules = ["app.repositories"]
 forbidden_modules = [
     "app.services", "app.routes", "app.bootstrap",
-    "app.middleware.auth", "app.config.auth",
+    "app.middleware.auth", "app.middleware.static_token", "app.config.auth",
 ]
 
 [[tool.importlinter.contracts]]
@@ -270,7 +269,7 @@ ignore_decorators = [
     "@mcp.custom_route",
     "@mcp.tool",
     "@event.listens_for",
-    "@_register",  # app.config.auth: registers the provider factory under its class path
+    "@_register",  # app.config.auth: registers the provider factory under its AUTH_MODE name
 ]
 # Names a framework or the migration loader reads by reflection.
 ignore_names = [

@@ -1,6 +1,6 @@
 """Remote ToolExecutor: drives a deployed Forgetful server through fastmcp.Client.
 
-execute()/list_tools()/tool_info() proxy the server's meta-tools, so identity and
+execute()/list_tools()/tool_info() proxy the server's meta-tools, so the tenant and
 scopes are enforced server-side from the token and help text always matches the
 server's version (no doc skew).
 """
@@ -25,9 +25,6 @@ _LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
 CLIENT_INIT_TIMEOUT_SECONDS = 30.0
 # Matches the 300s read timeout the MCP HTTP transport already applies by default.
 CLIENT_REQUEST_TIMEOUT_SECONDS = 300.0
-# The OAuth browser login runs inside the first request, and fastmcp's callback server
-# waits up to 300s for it, so an interactive client needs more headroom than that.
-INTERACTIVE_CLIENT_TIMEOUT_SECONDS = 360.0
 
 
 def normalize_server_url(url: str) -> str:
@@ -64,13 +61,8 @@ def strip_url_userinfo(url: str) -> str:
     return urlunsplit(parts._replace(netloc=parts.netloc.rpartition("@")[2]))
 
 
-def client_timeouts(*, interactive: bool = False) -> dict[str, float]:
-    """Handshake and request timeouts for a fastmcp Client (``interactive``: OAuth)."""
-    if interactive:
-        return {
-            "init_timeout": INTERACTIVE_CLIENT_TIMEOUT_SECONDS,
-            "timeout": INTERACTIVE_CLIENT_TIMEOUT_SECONDS,
-        }
+def client_timeouts() -> dict[str, float]:
+    """Handshake and request timeouts for a fastmcp Client."""
     return {
         "init_timeout": CLIENT_INIT_TIMEOUT_SECONDS,
         "timeout": CLIENT_REQUEST_TIMEOUT_SECONDS,
@@ -78,12 +70,12 @@ def client_timeouts(*, interactive: bool = False) -> dict[str, float]:
 
 
 def bearer_token_from_env() -> str | None:
-    """The headless/CI bearer token from FORGETFUL_TOKEN, normalised, or None.
+    """The bearer token from FORGETFUL_TOKEN, normalised, or None.
 
     Secrets pasted into env files, CI variables or k8s mounts often carry a trailing
     newline or spaces; sent as-is they make the HTTP layer reject the header with an
     error that embeds the whole token. Surrounding whitespace is therefore stripped and
-    a blank value counts as unset, so the OAuth fallback applies. A token that still
+    a blank value counts as unset, so no credential is sent. A token that still
     holds control or non-ASCII characters can never be a valid header value: reject it
     with a fixed message that does not repeat the secret.
     """
@@ -99,26 +91,12 @@ def bearer_token_from_env() -> str | None:
 
 
 def _default_client_factory(url: str, token: str | None):
-    """Build a fastmcp Client: bearer when a token is supplied, OAuth otherwise.
-
-    OAuth must be given persistent token storage - fastmcp's default is in-memory,
-    which would re-trigger the browser flow on every CLI invocation.
-    """
+    """Build a fastmcp Client: the bearer token when one is supplied, no credential otherwise."""
     from fastmcp import Client
 
     if token:
         return Client(url, auth=token, **client_timeouts())
-
-    from fastmcp.client.auth import OAuth
-
-    from app.routes.cli.paths import token_cache_dir
-    from app.routes.cli.token_storage import oauth_token_file_tree_store
-
-    cache = token_cache_dir()
-    cache.mkdir(parents=True, exist_ok=True)
-    cache.chmod(0o700)
-    oauth = OAuth(mcp_url=url, token_storage=oauth_token_file_tree_store(cache))
-    return Client(url, auth=oauth, **client_timeouts(interactive=True))
+    return Client(url, **client_timeouts())
 
 
 class RemoteExecutor:

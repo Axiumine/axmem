@@ -72,6 +72,8 @@ def _child_env(tmp_path: Path) -> dict[str, str]:
         "FASTMCP_SERVER_AUTH": "",
         "FORGETFUL_SERVER": "",
         "LOG_LEVEL": "INFO",
+        # No auth mode means no start; AUTH_MODE=none is accepted on this loopback bind.
+        "AUTH_MODE": "none",
     })
     return env
 

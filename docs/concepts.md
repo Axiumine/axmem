@@ -1,6 +1,6 @@
 # Core Concepts
 
-Forgetful organizes knowledge into two building blocks. Understanding when to use each one makes the difference between a cluttered knowledge dump and a useful, searchable knowledge graph.
+Forgetful organizes knowledge into memories, grouped by an optional project scope, and owned by a tenant. Understanding when to use each makes the difference between a cluttered knowledge dump and a useful, searchable knowledge graph.
 
 ---
 
@@ -12,7 +12,7 @@ Forgetful organizes knowledge into two building blocks. Understanding when to us
 
 Memories are the core of Forgetful. Each memory captures a single fact, decision, preference, or insight. Think of them as the nodes in your knowledge graph.
 
-**Important:** Memories are the only directly queryable type. Projects are reached through the memories they are linked to.
+**Important:** Memories are the only stored type. A project is a label on a memory, not a separate record.
 
 Good memories are:
 - **Easily titled** - if you can't summarize it in ~10 words, it's probably not atomic
@@ -41,18 +41,26 @@ Good memories are:
 
 **Organizational scope** - groups memories by context.
 
-Projects help you filter queries to relevant knowledge. When working on the e-commerce platform, you don't need memories from the trading bot project cluttering your results.
+A project is an optional free-form label (1 to 500 characters) on a memory. It is created the first time it is used, so there is nothing to set up. Projects help you filter queries to relevant knowledge. When working on the e-commerce platform, you don't need memories from the trading bot project cluttering your results.
 
 **Examples:**
-- "E-Commerce Platform Redesign" (status: active)
-- "Q4 Hiring Initiative" (status: completed)
-- "AI Agent Framework" (status: active)
+- `ecommerce-redesign`
+- `q4-hiring`
+- `agent-framework`
+
+Pick one spelling per project: `billing` and `Billing` are two scopes.
+
+### Tenants
+
+**Ownership and isolation** - every memory belongs to exactly one tenant.
+
+A tenant is the identity a request is authenticated as: the `tenant_id` claim of the token, else `tenant`, else `sub` (a static token names the tenant it is configured for; `AUTH_MODE=none` is the one `DEFAULT_TENANT`). A tenant reads and changes only its own memories, and its project scopes are its own: two tenants that use the label `billing` have two separate scopes. Another tenant's memory id behaves like an id that does not exist.
 
 ---
 
 ## Provenance Tracking
 
-Forgetful supports optional provenance fields on all object types so you can trace where knowledge came from and which agent encoded it. This is particularly useful when multiple agents or tools write to the same knowledge base.
+Forgetful supports optional provenance fields on memories so you can trace where knowledge came from and which agent encoded it. This is particularly useful when multiple agents or tools write to the same knowledge base.
 
 ### Supported Fields
 
@@ -70,8 +78,7 @@ Forgetful supports optional provenance fields on all object types so you can tra
 
 ### Coverage by Object Type
 
-- **All 9 fields**: Memories, Projects
-- Memories previously had 6 fields; `agent_id`, `agent_version`, and `agent_model` were added to bring them in line with projects
+- **All 9 fields**: Memories
 
 ### Environment-Level Defaults
 
@@ -97,7 +104,7 @@ When `false` (the default), agent-provided values take precedence and env values
 |----------|--------|
 | Is it detailed analysis or a guide (>300 words)? | Several linked **Memories** |
 | Is it a single fact, decision, or preference? | **Memory** |
-| Does it help scope/filter other knowledge? | **Project** |
+| Does it help scope/filter other knowledge? | A **project** scope on the memories |
 
 ---
 
@@ -114,7 +121,7 @@ Ask: "Is this ONE idea or MANY?" One idea = one memory. Many related ideas = sev
 
 ### When to Use Projects
 
-Create a project when you have:
+Give memories a project scope when you have:
 - Multiple related memories that should be queried together
 - Work context that you'll return to repeatedly
 - A need to exclude unrelated knowledge from searches
@@ -125,8 +132,8 @@ Create a project when you have:
 
 You're building a payment system. Here's how to decompose the knowledge:
 
-**Project:**
-- "E-Commerce Platform v2" (active)
+**Project scope:**
+- `ecommerce-platform-v2`
 
 **Memories (decisions and the evaluation of Stripe vs PayPal vs Square, split into atoms):**
 - "Chose Stripe over PayPal: better webhooks, lower fees, superior fraud detection"
@@ -136,7 +143,7 @@ You're building a payment system. Here's how to decompose the knowledge:
 
 **Links:**
 - Memories link to → each other
-- Everything scoped to → E-Commerce Platform v2 project
+- Everything scoped to → the `ecommerce-platform-v2` project
 
 ---
 
@@ -144,8 +151,8 @@ You're building a payment system. Here's how to decompose the knowledge:
 
 You're developing a coding assistant agent. Here's the breakdown:
 
-**Project:**
-- "AI Coding Assistant" (active)
+**Project scope:**
+- `ai-coding-assistant`
 
 **Memories (prompt engineering guidelines and decisions, split into atoms):**
 - "Use Claude Sonnet for quick edits, Opus for complex refactoring"
@@ -156,7 +163,7 @@ You're developing a coding assistant agent. Here's the breakdown:
 
 **Links:**
 - Related memories link to → each other
-- Everything scoped to → AI Coding Assistant project
+- Everything scoped to → the `ai-coding-assistant` project
 
 ---
 
@@ -164,7 +171,7 @@ You're developing a coding assistant agent. Here's the breakdown:
 
 | Type | Size | Contains | Links To |
 |---|---|---|---|
-| Memory | <400 words | One concept | Memories, Projects |
-| Project | N/A | Scope/context | Memories |
+| Memory | <400 words | One concept | Other memories of the same tenant |
+| Project scope | A label | Scope/context | Memories carrying the label |
 
-The knowledge graph emerges from these connections. Memories are the atoms; projects provide structure and context.
+The knowledge graph emerges from these connections. Memories are the atoms; project scopes provide structure and context.

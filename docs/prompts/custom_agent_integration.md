@@ -94,11 +94,11 @@ List available tools, optionally filtered by category.
 # See all tool categories
 discover_forgetful_tools()
 
-# See only project tools
-discover_forgetful_tools(category="project")
+# See only the memory tools
+discover_forgetful_tools(category="memory")
 ```
 
-Categories: `user`, `memory`, `project`
+Category: `memory` (the filter `linking` selects the link and unlink tools)
 
 ### 2. `how_to_use_forgetful_tool(tool_name)`
 Get detailed documentation for a specific tool including parameters and examples.
@@ -162,15 +162,9 @@ Is this ONE concept/decision/pattern?
 | `mark_memory_obsolete` | `memory_id`, `reason` | Soft delete |
 | `get_recent_memories` | (none) | Timeline view |
 
-### Project Tools
+### Project Scope
 
-| Tool | Required Params | Purpose |
-|------|-----------------|---------|
-| `create_project` | `name`, `description`, `project_type` | Create scope |
-| `list_projects` | (none) | List all |
-| `get_project` | `project_id` | Get details |
-| `update_project` | `project_id` | Modify |
-| `delete_project` | `project_id` | Remove (keeps memories) |
+There are no project tools. A project is an optional `project` string (a free-form label, created on first use) on `create_memory`, `update_memory`, `query_memory` and `get_recent_memories`.
 
 ---
 
@@ -196,17 +190,15 @@ else:
     execute_forgetful_tool("create_memory", {...})
 ```
 
-### 2. Project Discovery
+### 2. Project Scope
 
-Find the correct project before creating memories:
+Pick one label per project and use it consistently (for example the repository name). Check what the project already holds:
 
 ```python
-# List projects, optionally filter by repo
-projects = execute_forgetful_tool("list_projects", {
-    "repo_name": "owner/repo-name"
+recent = execute_forgetful_tool("get_recent_memories", {
+    "limit": 5,
+    "project": "owner/repo-name"
 })
-
-project_id = projects["projects"][0]["id"] if projects["projects"] else None
 ```
 
 ### 3. Memory Creation Template
@@ -219,7 +211,7 @@ execute_forgetful_tool("create_memory", {
     "context": "[Why this matters, max 500 chars]",
     "keywords": ["kw1", "kw2"],  # max 10
     "tags": ["tag1", "tag2"],  # max 10
-    "project_ids": [PROJECT_ID]  # scope to project
+    "project": "owner/repo-name"  # scope to project
 })
 ```
 
@@ -236,7 +228,7 @@ memory1 = execute_forgetful_tool("create_memory", {
     "keywords": ["architecture", "kafka", "events"],
     "tags": ["architecture", "decision"],
     "importance": 10,
-    "project_ids": [PROJECT_ID]
+    "project": "owner/repo-name"
 })
 
 memory2 = execute_forgetful_tool("create_memory", {
@@ -246,7 +238,7 @@ memory2 = execute_forgetful_tool("create_memory", {
     "keywords": ["eventual-consistency", "tradeoff"],
     "tags": ["architecture", "tradeoff"],
     "importance": 8,
-    "project_ids": [PROJECT_ID]
+    "project": "owner/repo-name"
 })
 
 # 2. Link the pieces to each other
@@ -282,7 +274,7 @@ execute_forgetful_tool("link_memories", {
 ### DO
 
 - **Query before create** - Check for existing memories to prevent duplicates
-- **Use project scoping** - Filter queries with `project_ids` for relevance
+- **Use project scoping** - Filter queries with `project` for relevance
 - **Link liberally** - Connect related memories to each other
 - **Mark obsolete, don't delete** - Preserve knowledge with audit trail
 - **Build links incrementally** - Add graph edges as you learn
@@ -290,7 +282,7 @@ execute_forgetful_tool("link_memories", {
 ### DON'T
 
 - **Create memories for transient info** - Current file paths, temporary errors
-- **Assume project_id** - Always discover the correct project first
+- **Vary the project label** - `billing` and `Billing` are two scopes; keep one spelling
 - **Store common knowledge** - Things readily available elsewhere
 - **Exceed character limits** - Split into atomic pieces instead
 - **Create low-importance memories (<6)** - Focus on reusable knowledge

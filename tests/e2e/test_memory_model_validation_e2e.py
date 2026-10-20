@@ -115,7 +115,7 @@ async def test_postgres_repositories_do_not_embed_a_blank_query(http_client, pos
     try:
         scored = await memory_repo.search_scored(
             user_id=uuid4(), query="   ", query_context="ctx", k=3,
-            importance_threshold=None, project_ids=None, exclude_ids=None,
+            importance_threshold=None, project=None, exclude_ids=None,
         )
     finally:
         adapter.generate_embedding = original

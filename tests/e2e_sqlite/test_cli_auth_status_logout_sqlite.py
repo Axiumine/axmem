@@ -1,13 +1,9 @@
-"""E2E tests for CLI auth status / token handling against the real in-process server.
+"""E2E tests for CLI auth status / login against the real in-process server.
 
 Reuses the file-backed SQLite server fixtures of the CLI remote suite and drives
-main.cli() end to end: FORGETFUL_TOKEN hygiene, `auth status` under a category-only
-scope ceiling, and a token cache that was moved after login.
+main.cli() end to end: FORGETFUL_TOKEN hygiene, `auth status` under a read-only scope
+ceiling, and `auth login` saving the server.
 """
-import asyncio
-import shutil
-from pathlib import Path
-
 import pytest
 
 from app.config.settings import settings
@@ -20,9 +16,9 @@ SECRET = "s3cr3t-token-VALUE-123"
 
 
 @pytest.fixture
-def category_scoped_server_url(cli_remote_env, request):
-    """The real server with a scope ceiling that excludes the `users` category."""
-    cli_remote_env.FORGETFUL_SCOPES = "read:memories,write:memories"
+def read_only_server_url(cli_remote_env, request):
+    """The real server with a scope ceiling that only allows reads."""
+    cli_remote_env.FORGETFUL_SCOPES = "read"
     return request.getfixturevalue("http_server_url")
 
 
@@ -57,21 +53,31 @@ def test_auth_status_with_trailing_newline_token_authenticates(
     code, out, err = invoke_cli(monkeypatch, capsys, ["auth", "status"])
 
     assert code == 0, err
-    assert "User:" in out
+    assert f"Server: {http_server_url}" in out
+    assert "Credentials: FORGETFUL_TOKEN" in out
     assert SECRET not in out + err
 
 
-# -- auth status under a category-only scope ceiling ---------------------------
+def test_auth_status_without_a_token_says_none_is_sent(http_server_url, monkeypatch, capsys):
+    monkeypatch.setattr(settings, "FORGETFUL_SERVER", http_server_url)
+
+    code, out, err = invoke_cli(monkeypatch, capsys, ["auth", "status"])
+
+    assert code == 0, err
+    assert "Credentials: none sent" in out
 
 
-def test_auth_status_is_authenticated_when_user_lookup_is_out_of_scope(
-    category_scoped_server_url, monkeypatch, capsys,
+# -- auth status under a read-only scope ceiling -------------------------------
+
+
+def test_auth_status_is_authenticated_under_a_read_only_scope(
+    read_only_server_url, monkeypatch, capsys,
 ):
-    url = category_scoped_server_url
+    url = read_only_server_url
 
-    # Control: the connection and credentials are fine, a permitted command works
+    # Control: the connection and credentials are fine, a read command works
     code, out, err = invoke_cli(
-        monkeypatch, capsys, ["memory", "save", "x", "--title", "S", "--server", url],
+        monkeypatch, capsys, ["memory", "recent", "--server", url],
     )
     assert code == 0, f"{out!r} {err!r}"
 
@@ -80,72 +86,16 @@ def test_auth_status_is_authenticated_when_user_lookup_is_out_of_scope(
 
     assert code == 0, f"exit={code} out={out!r} err={err!r}"
     assert f"Server: {url}" in out
-    assert "outside the granted scopes" in out
     assert "not authenticated" not in err
 
 
-def test_auth_status_still_shows_user_when_in_scope(http_server_url, monkeypatch, capsys):
-    monkeypatch.setattr(settings, "FORGETFUL_SERVER", http_server_url)
-
-    code, out, err = invoke_cli(monkeypatch, capsys, ["auth", "status"])
-
-    assert code == 0, err
-    assert "User:" in out
-    assert "outside the granted scopes" not in out
+# -- auth login ---------------------------------------------------------------
 
 
-# -- token cache moved after login --------------------------------------------
-
-
-async def _seed_then_relocate(tmp_path: Path, url: str) -> None:
-    """Log in (seed a token) under one directory, then move it to the live cache dir."""
-    from fastmcp.client.auth import OAuth
-    from mcp.shared.auth import OAuthToken
-
-    from app.routes.cli.token_storage import oauth_token_file_tree_store
-
-    old = tmp_path / "old_home" / "tokens"
-    old.mkdir(parents=True)
-    adapter = OAuth(
-        mcp_url=url, token_storage=oauth_token_file_tree_store(old),
-    ).token_storage_adapter
-    await adapter.set_tokens(OAuthToken(access_token="seeded", token_type="Bearer"))
-
-    new = paths.token_cache_dir()
-    new.parent.mkdir(parents=True, exist_ok=True)
-    shutil.move(str(old), str(new))
-
-
-def test_remote_command_survives_relocated_token_cache(
-    http_server_url, tmp_path, monkeypatch, capsys,
+def test_auth_login_saves_the_server_and_never_a_token(
+    http_server_url, monkeypatch, capsys,
 ):
-    asyncio.run(_seed_then_relocate(tmp_path, http_server_url))
-
-    code, out, err = invoke_cli(
-        monkeypatch, capsys, ["project", "list", "--json", "--server", http_server_url],
-    )
-
-    assert code == 0, err
-    assert "resolves outside the allowed directory" not in err
-
-
-def test_auth_status_survives_relocated_token_cache(
-    http_server_url, tmp_path, monkeypatch, capsys,
-):
-    asyncio.run(_seed_then_relocate(tmp_path, http_server_url))
-    monkeypatch.setattr(settings, "FORGETFUL_SERVER", http_server_url)
-
-    code, out, err = invoke_cli(monkeypatch, capsys, ["auth", "status"])
-
-    assert code == 0, err
-    assert "Cached credentials: yes" in out
-    assert "Traceback" not in err
-
-
-def test_auth_login_survives_relocated_token_cache(
-    http_server_url, tmp_path, monkeypatch, capsys,
-):
-    asyncio.run(_seed_then_relocate(tmp_path, http_server_url))
+    monkeypatch.setenv("FORGETFUL_TOKEN", SECRET)
 
     code, out, err = invoke_cli(
         monkeypatch, capsys, ["auth", "login", "--server", http_server_url],
@@ -153,3 +103,16 @@ def test_auth_login_survives_relocated_token_cache(
 
     assert code == 0, err
     assert f"Logged in to {http_server_url}" in out
+    saved = paths.user_env_file().read_text(encoding="utf-8")
+    assert f"FORGETFUL_SERVER={http_server_url}" in saved
+    assert SECRET not in saved + out + err
+
+
+def test_auth_login_to_an_unreachable_server_fails_without_saving(monkeypatch, capsys):
+    code, _, err = invoke_cli(
+        monkeypatch, capsys, ["auth", "login", "--server", "http://127.0.0.1:9/mcp"],
+    )
+
+    assert code == 1
+    assert "could not authenticate" in err
+    assert not paths.user_env_file().exists()

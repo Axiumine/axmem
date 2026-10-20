@@ -162,18 +162,14 @@ async def test_upsert_targeted_embeddings_without_expectation_still_writes(memor
 async def test_project_exists_for_user_is_owner_scoped(memory_repo, db_adapter):
     owner_id, _ = await _seed(memory_repo, db_adapter, count=1)
     other_id, _ = await _seed(memory_repo, db_adapter, count=1)
-    now = datetime.now(UTC)
-    async with db_adapter.system_session() as session:
-        project_id = (
-            await session.execute(
-                text(
-                    "INSERT INTO projects (user_id, name, description, project_type, status, created_at, updated_at) "
-                    "VALUES (:user_id, 'p', 'd', 'development', 'active', :now, :now) RETURNING id",
-                ),
-                {"user_id": str(owner_id), "now": now},
-            )
-        ).scalar_one()
+    await memory_repo.create_memory(
+        owner_id,
+        MemoryCreate(
+            title="scoped", content="c", context="x", keywords=["k"], tags=["t"], importance=5,
+            project="owner project",
+        ),
+    )
 
-    assert await memory_repo.project_exists_for_user(user_id=owner_id, project_id=project_id)
-    assert not await memory_repo.project_exists_for_user(user_id=other_id, project_id=project_id)
-    assert not await memory_repo.project_exists_for_user(user_id=owner_id, project_id=project_id + 1000)
+    assert await memory_repo.project_exists_for_user(user_id=owner_id, project="owner project")
+    assert not await memory_repo.project_exists_for_user(user_id=other_id, project="owner project")
+    assert not await memory_repo.project_exists_for_user(user_id=owner_id, project="unknown project")

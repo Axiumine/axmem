@@ -1,8 +1,8 @@
-"""E2E tests: INFO logging must not break projects on SQLite.
+"""E2E tests: INFO logging must not break requests on SQLite.
 
-Several log calls passed ``extra={"name": ...}``, a key reserved by
-``logging.LogRecord``. ``Logger.makeRecord`` raises ``KeyError`` for those, so project
-listing crashed whenever INFO was enabled for the module loggers.
+A log call that passes a key reserved by ``logging.LogRecord`` in ``extra`` makes
+``Logger.makeRecord`` raise ``KeyError``, so the request crashes whenever INFO is enabled
+for the module logger.
 
 ``init_db`` runs Alembic, whose ``fileConfig`` call disables every app logger that
 already exists and resets the root level, which hides the crash in the default test
@@ -16,8 +16,8 @@ import logging
 import pytest
 
 LOGGERS = (
-    "app.services.project_service",
-    "app.repositories.sqlite.project_repository",
+    "app.services.tenant_service",
+    "app.services.memory_service",
 )
 
 
@@ -56,50 +56,43 @@ def _messages(caplog, logger_name: str) -> set[str]:
     return {r.getMessage() for r in caplog.records if r.name == logger_name}
 
 
+MEMORY = {
+    "title": "info-logging-memory",
+    "content": "Created and listed while INFO logging is enabled",
+    "context": "reserved logrecord keys",
+    "keywords": ["logging"],
+    "tags": ["e2e"],
+    "importance": 5,
+    "project": "info-logging-project",
+}
+
+
 @pytest.mark.asyncio
-async def test_list_projects_via_api_with_info_logging(http_client, info_logging_http):
-    created = await http_client.post(
-        "/api/v1/projects",
-        json={
-            "name": "info-logging-project",
-            "description": "Listed while INFO logging is enabled",
-            "project_type": "development",
-        },
-    )
+async def test_memory_requests_via_api_with_info_logging(http_client, info_logging_http):
+    created = await http_client.post("/api/v1/memories", json=MEMORY)
     assert created.status_code == 201, created.text
 
-    response = await http_client.get("/api/v1/projects")
+    response = await http_client.get("/api/v1/memories", params={"project": MEMORY["project"]})
 
     assert response.status_code == 200, response.text
-    assert [p["name"] for p in response.json()["projects"]] == ["info-logging-project"]
-    assert "listing projects" in _messages(info_logging_http, "app.services.project_service")
-    assert "Listing projects" in _messages(
-        info_logging_http, "app.repositories.sqlite.project_repository",
-    )
+    assert [m["title"] for m in response.json()["memories"]] == [MEMORY["title"]]
+    assert "Creating tenant" in _messages(info_logging_http, "app.services.tenant_service")
 
 
 @pytest.mark.asyncio
-async def test_list_projects_name_filter_via_mcp_with_info_logging(mcp_client, info_logging_mcp):
+async def test_memory_tools_via_mcp_with_info_logging(mcp_client, info_logging_mcp):
     await mcp_client.call_tool(
-        "execute_forgetful_tool",
-        {
-            "tool_name": "create_project",
-            "arguments": {
-                "name": "Forgetful",
-                "description": "Filtered while INFO logging is enabled",
-                "project_type": "development",
-            },
-        },
+        "execute_forgetful_tool", {"tool_name": "create_memory", "arguments": MEMORY},
     )
 
     result = await mcp_client.call_tool(
         "execute_forgetful_tool",
-        {"tool_name": "list_projects", "arguments": {"name": "forget"}},
+        {"tool_name": "get_recent_memories", "arguments": {"project": MEMORY["project"]}},
     )
 
-    assert [p["name"] for p in result.data["projects"]] == ["Forgetful"]
+    assert [m["title"] for m in result.data["memories"]] == [MEMORY["title"]]
     record = next(
         r for r in info_logging_mcp.records
-        if r.name == "app.services.project_service" and r.getMessage() == "listing projects"
+        if r.name == "app.services.tenant_service" and r.getMessage() == "Creating tenant"
     )
-    assert record.name_filter == "forget"
+    assert record.tenant

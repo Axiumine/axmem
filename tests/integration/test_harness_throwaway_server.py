@@ -315,7 +315,7 @@ def test_child_settings_ignore_host_shell_and_user_config(tmp_path, monkeypatch)
         "LOG_FORMAT=json\n"
         "MEMORY_TITLE_MAX_LENGTH=5\n"
         "OBSOLETE_WARNING_ENABLED=false\n"
-        "DEFAULT_USER_NAME=leaked\n"
+        "DEFAULT_TENANT=leaked\n"
     )
 
     # Act

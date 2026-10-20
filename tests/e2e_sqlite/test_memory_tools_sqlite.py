@@ -49,7 +49,7 @@ async def test_create_memory_basic_e2e(mcp_client):
     assert result.data["title"] == "Python AsyncIO E2E Test"
     assert isinstance(result.data["linked_memory_ids"], list)
     assert isinstance(result.data["similar_memories"], list)
-    assert isinstance(result.data["project_ids"], list)
+    assert result.data["project"] is None
 
 
 @pytest.mark.asyncio

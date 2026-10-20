@@ -32,10 +32,6 @@ logger = logging.getLogger(__name__)
 
 _DISCOVER_CORE_SECTIONS = """\
 
-    **User Tools** - User profile and preferences
-    - get_current_user: Get authenticated user info
-    - update_user_notes: Store user preferences/notes
-
     **Memory Tools** - Atomic knowledge storage (<400 words per memory)
     - create_memory: Store a single concept with auto-linking to similar memories (supports provenance tracking)
     - query_memory: Semantic search across memories (use query_context for better ranking)
@@ -47,17 +43,14 @@ _DISCOVER_CORE_SECTIONS = """\
     - unobsolete_memory: Restore a memory previously marked obsolete
     - get_recent_memories: Get newest memories (timeline view)
 
+    **Project scope** (optional `project` argument of create_memory, update_memory, query_memory, get_recent_memories):
+    - A free-form label that groups memories; it is created the first time it is used
+    - query_memory and get_recent_memories only return memories in the scope they are given
+
     **Provenance Tracking** (optional fields for create_memory/update_memory):
     - source_repo, source_files, source_url: Track where knowledge came from
     - confidence: Reliability score (0.0-1.0) for AI-generated content
-    - encoding_agent, encoding_version: Track which agent/version created the memory
-
-    **Project Tools** - Organize memories by context/scope
-    - create_project: Create project container (development, personal, work, etc.)
-    - get_project: Retrieve project details
-    - list_projects: List all projects with optional status/repo filter
-    - update_project: Modify project metadata
-    - delete_project: Remove project (memories preserved)"""
+    - encoding_agent, encoding_version: Track which agent/version created the memory"""
 
 
 # ============================================================================
@@ -70,7 +63,7 @@ _EXECUTE_CORE_EXAMPLES = """\
 
     **Memory Operations:**
     - Search: execute_forgetful_tool("query_memory", {"query": "search terms", "query_context": "why searching"})
-    - Create: execute_forgetful_tool("create_memory", {"title": "Short title", "content": "Memory content (<2000 chars)", "context": "Why this matters", "keywords": ["kw1", "kw2"], "tags": ["tag1"], "importance": 7, "project_ids": [1]})
+    - Create: execute_forgetful_tool("create_memory", {"title": "Short title", "content": "Memory content (<2000 chars)", "context": "Why this matters", "keywords": ["kw1", "kw2"], "tags": ["tag1"], "importance": 7, "project": "my-project"})
     - Create with provenance: execute_forgetful_tool("create_memory", {"title": "...", "content": "...", "context": "...", "keywords": [...], "tags": [...], "importance": 7, "source_repo": "owner/repo", "source_files": ["src/main.py"], "confidence": 0.85, "encoding_agent": "claude-sonnet-4"})
     - Update: execute_forgetful_tool("update_memory", {"memory_id": 1, "content": "new content"})
     - Get: execute_forgetful_tool("get_memory", {"memory_id": 1})
@@ -78,11 +71,8 @@ _EXECUTE_CORE_EXAMPLES = """\
     - Unlink: execute_forgetful_tool("unlink_memories", {"source_id": 1, "target_id": 2})
     - Obsolete: execute_forgetful_tool("mark_memory_obsolete", {"memory_id": 42, "reason": "Outdated approach", "superseded_by": 100})
 
-    **Project Organization:**
-    - List: execute_forgetful_tool("list_projects", {})
-    - Create: execute_forgetful_tool("create_project", {"name": "Project Name", "description": "What this project is about", "project_type": "development"})
-    - Get: execute_forgetful_tool("get_project", {"project_id": 1})
-    - Query: execute_forgetful_tool("query_memory", {"query": "search terms", "query_context": "why searching", "project_ids": [1]})"""
+    **Project scope:**
+    - Query within a scope: execute_forgetful_tool("query_memory", {"query": "search terms", "query_context": "why searching", "project": "my-project"})"""
 
 
 # ============================================================================
@@ -92,13 +82,13 @@ _EXECUTE_CORE_EXAMPLES = """\
 
 def _build_category_list() -> str:
     """Build the valid category filter list."""
-    categories = ["user", "memory", "project", "linking"]
+    categories = ["memory", "linking"]
     return ", ".join(categories)
 
 
 def _build_tool_categories_line() -> str:
     """Build the tool categories pipe-separated line for execute_forgetful_tool."""
-    categories = ["memory", "project", "linking", "user"]
+    categories = ["memory", "linking"]
     return " | ".join(categories)
 
 
@@ -416,7 +406,7 @@ def register(mcp: ForgetfulMCP):
 
             ensure_tool_executable(registry, permitted, tool_name)
 
-            # Inject context into arguments for adapters to extract user
+            # Inject context into arguments for adapters to extract the tenant
             arguments["ctx"] = ctx
 
             # Execute through registry

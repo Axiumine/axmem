@@ -40,9 +40,11 @@ Forgetful requires two models (total ~193MB):
 If you have unrestricted internet access, Forgetful will automatically download models on first run:
 
 ```bash
-uvx forgetful-ai
+AUTH_MODE=none uvx forgetful-ai
 # First run: Downloading embedding models (~180MB). This may take a minute...
 ```
+
+The server refuses to start without `AUTH_MODE`; `AUTH_MODE=none` serves one local tenant on stdio or a loopback bind. The commands below leave it out for brevity: set it in the environment or in `~/.config/forgetful/.env`.
 
 Models are cached for future use. **This is the recommended approach for most users.**
 

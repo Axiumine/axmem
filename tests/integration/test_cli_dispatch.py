@@ -99,7 +99,7 @@ def test_top_level_help_advertises_subcommands(monkeypatch, recorded_runners, ca
     assert excinfo.value.code == 0
     out = capsys.readouterr().out
     assert "Subcommands" in out
-    for verb in ("memory", "tools", "call", "auth", "project", "serve", "re-embed"):
+    for verb in ("memory", "tools", "call", "auth", "serve", "re-embed"):
         assert verb in out, verb
 
 
@@ -134,16 +134,10 @@ def test_auth_subcommands_route_and_propagate_exit_codes(monkeypatch):
         calls["status"] = True
         return 1
 
-    def fake_logout():
-        calls["logout"] = True
-        return 0
-
     monkeypatch.setattr(auth_commands, "login", fake_login)
     monkeypatch.setattr(auth_commands, "status", fake_status)
-    monkeypatch.setattr(auth_commands, "logout", fake_logout)
 
     assert _invoke(monkeypatch, ["auth", "login", "--server", "http://remote:8020"]) == 0
     assert calls["login"] == "http://remote:8020"
     assert _invoke(monkeypatch, ["auth", "status"]) == 1
-    assert _invoke(monkeypatch, ["auth", "logout"]) == 0
-    assert calls["logout"] is True
+    assert not hasattr(auth_commands, "logout")

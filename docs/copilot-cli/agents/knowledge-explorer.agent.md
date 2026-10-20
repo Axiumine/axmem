@@ -42,7 +42,7 @@ Explore within project boundaries:
 execute_forgetful_tool("query_memory", {
   "query": "<topic>",
   "query_context": "Project-scoped exploration",
-  "project_ids": [<project_id>],
+  "project": "<project scope>",
   "k": 10,
   "include_links": true
 })
@@ -110,5 +110,3 @@ Use deep exploration when:
 |------|-----------------|-------------|
 | `query_memory` | `query`, `query_context` | Semantic search with links |
 | `get_memory` | `memory_id` | Full memory details |
-| `list_projects` | (none) | Available projects |
-| `get_project` | `project_id` | Project details |

@@ -7,12 +7,12 @@ from sqlalchemy import text
 from app.bootstrap import create_repositories
 from app.config.settings import settings
 from app.models.memory_models import MemoryCreate
-from app.models.project_models import ProjectCreate, ProjectType
 from app.models.user_models import UserCreate
 from app.repositories.vector_ddl import create_vec0_table_sql
 from tests.docs_artifacts_removal_cases import INSERT_CODE_ARTIFACT, INSERT_DOCUMENT
 from tests.migration_helpers import (
     alembic_config,
+    create_project_row,
     run_migration,
     stored_event_types,
     table_shapes,
@@ -59,10 +59,7 @@ async def store_skill_rows_and_events(db: Any) -> dict[str, Any]:
         UserCreate(external_id="skills-removal", name="Skills", email="skills@example.test"),
     )
     owner = user.id
-    project = await repos["project"].create_project(
-        owner,
-        ProjectCreate(name="Kept", description="Survives the migration", project_type=ProjectType.WORK),
-    )
+    project_id = await create_project_row(db, owner)
     memory = await repos["memory"].create_memory(
         owner,
         MemoryCreate(title="Kept memory", content="c", context="x", keywords=["k"], tags=["t"], importance=7),
@@ -79,7 +76,7 @@ async def store_skill_rows_and_events(db: Any) -> dict[str, Any]:
     )
     parameters = {
         "owner": str(owner),
-        "project": project.id,
+        "project": project_id,
         "memory": memory.id,
         "embedding": str([0.1] * settings.EMBEDDING_DIMENSIONS),
     }

@@ -21,9 +21,7 @@ class TestBuildCategoryList:
     def test_every_category_is_listed(self):
         result = _build_category_list()
 
-        assert result.split(", ") == [
-            "user", "memory", "project", "linking",
-        ]
+        assert result.split(", ") == ["memory", "linking"]
 
 
 class TestBuildToolCategoriesLine:
@@ -32,9 +30,7 @@ class TestBuildToolCategoriesLine:
     def test_every_category_is_listed(self):
         result = _build_tool_categories_line()
 
-        assert result.split(" | ") == [
-            "memory", "project", "linking", "user",
-        ]
+        assert result.split(" | ") == ["memory", "linking"]
 
 
 class TestMcpDescriptorMode:
@@ -77,9 +73,10 @@ class TestDiscoverDocstring:
 
             doc = _build_discover_docstring()
 
-        assert "**User Tools**" in doc
         assert "**Memory Tools**" in doc
-        assert "**Project Tools**" in doc
+        assert "**Project scope**" in doc
+        assert "User Tools" not in doc
+        assert "Project Tools" not in doc
 
     def test_workflow_section_always_present(self):
         """The workflow section is always appended."""
@@ -114,7 +111,8 @@ class TestExecuteDocstring:
             doc = _build_execute_docstring()
 
         assert "**Memory Operations:**" in doc
-        assert "**Project Organization:**" in doc
+        assert "**Project scope:**" in doc
+        assert "Project Organization" not in doc
 
     def test_tool_categories_line_is_present(self):
         with patch("app.routes.mcp.meta_tools.settings") as mock_settings:

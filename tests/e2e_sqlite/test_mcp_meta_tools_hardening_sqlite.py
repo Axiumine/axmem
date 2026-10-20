@@ -64,43 +64,35 @@ class TestExecuteErrorsAreSanitised:
     async def test_foreign_key_failure_returns_constraint_message(
         self, mcp_client, sqlite_app, monkeypatch,
     ):
-        # An unknown project_id is refused before the database (see the next test), so the
-        # driver's constraint error is raised by the repository itself.
+        # The driver's constraint error is raised by the repository itself.
         async def failing_insert(*args, **kwargs):
             raise IntegrityError(
-                "INSERT INTO projects (name, notes) VALUES (?, ?)",
+                "INSERT INTO memories (title, content) VALUES (?, ?)",
                 (SECRET_DESCRIPTION, SECRET_CONTENT),
                 Exception("FOREIGN KEY constraint failed"),
             )
 
-        monkeypatch.setattr(sqlite_app.project_service.project_repo, "create_project", failing_insert)
+        monkeypatch.setattr(sqlite_app.memory_service.memory_repo, "create_memory", failing_insert)
 
         message = await tool_error(
             mcp_client,
-            "create_project",
+            "create_memory",
             {
-                "name": SECRET_DESCRIPTION,
-                "description": "d",
-                "project_type": "development",
-                "notes": SECRET_CONTENT,
+                "title": SECRET_DESCRIPTION, "content": SECRET_CONTENT, "context": "ctx",
+                "keywords": ["k"], "tags": ["t"], "importance": 5,
             },
         )
 
         assert_no_leak(message)
-        assert message.startswith("Failed to execute 'create_project'")
+        assert message.startswith("Failed to execute 'create_memory'")
         assert CONSTRAINT_FAILURE in message
 
-    async def test_unknown_project_is_reported_as_not_found_without_driver_text(self, mcp_client):
-        arguments = {
-            "title": SECRET_DESCRIPTION, "content": SECRET_CONTENT, "context": "ctx",
-            "keywords": ["k"], "tags": ["t"], "importance": 5, "project_ids": [9999],
-        }
-
-        message = await tool_error(mcp_client, "create_memory", arguments)
+    async def test_unknown_memory_is_reported_as_not_found_without_driver_text(self, mcp_client):
+        message = await tool_error(mcp_client, "get_memory", {"memory_id": 9999})
 
         assert_no_leak(message)
-        assert message.startswith("Failed to execute 'create_memory'")
-        assert "Projects not found: {9999}" in message
+        assert message.startswith("Failed to execute 'get_memory'")
+        assert "9999" in message and "not found" in message.lower()
 
     async def test_driver_error_for_huge_id_is_generic(self, mcp_client):
         message = await tool_error(mcp_client, "get_memory", {"memory_id": 10**30})
@@ -304,7 +296,7 @@ class TestLogInjection:
         """CPython copies an unknown keyword into the TypeError text unescaped (message and
         traceback), so the name is rejected before dispatch and never logged or echoed raw."""
         with pytest.raises(ToolError) as caught:
-            await execute(mcp_client, "list_projects", {poisoned_key: 1})
+            await execute(mcp_client, "get_recent_memories", {poisoned_key: 1})
 
         output = console_log()
 
@@ -320,12 +312,12 @@ class TestLogInjection:
     async def test_unknown_but_well_formed_argument_name_is_still_a_normal_error(
         self, mcp_client, console_log,
     ):
-        message = await tool_error(mcp_client, "list_projects", {"no_such_argument": 1})
+        message = await tool_error(mcp_client, "get_recent_memories", {"no_such_argument": 1})
 
         output = console_log()
 
         assert "no_such_argument" in message
-        assert "Tool 'list_projects' execution failed" in output, (
+        assert "Tool 'get_recent_memories' execution failed" in output, (
             "precondition: the registry failure is logged, so the poisoned-key tests cover it"
         )
         assert forged_lines(output) == []
@@ -395,8 +387,8 @@ class TestLogInjection:
         assert_no_raw_control_characters(output, str(caught.value))
 
     async def test_regular_calls_still_log_the_tool_name(self, mcp_client, console_log):
-        await execute(mcp_client, "list_projects", {})
+        await execute(mcp_client, "get_recent_memories", {})
 
         output = console_log()
 
-        assert "execute_forgetful_tool: 'list_projects'" in output
+        assert "execute_forgetful_tool: 'get_recent_memories'" in output

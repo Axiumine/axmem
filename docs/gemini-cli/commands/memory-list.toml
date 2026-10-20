@@ -14,7 +14,7 @@ Retrieve recent memories using `execute_forgetful_tool("get_recent_memories", {.
 
 Parse the arguments for:
 - **Number**: If user specifies a count (e.g., "10", "last 5"), use that as `limit`
-- **Project**: If user mentions a project name, first list projects to get the ID, then filter
+- **Project**: If user mentions a project name, use it as the `project` scope label
 
 Default: `{"limit": 10}`
 
@@ -38,11 +38,11 @@ Recent Memories (showing X of Y):
 
 If the user asks for more detail on any memory, use `get_memory` to retrieve full content.
 
-If filtering by project and no project_id provided, first call:
+To filter by project, pass the project scope label as `project`:
 ```
-execute_forgetful_tool("list_projects", {})
+execute_forgetful_tool("get_recent_memories", {"limit": 10, "project": "<project scope>"})
 ```
-Then let the user select or infer from context.
+Infer the label from context or ask the user; a project is just a label, so there is no list to look it up in.
 
 ## Examples
 
@@ -50,7 +50,7 @@ Then let the user select or infer from context.
 ```
 /memory-list
 ```
-Returns last 10 memories across all projects.
+Returns last 10 memories across all project scopes.
 
 **With count:**
 ```
@@ -62,5 +62,5 @@ Returns last 5 memories.
 ```
 /memory-list forgetful project
 ```
-Lists projects, finds "forgetful" project ID, returns recent memories for that project.
+Returns recent memories in the "forgetful" project scope.
 """

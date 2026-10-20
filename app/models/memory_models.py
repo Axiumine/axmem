@@ -8,6 +8,7 @@ from pydantic import (
     ConfigDict,
     Field,
     StringConstraints,
+    ValidationError,
     ValidationInfo,
     field_validator,
     model_validator,
@@ -108,6 +109,45 @@ _SourceFile = Annotated[
     BeforeValidator(_reject_unencodable),
 ]
 
+# The project scope is a free-form label chosen by the caller. It is trimmed and bounded by the
+# width of the projects.name column; an update may also pass an empty label to clear the scope.
+SCOPE_MAX_LENGTH = 500
+_Scope = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=SCOPE_MAX_LENGTH),
+    BeforeValidator(_reject_unencodable),
+]
+_ScopeOrClear = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, max_length=SCOPE_MAX_LENGTH),
+    BeforeValidator(_reject_unencodable),
+]
+
+
+class _ScopeHolder(BaseModel):
+    project: _Scope
+
+
+def clean_scope(project: str | None) -> str | None:
+    """The trimmed project scope label, or None when there is no scope
+
+    Applies the same rules as the ``project`` field of the request models, for the paths that
+    take the label as a plain argument (listing, targeted rebuild), so one scope never reads
+    as two spellings.
+
+    Raises:
+        ValueError: If the label is blank, longer than SCOPE_MAX_LENGTH or cannot be stored
+    """
+    if project is None:
+        return None
+    try:
+        return _ScopeHolder(project=project).project
+    except ValidationError as exc:
+        error = exc.errors()[0]
+        if error["type"] == "unencodable_text":
+            raise ValueError(error["msg"]) from None
+        raise ValueError(f"project: {error['msg']}") from None
+
 # Values accepted for sorting memory listings (same sets as the REST list endpoint)
 VALID_SORT_BY: tuple[str, ...] = ("created_at", "updated_at", "importance")
 VALID_SORT_ORDER: tuple[str, ...] = ("asc", "desc")
@@ -154,9 +194,12 @@ class MemoryCreate(BaseModel):
         le=10,
         description="Importance 1-10 (default 7): 9-10=personal facts/foundational patterns, 8-9=critical solutions/decisions, 7-8=useful patterns/preferences, 6-7=milestones/solutions, <6=discourage.",
     )
-    project_ids: list[int] | None = Field(
+    project: _Scope | None = Field(
         default=None,
-        description="Link to project(s) for scoped queries. Enables 'show memories for Project X' filtering.",
+        description=(
+            "Optional free-form scope label (max 500 characters), created on first use. "
+            "Enables 'show memories for scope X' filtering."
+        ),
     )
 
     # Provenance tracking fields (optional) - for tracing AI-generated content
@@ -253,9 +296,9 @@ class MemoryUpdate(BaseModel):
         le=10,
         description="New importance 1-10: 9-10=personal/foundational, 8-9=critical, 7-8=useful, 6-7=milestones, <6=discourage. Unchanged if null.",
     )
-    project_ids: list[int] | None = Field(
+    project: _ScopeOrClear | None = Field(
         None,
-        description="New project associations. Replaces existing if provided, unchanged if null.",
+        description="New scope label. Replaces the existing one if provided, an empty string clears it, unchanged if null.",
     )
 
     # Provenance tracking fields (optional) - for tracing AI-generated content
@@ -348,7 +391,8 @@ class Memory(MemoryCreate):
     )
     created_at: datetime = Field(default_factory=lambda: datetime.now(tz=UTC), frozen=True)
     updated_at: datetime = Field(default_factory=lambda: datetime.now(tz=UTC))
-    project_ids: list[int] = Field(default_factory=list)
+    # A plain str: stored scopes are read back as they are, whatever rule applied when written
+    project: str | None = Field(default=None, description=MemoryCreate.model_fields["project"].description)
     linked_memory_ids: list[int] = Field(default_factory=list)
 
     # Lifecycle management fields
@@ -396,7 +440,7 @@ class ObsoleteMatch(BaseModel):
     obsolete_reason: str | None = None
     superseded_by: int | None = None
     obsoleted_at: datetime | None = None
-    project_ids: list[int] = Field(default_factory=list)
+    project: str | None = None
 
 
 class MemoryCreateResponse(BaseModel):
@@ -404,7 +448,7 @@ class MemoryCreateResponse(BaseModel):
     id: int
     title: str
     linked_memory_ids: list[int] = Field(default_factory=list)
-    project_ids: list[int] = Field(default_factory=list)
+    project: str | None = None
     similar_memories: list[MemorySummary] = Field(
         default_factory=list,
         description="Summaries of similar memories that were auto-linked for review",
@@ -469,9 +513,9 @@ class MemoryQueryRequest(BaseModel):
         le=10,
         description="Filter out memories below this importance (e.g., 7=only important memories)",
     )
-    project_ids: list[int] | None = Field(
+    project: _Scope | None = Field(
         None,
-        description="Filter results to specific projects (scoped search within project context)",
+        description="Filter results to one scope label (scoped search within a project context)",
     )
     strict_project_filter: bool = Field(
         False,

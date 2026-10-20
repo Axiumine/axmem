@@ -12,13 +12,9 @@ from app.models.tool_registry_models import (
     ToolParameter,
     ToolParameterDef,
 )
-from app.routes.mcp.tool_adapters import (
-    create_memory_adapters,
-    create_user_adapters,
-)
+from app.routes.mcp.tool_adapters import create_memory_adapters
 from app.routes.mcp.tool_registry import ToolRegistry
 from app.services.memory_service import MemoryService
-from app.services.user_service import UserService
 
 logger = logging.getLogger(__name__)
 
@@ -72,77 +68,6 @@ def register_simplified_tool(
         tags=tags or [],
         mutates=mutates,
     )
-
-
-# ============================================================================
-# User Tools Metadata
-# ============================================================================
-
-def register_user_tools_metadata(
-    registry: ToolRegistry,
-    adapters: dict[str, Any],
-):
-    """Register user tool metadata and implementations"""
-    tools: list[ToolDef] = [
-        {
-            "name": "get_current_user",
-            "description": "Returns information about the current authenticated user",
-            "parameters": [
-                {
-                    "name": "ctx",
-                    "type": "Context",
-                    "description": "FastMCP Context (automatically injected)",
-                    "required": True,
-                },
-            ],
-            "returns": "UserResponse with id, external_id, name, email, notes, timestamps",
-            "examples": [
-                'execute_forgetful_tool("get_current_user", {})',
-            ],
-            "tags": ["user", "authentication", "context"],
-        },
-        {
-            "name": "update_user_notes",
-            "mutates": True,
-            "description": "Update the notes field for the current user",
-            "parameters": [
-                {
-                    "name": "user_notes",
-                    "type": "str",
-                    "description": "The new notes content to store for the user",
-                    "required": True,
-                    "example": "User prefers TypeScript, uses VSCode, timezone: PST",
-                },
-                {
-                    "name": "ctx",
-                    "type": "Context",
-                    "description": "FastMCP Context (automatically injected)",
-                    "required": True,
-                },
-            ],
-            "returns": "Updated UserResponse with new notes value",
-            "examples": [
-                'execute_forgetful_tool("update_user_notes", {"user_notes": "Prefers React over Vue"})',
-            ],
-            "tags": ["user", "update", "preferences"],
-        },
-    ]
-
-    for tool_def in tools:
-        register_simplified_tool(
-            registry=registry,
-            name=tool_def["name"],
-            category=ToolCategory.USER,
-            description=tool_def["description"],
-            parameters=tool_def["parameters"],
-            returns=tool_def["returns"],
-            implementation=adapters[tool_def["name"]],
-            examples=tool_def.get("examples", []),
-            tags=tool_def.get("tags", []),
-            mutates=tool_def.get("mutates", False),
-        )
-
-    logger.info(f"Registered {len(tools)} user tools")
 
 
 # ============================================================================
@@ -209,12 +134,12 @@ def register_memory_tools_metadata(
                     "required": True,
                 },
                 {
-                    "name": "project_ids",
-                    "type": "Optional[List[int]]",
-                    "description": "Project IDs to link (optional)",
+                    "name": "project",
+                    "type": "Optional[str]",
+                    "description": "Optional free-form project scope label (max 500 characters); created on first use",
                     "required": False,
                     "default": None,
-                    "example": [1, 3],
+                    "example": "forgetful",
                 },
                 {
                     "name": "source_repo",
@@ -352,17 +277,17 @@ def register_memory_tools_metadata(
                     "example": 7,
                 },
                 {
-                    "name": "project_ids",
-                    "type": "Optional[List[int]]",
-                    "description": "Filter results to specific projects",
+                    "name": "project",
+                    "type": "Optional[str]",
+                    "description": "Only search memories in this project scope",
                     "required": False,
                     "default": None,
-                    "example": [1, 2],
+                    "example": "forgetful",
                 },
                 {
                     "name": "strict_project_filter",
                     "type": "bool",
-                    "description": "If True, linked memories must also be in specified projects",
+                    "description": "If True, linked memories must also be in the specified project scope",
                     "required": False,
                     "default": False,
                     "example": False,
@@ -442,12 +367,12 @@ def register_memory_tools_metadata(
                     "example": 8,
                 },
                 {
-                    "name": "project_ids",
-                    "type": "Optional[List[int]]",
-                    "description": "New project IDs - replaces existing links (optional)",
+                    "name": "project",
+                    "type": "Optional[str]",
+                    "description": "New project scope label - replaces the existing one; an empty string clears it (optional)",
                     "required": False,
                     "default": None,
-                    "example": [1, 2],
+                    "example": "forgetful",
                 },
                 {
                     "name": "source_repo",
@@ -717,12 +642,12 @@ def register_memory_tools_metadata(
                     "example": 0,
                 },
                 {
-                    "name": "project_ids",
-                    "type": "Optional[List[int]]",
-                    "description": "Optional filter to specific projects",
+                    "name": "project",
+                    "type": "Optional[str]",
+                    "description": "Optional filter to one project scope",
                     "required": False,
                     "default": None,
-                    "example": [1, 3],
+                    "example": "forgetful",
                 },
                 {
                     "name": "include_obsolete",
@@ -776,7 +701,7 @@ def register_memory_tools_metadata(
             "returns": "Dictionary with memories list (sorted per sort_by/sort_order) and total_count",
             "examples": [
                 'execute_forgetful_tool("get_recent_memories", {"limit": 5})',
-                'execute_forgetful_tool("get_recent_memories", {"limit": 10, "project_ids": [1, 2]})',
+                'execute_forgetful_tool("get_recent_memories", {"limit": 10, "project": "forgetful"})',
                 'execute_forgetful_tool("get_recent_memories", {"tags": ["ai-champion"], "limit": 20})',
                 (
                     'execute_forgetful_tool("get_recent_memories", '
@@ -790,8 +715,8 @@ def register_memory_tools_metadata(
             "name": "rebuild_embeddings",
             "mutates": True,
             "description": (
-                "Rebuild embeddings for a user-scoped subset of memories without resetting "
-                "global vector storage. Targets explicit memory ids, a single project, or "
+                "Rebuild embeddings for a tenant-scoped subset of memories without resetting "
+                "global vector storage. Targets explicit memory ids, a single project scope, or "
                 "all caller-owned memories."
             ),
             "parameters": [
@@ -804,18 +729,18 @@ def register_memory_tools_metadata(
                 {
                     "name": "memory_ids",
                     "type": "Optional[List[int]]",
-                    "description": "Explicit memory ids owned by the caller; leave null to use project_id or global user scope",
+                    "description": "Explicit memory ids owned by the caller; leave null to use project or the whole tenant",
                     "required": False,
                     "default": None,
                     "example": [123, 124],
                 },
                 {
-                    "name": "project_id",
-                    "type": "Optional[int]",
-                    "description": "Restrict the rebuild to memories of a single project owned by the caller",
+                    "name": "project",
+                    "type": "Optional[str]",
+                    "description": "Restrict the rebuild to memories in this project scope of the caller",
                     "required": False,
                     "default": None,
-                    "example": 1,
+                    "example": "forgetful",
                 },
             ],
             "returns": (
@@ -823,11 +748,11 @@ def register_memory_tools_metadata(
                 "while the rebuild ran so a newer embedding was kept), "
                 "failed (List[Dict[memory_id, reason]]; reason is a code such as embedding_failed, "
                 "persistence_failed or not_found_or_not_owned). "
-                "An unknown or foreign project_id is rejected with VALIDATION_ERROR"
+                "An unknown project scope is rejected with VALIDATION_ERROR"
             ),
             "examples": [
                 'execute_forgetful_tool("rebuild_embeddings", {"memory_ids": [123, 124]})',
-                'execute_forgetful_tool("rebuild_embeddings", {"project_id": 1})',
+                'execute_forgetful_tool("rebuild_embeddings", {"project": "forgetful"})',
                 'execute_forgetful_tool("rebuild_embeddings", {})',
             ],
             "tags": ["memory", "embeddings", "admin", "repair"],
@@ -857,208 +782,24 @@ def register_memory_tools_metadata(
 
 def register_all_tools_metadata(
     registry: ToolRegistry,
-    user_service: UserService,
     memory_service: MemoryService,
-    project_service,
     re_embedding_service,
 ):
     """Register all tool metadata and implementations
 
     Args:
         registry: ToolRegistry instance to register tools with
-        user_service: UserService instance
         memory_service: MemoryService instance
-        project_service: ProjectService instance
         re_embedding_service: ReEmbeddingService instance created at startup
     """
     logger.info("Starting tool registration")
 
-    # Import adapter factory functions
-    from app.routes.mcp.tool_adapters import create_project_adapters
+    memory_adapters = create_memory_adapters(memory_service, re_embedding_service)
 
-    # Create adapters for all categories
-    user_adapters = create_user_adapters(user_service)
-    memory_adapters = create_memory_adapters(memory_service, user_service, re_embedding_service)
-    project_adapters = create_project_adapters(project_service, user_service)
-
-    # Register tools by category
-    register_user_tools_metadata(registry, user_adapters)
     register_memory_tools_metadata(registry, memory_adapters)
-    register_project_tools_metadata(registry, project_adapters)
 
     # Log summary
     categories = registry.list_categories()
     total = sum(categories.values())
     logger.info(f"Tool registration complete: {total} tools across {len(categories)} categories")
     logger.info(f"Categories: {categories}")
-
-
-# ============================================================================
-# Project Tools Metadata
-# ============================================================================
-
-def register_project_tools_metadata(
-    registry: ToolRegistry,
-    adapters: dict[str, Any],
-):
-    """Register project tool metadata and implementations"""
-    tools: list[ToolDef] = [
-        {
-            "name": "create_project",
-            "mutates": True,
-            "description": "Create new project for organizing memories by context",
-            "parameters": [
-                {"name": "name", "type": "str", "description": "Project name (max 500 chars)", "required": True, "example": "forgetful"},
-                {"name": "description", "type": "str", "description": "Purpose/scope overview (max ~5000 chars)", "required": True, "example": "MIT-licensed memory service"},
-                {"name": "project_type", "type": "ProjectType", "description": "Project category (personal, work, learning, development, infrastructure, template, product, marketing, finance, documentation, development-environment, third-party-library, open-source)", "required": True, "example": "development"},
-                {"name": "ctx", "type": "Context", "description": "FastMCP Context (automatically injected)", "required": True},
-                {"name": "status", "type": "ProjectStatus", "description": "Project lifecycle status (active, archived, completed)", "required": False, "default": "active", "example": "active"},
-                {
-                    "name": "repo_name",
-                    "type": "Optional[str]",
-                    "description": (
-                        "Git repository identifier or HTTPS/SSH address (max 255 chars)"
-                    ),
-                    "required": False,
-                    "default": None,
-                    "example": "scottrbk/forgetful",
-                },
-                {"name": "last_encoding_point", "type": "Optional[str]", "description": "Opaque caller-managed encoding checkpoint (e.g. a Git commit SHA). Never advanced by the server.", "required": False, "default": None, "example": "5d41402abc4b2a76b9719d911017c592"},
-                {"name": "notes", "type": "Optional[str]", "description": "Workflow notes, setup instructions (max ~4000 chars)", "required": False, "default": None, "example": "Uses uv for dependency management"},
-                {"name": "source_repo", "type": "Optional[str]", "description": "Repository/project source for provenance tracking", "required": False, "default": None, "example": "owner/repo"},
-                {"name": "source_files", "type": "Optional[List[str]]", "description": "Files that informed this for provenance tracking", "required": False, "default": None, "example": ["src/main.py"]},
-                {"name": "source_url", "type": "Optional[str]", "description": "URL to source material for provenance tracking", "required": False, "default": None, "example": "https://example.com"},
-                {"name": "confidence", "type": "Optional[float]", "description": "Encoding confidence score (0.0-1.0) for provenance tracking", "required": False, "default": None, "example": 0.85},
-                {"name": "encoding_agent", "type": "Optional[str]", "description": "Software running the agent for provenance tracking", "required": False, "default": None, "example": "OpenCode"},
-                {"name": "encoding_version", "type": "Optional[str]", "description": "Version of encoding software for provenance tracking", "required": False, "default": None, "example": "1.0.0"},
-                {"name": "agent_id", "type": "Optional[str]", "description": "Agent identity for provenance tracking", "required": False, "default": None, "example": "CodeAgentUltra"},
-                {"name": "agent_version", "type": "Optional[str]", "description": "Agent version for provenance tracking", "required": False, "default": None, "example": "1.0"},
-                {"name": "agent_model", "type": "Optional[str]", "description": "LLM model used for provenance tracking", "required": False, "default": None, "example": "claude-sonnet-4-6"},
-            ],
-            "returns": "Complete Project with id, timestamps, and memory_count",
-            "examples": [
-                'execute_forgetful_tool("create_project", {"name": "my-project", "description": "A new project", "project_type": "development"})',
-            ],
-            "tags": ["project", "create", "organization"],
-        },
-        {
-            "name": "update_project",
-            "mutates": True,
-            "description": "Update project metadata using PATCH semantics (only specified fields are updated)",
-            "parameters": [
-                {"name": "project_id", "type": "int", "description": "ID of the project to update", "required": True, "example": 1},
-                {"name": "ctx", "type": "Context", "description": "FastMCP Context (automatically injected)", "required": True},
-                {"name": "name", "type": "Optional[str]", "description": "New project name", "required": False, "default": None, "example": "updated-project"},
-                {"name": "description", "type": "Optional[str]", "description": "New description", "required": False, "default": None, "example": "Updated description"},
-                {"name": "project_type", "type": "Optional[ProjectType]", "description": "New project type", "required": False, "default": None, "example": "work"},
-                {"name": "status", "type": "Optional[ProjectStatus]", "description": "New status", "required": False, "default": None, "example": "archived"},
-                {
-                    "name": "repo_name",
-                    "type": "Optional[str]",
-                    "description": (
-                        "New Git repository identifier or address; empty string clears"
-                    ),
-                    "required": False,
-                    "default": None,
-                    "example": "user/new-repo",
-                },
-                {"name": "last_encoding_point", "type": "Optional[str]", "description": 'Opaque caller-managed encoding checkpoint (e.g. a Git commit SHA). Never advanced by the server. Unchanged if omitted or null; pass empty string "" to clear.', "required": False, "default": None, "example": "5d41402abc4b2a76b9719d911017c592"},
-                {"name": "notes", "type": "Optional[str]", "description": "New notes", "required": False, "default": None, "example": "Additional notes"},
-                {"name": "source_repo", "type": "Optional[str]", "description": "Repository/project source for provenance tracking", "required": False, "default": None, "example": "owner/repo"},
-                {"name": "source_files", "type": "Optional[List[str]]", "description": "Files that informed this for provenance tracking", "required": False, "default": None, "example": ["src/main.py"]},
-                {"name": "source_url", "type": "Optional[str]", "description": "URL to source material for provenance tracking", "required": False, "default": None, "example": "https://example.com"},
-                {"name": "confidence", "type": "Optional[float]", "description": "Encoding confidence score (0.0-1.0) for provenance tracking", "required": False, "default": None, "example": 0.85},
-                {"name": "encoding_agent", "type": "Optional[str]", "description": "Software running the agent for provenance tracking", "required": False, "default": None, "example": "OpenCode"},
-                {"name": "encoding_version", "type": "Optional[str]", "description": "Version of encoding software for provenance tracking", "required": False, "default": None, "example": "1.0.0"},
-                {"name": "agent_id", "type": "Optional[str]", "description": "Agent identity for provenance tracking", "required": False, "default": None, "example": "CodeAgentUltra"},
-                {"name": "agent_version", "type": "Optional[str]", "description": "Agent version for provenance tracking", "required": False, "default": None, "example": "1.0"},
-                {"name": "agent_model", "type": "Optional[str]", "description": "LLM model used for provenance tracking", "required": False, "default": None, "example": "claude-sonnet-4-6"},
-            ],
-            "returns": "Updated Project object",
-            "examples": [
-                'execute_forgetful_tool("update_project", {"project_id": 1, "status": "archived"})',
-                'execute_forgetful_tool("update_project", {"project_id": 1, "last_encoding_point": ""})',
-            ],
-            "tags": ["project", "update", "patch"],
-        },
-        {
-            "name": "delete_project",
-            "mutates": True,
-            "description": "Delete project while preserving linked memories",
-            "parameters": [
-                {"name": "project_id", "type": "int", "description": "ID of the project to delete", "required": True, "example": 1},
-                {"name": "ctx", "type": "Context", "description": "FastMCP Context (automatically injected)", "required": True},
-            ],
-            "returns": "Dictionary with deletion confirmation",
-            "examples": [
-                'execute_forgetful_tool("delete_project", {"project_id": 1})',
-            ],
-            "tags": ["project", "delete", "remove"],
-        },
-        {
-            "name": "list_projects",
-            "description": "List projects with optional name/status/repository filtering",
-            "parameters": [
-                {"name": "ctx", "type": "Context", "description": "FastMCP Context (automatically injected)", "required": True},
-                {
-                    "name": "name",
-                    "type": "Optional[str]",
-                    "description": "Filter by project name (case-insensitive partial match)",
-                    "required": False,
-                    "default": None,
-                    "example": "forgetful",
-                },
-                {"name": "status", "type": "Optional[ProjectStatus]", "description": "Filter by status (active, archived, completed)", "required": False, "default": None, "example": "active"},
-                {
-                    "name": "repo_name",
-                    "type": "Optional[str]",
-                    "description": (
-                        "Match equivalent HTTPS/SSH/host-qualified addresses; otherwise "
-                        "literal. No partial match"
-                    ),
-                    "required": False,
-                    "default": None,
-                    "example": "scottrbk/forgetful",
-                },
-            ],
-            "returns": "Dictionary with projects list and count",
-            "examples": [
-                'execute_forgetful_tool("list_projects", {})',
-                'execute_forgetful_tool("list_projects", {"name": "forgetful"})',
-                'execute_forgetful_tool("list_projects", {"status": "active"})',
-            ],
-            "tags": ["project", "list", "query"],
-        },
-        {
-            "name": "get_project",
-            "description": (
-                "Retrieve complete project details by integer project_id. "
-                "To find a project by name, use list_projects with the name filter first."
-            ),
-            "parameters": [
-                {"name": "project_id", "type": "int", "description": "ID of the project to retrieve", "required": True, "example": 1},
-                {"name": "ctx", "type": "Context", "description": "FastMCP Context (automatically injected)", "required": True},
-            ],
-            "returns": "Complete Project object with all details",
-            "examples": [
-                'execute_forgetful_tool("get_project", {"project_id": 1})',
-            ],
-            "tags": ["project", "retrieve", "read"],
-        },
-    ]
-
-    for tool_def in tools:
-        register_simplified_tool(
-            registry=registry,
-            name=tool_def["name"],
-            category=ToolCategory.PROJECT,
-            description=tool_def["description"],
-            parameters=tool_def["parameters"],
-            returns=tool_def["returns"],
-            implementation=adapters[tool_def["name"]],
-            examples=tool_def.get("examples", []),
-            tags=tool_def.get("tags", []),
-            mutates=tool_def.get("mutates", False),
-        )
-
-    logger.info(f"Registered {len(tools)} project tools")

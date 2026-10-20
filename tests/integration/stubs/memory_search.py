@@ -5,7 +5,7 @@ from uuid import UUID
 from app.config.settings import settings
 from app.exceptions import NotFoundError
 from app.models.memory_models import Memory, MemoryScore
-from tests.integration.stubs.helpers import filter_items, shares_any
+from tests.integration.stubs.helpers import filter_items
 
 
 def keyword_overlap(first: Memory, second: Memory) -> int:
@@ -38,7 +38,7 @@ class MemorySearchMixin:
         query_context: str,
         k: int,
         importance_threshold: int | None,
-        project_ids: list[int] | None,
+        project: str | None,
         exclude_ids: list[int] | None = None,
     ) -> list[Memory]:
         """Mock semantic search - returns memories sorted by importance"""
@@ -46,7 +46,7 @@ class MemorySearchMixin:
             self._memories.get(user_id, {}).values(),
             (True, lambda m: not m.is_obsolete),
             (importance_threshold, lambda m: m.importance >= importance_threshold),
-            (project_ids, shares_any("project_ids", project_ids or [])),
+            (project, lambda m: m.project == project),
             (exclude_ids, lambda m: m.id not in exclude_ids),
         )
 
@@ -62,7 +62,7 @@ class MemorySearchMixin:
         query_context: str,
         k: int,
         importance_threshold: int | None,
-        project_ids: list[int] | None,
+        project: str | None,
         exclude_ids: list[int] | None = None,
     ):
         result = await self.search(
@@ -71,7 +71,7 @@ class MemorySearchMixin:
             query_context=query_context,
             k=k,
             importance_threshold=importance_threshold,
-            project_ids=project_ids,
+            project=project,
             exclude_ids=exclude_ids,
         )
         return [

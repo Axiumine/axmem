@@ -6,7 +6,7 @@ from fastmcp import Context
 from fastmcp.exceptions import ToolError
 
 from app.config.logging_config import logging
-from app.middleware.auth import get_user_from_auth
+from app.middleware.auth import get_tenant_from_auth
 from app.models.memory_models import (
     Memory,
     MemoryCreate,
@@ -36,7 +36,6 @@ from app.routes.mcp.adapters.memory_arguments import (
 from app.routes.mcp.pagination import clamp_list_pagination
 from app.services.memory_service import MemoryService
 from app.services.re_embedding_service import ReEmbeddingService
-from app.services.user_service import UserService
 from app.utils.pydantic_helper import filter_none_values
 
 logger = logging.getLogger(__name__)
@@ -46,11 +45,9 @@ class MemoryToolAdapters:
     """Wraps memory service methods as registry-compatible callables"""
 
     def __init__(
-        self, memory_service: MemoryService, user_service: UserService,
-        re_embedding_service: ReEmbeddingService,
+        self, memory_service: MemoryService, re_embedding_service: ReEmbeddingService,
     ):
         self.memory_service = memory_service
-        self.user_service = user_service
         self.re_embedding_service = re_embedding_service
 
     async def create_memory(
@@ -62,7 +59,7 @@ class MemoryToolAdapters:
         tags: list[str],
         importance: int,
         ctx: Context,
-        project_ids: list[int] | None = None,
+        project: str | None = None,
         # Provenance tracking fields
         source_repo: str | None = None,
         source_files: list[str] | None = None,
@@ -77,7 +74,7 @@ class MemoryToolAdapters:
         """Adapter for create_memory tool"""
         logger.info("MCP Tool Called -> create memory", extra={"title": title})
 
-        user = await get_user_from_auth(ctx)
+        tenant = await get_tenant_from_auth(ctx)
 
         memory_data = MemoryCreate(
             title=title,
@@ -86,7 +83,7 @@ class MemoryToolAdapters:
             keywords=keywords,
             tags=tags,
             importance=importance,
-            project_ids=coerce_optional_int_ids(project_ids, "project_ids"),
+            project=project,
             source_repo=source_repo,
             source_files=source_files,
             source_url=source_url,
@@ -99,17 +96,17 @@ class MemoryToolAdapters:
         )
 
         memory, similar_memories = await self.memory_service.create_memory(
-            user_id=user.id, memory_data=memory_data,
+            user_id=tenant.id, memory_data=memory_data,
         )
         obsolete_matches = await self.memory_service.find_obsolete_matches(
-            user_id=user.id,
+            user_id=tenant.id,
             memory_id=memory.id,
         )
 
         logger.info(
             "MCP Tool Call -> create memory completed",
             extra={
-                "user_id": user.id,
+                "tenant_id": tenant.id,
                 "memory_id": memory.id,
                 "title": memory.title,
                 "linked_memory_ids": memory.linked_memory_ids,
@@ -121,7 +118,7 @@ class MemoryToolAdapters:
             id=memory.id,
             title=memory.title,
             linked_memory_ids=memory.linked_memory_ids,
-            project_ids=memory.project_ids,
+            project=memory.project,
             similar_memories=similar_memories,
             obsolete_matches=obsolete_matches,
         )
@@ -135,7 +132,7 @@ class MemoryToolAdapters:
         include_links: bool = True,
         max_links_per_primary: int = 5,
         importance_threshold: int | None = None,
-        project_ids: list[int] | None = None,
+        project: str | None = None,
         strict_project_filter: bool = False,
     ) -> MemoryQueryResult:
         """Adapter for query_memory tool"""
@@ -144,16 +141,15 @@ class MemoryToolAdapters:
             extra={"query": query[:50], "k": k, "include_links": include_links},
         )
 
-        user = await get_user_from_auth(ctx)
+        tenant = await get_tenant_from_auth(ctx)
 
         k = clamp_int(k, "k", 1, 20)
         importance_threshold = clamp_optional_int(
             importance_threshold, "importance_threshold", 1, 10,
         )
-        project_ids = coerce_optional_int_ids(project_ids, "project_ids")
 
         result = await self.memory_service.query_memory(
-            user_id=user.id,
+            user_id=tenant.id,
             memory_query=MemoryQueryRequest(
                 query=query,
                 query_context=query_context,
@@ -161,7 +157,7 @@ class MemoryToolAdapters:
                 include_links=include_links,
                 max_links_per_primary=max_links_per_primary,
                 importance_threshold=importance_threshold,
-                project_ids=project_ids,
+                project=project,
                 strict_project_filter=strict_project_filter,
             ),
         )
@@ -187,7 +183,7 @@ class MemoryToolAdapters:
         keywords: list[str] | None = None,
         tags: list[str] | None = None,
         importance: int | None = None,
-        project_ids: list[int] | None = None,
+        project: str | None = None,
         # Provenance tracking fields
         source_repo: str | None = None,
         source_files: list[str] | None = None,
@@ -205,7 +201,7 @@ class MemoryToolAdapters:
         mid = resolve_memory_id("update_memory", memory_id, id)
         logger.info("MCP Tool -> update_memory", extra={"memory_id": mid})
 
-        user = await get_user_from_auth(ctx)
+        tenant = await get_tenant_from_auth(ctx)
 
         updated_dict = filter_none_values(
             title=title,
@@ -214,7 +210,7 @@ class MemoryToolAdapters:
             keywords=keywords,
             tags=tags,
             importance=clamp_optional_int(importance, "importance", 1, 10),
-            project_ids=coerce_optional_int_ids(project_ids, "project_ids"),
+            project=project,
             source_repo=source_repo,
             source_files=source_files,
             source_url=source_url,
@@ -229,7 +225,7 @@ class MemoryToolAdapters:
         updated_memory = MemoryUpdate(**updated_dict)
 
         refreshed_memory = await self.memory_service.update_memory(
-            user_id=user.id,
+            user_id=tenant.id,
             memory_id=mid,
             updated_memory=updated_memory,
         )
@@ -288,10 +284,10 @@ class MemoryToolAdapters:
             extra={"memory_id": src, "related_ids": cleaned_related_ids},
         )
 
-        user = await get_user_from_auth(ctx)
+        tenant = await get_tenant_from_auth(ctx)
 
         links_created = await self.memory_service.link_memories(
-            user_id=user.id,
+            user_id=tenant.id,
             memory_id=src,
             related_ids=cleaned_related_ids,
         )
@@ -355,12 +351,12 @@ class MemoryToolAdapters:
             extra={"source_id": src, "target_ids": cleaned_targets},
         )
 
-        user = await get_user_from_auth(ctx)
+        tenant = await get_tenant_from_auth(ctx)
 
         all_success = True
         for tgt in cleaned_targets:
             success = await self.memory_service.unlink_memories(
-                user_id=user.id,
+                user_id=tenant.id,
                 memory_id=src,
                 target_id=tgt,
             )
@@ -386,16 +382,16 @@ class MemoryToolAdapters:
         mid = resolve_memory_id("get_memory", memory_id, id)
         logger.info("MCP Tool -> get_memory", extra={"memory_id": mid})
 
-        user = await get_user_from_auth(ctx)
+        tenant = await get_tenant_from_auth(ctx)
 
         # the repository raises NotFoundError for a missing memory instead of returning None
         memory = cast(
-            Memory, await self.memory_service.get_memory(user_id=user.id, memory_id=mid),
+            Memory, await self.memory_service.get_memory(user_id=tenant.id, memory_id=mid),
         )
 
         logger.info(
             "MCP Tool - successfully retrieved memory",
-            extra={"memory_id": memory.id, "user_id": user.id},
+            extra={"memory_id": memory.id, "tenant_id": tenant.id},
         )
 
         return memory
@@ -416,10 +412,10 @@ class MemoryToolAdapters:
         superseded_by = coerce_optional_int_id(superseded_by, "superseded_by")
         logger.info("MCP Tool -> mark_memory_obsolete", extra={"memory_id": mid})
 
-        user = await get_user_from_auth(ctx)
+        tenant = await get_tenant_from_auth(ctx)
 
         success = await self.memory_service.mark_memory_obsolete(
-            user_id=user.id,
+            user_id=tenant.id,
             memory_id=mid,
             reason=reason,
             superseded_by=superseded_by,
@@ -439,10 +435,10 @@ class MemoryToolAdapters:
         mid = resolve_memory_id("unobsolete_memory", memory_id, id)
         logger.info("MCP Tool -> unobsolete_memory", extra={"memory_id": mid})
 
-        user = await get_user_from_auth(ctx)
+        tenant = await get_tenant_from_auth(ctx)
 
         success = await self.memory_service.unobsolete_memory(
-            user_id=user.id,
+            user_id=tenant.id,
             memory_id=mid,
         )
 
@@ -453,7 +449,7 @@ class MemoryToolAdapters:
         ctx: Context,
         limit: int = 10,
         offset: int = 0,
-        project_ids: list[int] | None = None,
+        project: str | None = None,
         include_obsolete: bool = False,
         sort_by: str = "created_at",
         sort_order: str = "desc",
@@ -462,7 +458,7 @@ class MemoryToolAdapters:
         created_since: str | None = None,
     ) -> dict:
         """Adapter for get_recent_memories tool"""
-        user = await get_user_from_auth(ctx)
+        tenant = await get_tenant_from_auth(ctx)
         limit, offset = clamp_list_pagination(
             coerce_int(limit, "limit"), coerce_int(offset, "offset"),
         )
@@ -473,14 +469,13 @@ class MemoryToolAdapters:
         tags = coerce_str_list(tags, "tags")
         check_importance_min(importance_min)
         since = parse_created_since(created_since)
-        project_ids = coerce_optional_int_ids(project_ids, "project_ids")
 
         logger.info(
             "MCP Tool -> get_recent_memories",
             extra={
                 "limit": limit,
                 "offset": offset,
-                "project_ids": project_ids,
+                "project": project,
                 "include_obsolete": include_obsolete,
                 "sort_by": sort_by,
                 "sort_order": sort_order,
@@ -494,10 +489,10 @@ class MemoryToolAdapters:
         # an object root: a bare [] carries no MCP structured content and collapses to
         # null on the remote wire. total_count is already computed by the service.
         memories, total_count = await self.memory_service.list_memories(
-            user_id=user.id,
+            user_id=tenant.id,
             limit=limit,
             offset=offset,
-            project_ids=project_ids,
+            project=project,
             include_obsolete=include_obsolete,
             sort_by=sort_by,
             sort_order=sort_order,
@@ -512,13 +507,13 @@ class MemoryToolAdapters:
         self,
         ctx: Context,
         memory_ids: list[int] | None = None,
-        project_id: int | None = None,
+        project: str | None = None,
     ) -> dict[str, Any]:
         """Adapter for `rebuild_embeddings` MCP tool (issue #39).
 
-        Re-runs the embedding pipeline on a *user-scoped* subset of memories
+        Re-runs the embedding pipeline on a *tenant-scoped* subset of memories
         without ever resetting global vector storage. Designed to refresh
-        explicit ids, a single project, or all caller-owned memories instead
+        explicit ids, a single project scope, or all caller-owned memories instead
         of forcing the destructive `--re-embed` full-migration path used by
         `re_embed_all`.
 
@@ -526,27 +521,26 @@ class MemoryToolAdapters:
         `rebuilt_ids`, `skipped_ids`, `failed`.
         """
         memory_ids = coerce_optional_int_ids(memory_ids, "memory_ids")
-        project_id = coerce_optional_int_id(project_id, "project_id")
 
         logger.info(
             "MCP Tool -> rebuild_embeddings",
             extra={
                 "memory_ids": memory_ids,
-                "project_id": project_id,
+                "project": project,
             },
         )
 
-        user = await get_user_from_auth(ctx)
+        tenant = await get_tenant_from_auth(ctx)
         service = self.re_embedding_service
         try:
-            await service.validate_targeted_scope(user.id, memory_ids, project_id)
+            await service.validate_targeted_scope(tenant.id, memory_ids, project)
         except ValueError as exc:
             raise ToolError(f"VALIDATION_ERROR: {exc}") from exc
 
         result = await service.rebuild_targeted(
-            user_id=user.id,
+            user_id=tenant.id,
             memory_ids=memory_ids,
-            project_id=project_id,
+            project=project,
         )
         return {
             "rebuilt_ids": result.rebuilt_ids,
@@ -556,11 +550,10 @@ class MemoryToolAdapters:
 
 
 def create_memory_adapters(
-    memory_service: MemoryService, user_service: UserService,
-    re_embedding_service: ReEmbeddingService,
+    memory_service: MemoryService, re_embedding_service: ReEmbeddingService,
 ) -> dict[str, Any]:
     """Create all memory tool adapters and return as dict"""
-    adapters = MemoryToolAdapters(memory_service, user_service, re_embedding_service)
+    adapters = MemoryToolAdapters(memory_service, re_embedding_service)
     return {
         "create_memory": adapters.create_memory,
         "query_memory": adapters.query_memory,

@@ -1,7 +1,7 @@
 """PostgreSQL E2E coverage for update_memory consistency
 
-Covers project_ids on every memory read path, replacing project links through PUT, and
-how update_memory uses pooled connections while an embedding is being generated.
+Covers the project scope on every memory read path, replacing and clearing it through PUT,
+and how update_memory uses pooled connections while an embedding is being generated.
 """
 
 import asyncio
@@ -14,7 +14,6 @@ from sqlalchemy import select
 from app.config.settings import settings
 from app.exceptions import NotFoundError
 from app.models.memory_models import MemoryCreate, MemoryUpdate
-from app.models.user_models import UserCreate
 from app.repositories.postgres.postgres_tables import MemoryTable
 from app.utils.embedding_helpers import build_embedding_text
 
@@ -33,19 +32,6 @@ CREATE_BODY = {
 }
 
 
-async def _create_project(http_client, name):
-    response = await http_client.post(
-        "/api/v1/projects",
-        json={
-            "name": name,
-            "description": f"Project {name}",
-            "project_type": "development",
-        },
-    )
-    assert response.status_code == 201, response.text
-    return response.json()["id"]
-
-
 async def _create_memory(http_client, **extra):
     response = await http_client.post("/api/v1/memories", json={**CREATE_BODY, **extra})
     assert response.status_code == 201, response.text
@@ -59,68 +45,60 @@ async def _get_memory(http_client, memory_id):
 
 
 # ============================================================================
-# project_ids round trip
+# project round trip
 # ============================================================================
 
 
 @pytest.mark.e2e
-async def test_get_memory_reports_linked_project_ids(http_client):
-    project_id = await _create_project(http_client, "pg-get-project")
-    memory_id = await _create_memory(http_client, project_ids=[project_id])
+async def test_get_memory_reports_its_project(http_client):
+    memory_id = await _create_memory(http_client, project="pg-get-project")
 
-    assert (await _get_memory(http_client, memory_id))["project_ids"] == [project_id]
+    assert (await _get_memory(http_client, memory_id))["project"] == "pg-get-project"
 
 
 @pytest.mark.e2e
-async def test_put_replaces_and_clears_project_ids(http_client):
-    first = await _create_project(http_client, "pg-first-project")
-    second = await _create_project(http_client, "pg-second-project")
-    memory_id = await _create_memory(http_client, project_ids=[first])
+async def test_put_replaces_and_clears_the_project(http_client):
+    memory_id = await _create_memory(http_client, project="pg-first-project")
 
-    replaced = await http_client.put(f"/api/v1/memories/{memory_id}", json={"project_ids": [second]})
+    replaced = await http_client.put(f"/api/v1/memories/{memory_id}", json={"project": "pg-second-project"})
     assert replaced.status_code == 200, replaced.text
-    assert replaced.json()["project_ids"] == [second]
-    assert (await _get_memory(http_client, memory_id))["project_ids"] == [second]
+    assert replaced.json()["project"] == "pg-second-project"
+    assert (await _get_memory(http_client, memory_id))["project"] == "pg-second-project"
 
-    cleared = await http_client.put(f"/api/v1/memories/{memory_id}", json={"project_ids": []})
+    cleared = await http_client.put(f"/api/v1/memories/{memory_id}", json={"project": ""})
     assert cleared.status_code == 200, cleared.text
-    assert cleared.json()["project_ids"] == []
-    assert (await _get_memory(http_client, memory_id))["project_ids"] == []
+    assert cleared.json()["project"] is None
+    assert (await _get_memory(http_client, memory_id))["project"] is None
 
 
 @pytest.mark.e2e
-async def test_put_other_field_keeps_project_links(http_client):
-    project_id = await _create_project(http_client, "pg-kept-project")
-    memory_id = await _create_memory(http_client, project_ids=[project_id])
+async def test_put_other_field_keeps_the_project(http_client):
+    memory_id = await _create_memory(http_client, project="pg-kept-project")
 
     response = await http_client.put(f"/api/v1/memories/{memory_id}", json={"title": "Renamed"})
 
     assert response.status_code == 200, response.text
-    assert response.json()["project_ids"] == [project_id]
-    assert (await _get_memory(http_client, memory_id))["project_ids"] == [project_id]
+    assert response.json()["project"] == "pg-kept-project"
+    assert (await _get_memory(http_client, memory_id))["project"] == "pg-kept-project"
 
 
 @pytest.mark.e2e
-async def test_put_unknown_project_id_is_not_found_and_keeps_links(http_client):
-    project_id = await _create_project(http_client, "pg-survivor-project")
-    memory_id = await _create_memory(http_client, project_ids=[project_id])
+async def test_put_overlong_project_is_rejected_and_keeps_the_scope(http_client):
+    memory_id = await _create_memory(http_client, project="pg-survivor-project")
 
-    response = await http_client.put(
-        f"/api/v1/memories/{memory_id}", json={"project_ids": [project_id + 1000]},
-    )
+    response = await http_client.put(f"/api/v1/memories/{memory_id}", json={"project": "x" * 501})
 
-    assert response.status_code == 404, response.text
-    assert (await _get_memory(http_client, memory_id))["project_ids"] == [project_id]
+    assert response.status_code == 400, response.text
+    assert (await _get_memory(http_client, memory_id))["project"] == "pg-survivor-project"
 
 
 @pytest.mark.e2e
-async def test_search_and_linked_memories_report_project_ids(http_client):
-    project_id = await _create_project(http_client, "pg-search-project")
+async def test_search_and_linked_memories_report_the_project(http_client):
     grouped_id = await _create_memory(
         http_client,
         title="Grouped memory about espresso machines",
         content="Descaling an espresso machine every three months keeps it healthy.",
-        project_ids=[project_id],
+        project="pg-search-project",
     )
     primary_id = await _create_memory(
         http_client,
@@ -145,8 +123,8 @@ async def test_search_and_linked_memories_report_project_ids(http_client):
     assert response.status_code == 200, response.text
     body = response.json()
     assert [m["id"] for m in body["primary_memories"]] == [primary_id]
-    assert [(lm["memory"]["id"], lm["memory"]["project_ids"]) for lm in body["linked_memories"]] == [
-        (grouped_id, [project_id]),
+    assert [(lm["memory"]["id"], lm["memory"]["project"]) for lm in body["linked_memories"]] == [
+        (grouped_id, "pg-search-project"),
     ]
 
     primary_hit = await http_client.post(
@@ -159,8 +137,8 @@ async def test_search_and_linked_memories_report_project_ids(http_client):
         },
     )
     assert primary_hit.status_code == 200, primary_hit.text
-    assert [(m["id"], m["project_ids"]) for m in primary_hit.json()["primary_memories"]] == [
-        (grouped_id, [project_id]),
+    assert [(m["id"], m["project"]) for m in primary_hit.json()["primary_memories"]] == [
+        (grouped_id, "pg-search-project"),
     ]
 
 
@@ -194,14 +172,8 @@ class ProbeEmbedder:
 
 
 async def _embedding_stack(postgres_app, db_adapter, monkeypatch, latency=0.0):
-    """Default user, the live memory repository and a probe embedder installed on it."""
-    user = await postgres_app.user_service.get_or_create_user(
-        UserCreate(
-            external_id=settings.DEFAULT_USER_ID,
-            name=settings.DEFAULT_USER_NAME,
-            email=settings.DEFAULT_USER_EMAIL,
-        ),
-    )
+    """Default tenant, the live memory repository and a probe embedder installed on it."""
+    user = await postgres_app.tenant_service.get_or_create_tenant(settings.DEFAULT_TENANT)
     repo = postgres_app.memory_service.memory_repo
     embedder = ProbeEmbedder(db_adapter._engine.pool, latency=latency)
     monkeypatch.setattr(repo, "embedding_adapter", embedder)

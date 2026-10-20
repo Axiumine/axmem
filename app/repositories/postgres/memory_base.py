@@ -13,6 +13,7 @@ from app.repositories.embeddings.reranker_adapter import RerankAdapter
 from app.repositories.postgres.postgres_adapter import PostgresDatabaseAdapter
 from app.repositories.postgres.postgres_tables import (
     MemoryTable,
+    ProjectsTable,
     memory_project_association,
 )
 
@@ -40,11 +41,14 @@ def memory_load_options() -> list[ExecutableOption]:
     ]
 
 
-def project_membership_filter(project_ids: list[int]) -> Exists:
-    """Condition: the memory belongs to at least one of project_ids."""
-    return select(memory_project_association.c.memory_id).where(
+def project_membership_filter(project: str) -> Exists:
+    """Condition: the memory is in the project scope of that name (scopes are matched by name)."""
+    return select(memory_project_association.c.memory_id).join(
+        ProjectsTable, ProjectsTable.id == memory_project_association.c.project_id,
+    ).where(
         memory_project_association.c.memory_id == MemoryTable.id,
-        memory_project_association.c.project_id.in_(project_ids),
+        ProjectsTable.user_id == MemoryTable.user_id,
+        ProjectsTable.name == project,
     ).exists()
 
 

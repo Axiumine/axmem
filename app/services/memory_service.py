@@ -5,7 +5,7 @@ This service implements the primary functionality for the Forgetful Memory Syste
     - Memory creation with auto-linking
     - Memory updates
     - Manual linking between memories
-    - Retrieval with project associations
+    - Retrieval within a project scope
 """
 import asyncio
 from datetime import datetime
@@ -25,6 +25,7 @@ from app.models.memory_models import (
     MemorySummary,
     MemoryUpdate,
     ObsoleteMatch,
+    clean_scope,
 )
 from app.protocols.memory_protocol import MemoryRepository
 from app.utils.provenance import (
@@ -91,7 +92,7 @@ class MemoryService:
             query_context=memory_query.query_context,
             k=memory_query.k,
             importance_threshold=memory_query.importance_threshold,
-            project_ids=memory_query.project_ids,
+            project=memory_query.project,
             exclude_ids=None,
         )
         primary_memories = [m for m, _ in scored]
@@ -146,15 +147,15 @@ class MemoryService:
 
         logger.info("querying linked memories", extra={"number of primary memories": len(primary_memories)})
 
-        linked_memory_projects = None
+        linked_memory_project = None
         if memory_query.strict_project_filter:
-            linked_memory_projects = memory_query.project_ids
+            linked_memory_project = memory_query.project
 
         linked_memories = await self._fetch_linked_memories(
             user_id=user_id,
             primary_memories=primary_memories,
             max_links_per_primary=memory_query.max_links_per_primary,
-            project_ids=linked_memory_projects,
+            project=linked_memory_project,
         )
         logger.info("linked memory query completed", extra={"number of linked memories": len(linked_memories)})
         return linked_memories
@@ -384,7 +385,7 @@ class MemoryService:
                 obsolete_reason=m.obsolete_reason,
                 superseded_by=m.superseded_by,
                 obsoleted_at=m.obsoleted_at,
-                project_ids=m.project_ids,
+                project=m.project,
             )
             for m, sim in matches
         ]
@@ -394,7 +395,7 @@ class MemoryService:
             user_id: UUID,
             limit: int = 10,
             offset: int = 0,
-            project_ids: list[int] | None = None,
+            project: str | None = None,
             include_obsolete: bool = False,
             sort_by: str = "created_at",
             sort_order: str = "desc",
@@ -408,7 +409,7 @@ class MemoryService:
             user_id: User ID
             limit: Maximum number of memories to return
             offset: Skip N results for pagination
-            project_ids: Optional filter to only retrieve memories from specific projects
+            project: Optional filter to only retrieve memories in this project scope
             include_obsolete: Include soft-deleted memories (default False)
             sort_by: Sort field - created_at, updated_at, importance
             sort_order: Sort direction - asc, desc
@@ -420,16 +421,18 @@ class MemoryService:
             Tuple of (memories, total_count) where total_count is count before pagination
 
         Raises:
-            ValueError: If sort_by or sort_order is not one of the supported values
+            ValueError: If sort_by or sort_order is not one of the supported values, or the
+                project label is blank or too long
         """
         sort_by = _normalise_sort_option(sort_by, "sort_by", VALID_SORT_BY)
         sort_order = _normalise_sort_option(sort_order, "sort_order", VALID_SORT_ORDER)
+        project = clean_scope(project)
 
         return await self.memory_repo.list_memories(
             user_id=user_id,
             limit=limit,
             offset=offset,
-            project_ids=project_ids,
+            project=project,
             include_obsolete=include_obsolete,
             sort_by=sort_by,
             sort_order=sort_order,
@@ -502,7 +505,7 @@ class MemoryService:
             user_id,
             primary_memories: list[Memory],
             max_links_per_primary: int,
-            project_ids: list[int] | None,
+            project: str | None,
     ) -> list[LinkedMemory]:
         """Fetch linked memories for each primary result
 
@@ -525,7 +528,7 @@ class MemoryService:
                 links = await self.memory_repo.get_linked_memories(
                     memory_id=primary.id,
                     user_id=user_id,
-                    project_ids=project_ids,
+                    project=project,
                     max_links=max_links_per_primary,
                     exclude_ids=sorted(seen_ids),
                 )

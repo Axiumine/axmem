@@ -23,15 +23,19 @@ object). Roughly 500 tokens of surface, with everything else disclosed at runtim
 ## Pick a transport
 
 - **stdio** — the client spawns the server per session: command `uvx forgetful-ai`
-  (equivalently `forgetful serve --transport stdio`). Right for a personal, local setup.
+  (equivalently `forgetful serve --transport stdio`) with `AUTH_MODE=none`, because the server
+  refuses to start without an auth mode and stdio carries no bearer token. Right for a personal,
+  local setup.
 - **HTTP** — the client connects to a running server at `<server>/mcp`, e.g.
-  `http://localhost:8020/mcp`. Right for a shared or deployed instance.
+  `http://localhost:8020/mcp`. Right for a shared or deployed instance; send
+  `Authorization: Bearer <token>` unless the server runs `AUTH_MODE=none` on a loopback bind.
 
 Claude Code, as the worked example:
 
 ```bash
-claude mcp add forgetful -- uvx forgetful-ai                          # stdio
-claude mcp add --transport http forgetful http://localhost:8020/mcp  # HTTP
+claude mcp add forgetful -e AUTH_MODE=none -- uvx forgetful-ai      # stdio
+claude mcp add --transport http forgetful https://forgetful.example.com/mcp \
+  --header "Authorization: Bearer $FORGETFUL_TOKEN"                  # HTTP, token
 ```
 
 Other clients follow the same two shapes (spawn command, or HTTP endpoint) in their own
@@ -40,8 +44,10 @@ Forgetful repo.
 
 ## Auth and scopes
 
-A local server defaults to no-auth single-user mode — connect and go. Deployed servers use
-bearer tokens or OAuth (the server's configured provider). `FORGETFUL_SCOPES` on the server
+The server fails closed: it will not start without `AUTH_MODE`. `AUTH_MODE=none` is the
+no-auth single-tenant mode for stdio and loopback binds; deployed servers use bearer tokens
+(`jwt`, `introspection` or `static`). The token names the tenant, and a tenant sees only its own
+memories. `FORGETFUL_SCOPES` on the server
 side sets a capability ceiling (e.g. read-only) that both MCP and CLI honour; a client that
 should only recall can be scoped so writes are refused. A bearer token's own `scope`/`scp`
 claim narrows access further (unrelated scopes such as `openid` are ignored); a token whose
@@ -53,8 +59,8 @@ is refused every tool.
 Behavioural, not configurational:
 
 1. `discover_forgetful_tools` returns the tool categories.
-2. One `execute_forgetful_tool` round-trip returns real data — `get_current_user` or
-   `list_projects` both work as smoke calls.
+2. One `execute_forgetful_tool` round-trip returns real data — `get_recent_memories`
+   works as a smoke call (an empty `memories` list on a fresh tenant is a pass).
 
 Done when: both pass in the client that was just wired, in a fresh session.
 

@@ -32,8 +32,10 @@ _SEMANTIC_SEARCH_SELECT = """
 _PROJECT_FILTER = """
     AND EXISTS (
         SELECT 1 FROM memory_project_association mpa
+        INNER JOIN projects p ON p.id = mpa.project_id
         WHERE mpa.memory_id = m.id
-        AND mpa.project_id IN ({})
+        AND p.user_id = m.user_id
+        AND p.name = :project
     )
 """
 
@@ -77,7 +79,7 @@ def _build_semantic_search_query(
     embedding_bytes: bytes,
     k: int,
     importance_threshold: int | None,
-    project_ids: list[int] | None,
+    project: str | None,
     exclude_ids: list[int] | None,
 ) -> tuple[str, dict[str, Any]]:
     """SQL and parameters of the nearest-memories query, with the optional filters applied."""
@@ -88,10 +90,9 @@ def _build_semantic_search_query(
         sql_parts.append(" AND m.importance >= :importance_threshold")
         params["importance_threshold"] = importance_threshold
 
-    if project_ids:
-        sql_parts.append(
-            _PROJECT_FILTER.format(_bind_list("project", project_ids, params)),  # noqa: S608 — safe: builds :named param placeholders, not user input
-        )
+    if project:
+        sql_parts.append(_PROJECT_FILTER)
+        params["project"] = project
 
     if exclude_ids:
         excluded = _bind_list("exclude", exclude_ids, params)
@@ -121,7 +122,7 @@ class SqliteMemorySearchMixin(SqliteMemoryBase):
         query_context: str,
         k: int,
         importance_threshold: int | None,
-        project_ids: list[int] | None,
+        project: str | None,
         exclude_ids: list[int] | None,
     ) -> list[Memory]:
         """Search by vector similarity, then optionally rerank candidates."""
@@ -131,7 +132,7 @@ class SqliteMemorySearchMixin(SqliteMemoryBase):
             query_context=query_context,
             k=k,
             importance_threshold=importance_threshold,
-            project_ids=project_ids,
+            project=project,
             exclude_ids=exclude_ids,
         )]
 
@@ -142,7 +143,7 @@ class SqliteMemorySearchMixin(SqliteMemoryBase):
         query_context: str,
         k: int,
         importance_threshold: int | None,
-        project_ids: list[int] | None,
+        project: str | None,
         exclude_ids: list[int] | None,
     ) -> list[tuple[Memory, MemoryScore]]:
         """Search by vector similarity, then optionally rerank candidates (with scores)."""
@@ -157,7 +158,7 @@ class SqliteMemorySearchMixin(SqliteMemoryBase):
             query=query,
             k=candidates_to_return,
             importance_threshold=importance_threshold,
-            project_ids=project_ids,
+            project=project,
             exclude_ids=exclude_ids,
         )
 
@@ -199,7 +200,7 @@ class SqliteMemorySearchMixin(SqliteMemoryBase):
         query: str,
         k: int,
         importance_threshold: int | None,
-        project_ids: list[int] | None,
+        project: str | None,
         exclude_ids: list[int] | None,
     ) -> list[tuple[Memory, float]]:
         """Perform semantic search using vector similarity with sqlite-vec."""
@@ -215,7 +216,7 @@ class SqliteMemorySearchMixin(SqliteMemoryBase):
             embedding_bytes=sqlite_vec.serialize_float32(embeddings),
             k=k,
             importance_threshold=importance_threshold,
-            project_ids=project_ids,
+            project=project,
             exclude_ids=exclude_ids,
         )
 

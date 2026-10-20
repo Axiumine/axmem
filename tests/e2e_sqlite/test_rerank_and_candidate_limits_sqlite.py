@@ -99,7 +99,7 @@ async def _memories(adapter, user_id, reranker, count, embeddings=None):
 async def _search_memories(repo, user_id, k):
     return await repo.search_scored(
         user_id=user_id, query="q", query_context="", k=k,
-        importance_threshold=None, project_ids=None, exclude_ids=None,
+        importance_threshold=None, project=None, exclude_ids=None,
     )
 
 

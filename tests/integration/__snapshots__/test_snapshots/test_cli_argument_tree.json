@@ -63,20 +63,6 @@
       "type": null
     }
   ],
-  "forgetful auth logout": [
-    {
-      "choices": null,
-      "default": null,
-      "flags": [
-        "-h",
-        "--help"
-      ],
-      "help": "show this help message and exit",
-      "nargs": 0,
-      "required": false,
-      "type": null
-    }
-  ],
   "forgetful auth status": [
     {
       "choices": null,
@@ -297,7 +283,7 @@
         "-p",
         "--project"
       ],
-      "help": "Project id or name filter",
+      "help": "Project scope (a free-form label) to list",
       "nargs": null,
       "required": false,
       "type": null
@@ -389,7 +375,7 @@
         "-p",
         "--project"
       ],
-      "help": "Project id or name to attach the memory to",
+      "help": "Project scope (a free-form label) to save the memory in",
       "nargs": null,
       "required": false,
       "type": null
@@ -483,69 +469,8 @@
         "-p",
         "--project"
       ],
-      "help": "Project id or name to scope the search",
+      "help": "Project scope (a free-form label) to search in",
       "nargs": null,
-      "required": false,
-      "type": null
-    }
-  ],
-  "forgetful project": [
-    {
-      "choices": null,
-      "default": null,
-      "flags": [
-        "-h",
-        "--help"
-      ],
-      "help": "show this help message and exit",
-      "nargs": 0,
-      "required": false,
-      "type": null
-    }
-  ],
-  "forgetful project list": [
-    {
-      "choices": null,
-      "default": null,
-      "flags": [
-        "-h",
-        "--help"
-      ],
-      "help": "show this help message and exit",
-      "nargs": 0,
-      "required": false,
-      "type": null
-    },
-    {
-      "choices": null,
-      "default": false,
-      "flags": [
-        "--json"
-      ],
-      "help": "Emit machine-readable JSON (errors become {\"error\": ...} on stderr)",
-      "nargs": 0,
-      "required": false,
-      "type": null
-    },
-    {
-      "choices": null,
-      "default": null,
-      "flags": [
-        "--server"
-      ],
-      "help": "Execute against a remote Forgetful deployment (beats FORGETFUL_SERVER)",
-      "nargs": null,
-      "required": false,
-      "type": null
-    },
-    {
-      "choices": null,
-      "default": false,
-      "flags": [
-        "--local"
-      ],
-      "help": "Force local mode even when FORGETFUL_SERVER is configured",
-      "nargs": 0,
       "required": false,
       "type": null
     }
@@ -760,7 +685,7 @@
       "flags": [
         "--category"
       ],
-      "help": "Filter by tool category (e.g. memory, project)",
+      "help": "Filter by tool category (e.g. memory, linking)",
       "nargs": null,
       "required": false,
       "type": null

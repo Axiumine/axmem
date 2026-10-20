@@ -73,7 +73,7 @@ not covered: there the container uid no longer owns the bind mounts.
 ## What a run does
 
 1. Build/verify the sandbox image, boot `forgetful serve` as a host subprocess:
-   file-backed SQLite in the run dir, no auth, FastEmbed
+   file-backed SQLite in the run dir, `AUTH_MODE=none` on the loopback bind, FastEmbed
    embeddings (warm default cache), `/health` polled to 200. Every other Forgetful
    setting is pinned to its default, so shell variables and
    `~/.config/forgetful` cannot leak into the instance under review; the server is the

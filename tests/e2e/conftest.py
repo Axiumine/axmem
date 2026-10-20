@@ -42,15 +42,13 @@ from app.routes.api import (
     auth,
     health,
     memories,
-    projects,
 )
 from app.routes.mcp import meta_tools
 from app.routes.mcp.tool_metadata_registry import register_all_tools_metadata
 from app.routes.mcp.tool_registry import ToolRegistry
 from app.services.memory_service import MemoryService
-from app.services.project_service import ProjectService
 from app.services.re_embedding_service import ReEmbeddingService
-from app.services.user_service import UserService
+from app.services.tenant_service import TenantService
 
 # Force all async tests in this directory onto the session event loop.
 # Required because asyncpg connections are bound to their creation loop.
@@ -371,23 +369,19 @@ async def postgres_app(
     @asynccontextmanager
     async def lifespan(app):
         """Application lifecycle — creates services, attaches to FastMCP instance."""
-        user_service = UserService(repos["user"])
+        tenant_service = TenantService(repos["user"])
         memory_service = MemoryService(repos["memory"])
-        project_service = ProjectService(repos["project"])
 
-        mcp.user_service = user_service
+        mcp.tenant_service = tenant_service
         mcp.memory_service = memory_service
-        mcp.project_service = project_service
 
         registry = ToolRegistry()
         mcp.registry = registry
 
         register_all_tools_metadata(
             registry=registry,
-            user_service=user_service,
             memory_service=memory_service,
             re_embedding_service=ReEmbeddingService(repos["memory"], embedding_adapter),
-            project_service=project_service,
         )
 
         yield
@@ -398,7 +392,6 @@ async def postgres_app(
     health.register(mcp)
     auth.register(mcp)
     memories.register(mcp)
-    projects.register(mcp)
     meta_tools.register(mcp)
 
     yield mcp

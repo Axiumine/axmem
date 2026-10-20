@@ -3,12 +3,16 @@ from typing import Any, cast
 from uuid import UUID
 
 import sqlite_vec
-from sqlalchemy import Result, Select, select, text
+from sqlalchemy import ColumnElement, Result, Select, select, text
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.repositories.sqlite.sqlite_tables import MemoryTable
+from app.repositories.sqlite.sqlite_tables import (
+    MemoryTable,
+    ProjectsTable,
+    memory_project_association,
+)
 
 
 def with_relationships(stmt: Select[tuple[MemoryTable]]) -> Select[tuple[MemoryTable]]:
@@ -18,6 +22,17 @@ def with_relationships(stmt: Select[tuple[MemoryTable]]) -> Select[tuple[MemoryT
         selectinload(MemoryTable.linked_memories),
         selectinload(MemoryTable.linking_memories),
     )
+
+
+def in_project(project: str) -> ColumnElement[bool]:
+    """Condition: the memory is in the project scope of that name (scopes are matched by name)."""
+    return select(memory_project_association.c.memory_id).join(
+        ProjectsTable, ProjectsTable.id == memory_project_association.c.project_id,
+    ).where(
+        memory_project_association.c.memory_id == MemoryTable.id,
+        ProjectsTable.user_id == MemoryTable.user_id,
+        ProjectsTable.name == project,
+    ).exists()
 
 
 async def reload_memory(session: AsyncSession, memory_id: int) -> MemoryTable:

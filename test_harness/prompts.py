@@ -47,8 +47,8 @@ verdict "pass" is a legitimate outcome; do not invent problems.
 _PER_SKILL_NOTES = {
     "forgetful-cli-setup": (
         "Note for this skill: the CLI is already installed and connected here. Verify "
-        "its claims with safe read-only commands (auth status, tools list, project "
-        "list); review install and `forgetful serve` instructions by inspection only — "
+        "its claims with safe read-only commands (auth status, tools list, memory "
+        "recent); review install and `forgetful serve` instructions by inspection only — "
         "do not run installers or start servers."
     ),
     "forgetful-context-gather": (

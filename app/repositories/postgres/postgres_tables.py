@@ -16,7 +16,6 @@ from sqlalchemy import (
     Text,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
-from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 from app.config.settings import settings
@@ -171,19 +170,22 @@ class MemoryTable(Base):
         return result
 
     @property
-    def project_ids(self) -> list[int]:
-        """Compute project IDs from projects relationship.
+    def project(self) -> str | None:
+        """Scope label of the memory: the name of its first project, or None.
+
+        A memory carries one scope. Rows written before scopes were single-valued can
+        hold several project associations; the oldest one is the scope that is reported.
 
         Returns:
-            List of project IDs, or empty list if relationship not loaded
+            The project name, or None when there is none or the relationship is not loaded
         """
         from sqlalchemy import inspect
         from sqlalchemy.orm.attributes import NO_VALUE
 
         insp = inspect(self)
-        if insp.attrs.projects.loaded_value is not NO_VALUE:
-            return [p.id for p in self.projects]
-        return []
+        if insp.attrs.projects.loaded_value is not NO_VALUE and self.projects:
+            return min(self.projects, key=lambda scope: scope.id).name
+        return None
 
     __table_args__ = (
         Index("ix_memories_user_id", "user_id"),
@@ -266,12 +268,6 @@ class ProjectsTable(Base):
         secondary=memory_project_association,
         back_populates="projects",
     )
-
-    # Computed properties for Pydantic conversion
-    @hybrid_property
-    def memory_count(self) -> int:
-        """Return the count of active (non-obsolete) memories linked to this project"""
-        return sum(1 for memory in self.memories if not memory.is_obsolete)
 
     __table_args__ = (
         Index("ix_projects_user_id", "user_id"),

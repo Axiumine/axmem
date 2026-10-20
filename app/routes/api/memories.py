@@ -14,7 +14,7 @@ from app.exceptions import (
     InvalidStateTransitionError,
     NotFoundError,
 )
-from app.middleware.auth import get_user_from_request
+from app.middleware.auth import get_tenant_from_request
 from app.models.memory_models import (
     Memory,
     MemoryCreate,
@@ -23,8 +23,9 @@ from app.models.memory_models import (
     MemoryListResponse,
     MemoryQueryRequest,
     MemoryUpdate,
+    clean_scope,
 )
-from app.routes.api.query_params import INT32_MAX, INT32_MIN, parse_int_param
+from app.routes.api.query_params import parse_int_param
 from app.routes.api.request_utils import (
     handle_request_errors,
     path_id,
@@ -53,13 +54,13 @@ def register(mcp: ForgetfulMCP):
             offset: Skip N results (default 0)
             sort_by: Sort field - created_at, updated_at, importance (default created_at)
             sort_order: Sort direction - asc, desc (default desc)
-            project_id: Filter by project (optional)
+            project: Filter by project scope (optional)
             importance_min: Minimum importance 1-10 (optional)
             tags: Comma-separated tags (optional)
             include_obsolete: Include obsolete memories (default false)
         """
         try:
-            user = await get_user_from_request(request, mcp)
+            tenant = await get_tenant_from_request(request, mcp)
         except ValueError as e:
             return JSONResponse({"error": str(e)}, status_code=401)
 
@@ -70,9 +71,6 @@ def register(mcp: ForgetfulMCP):
             limit = parse_int_param(params, "limit", 20)
             offset = parse_int_param(params, "offset", 0)
             importance_min = parse_int_param(params, "importance_min")
-            project_id = parse_int_param(
-                params, "project_id", min_value=INT32_MIN, max_value=INT32_MAX,
-            )
         except ValueError as e:
             return JSONResponse({"error": str(e)}, status_code=400)
 
@@ -119,14 +117,16 @@ def register(mcp: ForgetfulMCP):
         # Parse include_obsolete
         include_obsolete = params.get("include_obsolete", "false").lower() == "true"
 
-        # Convert project_id to list if provided
-        project_ids = [project_id] if project_id is not None else None
+        try:
+            project = clean_scope(params.get("project") or None)
+        except ValueError as e:
+            return JSONResponse({"error": str(e)}, status_code=400)
 
         memories, total = await mcp.memory_service.list_memories(
-            user_id=user.id,
+            user_id=tenant.id,
             limit=limit,
             offset=offset,
-            project_ids=project_ids,
+            project=project,
             include_obsolete=include_obsolete,
             sort_by=sort_by,
             sort_order=sort_order,
@@ -148,7 +148,7 @@ def register(mcp: ForgetfulMCP):
     async def get_memory(request: Request) -> JSONResponse:
         """Get a single memory by ID."""
         try:
-            user = await get_user_from_request(request, mcp)
+            tenant = await get_tenant_from_request(request, mcp)
         except ValueError as e:
             return JSONResponse({"error": str(e)}, status_code=401)
 
@@ -156,7 +156,7 @@ def register(mcp: ForgetfulMCP):
 
         try:
             memory = await mcp.memory_service.get_memory(
-                user_id=user.id,
+                user_id=tenant.id,
                 memory_id=memory_id,
             )
         except NotFoundError:
@@ -172,7 +172,7 @@ def register(mcp: ForgetfulMCP):
     async def create_memory(request: Request) -> JSONResponse:
         """Create a new memory."""
         try:
-            user = await get_user_from_request(request, mcp)
+            tenant = await get_tenant_from_request(request, mcp)
         except ValueError as e:
             return JSONResponse({"error": str(e)}, status_code=401)
 
@@ -184,15 +184,12 @@ def register(mcp: ForgetfulMCP):
         except Exception as e:
             return JSONResponse({"error": f"Invalid request body: {e!s}"}, status_code=400)
 
-        try:
-            memory, similar_memories = await mcp.memory_service.create_memory(
-                user_id=user.id,
-                memory_data=memory_data,
-            )
-        except AssociationNotFoundError as e:
-            return JSONResponse({"error": str(e)}, status_code=404)
+        memory, similar_memories = await mcp.memory_service.create_memory(
+            user_id=tenant.id,
+            memory_data=memory_data,
+        )
         obsolete_matches = await mcp.memory_service.find_obsolete_matches(
-            user_id=user.id,
+            user_id=tenant.id,
             memory_id=memory.id,
         )
 
@@ -200,7 +197,7 @@ def register(mcp: ForgetfulMCP):
             id=memory.id,
             title=memory.title,
             linked_memory_ids=memory.linked_memory_ids,
-            project_ids=memory.project_ids,
+            project=memory.project,
             similar_memories=similar_memories,
             obsolete_matches=obsolete_matches,
         )
@@ -212,7 +209,7 @@ def register(mcp: ForgetfulMCP):
     async def update_memory(request: Request) -> JSONResponse:
         """Update an existing memory."""
         try:
-            user = await get_user_from_request(request, mcp)
+            tenant = await get_tenant_from_request(request, mcp)
         except ValueError as e:
             return JSONResponse({"error": str(e)}, status_code=401)
 
@@ -228,12 +225,10 @@ def register(mcp: ForgetfulMCP):
 
         try:
             memory = await mcp.memory_service.update_memory(
-                user_id=user.id,
+                user_id=tenant.id,
                 memory_id=memory_id,
                 updated_memory=update_data,
             )
-        except AssociationNotFoundError as e:
-            return JSONResponse({"error": str(e)}, status_code=404)
         except NotFoundError:
             return JSONResponse({"error": "Memory not found"}, status_code=404)
 
@@ -247,7 +242,7 @@ def register(mcp: ForgetfulMCP):
     async def delete_memory(request: Request) -> JSONResponse:
         """Mark a memory as obsolete (soft delete)."""
         try:
-            user = await get_user_from_request(request, mcp)
+            tenant = await get_tenant_from_request(request, mcp)
         except ValueError as e:
             return JSONResponse({"error": str(e)}, status_code=401)
 
@@ -266,7 +261,7 @@ def register(mcp: ForgetfulMCP):
 
         try:
             success = await mcp.memory_service.mark_memory_obsolete(
-                user_id=user.id,
+                user_id=tenant.id,
                 memory_id=memory_id,
                 reason=reason,
                 superseded_by=superseded_by,
@@ -288,7 +283,7 @@ def register(mcp: ForgetfulMCP):
     async def search_memories(request: Request) -> JSONResponse:
         """Semantic search across memories."""
         try:
-            user = await get_user_from_request(request, mcp)
+            tenant = await get_tenant_from_request(request, mcp)
         except ValueError as e:
             return JSONResponse({"error": str(e)}, status_code=401)
 
@@ -301,7 +296,7 @@ def register(mcp: ForgetfulMCP):
             return JSONResponse({"error": f"Invalid request body: {e!s}"}, status_code=400)
 
         result = await mcp.memory_service.query_memory(
-            user_id=user.id,
+            user_id=tenant.id,
             memory_query=query_request,
         )
 
@@ -312,7 +307,7 @@ def register(mcp: ForgetfulMCP):
     async def link_memories(request: Request) -> JSONResponse:
         """Link memories together (appends to existing links)."""
         try:
-            user = await get_user_from_request(request, mcp)
+            tenant = await get_tenant_from_request(request, mcp)
         except ValueError as e:
             return JSONResponse({"error": str(e)}, status_code=401)
 
@@ -337,7 +332,7 @@ def register(mcp: ForgetfulMCP):
 
         try:
             linked_ids = await mcp.memory_service.link_memories(
-                user_id=user.id,
+                user_id=tenant.id,
                 memory_id=memory_id,
                 related_ids=link_request.related_ids,
             )
@@ -356,7 +351,7 @@ def register(mcp: ForgetfulMCP):
             include_obsolete: Include obsolete linked memories (default false)
         """
         try:
-            user = await get_user_from_request(request, mcp)
+            tenant = await get_tenant_from_request(request, mcp)
         except ValueError as e:
             return JSONResponse({"error": str(e)}, status_code=401)
 
@@ -378,7 +373,7 @@ def register(mcp: ForgetfulMCP):
         # Get the memory first to access linked_memory_ids
         try:
             memory = await mcp.memory_service.get_memory(
-                user_id=user.id,
+                user_id=tenant.id,
                 memory_id=memory_id,
             )
         except NotFoundError:
@@ -395,7 +390,7 @@ def register(mcp: ForgetfulMCP):
                 break
             try:
                 linked_memory = await mcp.memory_service.get_memory(
-                    user_id=user.id,
+                    user_id=tenant.id,
                     memory_id=linked_id,
                 )
             except NotFoundError:
@@ -414,7 +409,7 @@ def register(mcp: ForgetfulMCP):
     async def delete_memory_link(request: Request) -> JSONResponse:
         """Remove a specific link between memories."""
         try:
-            user = await get_user_from_request(request, mcp)
+            tenant = await get_tenant_from_request(request, mcp)
         except ValueError as e:
             return JSONResponse({"error": str(e)}, status_code=401)
 
@@ -423,7 +418,7 @@ def register(mcp: ForgetfulMCP):
 
         try:
             success = await mcp.memory_service.unlink_memories(
-                user_id=user.id,
+                user_id=tenant.id,
                 memory_id=memory_id,
                 target_id=target_id,
             )

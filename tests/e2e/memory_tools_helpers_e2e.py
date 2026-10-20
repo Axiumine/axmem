@@ -25,14 +25,6 @@ async def create_memory(
     )
 
 
-async def create_project(client, name, description, project_type="development"):
-    """Create a project and return the raw tool result."""
-    return await call_tool(
-        client, "create_project", name=name, description=description,
-        project_type=project_type,
-    )
-
-
 async def get_memory(client, memory_id):
     """Fetch one memory by ID."""
     return await call_tool(client, "get_memory", memory_id=memory_id)

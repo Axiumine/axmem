@@ -39,7 +39,7 @@ For each primary memory found, get full details:
 execute_forgetful_tool("get_memory", {"memory_id": <id>})
 ```
 
-Extract: project_ids, linked_memory_ids
+Extract: project, linked_memory_ids
 
 ## Phase 3: Follow the Links
 
@@ -53,13 +53,13 @@ Repeat for the new memories, skipping any ID already visited.
 
 ## Phase 4: Project Scope
 
-For discovered project_ids, search again within each project for memories the first query ranked too low:
+For each discovered project scope, search again within it for memories the first query ranked too low:
 
 ```
 execute_forgetful_tool("query_memory", {
   "query": "$ARGUMENTS",
   "query_context": "Project-scoped exploration via /memory-explore command",
-  "project_ids": [<ids>]
+  "project": "<project scope>"
 })
 ```
 

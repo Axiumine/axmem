@@ -2,10 +2,8 @@
 
 The fastmcp client is the one external boundary the CLI has, so it is replaced with a
 stub injected through the client-factory seam. Everything else (selection precedence,
-URL normalization, .env line editing, token-dir lifecycle) runs real code.
+URL normalization, env file line editing) runs real code.
 """
-
-from pathlib import Path
 
 import pytest
 
@@ -16,32 +14,10 @@ from app.routes.cli.parser import _build_executor, _run_auth_command, build_pars
 from app.routes.cli.remote_executor import RemoteExecutor, normalize_server_url
 
 
-async def _seed_oauth_token(token_dir: Path, url: str) -> None:
-    """Write a genuine URL-scoped OAuth token into the cache, as a real login would.
-
-    fastmcp keys its FileTreeStore token entries by server URL; the plain store only
-    creates the collection directory, not the nested dirs the URL-shaped key implies,
-    so pre-create them before the atomic write lands.
-    """
-    from fastmcp.client.auth import OAuth
-    from mcp.shared.auth import OAuthToken
-
-    from app.routes.cli.token_storage import oauth_token_file_tree_store
-
-    adapter = OAuth(
-        mcp_url=url, token_storage=oauth_token_file_tree_store(token_dir),
-    ).token_storage_adapter
-    token = OAuthToken(access_token="seeded", token_type="Bearer")
-    try:
-        await adapter.set_tokens(token)
-    except FileNotFoundError as exc:
-        Path(exc.filename).parent.mkdir(parents=True, exist_ok=True)
-        await adapter.set_tokens(token)
-
-
 class StubResult:
     def __init__(self, data):
         self.data = data
+        self.content = []
         self.is_error = False
 
 
@@ -51,7 +27,6 @@ class StubClient:
     def __init__(self, responses=None):
         self.calls = []
         self.closed = False
-        self.pinged = False
         self._responses = list(responses or [])
 
     async def __aenter__(self):
@@ -63,9 +38,6 @@ class StubClient:
     async def call_tool(self, name, arguments):
         self.calls.append((name, arguments))
         return StubResult(self._responses.pop(0) if self._responses else {"ok": True})
-
-    async def ping(self):
-        self.pinged = True
 
     async def close(self):
         self.closed = True
@@ -182,11 +154,9 @@ def test_normalize_server_url_rejects_non_http_scheme():
 # =============================================================================
 
 
-async def test_server_flag_beats_forgetful_server_setting(monkeypatch, tmp_path):
+async def test_server_flag_beats_forgetful_server_setting(monkeypatch):
     monkeypatch.setattr(settings, "FORGETFUL_SERVER", "http://from-settings:1")
     monkeypatch.delenv("FORGETFUL_TOKEN", raising=False)
-    # Tokenless remote -> OAuth factory; keep its token cache out of the real home dir
-    monkeypatch.setattr("app.routes.cli.paths.config_dir", lambda: tmp_path / "config")
 
     executor = await _build_executor(_args(["tools", "list", "--server", "http://from-flag:2"]))
 
@@ -197,10 +167,9 @@ async def test_server_flag_beats_forgetful_server_setting(monkeypatch, tmp_path)
         await executor.close()
 
 
-async def test_forgetful_server_setting_selects_remote(monkeypatch, tmp_path):
+async def test_forgetful_server_setting_selects_remote(monkeypatch):
     monkeypatch.setattr(settings, "FORGETFUL_SERVER", "http://from-settings:1")
     monkeypatch.delenv("FORGETFUL_TOKEN", raising=False)
-    monkeypatch.setattr("app.routes.cli.paths.config_dir", lambda: tmp_path / "config")
 
     executor = await _build_executor(_args(["tools", "list"]))
 
@@ -279,21 +248,19 @@ def test_upsert_env_var_appends_and_creates_file_when_missing(tmp_path):
     assert env_file.read_text().splitlines() == ["FORGETFUL_SERVER=http://new:2/mcp"]
 
 
-async def test_login_pings_server_and_saves_server_url(tmp_path, capsys):
+async def test_login_checks_the_server_and_saves_server_url(tmp_path, capsys):
     env_file = tmp_path / ".env"
     env_file.write_text("LOG_LEVEL=DEBUG\n")
-    token_dir = tmp_path / "tokens"
     stub = StubClient()
 
     code = await auth_commands.login(
         "http://remote:8020",
         env_file=env_file,
-        token_dir=token_dir,
-        client_factory=lambda url, token_dir: stub,
+        client_factory=lambda url, token: stub,
     )
 
     assert code == 0
-    assert stub.pinged
+    assert [name for name, _ in stub.calls] == ["discover_forgetful_tools"]
     assert env_file.read_text().splitlines() == [
         "LOG_LEVEL=DEBUG",
         "FORGETFUL_SERVER=http://remote:8020/mcp",
@@ -305,14 +272,13 @@ async def test_login_failure_exits_one_and_leaves_config_untouched(tmp_path, cap
     env_file.write_text("LOG_LEVEL=DEBUG\n")
 
     class FailingClient(StubClient):
-        async def ping(self):
+        async def call_tool(self, name, arguments):
             raise ConnectionError("connection refused")
 
     code = await auth_commands.login(
         "http://remote:8020",
         env_file=env_file,
-        token_dir=tmp_path / "tokens",
-        client_factory=lambda url, token_dir: FailingClient(),
+        client_factory=lambda url, token: FailingClient(),
     )
 
     assert code == 1
@@ -322,9 +288,8 @@ async def test_login_failure_exits_one_and_leaves_config_untouched(tmp_path, cap
 
 async def test_auth_login_bad_scheme_exits_one_with_clean_error(monkeypatch, tmp_path, capsys):
     """normalize_server_url's ValueError must surface as a clean error, not a traceback."""
-    # Path seams stubbed so a regression can't touch the real HOME (or pop a browser).
+    # Path seam stubbed so a regression can't touch the real HOME.
     monkeypatch.setattr(auth_commands, "user_env_file", lambda: tmp_path / ".env")
-    monkeypatch.setattr(auth_commands, "token_cache_dir", lambda: tmp_path / "tokens")
 
     code = await _run_auth_command(_args(["auth", "login", "--server", "ftp://example.com"]))
 
@@ -338,7 +303,6 @@ async def test_auth_status_bad_scheme_exits_one_with_clean_error(monkeypatch, tm
     """A bad FORGETFUL_SERVER scheme reaches status via RemoteExecutor construction."""
     monkeypatch.setattr(settings, "FORGETFUL_SERVER", "ftp://example.com")
     monkeypatch.delenv("FORGETFUL_TOKEN", raising=False)
-    monkeypatch.setattr(auth_commands, "token_cache_dir", lambda: tmp_path / "tokens")
 
     code = await _run_auth_command(_args(["auth", "status"]))
 
@@ -346,23 +310,6 @@ async def test_auth_status_bad_scheme_exits_one_with_clean_error(monkeypatch, tm
     err = capsys.readouterr().err
     assert "Unsupported server URL scheme" in err
     assert "Traceback" not in err
-
-
-def test_logout_deletes_token_cache_dir(tmp_path, capsys):
-    token_dir = tmp_path / "tokens"
-    (token_dir / "servers").mkdir(parents=True)
-    (token_dir / "servers" / "token.json").write_text("{}")
-
-    code = auth_commands.logout(token_dir=token_dir)
-
-    assert code == 0
-    assert not token_dir.exists()
-
-
-def test_logout_when_no_cached_tokens_still_succeeds(tmp_path, capsys):
-    code = auth_commands.logout(token_dir=tmp_path / "missing")
-
-    assert code == 0
 
 
 async def test_auth_status_local_mode_reports_local(monkeypatch, capsys):
@@ -374,103 +321,3 @@ async def test_auth_status_local_mode_reports_local(monkeypatch, capsys):
     out = capsys.readouterr().out
     assert "Mode: local" in out
     assert settings.DATABASE in out
-
-
-class _RecordingExecutor:
-    """Stands in for RemoteExecutor and records how it was constructed."""
-
-    built = {}
-
-    def __init__(self, url, *, token=None, client_factory=None):
-        type(self).built = {"token": token, "client_factory": client_factory}
-        self.server_url = url
-
-    async def execute(self, tool_name, arguments):
-        return {"name": "default-user-name"}
-
-    async def close(self):
-        pass
-
-
-async def test_auth_status_no_credentials_verifies_without_touching_cache(
-    monkeypatch, tmp_path, capsys,
-):
-    """No token + empty cache: status verifies via a plain (no-OAuth) client.
-
-    The default OAuth client registers and writes to the token cache on connect, so
-    using it for a read-only status check silently resurrects the cache `logout` just
-    cleared (and could pop a browser). Status must instead go through a no-auth client.
-    """
-    monkeypatch.delenv("FORGETFUL_TOKEN", raising=False)
-    empty_cache = tmp_path / "tokens"  # never created
-    monkeypatch.setattr(auth_commands, "token_cache_dir", lambda: empty_cache)
-    monkeypatch.setattr(
-        "app.routes.cli.remote_executor.RemoteExecutor", _RecordingExecutor,
-    )
-
-    code = await auth_commands.status(server="http://remote:8020")
-
-    assert code == 0
-    # Verified through the no-auth path, NOT the default OAuth (cache-writing) factory.
-    assert _RecordingExecutor.built["token"] is None
-    assert _RecordingExecutor.built["client_factory"] is not None
-    out = capsys.readouterr().out
-    assert "User: default-user-name" in out
-    assert "Cached credentials: no" in out
-    assert not empty_cache.exists()  # status wrote nothing to disk
-
-
-async def test_auth_status_with_cached_tokens_sends_cached_token_as_bearer(
-    monkeypatch, tmp_path, capsys,
-):
-    """A URL-scoped token for the current server means we're logged in: status sends
-    that cached access token as a plain bearer. It must NOT downgrade to the no-auth
-    client (which can't authenticate against a secured server) nor use the interactive
-    OAuth client (which registers, opens a browser and rewrites the cache on a 401)."""
-    monkeypatch.delenv("FORGETFUL_TOKEN", raising=False)
-    cache = tmp_path / "tokens"
-    cache.mkdir()
-    await _seed_oauth_token(cache, "http://remote:8020/mcp")
-    monkeypatch.setattr(auth_commands, "token_cache_dir", lambda: cache)
-    monkeypatch.setattr(
-        "app.routes.cli.remote_executor.RemoteExecutor", _RecordingExecutor,
-    )
-
-    code = await auth_commands.status(server="http://remote:8020/mcp")
-
-    assert code == 0
-    assert _RecordingExecutor.built["token"] == "seeded"
-    assert _RecordingExecutor.built["client_factory"] is None  # default factory, bearer auth
-    out = capsys.readouterr().out
-    assert "Cached credentials: yes" in out
-
-
-async def test_auth_status_cross_server_cache_does_not_trigger_oauth(
-    monkeypatch, tmp_path, capsys,
-):
-    """A cache holding tokens for server A must not authorize the OAuth path for B.
-
-    fastmcp scopes cached tokens per server URL. A global "cache is non-empty" check
-    would send `status` for a never-logged-in server B down the OAuth path, whose
-    client holds no tokens for B and so performs dynamic client registration and opens
-    a browser. status must instead report unauthenticated via the no-auth client.
-    """
-    import webbrowser
-
-    monkeypatch.delenv("FORGETFUL_TOKEN", raising=False)
-    cache = tmp_path / "tokens"
-    cache.mkdir()
-    await _seed_oauth_token(cache, "http://server-a.example:8020/mcp")
-    monkeypatch.setattr(auth_commands, "token_cache_dir", lambda: cache)
-    monkeypatch.setattr(
-        "app.routes.cli.remote_executor.RemoteExecutor", _RecordingExecutor,
-    )
-    monkeypatch.setattr(webbrowser, "open", lambda *a, **k: pytest.fail("browser opened"))
-
-    code = await auth_commands.status(server="http://server-b.example:8020/mcp")
-
-    assert code == 0
-    # No tokens for B -> no-auth path, NOT the default OAuth (DCR/browser) factory.
-    assert _RecordingExecutor.built["token"] is None
-    assert _RecordingExecutor.built["client_factory"] is not None
-    assert "Cached credentials: no" in capsys.readouterr().out

@@ -48,16 +48,14 @@ async def test_link_memories_skips_other_users_memory_e2e(mcp_client, monkeypatc
     own_id = await _create_memory(mcp_client, "Alice private note")
 
     with monkeypatch.context() as other_user:
-        other_user.setattr(settings, "DEFAULT_USER_ID", "link-ownership-user-b")
-        other_user.setattr(settings, "DEFAULT_USER_EMAIL", "link-ownership-b@example.test")
+        other_user.setattr(settings, "DEFAULT_TENANT", "link-ownership-tenant-b")
         foreign_id = await _create_memory(mcp_client, "Bob private note")
 
     assert await _link(mcp_client, own_id, [foreign_id]) == []
 
     assert await _get_linked_ids(mcp_client, own_id) == []
     with monkeypatch.context() as other_user:
-        other_user.setattr(settings, "DEFAULT_USER_ID", "link-ownership-user-b")
-        other_user.setattr(settings, "DEFAULT_USER_EMAIL", "link-ownership-b@example.test")
+        other_user.setattr(settings, "DEFAULT_TENANT", "link-ownership-tenant-b")
         assert await _get_linked_ids(mcp_client, foreign_id) == []
 
 
@@ -70,8 +68,7 @@ async def test_link_memories_foreign_id_indistinguishable_from_missing_e2e(
     own_target_id = await _create_memory(mcp_client, "Alice target note")
 
     with monkeypatch.context() as other_user:
-        other_user.setattr(settings, "DEFAULT_USER_ID", "link-ownership-user-b")
-        other_user.setattr(settings, "DEFAULT_USER_EMAIL", "link-ownership-b@example.test")
+        other_user.setattr(settings, "DEFAULT_TENANT", "link-ownership-tenant-b")
         foreign_id = await _create_memory(mcp_client, "Bob note")
 
     linked = await _link(mcp_client, own_id, [foreign_id, NONEXISTENT_MEMORY_ID, own_target_id])

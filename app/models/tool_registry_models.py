@@ -10,9 +10,7 @@ from pydantic import BaseModel, Field, JsonValue
 
 class ToolCategory(StrEnum):
     """Tool categories for organisation and filtering"""
-    USER = "user"
     MEMORY = "memory"
-    PROJECT = "project"
     LINKING = "linking"
 
 class ToolParameterDef(TypedDict):

@@ -23,35 +23,34 @@ Use `discover_forgetful_tools` and execute these queries:
 ```
 # Discover available tools
 discover_forgetful_tools(category="memory")
-discover_forgetful_tools(category="project")
 
 # Query for project information
 query_memory({
   "query": "[project-name] architecture overview",
   "include_links": true,
-  "project_ids": [project_id]
+  "project": "[project-name]"
 })
 
 query_memory({
   "query": "[project-name] design decisions",
   "include_links": true,
-  "project_ids": [project_id]
+  "project": "[project-name]"
 })
 
 query_memory({
   "query": "[project-name] implementation patterns",
   "include_links": true,
-  "project_ids": [project_id]
+  "project": "[project-name]"
 })
 
 query_memory({
   "query": "[project-name] features capabilities",
   "include_links": true,
-  "project_ids": [project_id]
+  "project": "[project-name]"
 })
 
-# List all project content
-list_memories({"project_id": project_id})
+# List the most recent memories of the project
+get_recent_memories({"limit": 20, "project": "[project-name]"})
 ```
 
 ### Compile KB Summary

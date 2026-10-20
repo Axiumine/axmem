@@ -1,18 +1,14 @@
-"""Integration tests for CLI output conversion and the on-disk OAuth token cache.
+"""Integration tests for CLI output conversion.
 
-Covers values that are not natively JSON, a stdout that refuses to be reconfigured,
-and the token cache when the disk fails while relocated metadata is being repaired.
+Covers values that are not natively JSON and a stdout that refuses to be reconfigured.
 """
 import io
 import json
-import os
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID
 
-from key_value.aio.stores.filetree.store import FileTreeStore
-
-from app.routes.cli import render, token_storage
+from app.routes.cli import render
 
 
 def test_to_jsonable_stringifies_values_json_cannot_represent():
@@ -45,22 +41,3 @@ def test_ensure_safe_stdout_survives_a_stream_that_cannot_be_reconfigured(monkey
         render.ensure_safe_stdout()
 
         assert stream.errors == "strict"
-
-
-def test_relocated_cache_metadata_survives_a_failing_disk_untouched(tmp_path, monkeypatch):
-    cache = tmp_path / "tokens"
-    cache.mkdir()
-    info_file = cache / "mcp-oauth-tokens-info.json"
-    stale = json.dumps({"directory": "/old/home/tokens/mcp-oauth-tokens"})
-    info_file.write_text(stale, encoding="utf-8")
-
-    def disk_full(source, destination):
-        raise OSError("no space left on device")
-
-    monkeypatch.setattr(os, "replace", disk_full)
-
-    store = token_storage.oauth_token_file_tree_store(cache)
-
-    assert isinstance(store, FileTreeStore)
-    assert info_file.read_text(encoding="utf-8") == stale
-    assert [path.name for path in cache.iterdir()] == [info_file.name]

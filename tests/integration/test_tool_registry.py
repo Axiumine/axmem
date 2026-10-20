@@ -79,7 +79,7 @@ async def test_get_tool(empty_registry, sample_tool_impl):
 
     empty_registry.register(
         name="retrieve_me",
-        category=ToolCategory.USER,
+        category=ToolCategory.LINKING,
         description="Test retrieval",
         parameters=params,
         returns="Test result",
@@ -89,7 +89,7 @@ async def test_get_tool(empty_registry, sample_tool_impl):
     tool = empty_registry.get_tool("retrieve_me")
     assert tool is not None
     assert tool.metadata.name == "retrieve_me"
-    assert tool.metadata.category == ToolCategory.USER
+    assert tool.metadata.category == ToolCategory.LINKING
     assert tool.implementation == sample_tool_impl
 
 
@@ -135,9 +135,9 @@ async def test_list_categories(empty_registry, sample_tool_impl):
     )
 
     empty_registry.register(
-        name="user_tool",
-        category=ToolCategory.USER,
-        description="User",
+        name="linking_tool",
+        category=ToolCategory.LINKING,
+        description="Linking",
         parameters=params,
         returns="Result",
         implementation=sample_tool_impl,
@@ -154,7 +154,7 @@ async def test_list_categories(empty_registry, sample_tool_impl):
 
     categories = empty_registry.list_categories()
     assert categories["memory"] == 2
-    assert categories["user"] == 1
+    assert categories["linking"] == 1
     assert len(categories) == 2
 
 
@@ -253,7 +253,7 @@ async def test_register_overwrites_existing(empty_registry, sample_tool_impl):
     # Re-register with different description
     empty_registry.register(
         name="overwrite_me",
-        category=ToolCategory.USER,
+        category=ToolCategory.LINKING,
         description="Updated",
         parameters=params,
         returns="Updated result",
@@ -262,7 +262,7 @@ async def test_register_overwrites_existing(empty_registry, sample_tool_impl):
 
     tool = empty_registry.get_tool("overwrite_me")
     assert tool.metadata.description == "Updated"
-    assert tool.metadata.category == ToolCategory.USER
+    assert tool.metadata.category == ToolCategory.LINKING
     assert len(empty_registry.list_all_tools()) == 1  # Still only one tool
 
 
@@ -349,10 +349,10 @@ async def registry_with_mutates(sample_tool_impl):
     registry.register(name="create_memory", category=ToolCategory.MEMORY, description="Create",
                       parameters=params, returns="R", implementation=sample_tool_impl, mutates=True)
 
-    # User: 1 read, 1 write
-    registry.register(name="get_current_user", category=ToolCategory.USER, description="Get user",
+    # Linking: 1 read, 1 write
+    registry.register(name="list_links", category=ToolCategory.LINKING, description="List links",
                       parameters=params, returns="R", implementation=sample_tool_impl, mutates=False)
-    registry.register(name="update_user_notes", category=ToolCategory.USER, description="Update",
+    registry.register(name="drop_links", category=ToolCategory.LINKING, description="Update",
                       parameters=params, returns="R", implementation=sample_tool_impl, mutates=True)
 
     return registry
@@ -361,7 +361,7 @@ async def registry_with_mutates(sample_tool_impl):
 @pytest.mark.asyncio
 async def test_get_permitted_tools(registry_with_mutates):
     """Test filtering tools by permitted set."""
-    permitted = {"query_memory", "get_memory", "get_current_user"}
+    permitted = {"query_memory", "get_memory", "list_links"}
     tools = registry_with_mutates.get_permitted_tools(permitted)
     names = {t.name for t in tools}
     assert names == permitted
@@ -395,10 +395,10 @@ async def test_get_permitted_by_category_excludes_unpermitted(registry_with_muta
 @pytest.mark.asyncio
 async def test_get_permitted_categories(registry_with_mutates):
     """Test category counts with permitted filter."""
-    permitted = {"query_memory", "get_memory", "get_current_user"}
+    permitted = {"query_memory", "get_memory", "list_links"}
     categories = registry_with_mutates.get_permitted_categories(permitted)
     assert categories["memory"] == 2
-    assert categories["user"] == 1
+    assert categories["linking"] == 1
     assert "create_memory" not in str(categories)  # Write tool excluded
 
 

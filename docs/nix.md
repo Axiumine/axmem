@@ -32,12 +32,12 @@ pytest tests/integration/ -q
 ## Run
 
 ```bash
-nix run .#forgetful-ai -- --transport http --port 8020
+AUTH_MODE=none nix run .#forgetful-ai -- --transport http --host 127.0.0.1 --port 8020
 ```
 
 (`nix run .` works too — `forgetful-ai` is the default app.) Anything after
 `--` is passed to Forgetful; see `forgetful --help` for transports and flags.
-For MCP clients, point a stdio server at `nix run .#forgetful-ai`.
+For MCP clients, point a stdio server at `nix run .#forgetful-ai` with `AUTH_MODE=none` in its environment. The server refuses to start without `AUTH_MODE`, and accepts `none` only on stdio or a loopback bind.
 
 ## Build
 

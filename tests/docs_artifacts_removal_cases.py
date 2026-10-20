@@ -10,10 +10,10 @@ from alembic import command
 from app.bootstrap import create_repositories
 from app.config.settings import settings
 from app.models.memory_models import MemoryCreate
-from app.models.project_models import ProjectCreate, ProjectType
 from app.models.user_models import UserCreate
 from tests.migration_helpers import (
     alembic_config,
+    create_project_row,
     read_shapes,
     run_migration,
     stored_event_types,
@@ -132,10 +132,7 @@ async def store_removed_rows_and_events(db: Any) -> dict[str, Any]:
         UserCreate(external_id="docs-artifacts-removal", name="Docs", email="docs@example.test"),
     )
     owner = user.id
-    project = await repos["project"].create_project(
-        owner,
-        ProjectCreate(name="Kept", description="Survives the migration", project_type=ProjectType.WORK),
-    )
+    project_id = await create_project_row(db, owner)
     memory = await repos["memory"].create_memory(
         owner,
         MemoryCreate(title="Kept memory", content="c", context="x", keywords=["k"], tags=["t"], importance=7),
@@ -148,7 +145,7 @@ async def store_removed_rows_and_events(db: Any) -> dict[str, Any]:
         "INSERT INTO memory_document_association (memory_id, document_id) VALUES (:memory, 1)",
         "INSERT INTO memory_code_artifact_association (memory_id, code_artifact_id) VALUES (:memory, 1)",
     ]
-    parameters = {"owner": str(owner), "project": project.id, "memory": memory.id}
+    parameters = {"owner": str(owner), "project": project_id, "memory": memory.id}
     event = text(
         "INSERT INTO activity_log (user_id, entity_type, entity_id, action, snapshot, actor, created_at) "
         "VALUES (:owner, :entity_type, 1, 'created', '{}', 'user', CURRENT_TIMESTAMP)",

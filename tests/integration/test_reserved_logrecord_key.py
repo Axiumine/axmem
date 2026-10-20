@@ -18,19 +18,15 @@ import ast
 import logging
 from collections.abc import Iterator
 from pathlib import Path
-from uuid import uuid4
 
 import pytest
 
-from app.models.project_models import ProjectCreate
+from app.exceptions import ConflictError
+from app.models.user_models import UserCreate
 
 APP_DIR = Path(__file__).resolve().parents[2] / "app"
 
-AFFECTED_LOGGERS = (
-    "app.services.project_service",
-    "app.repositories.postgres.project_repository",
-    "app.repositories.sqlite.project_repository",
-)
+AFFECTED_LOGGERS = ("app.services.tenant_service",)
 
 LOG_METHODS = {"debug", "info", "warning", "warn", "error", "exception", "critical", "log"}
 
@@ -116,45 +112,30 @@ def test_log_extra_never_uses_reserved_logrecord_keys():
     assert not offenders, "\n".join(offenders)
 
 
-async def test_list_projects_with_info_logging(test_project_service, info_logging):
-    user_id = uuid4()
-    await test_project_service.create_project(
-        user_id,
-        ProjectCreate(
-            name="Forgetful", description="d" * 20, project_type="development",
-        ),
+async def test_tenant_creation_with_info_logging(test_tenant_service, info_logging):
+    tenant = await test_tenant_service.get_or_create_tenant("acme")
+
+    assert tenant.external_id == "acme"
+    record = _single_record(info_logging, "app.services.tenant_service", "Creating tenant")
+    assert record.tenant == "acme"
+
+
+async def test_tenant_creation_race_with_info_logging(test_tenant_service, info_logging, monkeypatch):
+    repo = test_tenant_service.user_repo
+    winner = await repo.create_user(UserCreate(external_id="racing", name="racing", email=""))
+    lookups = iter([None, winner])
+
+    async def lookup(external_id):
+        return next(lookups)
+
+    async def conflict(user):
+        raise ConflictError("A user with this external_id already exists")
+
+    monkeypatch.setattr(repo, "get_user_by_external_id", lookup)
+    monkeypatch.setattr(repo, "create_user", conflict)
+
+    assert await test_tenant_service.get_or_create_tenant("racing") == winner
+    record = _single_record(
+        info_logging, "app.services.tenant_service", "Tenant creation race condition, fetching existing tenant",
     )
-
-    projects = await test_project_service.list_projects(user_id, name="forget")
-
-    assert [p.name for p in projects] == ["Forgetful"]
-    record = _single_record(info_logging, "app.services.project_service", "listing projects")
-    assert record.name_filter == "forget"
-
-
-class _FailingDbAdapter:
-    """db_adapter whose session() fails like an unreachable or locked database."""
-
-    def session(self, user_id):
-        raise ConnectionRefusedError("database unavailable")
-
-
-@pytest.mark.parametrize("backend", ["postgres", "sqlite"])
-async def test_repository_list_projects_logs_with_info_logging(backend, info_logging):
-    if backend == "postgres":
-        from app.repositories.postgres.project_repository import (
-            PostgresProjectRepository as Repo,
-        )
-    else:
-        from app.repositories.sqlite.project_repository import (
-            SqliteProjectRepository as Repo,
-        )
-    repository = Repo(db_adapter=_FailingDbAdapter())
-
-    # The log line precedes the database access, so reaching the stub's
-    # ConnectionRefusedError proves the logging call itself did not raise.
-    with pytest.raises(ConnectionRefusedError):
-        await repository.list_projects(uuid4(), name="forget")
-
-    record = _single_record(info_logging, Repo.__module__, "Listing projects")
-    assert record.name_filter == "forget"
+    assert record.tenant == "racing"

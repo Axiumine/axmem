@@ -1,6 +1,6 @@
 """Integration tests: a token's scope claim must never widen access to the instance ceiling.
 
-Covers how the OAuth access token's scope claim is turned into token scopes and
+Covers how the access token's scope claim is turned into token scopes and
 intersected with the instance ceiling (FORGETFUL_SCOPES):
 
 - unknown scopes next to a recognised one (``openid read``) are ignored, the
@@ -25,15 +25,13 @@ from app.routes.mcp.scope_resolver import (
 from app.routes.mcp.tool_registry import ToolRegistry
 
 ALL_TOOLS = {
-    "get_current_user",
-    "update_user_notes",
+    "get_memory",
     "query_memory",
     "create_memory",
-    "list_projects",
-    "create_project",
+    "update_memory",
 }
-READ_TOOLS = {"get_current_user", "query_memory", "list_projects"}
-MEMORY_READ_TOOLS = {"query_memory"}
+READ_TOOLS = {"get_memory", "query_memory"}
+MEMORY_READ_TOOLS = {"get_memory", "query_memory"}
 
 
 @pytest.fixture
@@ -45,12 +43,10 @@ def registry():
         return {}
 
     tools = [
-        ("get_current_user", ToolCategory.USER, False),
-        ("update_user_notes", ToolCategory.USER, True),
+        ("get_memory", ToolCategory.MEMORY, False),
         ("query_memory", ToolCategory.MEMORY, False),
         ("create_memory", ToolCategory.MEMORY, True),
-        ("list_projects", ToolCategory.PROJECT, False),
-        ("create_project", ToolCategory.PROJECT, True),
+        ("update_memory", ToolCategory.MEMORY, True),
     ]
     for name, category, mutates in tools:
         registry.register(
@@ -189,7 +185,7 @@ class TestClaimShapes:
 
     def test_comma_separated_token_within_claim_is_still_accepted(self, registry):
         permitted = _effective(registry, {"scope": "read,write:memories openid"})
-        assert permitted == READ_TOOLS | {"create_memory"}
+        assert permitted == READ_TOOLS | {"create_memory", "update_memory"}
 
 
 class TestNoScopeClaimKeepsInstanceCeiling:
@@ -223,8 +219,8 @@ class TestNoScopeClaimKeepsInstanceCeiling:
         assert _effective(registry, claims) == ALL_TOOLS
 
     def test_upstream_provider_scopes_on_token_are_not_forgetful_scopes(self, registry):
-        # OAuth proxy providers (GitHub, Google) fill AccessToken.scopes with the
-        # upstream provider's scopes and carry no scope claim: ceiling applies.
+        # A verifier may fill AccessToken.scopes with the issuer's own scopes while the
+        # token carries no scope claim: ceiling applies.
         permitted = _effective(registry, {"login": "octocat"}, scopes=["user", "read:user"])
         assert permitted == ALL_TOOLS
 

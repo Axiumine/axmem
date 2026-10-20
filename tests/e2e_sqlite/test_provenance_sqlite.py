@@ -1,4 +1,4 @@
-"""SQLite E2E tests for provenance tracking across all object types
+"""SQLite E2E tests for provenance tracking on memories
 
 Tests the full stack with in-memory SQLite: create with provenance fields,
 retrieve, verify all fields persisted and round-trip correctly.
@@ -30,38 +30,6 @@ def assert_provenance_fields(data: dict, expected: dict):
     for key, value in expected.items():
         actual = data.get(key)
         assert actual == value, f"Provenance field '{key}': expected {value!r}, got {actual!r}"
-
-
-# ============================================================================
-# Project provenance round-trip
-# ============================================================================
-
-
-@pytest.mark.asyncio
-async def test_project_provenance_roundtrip(mcp_client):
-    """Create project with all provenance fields, retrieve, verify persistence."""
-    result = await mcp_client.call_tool(
-        "execute_forgetful_tool",
-        {
-            "tool_name": "create_project",
-            "arguments": {
-                "name": "provenance-project",
-                "description": "Project with provenance tracking",
-                "project_type": "development",
-                **PROVENANCE_FIELDS_9,
-            },
-        },
-    )
-    assert result.data is not None
-    project_id = result.data["id"]
-    assert_provenance_fields(result.data, PROVENANCE_FIELDS_9)
-
-    # Retrieve and verify
-    get_result = await mcp_client.call_tool(
-        "execute_forgetful_tool",
-        {"tool_name": "get_project", "arguments": {"project_id": project_id}},
-    )
-    assert_provenance_fields(get_result.data, PROVENANCE_FIELDS_9)
 
 
 # ============================================================================
@@ -103,21 +71,44 @@ async def test_memory_provenance_roundtrip(mcp_client):
 # ============================================================================
 
 
-@pytest.mark.asyncio
-async def test_no_provenance_fields_remain_null(mcp_client):
-    """When no provenance provided and no env vars set, fields should be null."""
-    result = await mcp_client.call_tool(
+async def _create_plain_memory(mcp_client, title, **extra):
+    return await mcp_client.call_tool(
         "execute_forgetful_tool",
         {
-            "tool_name": "create_project",
+            "tool_name": "create_memory",
             "arguments": {
-                "name": "no-provenance",
-                "description": "No provenance fields",
-                "project_type": "personal",
+                "title": title,
+                "content": f"Content of {title}",
+                "context": "E2E provenance test",
+                "keywords": ["provenance"],
+                "tags": ["e2e"],
+                "importance": 6,
+                **extra,
             },
         },
     )
-    data = result.data
+
+
+async def _stored(mcp_client, memory_id):
+    result = await mcp_client.call_tool(
+        "execute_forgetful_tool",
+        {"tool_name": "get_memory", "arguments": {"memory_id": memory_id}},
+    )
+    return result.data
+
+
+async def _update_memory(mcp_client, memory_id, **fields):
+    return await mcp_client.call_tool(
+        "execute_forgetful_tool",
+        {"tool_name": "update_memory", "arguments": {"memory_id": memory_id, **fields}},
+    )
+
+
+@pytest.mark.asyncio
+async def test_no_provenance_fields_remain_null(mcp_client):
+    """When no provenance provided and no env vars set, fields should be null."""
+    result = await _create_plain_memory(mcp_client, "no-provenance")
+    data = await _stored(mcp_client, result.data["id"])
     assert data["source_repo"] is None
     assert data["source_files"] is None
     assert data["source_url"] is None
@@ -136,42 +127,25 @@ async def test_no_provenance_fields_remain_null(mcp_client):
 
 @pytest.mark.asyncio
 async def test_update_provenance_fields(mcp_client):
-    """Update provenance fields on an existing project."""
-    # Create without provenance
-    result = await mcp_client.call_tool(
-        "execute_forgetful_tool",
-        {
-            "tool_name": "create_project",
-            "arguments": {
-                "name": "update-provenance",
-                "description": "Will add provenance later",
-                "project_type": "development",
-            },
-        },
-    )
-    project_id = result.data["id"]
-    assert result.data["encoding_agent"] is None
+    """Update provenance fields on an existing memory."""
+    result = await _create_plain_memory(mcp_client, "update-provenance")
+    memory_id = result.data["id"]
+    assert (await _stored(mcp_client, memory_id))["encoding_agent"] is None
 
-    # Update with provenance
-    updated = await mcp_client.call_tool(
-        "execute_forgetful_tool",
-        {
-            "tool_name": "update_project",
-            "arguments": {
-                "project_id": project_id,
-                "encoding_agent": "UpdatedAgent",
-                "agent_id": "updated-id",
-                "agent_model": "claude-opus-4-6",
-            },
-        },
+    updated = await _update_memory(
+        mcp_client,
+        memory_id,
+        encoding_agent="UpdatedAgent",
+        agent_id="updated-id",
+        agent_model="claude-opus-4-6",
     )
     assert updated.data["encoding_agent"] == "UpdatedAgent"
     assert updated.data["agent_id"] == "updated-id"
     assert updated.data["agent_model"] == "claude-opus-4-6"
 
     # Verify non-provenance fields unchanged
-    assert updated.data["name"] == "update-provenance"
-    assert updated.data["description"] == "Will add provenance later"
+    assert updated.data["title"] == "update-provenance"
+    assert updated.data["content"] == "Content of update-provenance"
 
 
 # ============================================================================
@@ -182,7 +156,6 @@ async def test_update_provenance_fields(mcp_client):
 @pytest.mark.asyncio
 async def test_enforce_env_overwrite_blocks_update_provenance(mcp_client):
     """With ENFORCE_ENV_OVERWRITE=True, agent cannot change provenance via update."""
-    # Create project with env-enforced provenance
     with patch("app.utils.provenance.settings") as mock_settings:
         mock_settings.ENCODING_AGENT = "ServerAgent"
         mock_settings.ENCODING_VERSION = ""
@@ -191,23 +164,14 @@ async def test_enforce_env_overwrite_blocks_update_provenance(mcp_client):
         mock_settings.AGENT_MODEL = "server-model"
         mock_settings.ENFORCE_ENV_OVERWRITE = True
 
-        result = await mcp_client.call_tool(
-            "execute_forgetful_tool",
-            {
-                "tool_name": "create_project",
-                "arguments": {
-                    "name": "enforce-update-test",
-                    "description": "Testing enforce on update",
-                    "project_type": "development",
-                    "encoding_agent": "CallerAgent",
-                    "agent_id": "caller-id",
-                },
-            },
+        result = await _create_plain_memory(
+            mcp_client, "enforce-update-test", encoding_agent="CallerAgent", agent_id="caller-id",
         )
-    project_id = result.data["id"]
+    memory_id = result.data["id"]
     # Create enforced env values
-    assert result.data["encoding_agent"] == "ServerAgent"
-    assert result.data["agent_id"] == "server-agent-id"
+    created = await _stored(mcp_client, memory_id)
+    assert created["encoding_agent"] == "ServerAgent"
+    assert created["agent_id"] == "server-agent-id"
 
     # Now try to update provenance under enforce mode
     with patch("app.utils.provenance.settings") as mock_settings:
@@ -218,16 +182,8 @@ async def test_enforce_env_overwrite_blocks_update_provenance(mcp_client):
         mock_settings.AGENT_MODEL = "server-model"
         mock_settings.ENFORCE_ENV_OVERWRITE = True
 
-        updated = await mcp_client.call_tool(
-            "execute_forgetful_tool",
-            {
-                "tool_name": "update_project",
-                "arguments": {
-                    "project_id": project_id,
-                    "encoding_agent": "HackerAgent",
-                    "agent_id": "hacker-id",
-                },
-            },
+        updated = await _update_memory(
+            mcp_client, memory_id, encoding_agent="HackerAgent", agent_id="hacker-id",
         )
 
     # Agent's values should be overridden by server env
@@ -238,30 +194,12 @@ async def test_enforce_env_overwrite_blocks_update_provenance(mcp_client):
 @pytest.mark.asyncio
 async def test_no_enforce_allows_update_provenance(mcp_client):
     """With ENFORCE_ENV_OVERWRITE=False, agent can freely update provenance."""
-    result = await mcp_client.call_tool(
-        "execute_forgetful_tool",
-        {
-            "tool_name": "create_project",
-            "arguments": {
-                "name": "no-enforce-update",
-                "description": "Testing no enforce on update",
-                "project_type": "development",
-            },
-        },
-    )
-    project_id = result.data["id"]
+    result = await _create_plain_memory(mcp_client, "no-enforce-update")
+    memory_id = result.data["id"]
 
-    # Update provenance without enforce — agent values should go through
-    updated = await mcp_client.call_tool(
-        "execute_forgetful_tool",
-        {
-            "tool_name": "update_project",
-            "arguments": {
-                "project_id": project_id,
-                "encoding_agent": "CallerAgent",
-                "agent_id": "caller-id",
-            },
-        },
+    # Update provenance without enforce, agent values should go through
+    updated = await _update_memory(
+        mcp_client, memory_id, encoding_agent="CallerAgent", agent_id="caller-id",
     )
     assert updated.data["encoding_agent"] == "CallerAgent"
     assert updated.data["agent_id"] == "caller-id"

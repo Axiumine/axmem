@@ -1,142 +1,15 @@
 """E2E tests for REST API authentication.
 
 Tests that auth-enabled endpoints return proper 401 responses.
-Uses StaticTokenVerifier for realistic auth testing.
+Uses the static bearer-token verifier (tenant -> SHA-256 hash) on a real SQLite database.
 """
-from contextlib import asynccontextmanager
-
 import pytest
-from fastmcp import FastMCP
-from fastmcp.server.auth.providers.jwt import StaticTokenVerifier
-from httpx import ASGITransport, AsyncClient
 
-from app.repositories.sqlite.memory_repository import SqliteMemoryRepository
-from app.repositories.sqlite.project_repository import SqliteProjectRepository
-
-# Import from parent conftest setup
-from app.repositories.sqlite.sqlite_adapter import SqliteDatabaseAdapter
-from app.repositories.sqlite.user_repository import SqliteUserRepository
-from app.routes.api import auth, health, memories
-from app.routes.mcp import meta_tools
-from app.routes.mcp.tool_metadata_registry import register_all_tools_metadata
-from app.routes.mcp.tool_registry import ToolRegistry
-from app.services.memory_service import MemoryService
-from app.services.project_service import ProjectService
-from app.services.re_embedding_service import ReEmbeddingService
-from app.services.user_service import UserService
-
-# Test tokens for StaticTokenVerifier
-# Note: StaticTokenVerifier requires 'client_id' in each token
-TEST_TOKENS = {
-    "valid-token": {
-        "client_id": "test-client",
-        "sub": "test-user-123",
-        "name": "Test User",
-        "email": "test@example.com",
-    },
-    "minimal-token": {
-        "client_id": "test-client",
-        "sub": "minimal-user-456",
-        # Only required claims (client_id + sub)
-    },
-}
+from tests.e2e_sqlite.conftest import TENANT_TOKENS
 
 
-@pytest.fixture
-async def sqlite_app_with_auth(embedding_adapter):
-    """Create FastMCP app with StaticTokenVerifier auth enabled.
-
-    This allows testing auth-enabled endpoints with controlled test tokens.
-    """
-    from app.config.settings import settings
-
-    # Save and override settings
-    original_sqlite_memory = settings.SQLITE_MEMORY
-    original_database = settings.DATABASE
-    settings.DATABASE = "SQLite"
-    settings.SQLITE_MEMORY = True
-
-    try:
-        # Create auth provider with test tokens
-        auth_provider = StaticTokenVerifier(tokens=TEST_TOKENS)
-
-        # Create database adapter
-        db_adapter = SqliteDatabaseAdapter()
-        await db_adapter.init_db()
-
-        # Create repositories
-        user_repository = SqliteUserRepository(db_adapter=db_adapter)
-        memory_repository = SqliteMemoryRepository(
-            db_adapter=db_adapter,
-            embedding_adapter=embedding_adapter,
-            rerank_adapter=None,
-        )
-        project_repository = SqliteProjectRepository(db_adapter=db_adapter)
-
-        @asynccontextmanager
-        async def lifespan(app):
-            """Application lifecycle with SQLite initialization"""
-            # Create services
-            user_service = UserService(user_repository)
-            memory_service = MemoryService(memory_repository)
-            project_service = ProjectService(project_repository)
-
-            # Store services on FastMCP instance
-            mcp.user_service = user_service
-            mcp.memory_service = memory_service
-            mcp.project_service = project_service
-
-            # Create and attach registry
-            registry = ToolRegistry()
-            mcp.registry = registry
-
-            # Register all tools
-            register_all_tools_metadata(
-                registry=registry,
-                user_service=user_service,
-                memory_service=memory_service,
-                re_embedding_service=ReEmbeddingService(memory_repository, embedding_adapter),
-                project_service=project_service,
-            )
-
-            yield
-
-        # Create FastMCP app WITH auth enabled
-        mcp = FastMCP("Forgetful-Auth-E2E", lifespan=lifespan, auth=auth_provider)
-
-        # Register routes
-        health.register(mcp)
-        auth.register(mcp)
-        memories.register(mcp)
-        meta_tools.register(mcp)
-
-        yield mcp
-
-        # Cleanup
-        import asyncio
-        await asyncio.sleep(0.1)
-        try:
-            await db_adapter.dispose()
-        except (RuntimeError, asyncio.CancelledError):
-            pass
-    finally:
-        settings.DATABASE = original_database
-        settings.SQLITE_MEMORY = original_sqlite_memory
-
-
-@pytest.fixture
-async def auth_http_client(sqlite_app_with_auth):
-    """HTTP client for testing auth-enabled REST API routes.
-    """
-    from fastmcp import Client
-
-    # Initialize app by creating MCP client (runs lifespan)
-    async with Client(sqlite_app_with_auth) as _:
-        # Create HTTP client
-        asgi_app = sqlite_app_with_auth.http_app()
-        transport = ASGITransport(app=asgi_app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            yield client
+def _bearer(tenant: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {TENANT_TOKENS[tenant]}"}
 
 
 # ============================================
@@ -148,17 +21,17 @@ class TestAuthEnabled:
     """Test REST API with authentication enabled."""
 
     @pytest.mark.asyncio
-    async def test_no_token_returns_401(self, auth_http_client):
+    async def test_no_token_returns_401(self, static_auth_http_client):
         """Request without Authorization header returns 401."""
-        response = await auth_http_client.get("/api/v1/memories")
+        response = await static_auth_http_client.get("/api/v1/memories")
 
         assert response.status_code == 401
         assert "Missing or invalid Authorization header" in response.json()["error"]
 
     @pytest.mark.asyncio
-    async def test_invalid_token_returns_401(self, auth_http_client):
+    async def test_invalid_token_returns_401(self, static_auth_http_client):
         """Request with invalid token returns 401."""
-        response = await auth_http_client.get(
+        response = await static_auth_http_client.get(
             "/api/v1/memories",
             headers={"Authorization": "Bearer invalid-token-xyz"},
         )
@@ -167,12 +40,30 @@ class TestAuthEnabled:
         assert "Invalid or expired token" in response.json()["error"]
 
     @pytest.mark.asyncio
-    async def test_valid_token_returns_200(self, auth_http_client):
-        """Request with valid token succeeds."""
-        response = await auth_http_client.get(
+    async def test_a_token_that_is_only_a_prefix_of_a_valid_one_returns_401(self, static_auth_http_client):
+        response = await static_auth_http_client.get(
             "/api/v1/memories",
-            headers={"Authorization": "Bearer valid-token"},
+            headers={"Authorization": f"Bearer {TENANT_TOKENS['alice'][:-1]}"},
         )
+
+        assert response.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_the_configured_hash_is_not_a_credential(self, static_auth_http_client):
+        """Only the token is accepted; presenting its hash (all the server is configured with) is not."""
+        from app.middleware.static_token import hash_token
+
+        response = await static_auth_http_client.get(
+            "/api/v1/memories",
+            headers={"Authorization": f"Bearer {hash_token(TENANT_TOKENS['alice'])}"},
+        )
+
+        assert response.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_valid_token_returns_200(self, static_auth_http_client):
+        """Request with valid token succeeds."""
+        response = await static_auth_http_client.get("/api/v1/memories", headers=_bearer("alice"))
 
         assert response.status_code == 200
         data = response.json()
@@ -180,7 +71,7 @@ class TestAuthEnabled:
         assert "total" in data
 
     @pytest.mark.asyncio
-    async def test_valid_token_creates_memory(self, auth_http_client):
+    async def test_valid_token_creates_memory(self, static_auth_http_client):
         """Valid token allows creating memories."""
         payload = {
             "title": "Auth Test Memory",
@@ -190,10 +81,8 @@ class TestAuthEnabled:
             "tags": ["e2e"],
             "importance": 7,
         }
-        response = await auth_http_client.post(
-            "/api/v1/memories",
-            json=payload,
-            headers={"Authorization": "Bearer valid-token"},
+        response = await static_auth_http_client.post(
+            "/api/v1/memories", json=payload, headers=_bearer("alice"),
         )
 
         assert response.status_code == 201
@@ -202,19 +91,9 @@ class TestAuthEnabled:
         assert data["id"] > 0
 
     @pytest.mark.asyncio
-    async def test_minimal_token_works(self, auth_http_client):
-        """Token with only 'sub' claim works (uses fallbacks)."""
-        response = await auth_http_client.get(
-            "/api/v1/memories",
-            headers={"Authorization": "Bearer minimal-token"},
-        )
-
-        assert response.status_code == 200
-
-    @pytest.mark.asyncio
-    async def test_wrong_bearer_format_returns_401(self, auth_http_client):
+    async def test_wrong_bearer_format_returns_401(self, static_auth_http_client):
         """Authorization header without 'Bearer ' prefix returns 401."""
-        response = await auth_http_client.get(
+        response = await static_auth_http_client.get(
             "/api/v1/memories",
             headers={"Authorization": "Basic abc123"},
         )
@@ -223,17 +102,20 @@ class TestAuthEnabled:
         assert "Missing or invalid Authorization header" in response.json()["error"]
 
     @pytest.mark.asyncio
-    async def test_auth_info_accessible_without_token(self, auth_http_client):
+    async def test_a_token_in_a_query_parameter_is_not_a_credential(self, static_auth_http_client):
+        response = await static_auth_http_client.get(
+            f"/api/v1/memories?token={TENANT_TOKENS['alice']}",
+        )
+
+        assert response.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_auth_info_accessible_without_token(self, static_auth_http_client):
         """/api/v1/auth/info is a public endpoint, accessible without auth."""
-        response = await auth_http_client.get("/api/v1/auth/info")
+        response = await static_auth_http_client.get("/api/v1/auth/info")
 
         assert response.status_code == 200
-        data = response.json()
-        # Auth is enabled in this fixture (StaticTokenVerifier)
-        assert data["authEnabled"] is True
-        assert data["authMode"] == "jwt"  # StaticTokenVerifier is a TokenVerifier
-        assert data["oauthProviders"] == []
-        assert data["loginUrl"] is None
+        assert response.json() == {"authEnabled": True, "authMode": "static"}
 
 
 # ============================================
@@ -250,28 +132,47 @@ class TestAuthInfoEndpoint:
         response = await http_client.get("/api/v1/auth/info")
 
         assert response.status_code == 200
-        data = response.json()
-        assert data["authEnabled"] is False
-        assert data["authMode"] == "disabled"
-        assert data["oauthProviders"] == []
-        assert data["loginUrl"] is None
+        assert response.json() == {"authEnabled": False, "authMode": "disabled"}
 
     @pytest.mark.asyncio
     async def test_auth_info_json_schema(self, http_client):
         """Response includes all required fields."""
-        response = await http_client.get("/api/v1/auth/info")
+        data = (await http_client.get("/api/v1/auth/info")).json()
 
-        assert response.status_code == 200
-        data = response.json()
-
-        # Verify all required fields are present
-        assert "authEnabled" in data
-        assert "authMode" in data
-        assert "oauthProviders" in data
-        assert "loginUrl" in data
-
-        # Type checks
+        assert set(data) == {"authEnabled", "authMode"}
         assert isinstance(data["authEnabled"], bool)
         assert isinstance(data["authMode"], str)
-        assert isinstance(data["oauthProviders"], list)
-        assert data["loginUrl"] is None or isinstance(data["loginUrl"], str)
+
+
+# ============================================
+# Fail closed
+# ============================================
+
+
+class TestFailClosed:
+    """Without AUTH_MODE=none an app that has no auth provider refuses every request."""
+
+    @pytest.mark.asyncio
+    async def test_unconfigured_mode_refuses_rest_requests(self, http_client, monkeypatch):
+        from app.config.settings import settings
+
+        monkeypatch.setattr(settings, "AUTH_MODE", "")
+
+        response = await http_client.get("/api/v1/memories")
+
+        assert response.status_code == 401
+        assert "Authentication is not configured" in response.json()["error"]
+
+    @pytest.mark.asyncio
+    async def test_unconfigured_mode_refuses_tool_calls(self, mcp_client, monkeypatch):
+        from fastmcp.exceptions import ToolError
+
+        from app.config.settings import settings
+
+        monkeypatch.setattr(settings, "AUTH_MODE", "")
+
+        with pytest.raises(ToolError, match="Authentication is not configured"):
+            await mcp_client.call_tool(
+                "execute_forgetful_tool",
+                {"tool_name": "get_recent_memories", "arguments": {}},
+            )

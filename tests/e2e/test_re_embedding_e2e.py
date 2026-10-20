@@ -100,7 +100,7 @@ async def test_re_embed_search_works_after(memory_repo, db_adapter, embedding_ad
         query_context="verifying search after re-embed",
         k=3,
         importance_threshold=None,
-        project_ids=None,
+        project=None,
         exclude_ids=None,
     )
     assert len(search_results) > 0

@@ -6,6 +6,28 @@ This section provides more detailed instructions on how to connect forgetful to 
 - [Codex](#codex)
 - [Gemini CLI](#gemini-cli)
 - [OpenCode](#opencode)
+- [Forgetful CLI](#forgetful-cli)
+
+## Authentication
+
+Forgetful fails closed: a server with no `AUTH_MODE` refuses to start (see the
+[Configuration Guide](configuration.md#authentication-configuration)). What that means for a client:
+
+- **STDIO** (the client launches `uvx forgetful-ai` itself): there is no network listener and no bearer
+  token, so the server needs `AUTH_MODE=none`. Set it once for every launch in the user config file, or
+  add it to the `env` of a client entry:
+
+  ```bash
+  mkdir -p ~/.config/forgetful && echo "AUTH_MODE=none" >> ~/.config/forgetful/.env
+  ```
+
+  Every STDIO example below assumes this. All requests are then the one local tenant (`DEFAULT_TENANT`).
+- **HTTP on this machine**: start the server with `AUTH_MODE=none` and `SERVER_HOST=127.0.0.1`. `AUTH_MODE=none`
+  is refused on any other bind address, so the server cannot be exposed without a credential.
+- **HTTP on a network**: the server runs `AUTH_MODE=jwt`, `introspection` or `static`, and the client sends
+  `Authorization: Bearer <token>`. The token names the tenant, and a tenant sees only its own memories.
+  Examples that pass the header are under Claude Code and VS Code; any client that can set a request
+  header on a remote MCP server works the same way.
 
 ## Claude Code
 
@@ -69,6 +91,12 @@ claude mcp add --scope user forgetful uvx forgetful-ai \
 ### HTTP Transport
 ```bash
 claude mcp add --transport http --scope user forgetful http://localhost:8020/mcp
+```
+
+### HTTP Transport with a bearer token
+```bash
+claude mcp add --transport http --scope user forgetful https://forgetful.example.com/mcp \
+  --header "Authorization: Bearer $FORGETFUL_TOKEN"
 ```
 
 
@@ -159,6 +187,28 @@ Tag all objects written by this server instance with agent and model identity. S
       "url": "http://localhost:8020/mcp"
     }
   }
+}
+```
+
+### HTTP Transport with a bearer token
+
+```json
+{
+  "servers": {
+    "forgetful": {
+      "type": "http",
+      "url": "https://forgetful.example.com/mcp",
+      "headers": { "Authorization": "Bearer ${input:forgetful-token}" }
+    }
+  },
+  "inputs": [
+    {
+      "type": "promptString",
+      "id": "forgetful-token",
+      "description": "Forgetful bearer token",
+      "password": true
+    }
+  ]
 }
 ```
 
@@ -374,30 +424,31 @@ Bare `forgetful` (and `uvx --from . forgetful`) still boots the MCP server for
 back-compat, so lead with a verb - `forgetful memory --help`, `forgetful tools
 --help` - to explore the CLI.
 
-### Remote deployment with OAuth
+### Remote deployment with a bearer token
 
-Against a remote PostgreSQL-backed deployment with authentication enabled (see
-[Configuration Guide](configuration.md#authentication-configuration)):
+Against a remote PostgreSQL-backed deployment that requires a credential (see
+[Configuration Guide](configuration.md#authentication-configuration)). There is no
+interactive sign-in: the CLI sends the bearer token in `FORGETFUL_TOKEN` (a JWT, an
+introspected token or a static token, as the server is configured). The token is read from the
+environment only and is never written to a file.
 
 ```bash
+export FORGETFUL_TOKEN="<token>"
+
 forgetful auth login --server https://forgetful.example.com
-# Opens your browser for the OAuth authorization-code flow (PKCE + dynamic client
-# registration), caches tokens in ~/.config/forgetful/tokens/, and saves
-# FORGETFUL_SERVER to ~/.config/forgetful/.env
+# Checks the connection and credentials, then saves FORGETFUL_SERVER to
+# ~/.config/forgetful/.env
 
-forgetful auth status    # server, authenticated user, cached credentials (read-only)
+forgetful auth status    # server, whether the credentials work (read-only)
 forgetful memory search "deployment checklist" -c "release prep"   # runs remotely
-forgetful auth logout    # clears the local token cache
 ```
 
-Requirements: the deployment must be running an OAuth-capable auth provider
-(authorization-code flow with dynamic client registration). A FastMCP instance runs a
-single auth mechanism, so JWT-only deployments should use bearer tokens instead:
+The token names the tenant, so the CLI reaches only that tenant's memories. Memories can be
+grouped under a free-form scope label with `-p/--project` (for example
+`forgetful memory save "..." --title "..." -p billing`); the label is created on first use.
 
-```bash
-export FORGETFUL_TOKEN="<token>"          # headless/CI bearer auth
-forgetful memory recent --server https://forgetful.example.com
-```
+Local mode needs no token and is the `DEFAULT_TENANT` tenant. A local CLI invocation never
+starts a network listener, so it works whatever `AUTH_MODE` is set to.
 
 Per-invocation overrides: `--server URL` targets any deployment, `--local` forces
 local mode. `--json` on any tool command emits machine-readable output for scripting.

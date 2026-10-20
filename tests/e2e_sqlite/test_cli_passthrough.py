@@ -55,7 +55,7 @@ def test_tools_list_prints_categories(cli_sqlite_env, monkeypatch, capsys):
     assert code == 0
     payload = json.loads(out)
     assert payload["total_count"] > 0
-    assert set(payload["tools_by_category"]) == {"user", "memory", "project"}
+    assert set(payload["tools_by_category"]) == {"memory"}
 
 
 def test_tools_list_category_filter(cli_sqlite_env, monkeypatch, capsys):
@@ -112,12 +112,13 @@ def test_call_malformed_args_json_exits_with_usage_error(cli_sqlite_env, monkeyp
 
 def test_call_json_flag_emits_parseable_output(cli_sqlite_env, monkeypatch, capsys):
     code, out, _ = invoke_cli(
-        monkeypatch, capsys, ["call", "get_current_user", "--args", "{}", "--json"],
+        monkeypatch, capsys, ["call", "get_recent_memories", "--args", '{"limit": 1}', "--json"],
     )
 
     assert code == 0
     payload = json.loads(out)
-    assert payload["name"] == settings.DEFAULT_USER_NAME
+    assert payload["memories"] == []
+    assert payload["total_count"] == 0
 
 
 def test_call_unknown_tool_exits_one_with_suggestions(cli_sqlite_env, monkeypatch, capsys):
@@ -146,9 +147,8 @@ def test_python_main_py_propagates_cli_exit_codes():
     """`python main.py <subcommand>` must exit with the command's status, not 0.
 
     The `forgetful` console script wraps cli()'s return value in sys.exit(), but
-    running the module directly needs main.py to do that itself. FORGETFUL_TOKEN
-    forces the bearer branch (no OAuth/token-dir side effects) and port 9 refuses
-    the connection immediately, so the command fails fast with exit code 1.
+    running the module directly needs main.py to do that itself. Port 9 refuses the
+    connection immediately, so the command fails fast with exit code 1.
     """
     repo_root = Path(__file__).resolve().parents[2]
     env = {**os.environ, "FORGETFUL_TOKEN": "dummy-token"}
@@ -156,7 +156,7 @@ def test_python_main_py_propagates_cli_exit_codes():
     result = subprocess.run(
         [
             sys.executable, "main.py",
-            "call", "get_current_user", "--server", "http://127.0.0.1:9",
+            "call", "get_recent_memories", "--server", "http://127.0.0.1:9",
         ],
         cwd=repo_root, env=env, capture_output=True, text=True, timeout=120,
     )

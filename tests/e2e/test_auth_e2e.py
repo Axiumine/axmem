@@ -1,99 +1,76 @@
-"""End-to-end tests for authentication flow via HTTP
+"""End-to-end tests for authentication flow with PostgreSQL
 
-Tests complete auth flow: HTTP Request → FastMCP → Auth Middleware → User Provisioning
+Tests complete auth flow: FastMCP -> Auth Middleware -> Tenant Provisioning -> PostgreSQL
 
 Integration tests (test_auth.py) mock dependencies for fast unit testing.
-These E2E tests validate the full stack with real HTTP and database.
+These E2E tests validate the full stack with in-process FastMCP and real PostgreSQL.
 """
+from unittest.mock import MagicMock, patch
+
 import pytest
+from sqlalchemy import text
+
+from app.config.settings import settings
 
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 
+async def _recent(client):
+    return await client.call_tool(
+        "execute_forgetful_tool",
+        {"tool_name": "get_recent_memories", "arguments": {}},
+    )
+
+
+async def _tenants(db_adapter):
+    """external_id of every tenant record in the database."""
+    async with db_adapter.system_session() as session:
+        rows = await session.execute(text("SELECT external_id FROM users ORDER BY external_id"))
+        return [row[0] for row in rows]
+
+
 @pytest.mark.e2e
-async def test_default_user_provisioning_e2e(mcp_client):
-    """Test that default user is provisioned when FASTMCP_SERVER_AUTH not set
+async def test_local_tenant_provisioning_e2e(mcp_client, db_adapter, monkeypatch):
+    """With AUTH_MODE=none every call is the one DEFAULT_TENANT tenant, created on first use.
 
     This validates:
-    - get_user_from_auth() detects no auth configured
-    - Default user auto-provisioned on first tool call
-    - Same user returned on subsequent calls (idempotency)
+    - get_tenant_from_auth() detects no auth provider
+    - the local tenant is auto-provisioned on the first tool call
+    - the same tenant is used on subsequent calls (idempotency)
     """
-    # First tool call - should auto-create default user
-    result1 = await mcp_client.call_tool(
-        "execute_forgetful_tool",
-        {
-            "tool_name": "get_current_user",
-            "arguments": {},
-        },
-    )
+    monkeypatch.setattr(settings, "DEFAULT_TENANT", "workstation")
+    assert await _tenants(db_adapter) == []
 
-    assert result1.data is not None
-    user1_name = result1.data["name"]
-    user1_created_at = result1.data["created_at"]
+    await _recent(mcp_client)
+    await _recent(mcp_client)
 
-    # Should match default user settings (name contains "default")
-    assert "default" in user1_name.lower()
-
-    # Second tool call - should return same user (idempotency)
-    result2 = await mcp_client.call_tool(
-        "execute_forgetful_tool",
-        {
-            "tool_name": "get_current_user",
-            "arguments": {},
-        },
-    )
-
-    assert result2.data is not None
-    # Verify it's the same user by comparing name and created_at
-    assert result2.data["name"] == user1_name
-    assert result2.data["created_at"] == user1_created_at
+    assert await _tenants(db_adapter) == ["workstation"]
 
 
-# TODO: Docker E2E test for auth-enabled mode
-#
-# Testing auth-enabled mode with Docker requires actual auth infrastructure
-# (JWT keys, OAuth server, or introspection endpoint) which cannot be mocked
-# because the FastMCP server runs in a separate Docker container.
-#
-# The SQLite e2e test (test_auth_enabled_user_from_token_sqlite) already validates
-# the complete auth flow end-to-end with mocked tokens in the same process.
-#
-# To test auth-enabled mode with Docker, you would need to:
-# 1. Use DOCKER_ENV_OVERRIDE to configure a real auth provider
-# 2. Generate valid tokens (e.g., JWT with proper signing keys)
-# 3. Send tokens via Authorization header in Client requests
-#
-# Example approach (if implementing):
-#
-# DOCKER_ENV_OVERRIDE = {
-#     'FASTMCP_SERVER_AUTH': 'fastmcp.server.auth.providers.jwt.JWTVerifier',
-#     'FASTMCP_SERVER_AUTH_JWT_PUBLIC_KEY': '<PEM-encoded-public-key>',
-#     'FASTMCP_SERVER_AUTH_JWT_ALGORITHM': 'RS256',
-#     'FASTMCP_SERVER_AUTH_JWT_ISSUER': 'test-issuer',
-#     'FASTMCP_SERVER_AUTH_JWT_AUDIENCE': 'forgetful-test'
-# }
-#
-# @pytest.mark.e2e
-# @pytest.mark.asyncio
-# async def test_auth_enabled_user_from_token_e2e(mcp_client):
-#     """Test user provisioned from bearer token (Docker + PostgreSQL)"""
-#     # Generate signed JWT with test RSA key pair
-#     test_token = generate_test_jwt(
-#         private_key=TEST_PRIVATE_KEY,
-#         claims={
-#             "sub": "azure|postgres-e2e-test",
-#             "name": "PostgreSQL E2E Auth User",
-#             "email": "e2e-auth@postgres.test",
-#             "iss": "test-issuer",
-#             "aud": "forgetful-test"
-#         }
-#     )
-#
-#     # Send bearer token in request
-#     async with Client(mcp_server_url, headers={"Authorization": f"Bearer {test_token}"}) as client:
-#         result = await mcp_client.call_tool(
-#             "execute_forgetful_tool",
-#             {"tool_name": "get_current_user", "arguments": {}}
-#         )
-#         assert result.data["name"] == "PostgreSQL E2E Auth User"
+class MockAccessToken:
+    """Mock AccessToken for testing auth-enabled mode"""
+    def __init__(self, claims: dict):
+        self.claims = claims
+
+
+@pytest.mark.e2e
+@patch("app.middleware.auth.get_access_token")
+async def test_auth_enabled_tenant_from_token_e2e(mock_get_token, postgres_app, mcp_client, db_adapter):
+    """The tenant is provisioned from the bearer token claims when auth is enabled
+
+    The tenant is named by the claims (tenant_id, else tenant, else sub), created in
+    PostgreSQL on first use, and reused by later calls with the same token.
+    """
+    postgres_app.auth = MagicMock()
+    mock_get_token.return_value = MockAccessToken(claims={
+        "tenant_id": "globex",
+        "tenant": "ignored",
+        "sub": "azure|postgres-e2e-test",
+        "name": "Ignored Profile Name",
+        "email": "ignored@postgres.test",
+    })
+
+    await _recent(mcp_client)
+    await _recent(mcp_client)
+
+    assert await _tenants(db_adapter) == ["globex"]

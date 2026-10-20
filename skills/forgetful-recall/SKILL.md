@@ -43,9 +43,9 @@ Done when: both `query` and `query_context` are written, not just a bare keyword
 ## Step 2 — Scope deliberately
 
 Reads are cross-project by default, and usually should stay that way — knowledge transfers.
-Narrow with `project_ids` when the task is project-bound; add `strict_project_filter=True`
-to also keep linked memories inside those projects (the default `False` lets links cross
-them). Use `importance_threshold` to cut noise — it excludes anything scored below the value
+Narrow with `project` (the scope label) when the task is project-bound; add `strict_project_filter=True`
+to also keep linked memories inside that project (the default `False` lets links cross
+it). Use `importance_threshold` to cut noise — it excludes anything scored below the value
 given, pairing naturally with `forgetful-remember`'s rubric, where 5 is the noise floor for
 bulk/automated captures. Adjust `k` to trade breadth for focus. These are filters layered on
 top of semantic search, which stays the primary retrieval mechanism throughout.

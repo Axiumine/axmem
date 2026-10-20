@@ -7,10 +7,10 @@ from sqlalchemy import text
 from app.bootstrap import create_repositories
 from app.config.settings import settings
 from app.models.memory_models import MemoryCreate
-from app.models.project_models import ProjectCreate, ProjectType
 from app.models.user_models import UserCreate
 from tests.migration_helpers import (
     alembic_config,
+    create_project_row,
     original_chain_shapes,
     run_migration,
     table_shapes,
@@ -64,10 +64,7 @@ async def store_events_and_counters(db: Any) -> dict[str, Any]:
         UserCreate(external_id="activity-removal", name="Activity", email="activity@example.test"),
     )
     owner = user.id
-    project = await repos["project"].create_project(
-        owner,
-        ProjectCreate(name="Kept", description="Survives the migration", project_type=ProjectType.WORK),
-    )
+    await create_project_row(db, owner)
     first = await repos["memory"].create_memory(
         owner,
         MemoryCreate(title="Kept memory", content="c", context="x", keywords=["k"], tags=["t"], importance=7),
@@ -89,7 +86,7 @@ async def store_events_and_counters(db: Any) -> dict[str, Any]:
             text("UPDATE memories SET access_count = 3, last_accessed_at = CURRENT_TIMESTAMP WHERE id = :id"),
             {"id": first.id},
         )
-    return {"owner": str(owner), "project": project.name, "memory": first.id, "linked": second.id}
+    return {"owner": str(owner), "project": "Kept", "memory": first.id, "linked": second.id}
 
 
 class TestActivityRemoval:

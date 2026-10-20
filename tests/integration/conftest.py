@@ -7,11 +7,9 @@ module per domain); this module imports them and exposes the fixtures the tests 
 import pytest
 
 from app.services.memory_service import MemoryService
-from app.services.project_service import ProjectService
-from app.services.user_service import UserService
+from app.services.tenant_service import TenantService
 from tests.integration.stubs import (
     InMemoryMemoryRepository,
-    InMemoryProjectRepository,
     InMemoryUserRepository,
     MockEmbeddingsAdapter,
 )
@@ -32,9 +30,9 @@ def mock_user_repository():
 
 
 @pytest.fixture
-def test_user_service(mock_user_repository):
-    """Provides a UserService with in-memory repository"""
-    return UserService(mock_user_repository)
+def test_tenant_service(mock_user_repository):
+    """Provides a TenantService with in-memory repository"""
+    return TenantService(mock_user_repository)
 
 
 # ============ Memory Testing Fixtures ============
@@ -56,21 +54,6 @@ def mock_memory_repository():
 def test_memory_service(mock_memory_repository):
     """Provides a MemoryService with in-memory repository"""
     return MemoryService(mock_memory_repository)
-
-
-# ============ Project Testing Fixtures ============
-
-
-@pytest.fixture
-def mock_project_repository():
-    """Provides an in-memory project repository"""
-    return InMemoryProjectRepository()
-
-
-@pytest.fixture
-def test_project_service(mock_project_repository):
-    """Provides a ProjectService with in-memory repository"""
-    return ProjectService(mock_project_repository)
 
 
 # =============================================================================

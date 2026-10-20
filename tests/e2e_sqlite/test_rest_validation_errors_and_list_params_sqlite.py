@@ -11,7 +11,6 @@ from fastmcp import Client
 from httpx import ASGITransport, AsyncClient
 
 BIG = 10**30
-INT32_MAX = 2**31 - 1
 INT64_MAX = 2**63 - 1
 JSON_HEADERS = {"content-type": "application/json"}
 
@@ -51,21 +50,20 @@ class TestCustomValidatorErrors:
     """Errors raised by custom validators carry an exception object and must still be 400."""
 
     @pytest.mark.asyncio
-    async def test_projects_invalid_fields_return_400(self, api):
-        project_id = await _create(
-            api,
-            "/api/v1/projects",
-            {"name": "Alice", "description": "d", "project_type": "development"},
-        )
+    async def test_memory_invalid_project_returns_400(self, api):
+        memory_id = await _create(api, "/api/v1/memories", {
+            "title": "m", "content": "c", "context": "x", "keywords": ["a"],
+            "tags": ["t"], "importance": 5, "project": "Alice",
+        })
 
-        blank_name = await api.post(
-            "/api/v1/projects",
-            json={"name": "   ", "description": "d", "project_type": "development"},
-        )
-        _assert_validation_error(blank_name, "POST /projects blank name")
+        blank = await api.post("/api/v1/memories", json={
+            "title": "m", "content": "c", "context": "x", "keywords": ["a"],
+            "tags": ["t"], "importance": 5, "project": "   ",
+        })
+        _assert_validation_error(blank, "POST /memories blank project")
 
-        update = await api.put(f"/api/v1/projects/{project_id}", json={"name": "  "})
-        _assert_validation_error(update, "PUT /projects blank name")
+        too_long = await api.put(f"/api/v1/memories/{memory_id}", json={"project": "x" * 501})
+        _assert_validation_error(too_long, "PUT /memories over-long project")
 
     @pytest.mark.asyncio
     async def test_memory_links_to_self_return_400(self, api):
@@ -82,11 +80,11 @@ class TestCustomValidatorErrors:
 
     @pytest.mark.asyncio
     async def test_built_in_constraint_errors_keep_documented_shape(self, api):
-        response = await api.post("/api/v1/projects", json={"name": "only name"})
-        _assert_validation_error(response, "POST /projects missing fields")
+        response = await api.post("/api/v1/memories", json={"title": "only title"})
+        _assert_validation_error(response, "POST /memories missing fields")
         locations = {tuple(error["loc"]) for error in response.json()["error"]}
-        assert ("description",) in locations
-        assert ("project_type",) in locations
+        assert ("content",) in locations
+        assert ("context",) in locations
 
 
 class TestNonFiniteNumbers:
@@ -109,9 +107,9 @@ class TestNonFiniteNumbers:
     async def test_memory_routes_non_finite_values_return_400(self, api):
         create = await self._post_raw(api, "/api/v1/memories", (
             '{"title":"x","content":"c","context":"x","keywords":["a"],"tags":["t"],'
-            '"importance":5,"project_ids":[1e400]}'
+            '"importance":5,"project":1e400}'
         ))
-        _assert_rejected_by_body_parser(create, "POST /memories project_ids=[1e400]")
+        _assert_rejected_by_body_parser(create, "POST /memories project=1e400")
 
         memory_id = await _create(api, "/api/v1/memories", {
             "title": "m", "content": "c", "context": "x", "keywords": ["a"],
@@ -123,34 +121,33 @@ class TestNonFiniteNumbers:
         _assert_rejected_by_body_parser(update, "PUT /memories confidence=NaN")
 
         search = await self._post_raw(
-            api, "/api/v1/memories/search", '{"query":"x","project_ids":[1e400]}',
+            api, "/api/v1/memories/search", '{"query":"x","project":1e400}',
         )
-        _assert_rejected_by_body_parser(search, "POST /memories/search project_ids=[1e400]")
+        _assert_rejected_by_body_parser(search, "POST /memories/search project=1e400")
 
     @pytest.mark.asyncio
-    async def test_other_resources_non_finite_values_return_400(self, api):
-        project = await self._post_raw(api, "/api/v1/projects", (
-            '{"name":NaN,"description":"d","project_type":"development"}'
+    async def test_non_finite_title_returns_400(self, api):
+        response = await self._post_raw(api, "/api/v1/memories", (
+            '{"title":NaN,"content":"c","context":"x","keywords":["a"],"tags":["t"],"importance":5}'
         ))
-        _assert_rejected_by_body_parser(project, "POST /projects name=NaN")
+        _assert_rejected_by_body_parser(response, "POST /memories title=NaN")
 
 
 class TestIntegerQueryParams:
     """Query integers must be rejected with 400 when they cannot fit the database column."""
 
     @pytest.mark.asyncio
-    async def test_list_project_id_out_of_range_returns_400(self, api):
-        response = await api.get(f"/api/v1/memories?project_id={BIG}")
+    async def test_list_offset_out_of_range_returns_400(self, api):
+        response = await api.get(f"/api/v1/memories?offset={BIG}")
         assert response.status_code == 400, f"memories: {response.status_code}"
-        assert "project_id" in response.json()["error"]
+        assert "offset" in response.json()["error"]
 
     @pytest.mark.asyncio
     async def test_other_out_of_range_query_ints_return_400(self, api):
         urls = [
             f"/api/v1/memories?offset={2**63}",
-            f"/api/v1/memories?project_id=-{BIG}",
-            # row ids are INTEGER columns on PostgreSQL: one past int32 is out of range
-            f"/api/v1/memories?project_id={INT32_MAX + 1}",
+            f"/api/v1/memories?offset=-{BIG}",
+            f"/api/v1/memories?limit={BIG}",
         ]
         for url in urls:
             response = await api.get(url)
@@ -160,8 +157,8 @@ class TestIntegerQueryParams:
     @pytest.mark.asyncio
     async def test_boundary_values_still_accepted(self, api):
         urls = [
-            f"/api/v1/memories?project_id={INT32_MAX}",
             f"/api/v1/memories?offset={INT64_MAX}",
+            "/api/v1/memories?limit=100",
         ]
         for url in urls:
             response = await api.get(url)

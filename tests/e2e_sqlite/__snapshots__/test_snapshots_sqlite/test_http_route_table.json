@@ -1,18 +1,13 @@
 [
   "DELETE /api/v1/memories/{memory_id}",
   "DELETE /api/v1/memories/{memory_id}/links/{target_id}",
-  "DELETE /api/v1/projects/{project_id}",
   "GET /api/v1/auth/info",
   "GET /api/v1/memories",
   "GET /api/v1/memories/{memory_id}",
   "GET /api/v1/memories/{memory_id}/links",
-  "GET /api/v1/projects",
-  "GET /api/v1/projects/{project_id}",
   "GET /health",
   "POST /api/v1/memories",
   "POST /api/v1/memories/search",
   "POST /api/v1/memories/{memory_id}/links",
-  "POST /api/v1/projects",
-  "PUT /api/v1/memories/{memory_id}",
-  "PUT /api/v1/projects/{project_id}"
+  "PUT /api/v1/memories/{memory_id}"
 ]

@@ -58,7 +58,7 @@ async def assert_originals_restored(repo, user_id, originals):
     assert await repo.validate_embedding_dimensions()
     found = await repo.search_scored(
         user_id=user_id, query="original vector", query_context="backup test", k=10,
-        importance_threshold=None, project_ids=None, exclude_ids=None,
+        importance_threshold=None, project=None, exclude_ids=None,
     )
     assert {item.id for item, _ in found} == {originals[0].id, originals[1].id}
     assert [score.similarity for _, score in found] == pytest.approx([1.0, 1.0])

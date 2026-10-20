@@ -1,8 +1,6 @@
 {
   "categories_available": [
-    "user",
-    "memory",
-    "project"
+    "memory"
   ],
   "filtered_by": null,
   "tools_by_category": {
@@ -84,14 +82,11 @@
             "required": true,
             "type": "List[str]"
           },
-          "project_ids": {
-            "description": "Project IDs to link (optional)",
-            "example": [
-              1,
-              3
-            ],
+          "project": {
+            "description": "Optional free-form project scope label (max 500 characters); created on first use",
+            "example": "forgetful",
             "required": false,
-            "type": "Optional[List[int]]"
+            "type": "Optional[str]"
           },
           "source_files": {
             "description": "Files that informed this memory (list of paths) for provenance tracking",
@@ -170,14 +165,11 @@
             "required": false,
             "type": "int"
           },
-          "project_ids": {
-            "description": "Filter results to specific projects",
-            "example": [
-              1,
-              2
-            ],
+          "project": {
+            "description": "Only search memories in this project scope",
+            "example": "forgetful",
             "required": false,
-            "type": "Optional[List[int]]"
+            "type": "Optional[str]"
           },
           "query": {
             "description": "Natural language search query",
@@ -192,7 +184,7 @@
             "type": "str"
           },
           "strict_project_filter": {
-            "description": "If True, linked memories must also be in specified projects",
+            "description": "If True, linked memories must also be in the specified project scope",
             "example": false,
             "required": false,
             "type": "bool"
@@ -282,14 +274,11 @@
             "required": true,
             "type": "int"
           },
-          "project_ids": {
-            "description": "New project IDs - replaces existing links (optional)",
-            "example": [
-              1,
-              2
-            ],
+          "project": {
+            "description": "New project scope label - replaces the existing one; an empty string clears it (optional)",
+            "example": "forgetful",
             "required": false,
-            "type": "Optional[List[int]]"
+            "type": "Optional[str]"
           },
           "source_files": {
             "description": "New source files list. Replaces existing if provided, unchanged if null.",
@@ -511,14 +500,11 @@
             "required": false,
             "type": "int"
           },
-          "project_ids": {
-            "description": "Optional filter to specific projects",
-            "example": [
-              1,
-              3
-            ],
+          "project": {
+            "description": "Optional filter to one project scope",
+            "example": "forgetful",
             "required": false,
-            "type": "Optional[List[int]]"
+            "type": "Optional[str]"
           },
           "sort_by": {
             "description": "Sort field: created_at, updated_at, or importance",
@@ -545,7 +531,7 @@
       },
       {
         "category": "memory",
-        "description": "Rebuild embeddings for a user-scoped subset of memories without resetting global vector storage. Targets explicit memory ids, a single project, or all caller-owned memories.",
+        "description": "Rebuild embeddings for a tenant-scoped subset of memories without resetting global vector storage. Targets explicit memory ids, a single project scope, or all caller-owned memories.",
         "example": "execute_forgetful_tool(\"rebuild_embeddings\", {\"memory_ids\": [123, 124]})",
         "mutates": true,
         "name": "rebuild_embeddings",
@@ -557,7 +543,7 @@
             "type": "Context"
           },
           "memory_ids": {
-            "description": "Explicit memory ids owned by the caller; leave null to use project_id or global user scope",
+            "description": "Explicit memory ids owned by the caller; leave null to use project or the whole tenant",
             "example": [
               123,
               124
@@ -565,370 +551,16 @@
             "required": false,
             "type": "Optional[List[int]]"
           },
-          "project_id": {
-            "description": "Restrict the rebuild to memories of a single project owned by the caller",
-            "example": 1,
-            "required": false,
-            "type": "Optional[int]"
-          }
-        },
-        "returns": "Dict with rebuilt_ids (List[int]), skipped_ids (List[int]; not owned, or edited while the rebuild ran so a newer embedding was kept), failed (List[Dict[memory_id, reason]]; reason is a code such as embedding_failed, persistence_failed or not_found_or_not_owned). An unknown or foreign project_id is rejected with VALIDATION_ERROR"
-      }
-    ],
-    "project": [
-      {
-        "category": "project",
-        "description": "Create new project for organizing memories by context",
-        "example": "execute_forgetful_tool(\"create_project\", {\"name\": \"my-project\", \"description\": \"A new project\", \"project_type\": \"development\"})",
-        "mutates": true,
-        "name": "create_project",
-        "parameters": {
-          "agent_id": {
-            "description": "Agent identity for provenance tracking",
-            "example": "CodeAgentUltra",
-            "required": false,
-            "type": "Optional[str]"
-          },
-          "agent_model": {
-            "description": "LLM model used for provenance tracking",
-            "example": "claude-sonnet-4-6",
-            "required": false,
-            "type": "Optional[str]"
-          },
-          "agent_version": {
-            "description": "Agent version for provenance tracking",
-            "example": "1.0",
-            "required": false,
-            "type": "Optional[str]"
-          },
-          "confidence": {
-            "description": "Encoding confidence score (0.0-1.0) for provenance tracking",
-            "example": 0.85,
-            "required": false,
-            "type": "Optional[float]"
-          },
-          "ctx": {
-            "description": "FastMCP Context (automatically injected)",
-            "example": null,
-            "required": true,
-            "type": "Context"
-          },
-          "description": {
-            "description": "Purpose/scope overview (max ~5000 chars)",
-            "example": "MIT-licensed memory service",
-            "required": true,
-            "type": "str"
-          },
-          "encoding_agent": {
-            "description": "Software running the agent for provenance tracking",
-            "example": "OpenCode",
-            "required": false,
-            "type": "Optional[str]"
-          },
-          "encoding_version": {
-            "description": "Version of encoding software for provenance tracking",
-            "example": "1.0.0",
-            "required": false,
-            "type": "Optional[str]"
-          },
-          "last_encoding_point": {
-            "description": "Opaque caller-managed encoding checkpoint (e.g. a Git commit SHA). Never advanced by the server.",
-            "example": "5d41402abc4b2a76b9719d911017c592",
-            "required": false,
-            "type": "Optional[str]"
-          },
-          "name": {
-            "description": "Project name (max 500 chars)",
-            "example": "forgetful",
-            "required": true,
-            "type": "str"
-          },
-          "notes": {
-            "description": "Workflow notes, setup instructions (max ~4000 chars)",
-            "example": "Uses uv for dependency management",
-            "required": false,
-            "type": "Optional[str]"
-          },
-          "project_type": {
-            "description": "Project category (personal, work, learning, development, infrastructure, template, product, marketing, finance, documentation, development-environment, third-party-library, open-source)",
-            "example": "development",
-            "required": true,
-            "type": "ProjectType"
-          },
-          "repo_name": {
-            "description": "Git repository identifier or HTTPS/SSH address (max 255 chars)",
-            "example": "scottrbk/forgetful",
-            "required": false,
-            "type": "Optional[str]"
-          },
-          "source_files": {
-            "description": "Files that informed this for provenance tracking",
-            "example": [
-              "src/main.py"
-            ],
-            "required": false,
-            "type": "Optional[List[str]]"
-          },
-          "source_repo": {
-            "description": "Repository/project source for provenance tracking",
-            "example": "owner/repo",
-            "required": false,
-            "type": "Optional[str]"
-          },
-          "source_url": {
-            "description": "URL to source material for provenance tracking",
-            "example": "https://example.com",
-            "required": false,
-            "type": "Optional[str]"
-          },
-          "status": {
-            "description": "Project lifecycle status (active, archived, completed)",
-            "example": "active",
-            "required": false,
-            "type": "ProjectStatus"
-          }
-        },
-        "returns": "Complete Project with id, timestamps, and memory_count"
-      },
-      {
-        "category": "project",
-        "description": "Update project metadata using PATCH semantics (only specified fields are updated)",
-        "example": "execute_forgetful_tool(\"update_project\", {\"project_id\": 1, \"status\": \"archived\"})",
-        "mutates": true,
-        "name": "update_project",
-        "parameters": {
-          "agent_id": {
-            "description": "Agent identity for provenance tracking",
-            "example": "CodeAgentUltra",
-            "required": false,
-            "type": "Optional[str]"
-          },
-          "agent_model": {
-            "description": "LLM model used for provenance tracking",
-            "example": "claude-sonnet-4-6",
-            "required": false,
-            "type": "Optional[str]"
-          },
-          "agent_version": {
-            "description": "Agent version for provenance tracking",
-            "example": "1.0",
-            "required": false,
-            "type": "Optional[str]"
-          },
-          "confidence": {
-            "description": "Encoding confidence score (0.0-1.0) for provenance tracking",
-            "example": 0.85,
-            "required": false,
-            "type": "Optional[float]"
-          },
-          "ctx": {
-            "description": "FastMCP Context (automatically injected)",
-            "example": null,
-            "required": true,
-            "type": "Context"
-          },
-          "description": {
-            "description": "New description",
-            "example": "Updated description",
-            "required": false,
-            "type": "Optional[str]"
-          },
-          "encoding_agent": {
-            "description": "Software running the agent for provenance tracking",
-            "example": "OpenCode",
-            "required": false,
-            "type": "Optional[str]"
-          },
-          "encoding_version": {
-            "description": "Version of encoding software for provenance tracking",
-            "example": "1.0.0",
-            "required": false,
-            "type": "Optional[str]"
-          },
-          "last_encoding_point": {
-            "description": "Opaque caller-managed encoding checkpoint (e.g. a Git commit SHA). Never advanced by the server. Unchanged if omitted or null; pass empty string \"\" to clear.",
-            "example": "5d41402abc4b2a76b9719d911017c592",
-            "required": false,
-            "type": "Optional[str]"
-          },
-          "name": {
-            "description": "New project name",
-            "example": "updated-project",
-            "required": false,
-            "type": "Optional[str]"
-          },
-          "notes": {
-            "description": "New notes",
-            "example": "Additional notes",
-            "required": false,
-            "type": "Optional[str]"
-          },
-          "project_id": {
-            "description": "ID of the project to update",
-            "example": 1,
-            "required": true,
-            "type": "int"
-          },
-          "project_type": {
-            "description": "New project type",
-            "example": "work",
-            "required": false,
-            "type": "Optional[ProjectType]"
-          },
-          "repo_name": {
-            "description": "New Git repository identifier or address; empty string clears",
-            "example": "user/new-repo",
-            "required": false,
-            "type": "Optional[str]"
-          },
-          "source_files": {
-            "description": "Files that informed this for provenance tracking",
-            "example": [
-              "src/main.py"
-            ],
-            "required": false,
-            "type": "Optional[List[str]]"
-          },
-          "source_repo": {
-            "description": "Repository/project source for provenance tracking",
-            "example": "owner/repo",
-            "required": false,
-            "type": "Optional[str]"
-          },
-          "source_url": {
-            "description": "URL to source material for provenance tracking",
-            "example": "https://example.com",
-            "required": false,
-            "type": "Optional[str]"
-          },
-          "status": {
-            "description": "New status",
-            "example": "archived",
-            "required": false,
-            "type": "Optional[ProjectStatus]"
-          }
-        },
-        "returns": "Updated Project object"
-      },
-      {
-        "category": "project",
-        "description": "Delete project while preserving linked memories",
-        "example": "execute_forgetful_tool(\"delete_project\", {\"project_id\": 1})",
-        "mutates": true,
-        "name": "delete_project",
-        "parameters": {
-          "ctx": {
-            "description": "FastMCP Context (automatically injected)",
-            "example": null,
-            "required": true,
-            "type": "Context"
-          },
-          "project_id": {
-            "description": "ID of the project to delete",
-            "example": 1,
-            "required": true,
-            "type": "int"
-          }
-        },
-        "returns": "Dictionary with deletion confirmation"
-      },
-      {
-        "category": "project",
-        "description": "List projects with optional name/status/repository filtering",
-        "example": "execute_forgetful_tool(\"list_projects\", {})",
-        "mutates": false,
-        "name": "list_projects",
-        "parameters": {
-          "ctx": {
-            "description": "FastMCP Context (automatically injected)",
-            "example": null,
-            "required": true,
-            "type": "Context"
-          },
-          "name": {
-            "description": "Filter by project name (case-insensitive partial match)",
+          "project": {
+            "description": "Restrict the rebuild to memories in this project scope of the caller",
             "example": "forgetful",
             "required": false,
             "type": "Optional[str]"
-          },
-          "repo_name": {
-            "description": "Match equivalent HTTPS/SSH/host-qualified addresses; otherwise literal. No partial match",
-            "example": "scottrbk/forgetful",
-            "required": false,
-            "type": "Optional[str]"
-          },
-          "status": {
-            "description": "Filter by status (active, archived, completed)",
-            "example": "active",
-            "required": false,
-            "type": "Optional[ProjectStatus]"
           }
         },
-        "returns": "Dictionary with projects list and count"
-      },
-      {
-        "category": "project",
-        "description": "Retrieve complete project details by integer project_id. To find a project by name, use list_projects with the name filter first.",
-        "example": "execute_forgetful_tool(\"get_project\", {\"project_id\": 1})",
-        "mutates": false,
-        "name": "get_project",
-        "parameters": {
-          "ctx": {
-            "description": "FastMCP Context (automatically injected)",
-            "example": null,
-            "required": true,
-            "type": "Context"
-          },
-          "project_id": {
-            "description": "ID of the project to retrieve",
-            "example": 1,
-            "required": true,
-            "type": "int"
-          }
-        },
-        "returns": "Complete Project object with all details"
-      }
-    ],
-    "user": [
-      {
-        "category": "user",
-        "description": "Returns information about the current authenticated user",
-        "example": "execute_forgetful_tool(\"get_current_user\", {})",
-        "mutates": false,
-        "name": "get_current_user",
-        "parameters": {
-          "ctx": {
-            "description": "FastMCP Context (automatically injected)",
-            "example": null,
-            "required": true,
-            "type": "Context"
-          }
-        },
-        "returns": "UserResponse with id, external_id, name, email, notes, timestamps"
-      },
-      {
-        "category": "user",
-        "description": "Update the notes field for the current user",
-        "example": "execute_forgetful_tool(\"update_user_notes\", {\"user_notes\": \"Prefers React over Vue\"})",
-        "mutates": true,
-        "name": "update_user_notes",
-        "parameters": {
-          "ctx": {
-            "description": "FastMCP Context (automatically injected)",
-            "example": null,
-            "required": true,
-            "type": "Context"
-          },
-          "user_notes": {
-            "description": "The new notes content to store for the user",
-            "example": "User prefers TypeScript, uses VSCode, timezone: PST",
-            "required": true,
-            "type": "str"
-          }
-        },
-        "returns": "Updated UserResponse with new notes value"
+        "returns": "Dict with rebuilt_ids (List[int]), skipped_ids (List[int]; not owned, or edited while the rebuild ran so a newer embedding was kept), failed (List[Dict[memory_id, reason]]; reason is a code such as embedding_failed, persistence_failed or not_found_or_not_owned). An unknown project scope is rejected with VALIDATION_ERROR"
       }
     ]
   },
-  "total_count": 17
+  "total_count": 10
 }

@@ -24,7 +24,7 @@ execute_forgetful_tool("query_memory", {
 })
 ```
 
-If user mentions a specific project, add `project_ids` filter.
+If user mentions a specific project, add a `project` filter (the project scope label).
 
 ### Creating Memories
 
@@ -38,7 +38,7 @@ execute_forgetful_tool("create_memory", {
   "keywords": ["<for semantic clustering - 10 max>"],
   "tags": ["<for categorization - 10 max>"],
   "importance": <1-10 score>,
-  "project_ids": [<optional project IDs>]
+  "project": "<optional project scope label>"
 })
 ```
 
@@ -59,7 +59,7 @@ Use `get_recent_memories` for timeline view:
 ```
 execute_forgetful_tool("get_recent_memories", {
   "limit": 10,
-  "project_ids": [<optional>]
+  "project": "<optional project scope label>"
 })
 ```
 
@@ -92,13 +92,12 @@ execute_forgetful_tool("query_memory", {
 
 If similar exists: update it or link to it instead of creating a duplicate.
 
-### Project Discovery
+### Project Scope
 
-Before creating project-scoped memories, find the correct project:
+A project is an optional scope label on a memory; it is created the first time it is used. To scope memories to a repository:
 
 1. Check git remote: `git remote get-url origin`
-2. Search by repo: `execute_forgetful_tool("list_projects", {"repo_name": "owner/repo"})`
-3. If no project exists, ask user if they want to create one
+2. Use `owner/repo` as the `project` value of the memories you create and search
 
 ### Response Format
 
@@ -129,4 +128,3 @@ Saved to memory: "[title]"
 | `get_memory` | `memory_id` | Get full memory details |
 | `update_memory` | `memory_id` | PATCH update fields |
 | `get_recent_memories` | (none) | Recent memories list |
-| `list_projects` | (none) | List all projects |

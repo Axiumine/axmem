@@ -1,4 +1,4 @@
-"""PostgreSQL E2E tests for provenance tracking across all object types
+"""PostgreSQL E2E tests for provenance tracking on memories
 
 Tests the full stack with real PostgreSQL: create with provenance fields,
 retrieve, verify all fields persisted and round-trip correctly.
@@ -37,51 +37,20 @@ def assert_provenance_fields(data: dict, expected: dict):
 
 
 # ============================================================================
-# Project provenance round-trip
-# ============================================================================
-
-
-@pytest.mark.e2e
-async def test_project_provenance_roundtrip_pg(mcp_client):
-    """Create project with all provenance fields on Postgres, verify round-trip."""
-    result = await mcp_client.call_tool(
-        "execute_forgetful_tool",
-        {
-            "tool_name": "create_project",
-            "arguments": {
-                "name": "provenance-project-pg",
-                "description": "Project with provenance tracking on postgres",
-                "project_type": "development",
-                **PROVENANCE_FIELDS_9,
-            },
-        },
-    )
-    assert result.data is not None
-    project_id = result.data["id"]
-    assert_provenance_fields(result.data, PROVENANCE_FIELDS_9)
-
-    get_result = await mcp_client.call_tool(
-        "execute_forgetful_tool",
-        {"tool_name": "get_project", "arguments": {"project_id": project_id}},
-    )
-    assert_provenance_fields(get_result.data, PROVENANCE_FIELDS_9)
-
-
-# ============================================================================
 # Memory provenance round-trip
 # ============================================================================
 
 
 @pytest.mark.e2e
 async def test_memory_provenance_roundtrip_pg(mcp_client):
-    """Create memory with all provenance fields on Postgres, verify round-trip."""
+    """Create memory with all provenance fields, retrieve, verify persistence."""
     result = await mcp_client.call_tool(
         "execute_forgetful_tool",
         {
             "tool_name": "create_memory",
             "arguments": {
-                "title": "Provenance test memory pg",
-                "content": "Testing provenance tracking on memories with postgres",
+                "title": "Provenance test memory",
+                "content": "Testing provenance tracking on memories",
                 "context": "E2E provenance test",
                 "keywords": ["provenance", "test"],
                 "tags": ["e2e"],
@@ -93,6 +62,7 @@ async def test_memory_provenance_roundtrip_pg(mcp_client):
     assert result.data is not None
     memory_id = result.data["id"]
 
+    # Retrieve and verify
     get_result = await mcp_client.call_tool(
         "execute_forgetful_tool",
         {"tool_name": "get_memory", "arguments": {"memory_id": memory_id}},
@@ -101,28 +71,85 @@ async def test_memory_provenance_roundtrip_pg(mcp_client):
 
 
 # ============================================================================
-# Null handling
+# Null handling: no provenance, no env vars
 # ============================================================================
+
+
+async def _create_plain_memory(mcp_client, title, **extra):
+    return await mcp_client.call_tool(
+        "execute_forgetful_tool",
+        {
+            "tool_name": "create_memory",
+            "arguments": {
+                "title": title,
+                "content": f"Content of {title}",
+                "context": "E2E provenance test",
+                "keywords": ["provenance"],
+                "tags": ["e2e"],
+                "importance": 6,
+                **extra,
+            },
+        },
+    )
+
+
+async def _stored(mcp_client, memory_id):
+    result = await mcp_client.call_tool(
+        "execute_forgetful_tool",
+        {"tool_name": "get_memory", "arguments": {"memory_id": memory_id}},
+    )
+    return result.data
+
+
+async def _update_memory(mcp_client, memory_id, **fields):
+    return await mcp_client.call_tool(
+        "execute_forgetful_tool",
+        {"tool_name": "update_memory", "arguments": {"memory_id": memory_id, **fields}},
+    )
 
 
 @pytest.mark.e2e
 async def test_no_provenance_fields_remain_null_pg(mcp_client):
-    """When no provenance provided, all fields should be null on Postgres."""
-    result = await mcp_client.call_tool(
-        "execute_forgetful_tool",
-        {
-            "tool_name": "create_project",
-            "arguments": {
-                "name": "no-prov-pg",
-                "description": "No provenance",
-                "project_type": "personal",
-            },
-        },
+    """When no provenance provided and no env vars set, fields should be null."""
+    result = await _create_plain_memory(mcp_client, "no-provenance")
+    data = await _stored(mcp_client, result.data["id"])
+    assert data["source_repo"] is None
+    assert data["source_files"] is None
+    assert data["source_url"] is None
+    assert data["confidence"] is None
+    assert data["encoding_agent"] is None
+    assert data["encoding_version"] is None
+    assert data["agent_id"] is None
+    assert data["agent_version"] is None
+    assert data["agent_model"] is None
+
+
+# ============================================================================
+# Update provenance fields
+# ============================================================================
+
+
+@pytest.mark.e2e
+async def test_update_provenance_fields_pg(mcp_client):
+    """Update provenance fields on an existing memory."""
+    result = await _create_plain_memory(mcp_client, "update-provenance")
+    memory_id = result.data["id"]
+    assert (await _stored(mcp_client, memory_id))["encoding_agent"] is None
+
+    updated = await _update_memory(
+        mcp_client,
+        memory_id,
+        encoding_agent="UpdatedAgent",
+        agent_id="updated-id",
+        agent_model="claude-opus-4-6",
     )
-    data = result.data
-    for field in ["source_repo", "source_files", "source_url", "confidence",
-                  "encoding_agent", "encoding_version", "agent_id", "agent_version", "agent_model"]:
-        assert data[field] is None, f"Expected {field} to be None, got {data[field]!r}"
+    assert updated.data["encoding_agent"] == "UpdatedAgent"
+    assert updated.data["agent_id"] == "updated-id"
+    assert updated.data["agent_model"] == "claude-opus-4-6"
+
+    # Verify non-provenance fields unchanged
+    assert updated.data["title"] == "update-provenance"
+    assert updated.data["content"] == "Content of update-provenance"
 
 
 # ============================================================================
@@ -131,23 +158,24 @@ async def test_no_provenance_fields_remain_null_pg(mcp_client):
 
 
 @pytest.mark.e2e
-async def test_project_provenance_via_http_api(http_client):
-    """Create project with provenance via REST API, verify fields returned."""
+async def test_memory_provenance_via_http_api(http_client):
+    """Create a memory with provenance via the REST API, verify the stored fields."""
     response = await http_client.post(
-        "/api/v1/projects",
+        "/api/v1/memories",
         json={
-            "name": "http-provenance-pg",
-            "description": "HTTP API provenance test",
-            "project_type": "development",
+            "title": "http-provenance-pg",
+            "content": "HTTP API provenance test",
+            "context": "REST provenance round-trip",
+            "keywords": ["provenance"],
+            "tags": ["e2e"],
+            "importance": 6,
             **PROVENANCE_FIELDS_9,
         },
     )
     assert response.status_code == 201
-    data = response.json()
-    assert_provenance_fields(data, PROVENANCE_FIELDS_9)
+    memory_id = response.json()["id"]
 
-    # GET round-trip
-    get_response = await http_client.get(f"/api/v1/projects/{data['id']}")
+    get_response = await http_client.get(f"/api/v1/memories/{memory_id}")
     assert get_response.status_code == 200
     assert_provenance_fields(get_response.json(), PROVENANCE_FIELDS_9)
 
@@ -159,7 +187,7 @@ async def test_project_provenance_via_http_api(http_client):
 
 @pytest.mark.e2e
 async def test_enforce_env_overwrite_blocks_update_pg(mcp_client):
-    """With ENFORCE_ENV_OVERWRITE=True, agent cannot change provenance via update on Postgres."""
+    """With ENFORCE_ENV_OVERWRITE=True, agent cannot change provenance via update."""
     with patch("app.utils.provenance.settings") as mock_settings:
         mock_settings.ENCODING_AGENT = "ServerAgent"
         mock_settings.ENCODING_VERSION = ""
@@ -168,22 +196,16 @@ async def test_enforce_env_overwrite_blocks_update_pg(mcp_client):
         mock_settings.AGENT_MODEL = "server-model"
         mock_settings.ENFORCE_ENV_OVERWRITE = True
 
-        result = await mcp_client.call_tool(
-            "execute_forgetful_tool",
-            {
-                "tool_name": "create_project",
-                "arguments": {
-                    "name": "enforce-update-pg",
-                    "description": "Testing enforce on update pg",
-                    "project_type": "development",
-                    "encoding_agent": "CallerAgent",
-                },
-            },
+        result = await _create_plain_memory(
+            mcp_client, "enforce-update-test", encoding_agent="CallerAgent", agent_id="caller-id",
         )
-    project_id = result.data["id"]
-    assert result.data["encoding_agent"] == "ServerAgent"
+    memory_id = result.data["id"]
+    # Create enforced env values
+    created = await _stored(mcp_client, memory_id)
+    assert created["encoding_agent"] == "ServerAgent"
+    assert created["agent_id"] == "server-agent-id"
 
-    # Try to update provenance under enforce mode
+    # Now try to update provenance under enforce mode
     with patch("app.utils.provenance.settings") as mock_settings:
         mock_settings.ENCODING_AGENT = "ServerAgent"
         mock_settings.ENCODING_VERSION = ""
@@ -192,17 +214,24 @@ async def test_enforce_env_overwrite_blocks_update_pg(mcp_client):
         mock_settings.AGENT_MODEL = "server-model"
         mock_settings.ENFORCE_ENV_OVERWRITE = True
 
-        updated = await mcp_client.call_tool(
-            "execute_forgetful_tool",
-            {
-                "tool_name": "update_project",
-                "arguments": {
-                    "project_id": project_id,
-                    "encoding_agent": "HackerAgent",
-                    "agent_id": "hacker-id",
-                },
-            },
+        updated = await _update_memory(
+            mcp_client, memory_id, encoding_agent="HackerAgent", agent_id="hacker-id",
         )
 
+    # Agent's values should be overridden by server env
     assert updated.data["encoding_agent"] == "ServerAgent"
     assert updated.data["agent_id"] == "server-agent-id"
+
+
+@pytest.mark.e2e
+async def test_no_enforce_allows_update_pg(mcp_client):
+    """With ENFORCE_ENV_OVERWRITE=False, agent can freely update provenance."""
+    result = await _create_plain_memory(mcp_client, "no-enforce-update")
+    memory_id = result.data["id"]
+
+    # Update provenance without enforce, agent values should go through
+    updated = await _update_memory(
+        mcp_client, memory_id, encoding_agent="CallerAgent", agent_id="caller-id",
+    )
+    assert updated.data["encoding_agent"] == "CallerAgent"
+    assert updated.data["agent_id"] == "caller-id"

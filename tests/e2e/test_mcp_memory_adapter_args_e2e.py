@@ -115,17 +115,9 @@ async def test_include_obsolete_false_strings_hide_obsolete_memories_e2e(mcp_cli
 
 
 @pytest.mark.asyncio
-async def test_string_project_id_filters_on_that_project_e2e(mcp_client):
-    project_ids = []
-    for i in range(12):
-        result = await _exec(mcp_client, "create_project", {
-            "name": f"pg-adapter-args-project-{i}",
-            "description": f"project {i}",
-            "project_type": "development",
-        })
-        project_ids.append(json.loads(result.content[0].text)["id"])
-    in_last = await _create_memory(mcp_client, "pg in last", project_ids=[project_ids[11]])
-    await _create_memory(mcp_client, "pg in first", project_ids=[project_ids[0]])
-    await _create_memory(mcp_client, "pg in second", project_ids=[project_ids[1]])
+async def test_numeric_looking_project_filters_on_that_project_e2e(mcp_client):
+    in_twelve = await _create_memory(mcp_client, "pg in twelve", project="12")
+    await _create_memory(mcp_client, "pg in one", project="1")
+    await _create_memory(mcp_client, "pg in two", project="2")
 
-    assert await _recent_ids(mcp_client, project_ids=str(project_ids[11])) == [in_last]
+    assert await _recent_ids(mcp_client, project="12") == [in_twelve]

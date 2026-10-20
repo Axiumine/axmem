@@ -65,7 +65,7 @@ async def test_linked_memories_include_both_link_directions_when_nothing_is_excl
     await repo.create_link(user_id, one.id, two.id)
     await repo.create_link(user_id, three.id, one.id)
 
-    linked = await repo.get_linked_memories(user_id, one.id, project_ids=None)
+    linked = await repo.get_linked_memories(user_id, one.id, project=None)
 
     assert sorted(memory.id for memory in linked) == sorted([two.id, three.id])
 
@@ -75,7 +75,7 @@ async def test_batch_link_with_no_targets_creates_nothing(repo, user_id, memorie
 
     assert await repo.create_links_batch(user_id, one.id, []) == []
 
-    assert await repo.get_linked_memories(user_id, one.id, project_ids=None) == []
+    assert await repo.get_linked_memories(user_id, one.id, project=None) == []
 
 
 async def test_batch_link_skips_the_source_memory_itself(repo, user_id, memories):
@@ -84,7 +84,7 @@ async def test_batch_link_skips_the_source_memory_itself(repo, user_id, memories
     created = await repo.create_links_batch(user_id, one.id, [one.id, two.id])
 
     assert created == [two.id]
-    linked = await repo.get_linked_memories(user_id, one.id, project_ids=None)
+    linked = await repo.get_linked_memories(user_id, one.id, project=None)
     assert [memory.id for memory in linked] == [two.id]
 
 
@@ -92,7 +92,7 @@ async def test_semantic_search_leaves_out_excluded_memory_ids(repo, user_id, mem
     one, two, three = memories
 
     found = await repo.semantic_search_scored(
-        user_id, "One body", k=10, importance_threshold=None, project_ids=None,
+        user_id, "One body", k=10, importance_threshold=None, project=None,
         exclude_ids=[one.id, three.id],
     )
 
@@ -103,7 +103,7 @@ async def test_semantic_search_without_an_exclusion_list_returns_every_neighbour
     repo, user_id, memories,
 ):
     found = await repo.semantic_search_scored(
-        user_id, "One body", k=10, importance_threshold=None, project_ids=None, exclude_ids=None,
+        user_id, "One body", k=10, importance_threshold=None, project=None, exclude_ids=None,
     )
 
     assert sorted(memory.id for memory, _ in found) == sorted(memory.id for memory in memories)

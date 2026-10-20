@@ -13,6 +13,7 @@ import subprocess
 import sys
 import textwrap
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from dotenv import dotenv_values
@@ -41,7 +42,7 @@ UNICODE_SEPARATORS = {
 }
 
 # "Alvaro" with an accented capital A: UTF-8 bytes C3 81, and 0x81 is undefined in cp1252.
-UTF8_CONTENT = "DEFAULT_USER_NAME=Álvaro\nLOG_LEVEL=DEBUG\n".encode()
+UTF8_CONTENT = "DEFAULT_TENANT=Álvaro\nLOG_LEVEL=DEBUG\n".encode()
 
 
 def _leftover_temp_files(directory: Path, keep: str = ".env") -> list[str]:
@@ -53,15 +54,20 @@ def _effective_server(dotenv_path: Path) -> str | None:
     return Settings(_env_file=str(dotenv_path)).FORGETFUL_SERVER
 
 
-class _PingOkClient:
+class _ToolListClient:
+    """fastmcp.Client double whose discovery call succeeds."""
+
     async def __aenter__(self):
         return self
 
     async def __aexit__(self, *exc):
         return False
 
-    async def ping(self):
-        return True
+    async def call_tool(self, name, payload):
+        return SimpleNamespace(data={"tools_by_category": {}}, content=[])
+
+    async def close(self):
+        pass
 
 
 # =============================================================================
@@ -151,8 +157,7 @@ async def test_login_with_duplicate_server_lines_makes_the_new_server_effective(
     code = await auth_commands.login(
         "http://new:8020",
         env_file=env_file,
-        token_dir=tmp_path / "tokens",
-        client_factory=lambda url, token_dir: _PingOkClient(),
+        client_factory=lambda url, token: _ToolListClient(),
     )
 
     assert code == 0

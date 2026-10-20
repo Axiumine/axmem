@@ -2,17 +2,14 @@
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import ColumnElement, Select, select
+from sqlalchemy import Select, select
 
 from app.config.logging_config import logging
 from app.exceptions import NotFoundError
 from app.models.memory_models import VALID_SORT_ORDER, Memory
 from app.repositories.sqlite.memory_base import SqliteMemoryBase
-from app.repositories.sqlite.memory_queries import with_relationships
-from app.repositories.sqlite.sqlite_tables import (
-    MemoryTable,
-    memory_project_association,
-)
+from app.repositories.sqlite.memory_queries import in_project, with_relationships
+from app.repositories.sqlite.sqlite_tables import MemoryTable
 
 logger = logging.getLogger(__name__)
 
@@ -23,17 +20,9 @@ _SORT_COLUMNS = {
 }
 
 
-def _in_projects(project_ids: list[int]) -> ColumnElement[bool]:
-    """Condition: the memory belongs to one of the projects."""
-    return select(memory_project_association.c.memory_id).where(
-        memory_project_association.c.memory_id == MemoryTable.id,
-        memory_project_association.c.project_id.in_(project_ids),
-    ).exists()
-
-
 def _listing_statement(
     user_id: UUID,
-    project_ids: list[int] | None,
+    project: str | None,
     include_obsolete: bool,
     importance_min: int | None,
     created_since: datetime | None,
@@ -50,8 +39,8 @@ def _listing_statement(
     if created_since is not None:
         stmt = stmt.where(MemoryTable.created_at >= created_since.astimezone(UTC))
 
-    if project_ids:
-        stmt = stmt.where(_in_projects(project_ids))
+    if project:
+        stmt = stmt.where(in_project(project))
     return stmt
 
 
@@ -128,7 +117,7 @@ class SqliteMemoryReadMixin(SqliteMemoryBase):
             user_id: UUID,
             limit: int,
             offset: int = 0,
-            project_ids: list[int] | None = None,
+            project: str | None = None,
             include_obsolete: bool = False,
             sort_by: str = "created_at",
             sort_order: str = "desc",
@@ -142,7 +131,7 @@ class SqliteMemoryReadMixin(SqliteMemoryBase):
             user_id: User ID for ownership filtering
             limit: Maximum number of memories to return
             offset: Skip N results for pagination
-            project_ids: Optional filter to only retrieve memories from specific projects
+            project: Optional filter to only retrieve memories in this project scope
             include_obsolete: Include soft-deleted memories (default False)
             sort_by: Sort field - created_at, updated_at, importance
             sort_order: Sort direction - asc, desc
@@ -154,7 +143,7 @@ class SqliteMemoryReadMixin(SqliteMemoryBase):
             Tuple of (memories, total_count) where total_count is count before pagination
         """
         stmt = _sorted(
-            _listing_statement(user_id, project_ids, include_obsolete, importance_min, created_since),
+            _listing_statement(user_id, project, include_obsolete, importance_min, created_since),
             sort_by,
             sort_order,
         )
@@ -174,7 +163,7 @@ class SqliteMemoryReadMixin(SqliteMemoryBase):
                 "total": total,
                 "limit": limit,
                 "offset": offset,
-                "project_filtered": project_ids is not None,
+                "project_filtered": project is not None,
                 "include_obsolete": include_obsolete,
                 "sort_by": sort_by,
                 "sort_order": sort_order,

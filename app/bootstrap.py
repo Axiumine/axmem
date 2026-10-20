@@ -22,9 +22,8 @@ from app.routes.mcp.tool_registry import ToolRegistry
 
 if TYPE_CHECKING:
     from app.services.memory_service import MemoryService
-    from app.services.project_service import ProjectService
     from app.services.re_embedding_service import ReEmbeddingService
-    from app.services.user_service import UserService
+    from app.services.tenant_service import TenantService
 
 logger = logging.getLogger(__name__)
 
@@ -107,9 +106,6 @@ def create_repositories(db_adapter, embeddings_adapter, reranker_adapter):
     """Create all repositories based on database setting."""
     if settings.DATABASE == "Postgres":
         from app.repositories.postgres.memory_repository import PostgresMemoryRepository
-        from app.repositories.postgres.project_repository import (
-            PostgresProjectRepository,
-        )
         from app.repositories.postgres.user_repository import PostgresUserRepository
 
         repos = {
@@ -119,13 +115,11 @@ def create_repositories(db_adapter, embeddings_adapter, reranker_adapter):
                 embedding_adapter=embeddings_adapter,
                 rerank_adapter=reranker_adapter,
             ),
-            "project": PostgresProjectRepository(db_adapter=db_adapter),
         }
 
         return repos
     if settings.DATABASE == "SQLite":
         from app.repositories.sqlite.memory_repository import SqliteMemoryRepository
-        from app.repositories.sqlite.project_repository import SqliteProjectRepository
         from app.repositories.sqlite.user_repository import SqliteUserRepository
 
         repos = {
@@ -135,7 +129,6 @@ def create_repositories(db_adapter, embeddings_adapter, reranker_adapter):
                 embedding_adapter=embeddings_adapter,
                 rerank_adapter=reranker_adapter,
             ),
-            "project": SqliteProjectRepository(db_adapter=db_adapter),
         }
 
         return repos
@@ -146,9 +139,8 @@ def create_repositories(db_adapter, embeddings_adapter, reranker_adapter):
 class Services:
     """Service layer instances."""
 
-    user: UserService
+    tenant: TenantService
     memory: MemoryService
-    project: ProjectService
     re_embedding: ReEmbeddingService
 
 
@@ -185,22 +177,18 @@ async def build_runtime() -> Runtime:
     repos = create_repositories(db_adapter, embeddings_adapter, reranker_adapter)
 
     from app.services.memory_service import MemoryService
-    from app.services.project_service import ProjectService
     from app.services.re_embedding_service import ReEmbeddingService
-    from app.services.user_service import UserService
+    from app.services.tenant_service import TenantService
 
-    user_service = UserService(repos["user"])
+    tenant_service = TenantService(repos["user"])
     memory_service = MemoryService(repos["memory"])
     re_embedding_service = ReEmbeddingService(repos["memory"], embeddings_adapter)
-    project_service = ProjectService(repos["project"])
 
     registry = ToolRegistry()
     register_all_tools_metadata(
         registry=registry,
-        user_service=user_service,
         memory_service=memory_service,
         re_embedding_service=re_embedding_service,
-        project_service=project_service,
     )
 
     categories = registry.list_categories()
@@ -215,9 +203,8 @@ async def build_runtime() -> Runtime:
     logger.info(f"Scoped permissions: scopes={list(instance_scopes)}, permitted_tools={len(permitted_tools)}")
 
     services = Services(
-        user=user_service,
+        tenant=tenant_service,
         memory=memory_service,
-        project=project_service,
         re_embedding=re_embedding_service,
     )
 

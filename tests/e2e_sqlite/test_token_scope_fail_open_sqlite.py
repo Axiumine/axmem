@@ -1,4 +1,4 @@
-"""End-to-end tests: OAuth token scopes must narrow, never widen, the instance ceiling.
+"""End-to-end tests: token scopes must narrow, never widen, the instance ceiling.
 
 Drives the in-process FastMCP app (in-memory SQLite, real meta-tools, real scope
 resolver). Access tokens are produced by FastMCP's own JWTVerifier from a signed
@@ -86,7 +86,7 @@ async def test_read_only_token_cannot_write_whatever_the_claim_shape(sqlite_app,
         assert denied.is_error
         assert "not permitted" in str(denied.content).lower()
 
-        allowed = await _execute(client, "get_current_user", {})
+        allowed = await _execute(client, "get_recent_memories", {})
         assert not allowed.is_error
 
 
@@ -98,7 +98,7 @@ async def test_category_scope_next_to_foreign_scope_still_limits_to_that_categor
         assert {tool["category"] for tool in tools} == {"memory"}
         assert not [tool for tool in tools if tool["mutates"]]
 
-        denied = await _execute(client, "get_current_user", {})
+        denied = await _execute(client, "mark_memory_obsolete", {"memory_id": 1, "reason": "r"})
         assert denied.is_error
         assert "not permitted" in str(denied.content).lower()
 
@@ -117,7 +117,7 @@ async def test_token_scopes_without_any_recognised_scope_deny_everything(sqlite_
         assert await _discovered_tools(client) == []
 
         for tool_name, arguments in (
-            ("get_current_user", {}),
+            ("get_recent_memories", {}),
             ("create_memory", dict(CREATE_MEMORY_ARGS)),
         ):
             result = await _execute(client, tool_name, arguments)

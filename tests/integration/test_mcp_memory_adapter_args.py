@@ -207,7 +207,7 @@ def test_shared_sort_constants_match_the_rest_route():
 
 
 def test_every_documented_memory_tool_parameter_is_accepted_by_its_adapter():
-    adapters = create_memory_adapters(MagicMock(), MagicMock(), MagicMock())
+    adapters = create_memory_adapters(MagicMock(), MagicMock())
     registry = ToolRegistry()
     register_memory_tools_metadata(registry, adapters)
 

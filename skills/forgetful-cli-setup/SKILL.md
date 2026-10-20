@@ -33,10 +33,12 @@ Connection precedence: `--local` > `--server URL` > `FORGETFUL_SERVER` env > loc
 
 - **Local** (default): runs in-process against the locally configured database — zero
   config, no server needed. Right for a personal knowledge base on one machine.
-- **Remote**: drives a deployed server. Interactive use: `forgetful auth login --server
-  <url>` (browser OAuth; tokens cached under `~/.config/forgetful/`, server written to the
-  user config). Headless/CI use: set `FORGETFUL_SERVER` and `FORGETFUL_TOKEN` (bearer) in
-  the environment — no browser involved.
+- **Remote**: drives a deployed server. Set `FORGETFUL_TOKEN` (a bearer token: JWT,
+  introspected or static, as the server is configured) in the environment, then
+  `forgetful auth login --server <url>` checks the connection and saves the server to the
+  user config; or set `FORGETFUL_SERVER` as well and skip the login. The token is read from
+  the environment only and never stored; there is no browser flow. The token names the
+  tenant, and a tenant sees only its own memories. Local mode is the `DEFAULT_TENANT` tenant.
 
 Config merges shell env over `~/.config/forgetful/.env`. Check state anytime with
 `forgetful auth status`.
@@ -45,22 +47,22 @@ Config merges shell env over `~/.config/forgetful/.env`. Check state anytime wit
 
 ```bash
 forgetful tools list                          # registry categories come back
-forgetful project list --json                 # one real call round-trips
+forgetful memory recent --json                # one real call round-trips
 ```
 
 Done when: both succeed against the intended target (local or the remote URL).
 
 ## The machine contract
 
-For scripts and agents, pass `--json` on data commands — `tools`, `call`, `memory`, and
-`project` verbs: results are machine JSON, errors arrive as `{"error": ...}` on stderr. `auth`
+For scripts and agents, pass `--json` on data commands — `tools`, `call` and `memory`
+verbs: results are machine JSON, errors arrive as `{"error": ...}` on stderr. `auth`
 subcommands are human-oriented and don't take `--json`. Exit codes are contractual — `0`
 success, `1` tool or runtime error, `2` usage error. Parse output, branch on exit code.
 
 ## The discovery ladder
 
-1. **Curated verbs** for the common paths: `forgetful memory search|save|get|recent`,
-   `forgetful project list`.
+1. **Curated verbs** for the common paths: `forgetful memory search|save|get|recent`
+   (`-p/--project <label>` scopes them to a project).
 2. **`forgetful tools list [--category <c>]`** to discover every registry operation.
 3. **`forgetful tools info <operation>`** for the schema.
 4. **`forgetful call <operation> --args '<JSON>'`** to invoke anything the registry has.
@@ -71,8 +73,10 @@ same operations.
 
 ## Operating a local server
 
-- `forgetful serve --transport http --host 0.0.0.0 --port 8020` (or `--transport stdio`
-  for MCP clients that spawn a process).
+- The server refuses to start without `AUTH_MODE`. `AUTH_MODE=none` serves one local tenant and is
+  accepted only on stdio or on a loopback bind: `AUTH_MODE=none forgetful serve --transport http
+  --host 127.0.0.1 --port 8020` (or `--transport stdio` for MCP clients that spawn a process). A
+  server bound to another address needs `AUTH_MODE=jwt`, `introspection` or `static`.
 - Database via env: `DATABASE=SQLite` with `SQLITE_PATH` (file) or `SQLITE_MEMORY=true`
   (ephemeral), or `DATABASE=Postgres` with `POSTGRES_HOST/PORT/DB/USER/PASSWORD`.
 - After changing embedding provider or model: `forgetful re-embed --dry-run` to preview,

@@ -12,8 +12,7 @@ not class attributes at runtime); the real imports keep each entry tied to its o
 from app.config.settings import Settings
 from app.middleware.auth import TokenCache
 from app.models.memory_models import MemoryScore, MemorySummary, ObsoleteMatch
-from app.models.project_models import ProjectStatus, ProjectType
-from app.models.user_models import UserCreate, UserUpdate
+from app.models.user_models import User, UserCreate
 from app.repositories.embeddings.embedding_adapter import _EmbeddingsCreateKwargs
 from app.repositories.embeddings.fastembed_offline import FastEmbedKwargs
 from app.repositories.postgres import postgres_tables
@@ -23,35 +22,15 @@ from test_harness.report import ReportIssue, ReportStep, WalkthroughReport
 
 # --- pydantic-settings fields, populated from the environment / .env files ------------
 # ENCODING_* and AGENT_* are read by name through getattr(settings, ...) via
-# PROVENANCE_ENV_MAP in app/utils/provenance.py. SERVICE_DESCRIPTION and
-# OAUTH_STORAGE_PATH are documented in docs/configuration.md and pinned by the
-# test_settings_defaults snapshot; no application code reads them.
+# PROVENANCE_ENV_MAP in app/utils/provenance.py. SERVICE_DESCRIPTION is documented in
+# docs/configuration.md and pinned by the test_settings_defaults snapshot; no application
+# code reads it.
 Settings.SERVICE_DESCRIPTION
-Settings.OAUTH_STORAGE_PATH
 Settings.ENCODING_AGENT
 Settings.ENCODING_VERSION
 Settings.AGENT_ID
 Settings.AGENT_VERSION
 Settings.AGENT_MODEL
-
-# --- StrEnum members: the stored / API vocabulary (a value domain, not code paths) ----
-# Members are persisted in the database and accepted or returned by the REST and MCP
-# interfaces, so removing an unreferenced one would change what clients may send.
-ProjectStatus.ARCHIVED
-ProjectStatus.COMPLETED
-ProjectType.PERSONAL
-ProjectType.WORK
-ProjectType.LEARNING
-ProjectType.DEVELOPMENT
-ProjectType.INFRASTRUCTURE
-ProjectType.TEMPLATE
-ProjectType.PRODUCT
-ProjectType.MARKETING
-ProjectType.FINANCE
-ProjectType.DOCUMENTATION
-ProjectType.DEVELOPMENT_ENVIRONMENT
-ProjectType.THIRD_PARTY_LIBRARY
-ProjectType.OPEN_SOURCE
 
 # --- pydantic model fields, serialised in REST / MCP responses and report files -------
 # The test_harness report models are validated from the agent-written report.json.
@@ -59,8 +38,6 @@ MemorySummary.similarity
 MemoryScore.similarity
 MemoryScore.rerank_score
 ObsoleteMatch.similarity
-UserCreate.idp_metadata
-UserUpdate.idp_metadata
 ReportStep.commands
 ReportStep.observed
 ReportIssue.severity
@@ -76,10 +53,25 @@ FastEmbedKwargs.local_files_only
 
 # --- SQLAlchemy ORM columns and relationships ------------------------------------------
 # Columns are the table schema (pinned by the schema snapshots and the alembic revisions);
-# values are written through mapped keyword arguments and read by the mapper. The
-# relationship names are the back_populates targets of the other side of the mapping.
+# values are written through mapped keyword arguments and read by the mapper. The tenant
+# record and the project scope rows keep every column of the stored schema, though only the
+# tenant name and the scope name are read now; the storage layer is replaced later, not migrated.
+User.email
+UserCreate.email
+sqlite_tables.UsersTable.email
 sqlite_tables.UsersTable.idp_metadata
+sqlite_tables.UsersTable.notes
+sqlite_tables.ProjectsTable.project_type
+sqlite_tables.ProjectsTable.repo_name
+sqlite_tables.ProjectsTable.last_encoding_point
+sqlite_tables.ProjectsTable.notes
+postgres_tables.UsersTable.email
 postgres_tables.UsersTable.idp_metadata
+postgres_tables.UsersTable.notes
+postgres_tables.ProjectsTable.project_type
+postgres_tables.ProjectsTable.repo_name
+postgres_tables.ProjectsTable.last_encoding_point
+postgres_tables.ProjectsTable.notes
 
 # --- Read-only observation accessors that the tests of live behaviour assert on -------
 # Nothing in production calls these; they expose state that tests/ read to prove the

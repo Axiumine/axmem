@@ -12,11 +12,11 @@ from app.repositories.postgres.memory_base import (
     affected_rows,
     fits_int4,
     memory_load_options,
+    project_membership_filter,
 )
 from app.repositories.postgres.postgres_tables import (
     MemoryLinkTable,
     MemoryTable,
-    ProjectsTable,
 )
 
 logger = logging.getLogger(__name__)
@@ -29,7 +29,7 @@ class MemoryLinksMixin(MemoryRepositoryBase):
             self,
             user_id: UUID,
             memory_id: int,
-            project_ids: list[int] | None,
+            project: str | None,
             max_links: int = 5,
             exclude_ids: list[int] | None = None,
     ) -> list[Memory]:
@@ -39,7 +39,7 @@ class MemoryLinksMixin(MemoryRepositoryBase):
             user_id: User ID,
             memory_id: Memory ID of the memory to retrieve linked memories for
             max_links: Maximum number of linked memories to return
-            project_ids: Optional to filter linked memories for projects
+            project: Optional project scope to keep linked memories to
             exclude_ids: Optional memory IDs to leave out, applied before max_links
 
         Returns:
@@ -61,10 +61,8 @@ class MemoryLinksMixin(MemoryRepositoryBase):
         if exclude_ids:
             stmt = stmt.where(MemoryTable.id.not_in(exclude_ids))
 
-        if project_ids:
-            stmt = stmt.join(MemoryTable.projects).where(
-                ProjectsTable.id.in_(project_ids),
-            ).distinct()
+        if project:
+            stmt = stmt.where(project_membership_filter(project))
 
         stmt = stmt.order_by(MemoryTable.importance.desc()).limit(max_links)
 

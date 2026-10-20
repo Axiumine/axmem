@@ -23,7 +23,6 @@ from tests.e2e.pg_repository_world_e2e_helpers import (
     build_world,
     captured_logger,
     new_memory,
-    new_project,
 )
 
 pytestmark = [pytest.mark.e2e, pytest.mark.asyncio(loop_scope="session")]
@@ -172,17 +171,17 @@ async def test_restoring_another_users_obsolete_memory_returns_false_and_keeps_i
     assert (await world.memories.get_memory_by_id(world.stranger, strangers.id)).is_obsolete is True
 
 
-async def test_linked_memories_can_be_limited_to_projects(world):
+async def test_linked_memories_can_be_limited_to_a_project(world):
     owner = world.owner
-    project = await new_project(world, owner)
+    project = "Linked project"
     centre = await new_memory(world, owner, "Centre")
-    in_project = await new_memory(world, owner, "In the project", project_ids=[project])
+    in_project = await new_memory(world, owner, "In the project", project=project)
     outside = await new_memory(world, owner, "Outside the project")
     await world.memories.create_link(owner, centre.id, in_project.id)
     await world.memories.create_link(owner, centre.id, outside.id)
 
-    everything = await world.memories.get_linked_memories(owner, centre.id, project_ids=None)
-    scoped = await world.memories.get_linked_memories(owner, centre.id, project_ids=[project])
+    everything = await world.memories.get_linked_memories(owner, centre.id, project=None)
+    scoped = await world.memories.get_linked_memories(owner, centre.id, project=project)
 
     assert sorted(m.id for m in everything) == sorted([in_project.id, outside.id])
     assert [m.id for m in scoped] == [in_project.id]
@@ -196,7 +195,7 @@ async def test_link_from_another_users_memory_is_not_found_and_links_nothing(wor
         await world.memories.create_link(world.owner, strangers.id, own.id)
 
     assert str(refused.value) == f"Source memory with id {strangers.id} not found"
-    assert await world.memories.get_linked_memories(world.owner, own.id, project_ids=None) == []
+    assert await world.memories.get_linked_memories(world.owner, own.id, project=None) == []
 
 
 async def test_batch_link_without_targets_links_nothing(world):
@@ -210,7 +209,7 @@ async def test_batch_link_from_an_out_of_range_source_links_nothing(world):
 
     assert await world.memories.create_links_batch(world.owner, OUT_OF_RANGE_ID, [target.id]) == []
 
-    assert await world.memories.get_linked_memories(world.owner, target.id, project_ids=None) == []
+    assert await world.memories.get_linked_memories(world.owner, target.id, project=None) == []
 
 
 async def test_batch_link_skips_the_source_itself(world):
@@ -220,5 +219,5 @@ async def test_batch_link_skips_the_source_itself(world):
     linked = await world.memories.create_links_batch(world.owner, source.id, [source.id, target.id])
 
     assert linked == [target.id]
-    neighbours = await world.memories.get_linked_memories(world.owner, source.id, project_ids=None)
+    neighbours = await world.memories.get_linked_memories(world.owner, source.id, project=None)
     assert [m.id for m in neighbours] == [target.id]

@@ -1,13 +1,10 @@
 """User repository for postgres data access operations
 """
-from datetime import UTC, datetime
-from uuid import UUID
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
-from sqlalchemy import select, update
-from sqlalchemy.exc import IntegrityError, NoResultFound
-
-from app.exceptions import ConflictError, NotFoundError
-from app.models.user_models import User, UserCreate, UserUpdate
+from app.exceptions import ConflictError
+from app.models.user_models import User, UserCreate
 from app.repositories.postgres.postgres_adapter import PostgresDatabaseAdapter
 from app.repositories.postgres.postgres_errors import violated_constraint
 from app.repositories.postgres.postgres_tables import UsersTable
@@ -20,22 +17,6 @@ class PostgresUserRepository:
     def __init__(self, db_adapter: PostgresDatabaseAdapter):
         self.db_adapter = db_adapter
 
-
-    async def get_user_by_id(self, user_id: UUID) -> User | None:
-        """Gets a user by their internal id
-
-        Args:
-            user_id: Internal User ID (UUID)
-        
-        Returns:
-            User object or None if not found
-        """
-        async with self.db_adapter.system_session() as session:
-            result = await session.execute(select(UsersTable).where(UsersTable.id==user_id))
-            user_orm = result.scalars().first()
-            if user_orm:
-                return User.model_validate(user_orm)
-            return None
 
     async def get_user_by_external_id(self, external_id: str) -> User | None:
         """Gets a user by their external id
@@ -74,36 +55,3 @@ class PostgresUserRepository:
             if violated_constraint(exc) == "ix_users_external_id":
                 raise ConflictError("A user with this external_id already exists") from exc
             raise
-
-    async def update_user(self, user_id: UUID, updated_user: UserUpdate) -> User:
-        """Updates the user entity with the incoming UserUpdate object
-
-        Args:
-            user_id: User ID to update
-            updated_user: user update object
-
-        Returns:
-            User object
-                
-        Raises:
-            NotFoundError: If user not found
-        """
-        async with self.db_adapter.system_session() as session:
-            update_data = updated_user.model_dump(exclude_unset=True)
-            update_data["updated_at"] = datetime.now(UTC)
-
-            stmt = (
-                update(UsersTable)
-                .where(UsersTable.id == user_id)
-                .values(**update_data)
-                .returning(UsersTable)
-            )
-
-            try:
-                result = await session.execute(stmt)
-                user = result.scalar_one()
-                return User.model_validate(user)
-            except NoResultFound:
-                raise NotFoundError(f"User with id {user_id} not found")
-
-

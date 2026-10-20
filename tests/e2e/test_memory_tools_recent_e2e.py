@@ -11,7 +11,6 @@ import pytest
 from tests.e2e.memory_tools_helpers_e2e import (
     call_tool,
     create_memory,
-    create_project,
     get_memory,
     mark_obsolete,
     recent_envelope,
@@ -25,12 +24,7 @@ pytestmark = pytest.mark.asyncio(loop_scope="session")
 async def test_get_recent_memories_basic_e2e(mcp_client):
     """Test getting recent memories sorted by creation timestamp"""
     # Create a unique project to isolate this test's memories
-    project_result = await create_project(
-        mcp_client,
-        "Recent Memories Basic Test Project",
-        "Project for test isolation in get_recent_memories test",
-    )
-    project_id = project_result.data["id"]
+    project_name = "Recent Memories Basic Test Project"
 
     # Create several memories in this project
     memory_ids = []
@@ -43,13 +37,13 @@ async def test_get_recent_memories_basic_e2e(mcp_client):
             keywords=["recent", "test", f"memory{i}"],
             tags=["recent-basic-e2e-test"],
             importance=7,
-            project_ids=[project_id],
+            project=project_name,
         )
         memory_ids.append(result.data["id"])
 
     # Get recent memories filtered by project (should return newest first)
     recent_result = await recent_memories(
-        mcp_client, limit=3, project_ids=[project_id],
+        mcp_client, limit=3, project=project_name,
     )
 
     assert recent_result.content is not None
@@ -70,12 +64,7 @@ async def test_get_recent_memories_basic_e2e(mcp_client):
 @pytest.mark.e2e
 async def test_get_recent_memories_linked_ids_match_get_memory_e2e(mcp_client):
     """get_recent_memories linked_memory_ids must match get_memory for both link ends."""
-    project_result = await create_project(
-        mcp_client,
-        "recent-linked-ids-match-test-postgres",
-        "Isolation for get_recent linked_memory_ids e2e",
-    )
-    project_id = project_result.data["id"]
+    project_name = "recent-linked-ids-match-test-postgres"
 
     memory_a_result = await create_memory(
         mcp_client,
@@ -85,7 +74,7 @@ async def test_get_recent_memories_linked_ids_match_get_memory_e2e(mcp_client):
         keywords=["machine-learning", "ai", "patterns"],
         tags=["ml", "basics"],
         importance=7,
-        project_ids=[project_id],
+        project=project_name,
     )
     memory_a_id = memory_a_result.data["id"]
 
@@ -97,7 +86,7 @@ async def test_get_recent_memories_linked_ids_match_get_memory_e2e(mcp_client):
         keywords=["css", "web", "layout"],
         tags=["frontend", "css"],
         importance=7,
-        project_ids=[project_id],
+        project=project_name,
     )
     memory_b_id = memory_b_result.data["id"]
 
@@ -111,7 +100,7 @@ async def test_get_recent_memories_linked_ids_match_get_memory_e2e(mcp_client):
     assert memory_a_id in get_b_result.data["linked_memory_ids"]
 
     recent_result = await recent_memories(
-        mcp_client, limit=20, project_ids=[project_id],
+        mcp_client, limit=20, project=project_name,
     )
     envelope = recent_envelope(recent_result)
     memories = envelope["memories"]
@@ -131,12 +120,7 @@ async def test_get_recent_memories_linked_ids_match_get_memory_e2e(mcp_client):
 async def test_get_recent_memories_with_project_filter_e2e(mcp_client):
     """Test getting recent memories filtered by project"""
     # Create a project
-    project_result = await create_project(
-        mcp_client,
-        "recent-memories-project-filter-test",
-        "Project for testing get_recent_memories filtering",
-    )
-    project_id = project_result.data["id"]
+    project_name = "recent-memories-project-filter-test"
 
     # Create memories with and without the project
     with_project_result = await create_memory(
@@ -147,7 +131,7 @@ async def test_get_recent_memories_with_project_filter_e2e(mcp_client):
         keywords=["project", "filter", "test"],
         tags=["test"],
         importance=7,
-        project_ids=[project_id],
+        project=project_name,
     )
     memory_with_project_id = with_project_result.data["id"]
 
@@ -164,7 +148,7 @@ async def test_get_recent_memories_with_project_filter_e2e(mcp_client):
 
     # Get recent memories filtered by project
     recent_result = await recent_memories(
-        mcp_client, limit=10, project_ids=[project_id],
+        mcp_client, limit=10, project=project_name,
     )
 
     assert recent_result.content is not None
@@ -278,14 +262,9 @@ async def test_get_recent_memories_with_tags_filter_e2e(mcp_client):
 
 
 @pytest.mark.e2e
-async def test_get_recent_memories_tags_with_project_ids_e2e(mcp_client):
-    """Test combined tags + project_ids filter on get_recent_memories"""
-    project_result = await create_project(
-        mcp_client,
-        f"e2e-recent-tags-project-{uuid.uuid4().hex[:8]}",
-        "Project for tag+project filter test",
-    )
-    project_id = project_result.data["id"]
+async def test_get_recent_memories_tags_with_project_e2e(mcp_client):
+    """Test combined tags + project filter on get_recent_memories"""
+    project_name = f"e2e-recent-tags-project-{uuid.uuid4().hex[:8]}"
     tag = f"e2e-recent-project-tag-{uuid.uuid4().hex[:8]}"
 
     in_scope = await create_memory(
@@ -296,7 +275,7 @@ async def test_get_recent_memories_tags_with_project_ids_e2e(mcp_client):
         keywords=["e2e", "project-tag"],
         tags=[tag, "test"],
         importance=7,
-        project_ids=[project_id],
+        project=project_name,
     )
     wrong_project = await create_memory(
         mcp_client,
@@ -312,7 +291,7 @@ async def test_get_recent_memories_tags_with_project_ids_e2e(mcp_client):
     wrong_project_id = wrong_project.data["id"]
 
     filtered = await recent_memories(
-        mcp_client, tags=[tag], project_ids=[project_id], limit=50,
+        mcp_client, tags=[tag], project=project_name, limit=50,
     )
     filtered_ids = {m["id"] for m in recent_envelope(filtered)["memories"]}
     assert in_scope_id in filtered_ids

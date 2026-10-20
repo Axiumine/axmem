@@ -143,6 +143,9 @@ class ThrowawayForgetful:
             "EMBEDDING_DIMENSIONS": "384",
             "RERANKING_ENABLED": "false",
             "FASTMCP_SERVER_AUTH": "",
+            # The server refuses to start without an auth mode; the throwaway instance only
+            # listens on 127.0.0.1, the one bind where AUTH_MODE=none is accepted.
+            "AUTH_MODE": "none",
             "FORGETFUL_SERVER": "",
             "CORS_ENABLED": "false",
             "LOG_LEVEL": "INFO",

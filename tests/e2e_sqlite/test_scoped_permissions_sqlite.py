@@ -9,7 +9,7 @@ import pytest
 from app.routes.mcp.scope_resolver import parse_scopes, resolve_permitted_tools
 
 # Tools discoverable with the default wildcard scope: the floor a restricted scope must stay below.
-ALL_TOOLS_COUNT = 17
+ALL_TOOLS_COUNT = 10
 
 # ============================================================================
 # Default wildcard scope - regression (all tools accessible)
@@ -28,7 +28,7 @@ async def test_default_wildcard_execute_read_tool(mcp_client):
     """With default * scope, read tools should work."""
     result = await mcp_client.call_tool(
         "execute_forgetful_tool",
-        {"tool_name": "get_current_user", "arguments": {}},
+        {"tool_name": "get_recent_memories", "arguments": {}},
     )
     assert result.data is not None
 
@@ -86,7 +86,7 @@ async def test_read_only_scope_execute_read_succeeds(mcp_client, sqlite_app):
 
     result = await mcp_client.call_tool(
         "execute_forgetful_tool",
-        {"tool_name": "get_current_user", "arguments": {}},
+        {"tool_name": "get_recent_memories", "arguments": {}},
     )
     assert result.data is not None
 
@@ -145,12 +145,8 @@ async def test_read_memories_scope_discover(mcp_client, sqlite_app):
     result = await mcp_client.call_tool("discover_forgetful_tools", {})
     assert result.data is not None
 
-    # Only memory category should be present
-    categories = result.data["categories_available"]
-    assert "memory" in categories
-    # Other categories should be absent
-    assert "user" not in categories
-    assert "project" not in categories
+    # Only the memory category exists, and it is present
+    assert result.data["categories_available"] == ["memory"]
 
     # All discovered tools should be memory reads
     all_tools = []
@@ -179,8 +175,8 @@ async def test_read_memories_scope_execute_memory_read(mcp_client, sqlite_app):
 
 
 @pytest.mark.asyncio
-async def test_read_memories_scope_execute_user_denied(mcp_client, sqlite_app):
-    """With read:memories, executing a user tool should be denied."""
+async def test_read_memories_scope_execute_memory_write_denied(mcp_client, sqlite_app):
+    """With read:memories, executing a memory write tool should be denied."""
     instance_scopes = parse_scopes("read:memories")
     sqlite_app._instance_permitted_tools = resolve_permitted_tools(instance_scopes, sqlite_app.registry)
     sqlite_app._instance_scopes = instance_scopes
@@ -188,7 +184,7 @@ async def test_read_memories_scope_execute_user_denied(mcp_client, sqlite_app):
     with pytest.raises(Exception) as exc_info:
         await mcp_client.call_tool(
             "execute_forgetful_tool",
-            {"tool_name": "get_current_user", "arguments": {}},
+            {"tool_name": "mark_memory_obsolete", "arguments": {"memory_id": 1, "reason": "r"}},
         )
     assert "not permitted" in str(exc_info.value).lower()
 
@@ -207,10 +203,7 @@ async def test_mixed_scopes_all_reads_plus_memory_writes(mcp_client, sqlite_app)
     result = await mcp_client.call_tool("discover_forgetful_tools", {})
     assert result.data is not None
 
-    # Should have multiple categories (reads from all)
-    categories = result.data["categories_available"]
-    assert "memory" in categories
-    assert "user" in categories
+    assert result.data["categories_available"] == ["memory"]
 
     # Check that memory category has both reads and writes
     memory_result = await mcp_client.call_tool(
@@ -252,23 +245,16 @@ async def test_mixed_scopes_execute_memory_write(mcp_client, sqlite_app):
 
 
 @pytest.mark.asyncio
-async def test_mixed_scopes_non_memory_write_denied(mcp_client, sqlite_app):
-    """With read,write:memories, non-memory writes should be denied."""
-    instance_scopes = parse_scopes("read,write:memories")
+async def test_write_only_scope_denies_reads(mcp_client, sqlite_app):
+    """With write:memories alone, read tools should be denied."""
+    instance_scopes = parse_scopes("write:memories")
     sqlite_app._instance_permitted_tools = resolve_permitted_tools(instance_scopes, sqlite_app.registry)
     sqlite_app._instance_scopes = instance_scopes
 
     with pytest.raises(Exception) as exc_info:
         await mcp_client.call_tool(
             "execute_forgetful_tool",
-            {
-                "tool_name": "create_project",
-                "arguments": {
-                    "name": "Should fail",
-                    "description": "Denied",
-                    "project_type": "development",
-                },
-            },
+            {"tool_name": "get_recent_memories", "arguments": {}},
         )
     assert "not permitted" in str(exc_info.value).lower()
 

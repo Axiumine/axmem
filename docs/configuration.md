@@ -4,7 +4,7 @@ This guide explains all available environment variables for configuring Forgetfu
 
 ## Quick Start
 
-All configuration is optional. If no `.env` file exists, Forgetful uses sensible defaults from `app/config/settings.py`.
+All configuration is optional except authentication: Forgetful uses sensible defaults from `app/config/settings.py` when no `.env` file exists, but the server refuses to start until `AUTH_MODE` is set (see [Authentication Configuration](#authentication-configuration)). For a local server, `AUTH_MODE=none` is enough on stdio or with `SERVER_HOST=127.0.0.1`.
 
 To customize configuration, copy the reference file from the repository root and edit it. Forgetful reads
 `.env` from the directory it is started in and `~/.config/forgetful/.env` (the user config file, which
@@ -12,7 +12,7 @@ outranks the local one):
 
 ```bash
 cp .env.example .env
-# Edit .env with your values
+# Edit .env with your values (set AUTH_MODE; the example file uses AUTH_MODE=none and SERVER_HOST=127.0.0.1)
 uv run main.py --transport http
 ```
 
@@ -45,9 +45,9 @@ uv run main.py --transport http
 - **Default**: `0.0.0.0`
 - **Description**: Network interface the server binds to
 - **Values**:
-  - `0.0.0.0` - Listen on all interfaces (default)
-  - `127.0.0.1` - Listen only on localhost
-- **Example**: `SERVER_HOST=0.0.0.0`
+  - `0.0.0.0` - Listen on all interfaces (default). Needs `AUTH_MODE=jwt`, `introspection` or `static`
+  - `127.0.0.1` or `::1` - Listen only on localhost. The only HTTP binds that accept `AUTH_MODE=none`
+- **Example**: `SERVER_HOST=127.0.0.1`
 
 ### `SERVER_PORT`
 - **Default**: `8020`
@@ -161,163 +161,143 @@ uv run main.py --transport http
 
 ## Authentication Configuration
 
-Forgetful leverages **FastMCP's built-in authentication system** via environment variables. This provides flexible auth options without custom code.
+Forgetful fails closed. The server has no default authentication mode: with `AUTH_MODE` unset it
+**refuses to start**, so a server can never come up open by accident. Choose one mode:
 
-Forgetful reads the same `FASTMCP_SERVER_AUTH` and `FASTMCP_SERVER_AUTH_*` environment variables documented below and constructs the appropriate auth provider at startup. Users configure auth entirely through env vars — no code changes required.
+| `AUTH_MODE` | Credential | Tenant comes from |
+|---|---|---|
+| `jwt` | Signed JWT in `Authorization: Bearer` | Token claims (order below) |
+| `introspection` | Opaque token checked at an RFC 7662 endpoint | Introspection claims (order below) |
+| `static` | Fixed token per tenant, configured as a SHA-256 hash | The tenant the token is configured for |
+| `none` | No credential | `DEFAULT_TENANT` (every request is that one tenant) |
 
-**📚 Official Documentation**:
-- [FastMCP Auth Guide](https://fastmcp.wiki/en/servers/auth/authentication)
-- [Auth Examples](https://github.com/jlowin/fastmcp/tree/main/docs/servers/auth)
+`AUTH_MODE=none` is accepted **only** when the server binds a loopback address (`127.0.0.1` or `::1`;
+hostnames such as `localhost` do not count) or runs on stdio. On any other bind (`0.0.0.0`, a LAN
+address) the server exits with an error instead of serving anonymous requests. The credential modes
+(`jwt`, `introspection`, `static`) need a bearer token, so they are refused on stdio, which carries none.
+
+The GitHub and Google OAuth providers and the browser login of the CLI are removed. Use a token issued
+by your identity provider (`jwt`, `introspection`) or a static token.
 
 ---
 
-### Authentication Modes
+### Tenants
 
-#### **No Authentication (Default)**
+Every user of the server is a **tenant**: the unit of ownership and isolation. A tenant can read and
+change only its own memories, on every access path (MCP tools, REST routes, CLI). Another tenant's
+memory id answers exactly like an id that does not exist.
 
-When `FASTMCP_SERVER_AUTH` is **not set**, authentication is disabled and all requests use the default user:
+The tenant of a request is read from the verified token claims in this order, first non-blank claim wins:
+
+1. `tenant_id`
+2. `tenant`
+3. `sub`
+
+A token with none of the three is refused. A claim that is not a string or integer, or is longer than
+255 characters, is refused rather than skipped. The tenant is created in the database on its first request.
+Names are compared exactly, so `Acme` and `acme` are two tenants.
+
+---
+
+### Static tokens (`AUTH_MODE=static`)
+
+One fixed bearer token per tenant, for deployments without an identity provider. The configuration holds
+only the **SHA-256 hash** of each token, never the token.
 
 ```bash
-# .env - No auth configured
-DEFAULT_USER_ID="default-user-id"
-DEFAULT_USER_NAME="default-user-name"
-DEFAULT_USER_EMAIL="default.user@forgetful.dev"
+# Generate a token and its hash; hand the token to the tenant, keep only the hash
+TOKEN=$(openssl rand -hex 32)
+printf '%s' "$TOKEN" | sha256sum | cut -d' ' -f1
 ```
 
-#### **Token Introspection (OAuth 2.0 RFC 7662)**
-
-Validates opaque bearer tokens via an introspection endpoint. Recommended for microservices architectures.
-
 ```bash
-# .env - Token Introspection
-FASTMCP_SERVER_AUTH=fastmcp.server.auth.providers.introspection.IntrospectionTokenVerifier
-FASTMCP_SERVER_AUTH_INTROSPECTION_URL=https://auth.yourcompany.com/oauth/introspect
-FASTMCP_SERVER_AUTH_INTROSPECTION_CLIENT_ID=forgetful-resource-server
-FASTMCP_SERVER_AUTH_INTROSPECTION_CLIENT_SECRET=your-client-secret
-FASTMCP_SERVER_AUTH_INTROSPECTION_REQUIRED_SCOPES=api:read,api:write
+# .env
+AUTH_MODE=static
+AUTH_STATIC_TOKEN_HASHES={"acme": "<64 hex characters>", "globex": "<64 hex characters>"}
 ```
 
-**How it works**:
-- Client sends bearer token in `Authorization` header
-- Forgetful validates token via introspection endpoint
-- User provisioned from token claims (`sub`, `name`, `email`)
+The client sends `Authorization: Bearer <token>`. A presented token is hashed and compared with every
+configured hash in constant time; the token never appears in logs or error messages. One token belongs
+to one tenant: the server refuses to start if two tenants share a hash, if a value is not a 64-character
+hexadecimal digest, or if no tenant is configured. A static token does not expire; to revoke it, remove
+its hash and restart. To rotate, replace the hash.
 
-#### **JWT Verification**
+---
 
-Validates JWT tokens using JWKS endpoint or public key. Ideal for stateless authentication.
+### JWT verification (`AUTH_MODE=jwt`)
+
+Validates JWTs with a JWKS endpoint or a public key.
 
 ```bash
-# .env - JWT Verification
-FASTMCP_SERVER_AUTH=fastmcp.server.auth.providers.jwt.JWTVerifier
+# .env
+AUTH_MODE=jwt
 FASTMCP_SERVER_AUTH_JWT_JWKS_URI=https://auth.yourcompany.com/.well-known/jwks.json
 FASTMCP_SERVER_AUTH_JWT_ISSUER=https://auth.yourcompany.com
 FASTMCP_SERVER_AUTH_JWT_AUDIENCE=forgetful-api
 FASTMCP_SERVER_AUTH_JWT_REQUIRED_SCOPES=api:read,api:write
 ```
 
-**How it works**:
-- Client sends JWT in `Authorization: Bearer <token>` header
-- Forgetful validates signature, issuer, audience, expiration
-- User provisioned from JWT claims (`sub`, `name`, `email`)
+Either `FASTMCP_SERVER_AUTH_JWT_JWKS_URI` or `FASTMCP_SERVER_AUTH_JWT_PUBLIC_KEY` is required. Forgetful
+validates the signature, issuer, audience and expiry; an expired or invalid token gets `401`.
 
-#### **OAuth Proxy (GitHub, Google, etc.)**
+### Token introspection (`AUTH_MODE=introspection`)
 
-For OAuth providers that don't support Dynamic Client Registration (DCR). Pre-register your app with the provider.
+Validates opaque bearer tokens at an introspection endpoint (OAuth 2.0 RFC 7662).
 
 ```bash
-# .env - GitHub OAuth Proxy
-FASTMCP_SERVER_AUTH=fastmcp.server.auth.providers.github.GitHubProvider
-FASTMCP_SERVER_AUTH_GITHUB_CLIENT_ID=Ov23li...
-FASTMCP_SERVER_AUTH_GITHUB_CLIENT_SECRET=abc123...
-FASTMCP_SERVER_AUTH_GITHUB_BASE_URL=https://forgetful.yourcompany.com
+# .env
+AUTH_MODE=introspection
+FASTMCP_SERVER_AUTH_INTROSPECTION_URL=https://auth.yourcompany.com/oauth/introspect
+FASTMCP_SERVER_AUTH_INTROSPECTION_CLIENT_ID=forgetful-resource-server
+FASTMCP_SERVER_AUTH_INTROSPECTION_CLIENT_SECRET=your-client-secret
+FASTMCP_SERVER_AUTH_INTROSPECTION_REQUIRED_SCOPES=api:read,api:write
 ```
 
-**Supported Providers**:
-- `fastmcp.server.auth.providers.github.GitHubProvider`
-- `fastmcp.server.auth.providers.google.GoogleProvider`
-- See [FastMCP docs](https://github.com/jlowin/fastmcp/tree/main/docs/servers/auth) for full list
+A token the endpoint reports as inactive, or whose `exp` has passed, gets `401`. Results are cached for
+`TOKEN_CACHE_TTL_SECONDS` (see below).
 
 ---
 
 ### Configuration Reference
 
-#### `FASTMCP_SERVER_AUTH`
-- **Default**: Not set (authentication disabled)
-- **Description**: Fully-qualified class path to FastMCP auth provider
-- **Values**:
-  - *Omit* - No authentication (default user mode)
-  - `fastmcp.server.auth.providers.introspection.IntrospectionTokenVerifier` - Token introspection
-  - `fastmcp.server.auth.providers.jwt.JWTVerifier` - JWT verification
-  - `fastmcp.server.auth.providers.github.GitHubProvider` - GitHub OAuth
-  - `fastmcp.server.auth.providers.google.GoogleProvider` - Google OAuth
-- **Example**: `FASTMCP_SERVER_AUTH=fastmcp.server.auth.providers.jwt.JWTVerifier`
+#### `AUTH_MODE`
+- **Default**: unset (the server refuses to start)
+- **Values**: `none`, `jwt`, `introspection`, `static` (case-insensitive)
+- **Example**: `AUTH_MODE=static`
 
-#### Default User Settings (when auth is disabled)
+#### `DEFAULT_TENANT`
+- **Default**: `default`
+- **Description**: The tenant of every request when `AUTH_MODE=none`. 1 to 255 characters; surrounding whitespace is trimmed.
+- **Example**: `DEFAULT_TENANT=workstation`
 
-##### `DEFAULT_USER_ID`
-- **Default**: `default-user-id`
-- **Description**: External user ID when authentication is disabled
-- **Example**: `DEFAULT_USER_ID=local-dev-user`
+#### `AUTH_STATIC_TOKEN_HASHES`
+- **Default**: `{}`
+- **Description**: JSON object of tenant name to the SHA-256 hex digest of that tenant's token. Required when `AUTH_MODE=static`.
+- **Example**: `AUTH_STATIC_TOKEN_HASHES={"acme": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"}`
 
-##### `DEFAULT_USER_NAME`
-- **Default**: `default-user-name`
-- **Description**: Display name for default user
-- **Example**: `DEFAULT_USER_NAME=Local Developer`
+#### `TOKEN_CACHE_ENABLED`, `TOKEN_CACHE_TTL_SECONDS`, `TOKEN_CACHE_MAX_SIZE`
+- **Default**: `true`, `300`, `1000`
+- **Description**: Cache of verified tokens for the HTTP and REST paths. Applies to `jwt` and `introspection`; a static token is a hash lookup and needs no cache. Set `TOKEN_CACHE_ENABLED=false` for revocation to take effect on the next request.
 
-##### `DEFAULT_USER_EMAIL`
-- **Default**: `default-user-email`
-- **Description**: Email address for default user
-- **Example**: `DEFAULT_USER_EMAIL=dev@localhost`
-
-#### OAuth Storage Configuration
-
-##### `OAUTH_STORAGE_PATH`
-- **Default**: Platform-specific user data directory (e.g., `~/.local/share/forgetful/oauth`)
-- **Description**: Directory where OAuth tokens and state are persisted
-- **Purpose**: Stores authentication tokens between restarts when using OAuth providers (GitHub, Google, etc.)
-- **Note**: This directory contains sensitive authentication data - ensure proper file permissions
-- **Example**: `OAUTH_STORAGE_PATH=/app/data/oauth`
-
----
-
-### User Provisioning
-
-When authentication is enabled, Forgetful automatically provisions users from token claims:
-
-**Required Claims**:
-- `sub` - Subject identifier (maps to `external_id`)
-- `name` OR `preferred_username` - Display name
-
-**Optional Claims**:
-- `email` - Email address (defaults to empty string)
-
-**Auto-provisioning behavior**:
-- First request: User created in database
-- Subsequent requests: User retrieved by `external_id`
-- Updates: Name/email updated if changed in token
-
-**Example token claims**:
-```json
-{
-  "sub": "auth0|507f1f77bcf86cd799439011",
-  "name": "Jane Doe",
-  "email": "jane@example.com",
-  "iat": 1700000000,
-  "exp": 1700003600
-}
-```
+#### Removed settings
+`FASTMCP_SERVER_AUTH`, `FASTMCP_SERVER_AUTH_GITHUB_*`, `FASTMCP_SERVER_AUTH_GOOGLE_*`, `OAUTH_STORAGE_PATH`
+and `DEFAULT_USER_ID`, `DEFAULT_USER_NAME`, `DEFAULT_USER_EMAIL` no longer exist. Replace
+`FASTMCP_SERVER_AUTH=...JWTVerifier` with `AUTH_MODE=jwt` (and `...IntrospectionTokenVerifier` with
+`AUTH_MODE=introspection`), and `DEFAULT_USER_ID` with `DEFAULT_TENANT`. Existing users in the database are
+not migrated: a tenant is matched to its stored record by name, so rename `DEFAULT_TENANT` to the old
+`DEFAULT_USER_ID` value to keep serving the memories stored under it.
 
 ---
 
 ### Security Best Practices
 
-1. **Production Deployments**:
-   - Always enable authentication (`FASTMCP_SERVER_AUTH`)
-   - Use HTTPS for all endpoints
-   - Rotate client secrets regularly
-   - Bind to localhost: `SERVER_HOST=127.0.0.1`
+1. **Production deployments**:
+   - Pick a credential mode (`jwt`, `introspection` or `static`); use `none` only on a loopback bind
+   - Use HTTPS for all endpoints (put a TLS-terminating proxy in front)
+   - Rotate client secrets and static tokens regularly
+   - Keep tokens out of the configuration: static tokens are stored as hashes only
 
-2. **Token Scopes**:
+2. **Token scopes**:
    - Define required scopes: `FASTMCP_SERVER_AUTH_*_REQUIRED_SCOPES`
    - Implement least-privilege access
    - Forgetful narrows the tools a token can use from its `scope` (or `scp`) claim, given as a
@@ -326,16 +306,17 @@ When authentication is enabled, Forgetful automatically provisions users from to
      (`openid`, `email`, another API's scope) is ignored.
    - A token that carries scopes but none of the Forgetful ones is denied every tool, so add one
      (for example `*`) to tokens whose scopes are only verifier requirements such as `api:read`.
-     A token with no scope claim at all gets the full `FORGETFUL_SCOPES` ceiling.
+     A token with no scope claim at all gets the full `FORGETFUL_SCOPES` ceiling. A static token
+     carries no scopes and gets the ceiling.
 
-3. **Development vs Production**:
+3. **Development vs production**:
    ```bash
-   # Development - No auth for local testing
-   # FASTMCP_SERVER_AUTH not set
-   DEFAULT_USER_ID=dev-user
+   # Development - one local tenant, loopback bind only
+   AUTH_MODE=none
+   SERVER_HOST=127.0.0.1
 
-   # Production - JWT auth required
-   FASTMCP_SERVER_AUTH=fastmcp.server.auth.providers.jwt.JWTVerifier
+   # Production - JWT required
+   AUTH_MODE=jwt
    FASTMCP_SERVER_AUTH_JWT_JWKS_URI=https://auth.company.com/.well-known/jwks.json
    FASTMCP_SERVER_AUTH_JWT_ISSUER=https://auth.company.com
    FASTMCP_SERVER_AUTH_JWT_AUDIENCE=forgetful-prod
@@ -345,21 +326,23 @@ When authentication is enabled, Forgetful automatically provisions users from to
 
 ### Troubleshooting
 
-**"Authentication required but no bearer token provided"**:
-- Client must send `Authorization: Bearer <token>` header
+**"No authentication mode is configured, so the server will not start"**:
+- Set `AUTH_MODE` (see the table above). For a local server, `AUTH_MODE=none` with `SERVER_HOST=127.0.0.1`
+
+**"AUTH_MODE=none is accepted only when the HTTP server is bound to a loopback address"**:
+- Bind `SERVER_HOST=127.0.0.1` (or `::1`), or choose `jwt`, `introspection` or `static`
+
+**"Authentication required but no bearer token provided" / "Missing or invalid Authorization header"**:
+- Client must send `Authorization: Bearer <token>`
 - Check MCP client configuration
 
-**"Token contains no 'sub' claim"**:
-- Token is invalid or missing required claim
-- Verify token with JWT debugger (jwt.io)
-
-**"Token requires 'name' or 'preferred_username' claim"**:
-- Token missing user display name
-- Configure IdP to include `name` claim
+**"Token contains no 'tenant_id', 'tenant' or 'sub' claim"**:
+- The token names no tenant; configure the identity provider to include one of those claims
+- Verify the token with a JWT debugger
 
 **401 Unauthorized**:
-- Token expired, invalid signature, or wrong audience
-- Enable debug logging: `LOG_LEVEL=DEBUG`
+- Token expired, invalid signature, wrong audience, inactive at the introspection endpoint, or not a configured static token
+- Enable debug logging: `LOG_LEVEL=DEBUG` (tokens are never logged)
 
 ---
 
@@ -386,17 +369,19 @@ default, or against a remote deployment.
 
   Do not put credentials in the URL (`https://user:password@host`). `forgetful auth
   login` drops them before saving the URL, and `auth status` and CLI error messages mask
-  them. Use `FORGETFUL_TOKEN` (below) or the browser OAuth flow to authenticate.
+  them. Use `FORGETFUL_TOKEN` (below) to authenticate.
 - **Set by**: `forgetful auth login --server URL` (written to `~/.config/forgetful/.env`),
   or manually via shell env / any `.env` file in the standard list.
 
 ### `FORGETFUL_TOKEN`
 
 - **Default**: unset
-- **Purpose**: Bearer token for headless/CI use of the CLI against an authenticated
-  deployment. Read from the shell environment only - deliberately never stored in
-  `.env` files or the token cache. When unset, the CLI uses the browser OAuth flow.
-  Surrounding whitespace (such as a trailing newline from an env file or CI secret) is
+- **Purpose**: Bearer token the CLI sends to a remote deployment (a JWT, an introspected
+  token or a static token, as the server is configured). Read from the shell environment
+  only - deliberately never stored in `.env` files or anywhere else. When unset, the CLI
+  sends no credential, which only a server running `AUTH_MODE=none` accepts. The token names
+  the tenant, so the CLI reaches only that tenant's memories. In local mode the CLI is the
+  `DEFAULT_TENANT` tenant. Surrounding whitespace (such as a trailing newline from an env file or CI secret) is
   stripped and a blank value counts as unset. A value that still contains control or
   non-ASCII characters is rejected with an error that does not repeat the token.
 
@@ -405,27 +390,22 @@ default, or against a remote deployment.
 The CLI bounds how long it waits on a remote deployment, so a URL that answers with a
 non-MCP page (reverse-proxy error page, SPA catch-all, wrong `--server`) fails with
 `Error: ...` and exit code 1 instead of hanging. The MCP handshake gets 30 seconds and
-each request 300 seconds. The browser OAuth flow (`auth login`, or any command run
-without `FORGETFUL_TOKEN`) gets 360 seconds for both, to leave room for the interactive
-login.
+each request 300 seconds.
 
 ### Configuration precedence (highest wins)
 
 1. Per-invocation flags: `--server URL` / `--local`
 2. Shell environment: `FORGETFUL_SERVER`, `FORGETFUL_TOKEN`
-3. User config file: `~/.config/forgetful/.env` (written by `forgetful auth login`)
+3. User config file: `~/.config/forgetful/.env` (`forgetful auth login --server URL` saves `FORGETFUL_SERVER` there)
 4. Defaults: local mode, SQLite at the platform data path, FastEmbed embeddings
 
-### Token cache
+### `forgetful auth`
 
-OAuth tokens are cached in `~/.config/forgetful/tokens/` (created `0700`) so the
-browser flow runs once, not per invocation. `forgetful auth logout` deletes this
-directory (or, when it is a symlink, empties the directory it points at); the
-server-side session is untouched. The cache keeps working if the directory is moved
-(renamed home, bind mount, restored backup). `forgetful auth status` is read-only: it
-sends `FORGETFUL_TOKEN` or the cached access token as a plain bearer and never starts the
-browser flow, so an expired token is reported as not authenticated until you run
-`forgetful auth login` again.
+`forgetful auth login --server URL` checks the connection (sending `FORGETFUL_TOKEN`, if set) and saves
+`FORGETFUL_SERVER` to the user config file. There is no interactive sign-in and nothing is cached on
+disk. `forgetful auth status` is read-only: it reports the active mode and, in remote mode, sends
+`FORGETFUL_TOKEN` (or nothing) as a plain bearer to prove the credentials work. A `401` is reported as
+not authenticated.
 
 ---
 
@@ -520,7 +500,7 @@ one later does not make memories that were stored under the old limit unreadable
 ### `OBSOLETE_WARNING_ENABLED`
 - **Default**: `true`
 - **Description**: Warn when a created memory is similar to superseded memories
-- **Behavior**: Warning-only in response payload, max 3 matches, same user, all projects; never blocks creation; adds one vector query per `create_memory`; when `false`, `obsolete_matches` is always `[]` and no query runs
+- **Behavior**: Warning-only in response payload, max 3 matches, same tenant, all project scopes; never blocks creation; adds one vector query per `create_memory`; when `false`, `obsolete_matches` is always `[]` and no query runs
 - **Example**: `OBSOLETE_WARNING_ENABLED=false`
 
 ### `OBSOLETE_WARNING_THRESHOLD`
@@ -531,19 +511,12 @@ one later does not make memories that were stored under the old limit unreadable
 
 ---
 
-## Project Configuration
+## Project Scope
 
-### `PROJECT_DESCRIPTION_MAX_LENGTH`
-- **Default**: `5000`
-- **Description**: Maximum characters for project descriptions
-- **Purpose**: Text field with reasonable cap for detailed project documentation
-- **Example**: `PROJECT_DESCRIPTION_MAX_LENGTH=5000`
-
-### `PROJECT_NOTES_MAX_LENGTH`
-- **Default**: `4000`
-- **Description**: Maximum characters for project notes
-- **Purpose**: Text field with reasonable cap for project-level annotations
-- **Example**: `PROJECT_NOTES_MAX_LENGTH=4000`
+A project is an optional free-form scope label on a memory (the `project` argument of `create_memory`,
+`update_memory`, `query_memory` and `get_recent_memories`; `-p/--project` on the CLI). It is trimmed, 1 to
+500 characters, and created the first time it is used. There is nothing to configure and no project records
+to manage. Each tenant has its own scopes: the same label used by two tenants is two separate scopes.
 
 ---
 
@@ -857,6 +830,8 @@ Settings are resolved in this order (highest priority first):
 ### Local Development
 ```bash
 # .env
+AUTH_MODE=none
+SERVER_HOST=127.0.0.1
 SERVER_PORT=8020
 POSTGRES_HOST=127.0.0.1
 LOG_LEVEL=DEBUG
@@ -866,6 +841,10 @@ LOG_FORMAT=console
 ### Production
 ```bash
 # .env
+AUTH_MODE=jwt
+FASTMCP_SERVER_AUTH_JWT_JWKS_URI=https://auth.example.com/.well-known/jwks.json
+FASTMCP_SERVER_AUTH_JWT_ISSUER=https://auth.example.com
+FASTMCP_SERVER_AUTH_JWT_AUDIENCE=forgetful
 SERVER_PORT=8020
 SERVER_HOST=127.0.0.1
 POSTGRES_HOST=db.internal.example.com
@@ -897,6 +876,7 @@ DENSE_SEARCH_CANDIDATES=100
    ```bash
    SERVER_HOST=127.0.0.1
    ```
+   Binding another address requires an authentication mode other than `none`.
 
 3. **Use structured logging in production**
    ```bash

@@ -25,16 +25,15 @@ Parse for:
 
 ## Phase 0: Discovery & Assessment (ALWAYS START HERE)
 
-### Step 1: Check for Existing Project
+### Step 1: Check for Existing Project Memories
+
+A project is a scope label on memories, not a record: use the repository name (`owner/repo-name`) as the `project` value of every memory in this run. There is nothing to create first.
 
 ```
-execute_forgetful_tool("list_projects", {})
+execute_forgetful_tool("get_recent_memories", {"limit": 5, "project": "owner/repo-name"})
 ```
 
-Search for the project. If found:
-- Note the `project_id` (required for linking)
-- Review description, project_type, status
-- Check notes field for operational details
+If memories come back, this repository was encoded before: treat the run as a refresh.
 
 ### Step 2: Assess Project Size & Scope
 
@@ -60,7 +59,7 @@ execute_forgetful_tool("query_memory", {
   "query_context": "Assessing existing knowledge base coverage for bootstrap",
   "k": 10,
   "include_links": true,
-  "project_ids": [<project_id if exists>]
+  "project": "owner/repo-name"
 })
 ```
 
@@ -114,7 +113,7 @@ Phase [N] Complete:
 | Phase | Minimum Output | Gate Requirement |
 |-------|---------------|------------------|
 | 0: Discovery | Gap analysis report | Report before proceeding |
-| 1: Foundation | 5 memories + project | All 5 core memories created |
+| 1: Foundation | 5 memories | All 5 core memories created |
 | 2: Architecture | Layer memories | 1 memory per identified layer |
 | 3: Patterns | 3+ pattern memories | Pattern count met |
 
@@ -128,19 +127,6 @@ Phase [N] Complete:
 ---
 
 ## Phase 1: Project Foundation (5-10 memories)
-
-### Create/Update the Project
-
-If project doesn't exist:
-```
-execute_forgetful_tool("create_project", {
-  "name": "owner/repo-name",
-  "description": "<2-3 paragraphs: problem solved, features, tech stack>",
-  "project_type": "development",
-  "repo_name": "owner/repo",
-  "notes": "<operational details: how to run, test, deploy>"
-})
-```
 
 ### Create Foundation Memories
 
@@ -181,7 +167,7 @@ Template:
   "keywords": ["layer-name", "pattern", "directory"],
   "tags": ["architecture", "layer"],
   "importance": 8,
-  "project_ids": [<project_id>]
+  "project": "owner/repo-name"
 }
 ```
 
@@ -231,7 +217,7 @@ Search for these pattern types:
   "keywords": ["pattern", "specific-pattern-name"],
   "tags": ["pattern", "implementation"],
   "importance": 8,
-  "project_ids": [<project_id>]
+  "project": "owner/repo-name"
 }
 ```
 
@@ -281,7 +267,7 @@ Phase 3 Complete:
   "keywords": ["feature", "specific-feature-area"],
   "tags": ["feature", "implementation"],
   "importance": 8,
-  "project_ids": [<project_id>]
+  "project": "owner/repo-name"
 }
 ```
 
@@ -347,7 +333,7 @@ Grep: "## Why", "## Design", "## Architecture Decisions", "## Rationale"
   "keywords": ["decision", "topic-area"],
   "tags": ["decision", "documented"],
   "importance": 9,
-  "project_ids": [<project_id>]
+  "project": "owner/repo-name"
 }
 ```
 
@@ -369,7 +355,7 @@ Phase 5 Complete:
 | Phase | Minimum Output | Gate Requirement |
 |-------|---------------|------------------|
 | 0: Discovery | Gap analysis report | Report before proceeding |
-| 1: Foundation | 5 memories + project | All 5 core memories created |
+| 1: Foundation | 5 memories | All 5 core memories created |
 | 2: Architecture | Layer memories | 1 per identified layer |
 | 3: Patterns | 3+ memories | Pattern count met |
 
@@ -411,14 +397,14 @@ After completion, test with validation queries:
 execute_forgetful_tool("query_memory", {
   "query": "How is the codebase architected?",
   "query_context": "Testing bootstrap coverage",
-  "project_ids": [<project_id>]
+  "project": "owner/repo-name"
 })
 
 # Test 2: Implementation patterns
 execute_forgetful_tool("query_memory", {
   "query": "How do I add a new API endpoint?",
   "query_context": "Testing bootstrap coverage",
-  "project_ids": [<project_id>]
+  "project": "owner/repo-name"
 })
 
 # Test 3: Linked knowledge

@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 def _list_conditions(
         user_id: UUID,
-        project_ids: list[int] | None,
+        project: str | None,
         include_obsolete: bool,
         tags: list[str] | None,
         importance_min: int | None,
@@ -43,8 +43,8 @@ def _list_conditions(
         conditions.append(MemoryTable.tags.overlap(tags))
 
     # Project filter
-    if project_ids:
-        conditions.append(project_membership_filter(project_ids))
+    if project:
+        conditions.append(project_membership_filter(project))
 
     return conditions
 
@@ -77,7 +77,7 @@ class MemoryListingMixin(MemoryRepositoryBase):
             user_id: UUID,
             limit: int,
             offset: int = 0,
-            project_ids: list[int] | None = None,
+            project: str | None = None,
             include_obsolete: bool = False,
             sort_by: str = "created_at",
             sort_order: str = "desc",
@@ -91,7 +91,7 @@ class MemoryListingMixin(MemoryRepositoryBase):
             user_id: User ID for ownership filtering
             limit: Maximum number of memories to return
             offset: Skip N results for pagination
-            project_ids: Optional filter to only retrieve memories from specific projects
+            project: Optional filter to only retrieve memories in this project scope
             include_obsolete: Include soft-deleted memories (default False)
             sort_by: Sort field - created_at, updated_at, importance
             sort_order: Sort direction - asc, desc
@@ -104,7 +104,7 @@ class MemoryListingMixin(MemoryRepositoryBase):
         """
         conditions = _list_conditions(
             user_id=user_id,
-            project_ids=project_ids,
+            project=project,
             include_obsolete=include_obsolete,
             tags=tags,
             importance_min=importance_min,
@@ -138,7 +138,7 @@ class MemoryListingMixin(MemoryRepositoryBase):
                 "total": total,
                 "limit": limit,
                 "offset": offset,
-                "project_filtered": project_ids is not None,
+                "project_filtered": project is not None,
                 "include_obsolete": include_obsolete,
                 "sort_by": sort_by,
                 "sort_order": sort_order,

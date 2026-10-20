@@ -27,36 +27,32 @@ async def _obsolete(http_client, memory_id, body=None):
 
 
 @pytest.mark.e2e
-async def test_create_with_unknown_project_id_is_404(http_client):
-    response = await http_client.post(API, json={**MEMORY, "project_ids": [999999]})
-
-    assert response.status_code == 404, response.text
-    assert response.json()["error"].startswith("Projects not found")
-
-
-@pytest.mark.e2e
-async def test_update_with_unknown_project_names_the_association(http_client):
-    memory_id = await _create_memory(http_client)
-
-    response = await http_client.put(f"{API}/{memory_id}", json={"title": "Renamed", "project_ids": [999999]})
-
-    assert response.status_code == 404, response.text
-    assert response.json()["error"].startswith("Projects not found")
-
-
-@pytest.mark.e2e
-async def test_create_response_reports_linked_project_ids(http_client):
-    project = await http_client.post("/api/v1/projects", json={
-        "name": "pg-memory-route-project",
-        "description": "Project linked from a memory",
-        "project_type": "development",
-    })
-    assert project.status_code == 201, project.text
-
-    response = await http_client.post(API, json={**MEMORY, "project_ids": [project.json()["id"]]})
+async def test_create_with_an_unknown_project_creates_it_on_first_use(http_client):
+    response = await http_client.post(API, json={**MEMORY, "project": "pg-new-project"})
 
     assert response.status_code == 201, response.text
-    assert response.json()["project_ids"] == [project.json()["id"]]
+    assert response.json()["project"] == "pg-new-project"
+
+
+@pytest.mark.e2e
+async def test_update_to_a_new_project_keeps_the_memory(http_client):
+    memory_id = await _create_memory(http_client)
+
+    response = await http_client.put(
+        f"{API}/{memory_id}", json={"title": "Renamed", "project": "pg-fresh-project"},
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["project"] == "pg-fresh-project"
+    assert response.json()["title"] == "Renamed"
+
+
+@pytest.mark.e2e
+async def test_create_response_reports_the_project(http_client):
+    response = await http_client.post(API, json={**MEMORY, "project": "pg-memory-route-project"})
+
+    assert response.status_code == 201, response.text
+    assert response.json()["project"] == "pg-memory-route-project"
 
 
 @pytest.mark.e2e
