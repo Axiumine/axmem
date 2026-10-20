@@ -235,7 +235,7 @@ curl -X DELETE -H "api-key: $QDRANT_API_KEY" "$QDRANT_URL/collections/<previous 
 
 ### FastEmbed (removed) to TensorRT (local GPU)
 
-The `FastEmbed` provider (local CPU, ONNX Runtime) no longer exists. `EMBEDDING_PROVIDER=FastEmbed` stops startup with an error that names the setting, and the `FASTEMBED_CACHE_DIR`, `FASTEMBED_LOCAL_FILES_ONLY` and `EMBEDDING_ONNX_PROVIDERS` settings are ignored. `TensorRT` is the default provider, so memories that were embedded by `FastEmbed` are moved over by removing the old line and re-embedding. The model name and the width stay the same, but the vectors come from another runtime and are not identical, so `--re-embed` rewrites all of them:
+The `FastEmbed` provider (local CPU, ONNX Runtime) no longer exists. `EMBEDDING_PROVIDER=FastEmbed` stops startup with an error that names the setting, and the `FASTEMBED_CACHE_DIR`, `FASTEMBED_LOCAL_FILES_ONLY` and `EMBEDDING_ONNX_PROVIDERS` settings are ignored (the server names each one in a warning at start, as it does for `RERANKING_ONNX_PROVIDERS` and `RERANKING_THREADS`). `TensorRT` is the default provider, so memories that were embedded by `FastEmbed` are moved over by removing the old line and re-embedding. The model name and the width stay the same, but the vectors come from another runtime and are not identical, so `--re-embed` rewrites all of them:
 
 ```bash
 # settings file (or remove the EMBEDDING_PROVIDER line: TensorRT is the default)

@@ -65,7 +65,7 @@ def _scopes(raw: str) -> list[str] | None:
 
 @_register("jwt")
 def _build_jwt() -> AuthProvider:
-    from fastmcp.server.auth.providers.jwt import JWTVerifier
+    from app.middleware.token_verifiers import ExpiringJWTVerifier
 
     jwks_uri = settings.FASTMCP_SERVER_AUTH_JWT_JWKS_URI or None
     public_key = settings.FASTMCP_SERVER_AUTH_JWT_PUBLIC_KEY or None
@@ -76,20 +76,38 @@ def _build_jwt() -> AuthProvider:
             "FASTMCP_SERVER_AUTH_JWT_PUBLIC_KEY is required for JWTVerifier",
         )
 
-    return JWTVerifier(
+    issuer = (settings.FASTMCP_SERVER_AUTH_JWT_ISSUER or "").strip()
+    audience = (settings.FASTMCP_SERVER_AUTH_JWT_AUDIENCE or "").strip()
+    missing = [
+        name
+        for name, value in (
+            ("FASTMCP_SERVER_AUTH_JWT_ISSUER", issuer),
+            ("FASTMCP_SERVER_AUTH_JWT_AUDIENCE", audience),
+        )
+        if not value
+    ]
+    if missing:
+        raise ValueError(
+            "AUTH_MODE=jwt requires both FASTMCP_SERVER_AUTH_JWT_ISSUER and "
+            f"FASTMCP_SERVER_AUTH_JWT_AUDIENCE (not set: {', '.join(missing)}). Without them a token "
+            "that the same identity provider issued for another application would be accepted.",
+        )
+
+    return ExpiringJWTVerifier(
         jwks_uri=jwks_uri,
         public_key=public_key,
-        issuer=settings.FASTMCP_SERVER_AUTH_JWT_ISSUER or None,
-        audience=settings.FASTMCP_SERVER_AUTH_JWT_AUDIENCE or None,
+        issuer=issuer,
+        audience=audience,
         required_scopes=_scopes(settings.FASTMCP_SERVER_AUTH_JWT_REQUIRED_SCOPES),
     )
 
 
 @_register("introspection")
 def _build_introspection() -> AuthProvider:
-    from fastmcp.server.auth.providers.introspection import IntrospectionTokenVerifier
+    from app.middleware.token_verifiers import AudienceIntrospectionVerifier
 
-    return IntrospectionTokenVerifier(
+    return AudienceIntrospectionVerifier(
+        audience=(settings.FASTMCP_SERVER_AUTH_INTROSPECTION_AUDIENCE or "").strip() or None,
         introspection_url=_required(settings.FASTMCP_SERVER_AUTH_INTROSPECTION_URL, "FASTMCP_SERVER_AUTH_INTROSPECTION_URL"),
         client_id=_required(settings.FASTMCP_SERVER_AUTH_INTROSPECTION_CLIENT_ID, "FASTMCP_SERVER_AUTH_INTROSPECTION_CLIENT_ID"),
         client_secret=_required(settings.FASTMCP_SERVER_AUTH_INTROSPECTION_CLIENT_SECRET, "FASTMCP_SERVER_AUTH_INTROSPECTION_CLIENT_SECRET"),

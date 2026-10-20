@@ -209,7 +209,11 @@ Every request acts as one tenant. `AUTH_MODE` decides how the tenant is found, a
 
 `AUTH_MODE=none` is accepted only on stdio or on a loopback bind (`127.0.0.1`, `::1`); on any other address the server refuses to
 start. The check sees the bind address only: if a proxy, a tunnel or a port mapping forwards to the loopback port, every caller
-is the default tenant, so use `jwt`, `introspection` or `static` for anything that is not strictly local. The GitHub and Google OAuth providers and the CLI browser login are removed. See the
+is the default tenant, so use `jwt`, `introspection` or `static` for anything that is not strictly local. A credential-free HTTP server also
+answers `421` to a `Host` that is not a loopback name and `403` to a foreign `Origin`, so a web page cannot drive it by DNS rebinding or a
+cross-origin POST. `jwt` needs `FASTMCP_SERVER_AUTH_JWT_ISSUER` and `FASTMCP_SERVER_AUTH_JWT_AUDIENCE` (the server refuses to start without them) and a
+token with an `exp` claim. `AXMEM_SCOPES` and the scopes of a token limit the REST routes as they limit the MCP tools (`403` for a tool that is not
+permitted). The GitHub and Google OAuth providers and the CLI browser login are removed. See the
 [Configuration Guide](docs/configuration.md#authentication-configuration) for the details and for generating a static token hash.
 
 ### Connecting to an Agent

@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 AUTH_MODE_BY_PROVIDER = {
     "StaticTokenVerifier": "static",
     "IntrospectionTokenVerifier": "introspection",
+    "AudienceIntrospectionVerifier": "introspection",
 }
 
 

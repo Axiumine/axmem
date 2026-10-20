@@ -117,7 +117,8 @@ source_modules = [
 ]
 forbidden_modules = [
     "app.services", "app.repositories", "app.routes", "app.bootstrap",
-    "app.middleware.auth", "app.middleware.static_token", "app.config.auth",
+    "app.middleware.auth", "app.middleware.static_token", "app.middleware.token_verifiers",
+    "app.middleware.loopback_guard", "app.config.auth",
 ]
 
 [[tool.importlinter.contracts]]
@@ -127,7 +128,8 @@ type = "forbidden"
 source_modules = ["app.services"]
 forbidden_modules = [
     "app.repositories", "app.routes", "app.bootstrap",
-    "app.middleware.auth", "app.middleware.static_token", "app.config.auth",
+    "app.middleware.auth", "app.middleware.static_token", "app.middleware.token_verifiers",
+    "app.middleware.loopback_guard", "app.config.auth",
 ]
 
 [[tool.importlinter.contracts]]
@@ -137,7 +139,8 @@ type = "forbidden"
 source_modules = ["app.repositories"]
 forbidden_modules = [
     "app.services", "app.routes", "app.bootstrap",
-    "app.middleware.auth", "app.middleware.static_token", "app.config.auth",
+    "app.middleware.auth", "app.middleware.static_token", "app.middleware.token_verifiers",
+    "app.middleware.loopback_guard", "app.config.auth",
 ]
 
 [[tool.importlinter.contracts]]
@@ -296,6 +299,7 @@ ignore_decorators = [
     "@field_validator",
     "@model_validator",
     "@mcp.custom_route",
+    "@rest_route",  # app.routes.api.access: registers the handler behind the credential, scope and body checks
     "@mcp.tool",
     "@_register",  # app.config.auth: registers the provider factory under its AUTH_MODE name
 ]

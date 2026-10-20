@@ -26,6 +26,7 @@ if TYPE_CHECKING:
     from fastmcp import Context
 
     from app.routes.mcp.tool_registry import ToolRegistry
+    from app.routes.server_state import AxmemMCP
 
 logger = logging.getLogger(__name__)
 
@@ -156,22 +157,26 @@ def get_required_scope(tool_name: str, registry: ToolRegistry) -> str:
     return f"{action}:{scope_category}"
 
 
-def get_effective_scopes(ctx: Context) -> tuple[set[str], frozenset[str]]:
-    """Resolve effective permitted tools for the current request.
+def effective_permitted_tools(
+    server: AxmemMCP, token_scopes: frozenset[str] | None,
+) -> tuple[set[str], frozenset[str]]:
+    """Resolve the tools a request may use: the instance ceiling narrowed by the token's scopes.
 
     Intersection model:
-    1. Start with instance-level scopes from ctx.fastmcp._instance_permitted_tools
-    2. If OAuth token has scopes, intersect with token-level permissions
+    1. Start with instance-level scopes from ``server._instance_permitted_tools``
+    2. If the token has scopes, intersect with token-level permissions
        (a token whose scopes include no Axmem scope permits nothing)
-    3. If no token scopes, fall back to instance-level permissions
+    3. If the token has no scope claim (``token_scopes`` is None), fall back to the instance ceiling
+
+    The MCP meta-tools and the REST routes both resolve through this one function.
 
     Args:
-        ctx: FastMCP Context
+        server: The server that carries the registry and the instance ceiling
+        token_scopes: ``token_scopes_from_claims`` of the request's token, or None
 
     Returns:
         Tuple of (permitted_tool_names, effective_scope_tokens)
     """
-    server = server_of(ctx)
     instance_permitted: set[str] = getattr(server, "_instance_permitted_tools", None) or set()
     instance_scopes: frozenset[str] = getattr(server, "_instance_scopes", frozenset({"*"}))
 
@@ -179,9 +184,6 @@ def get_effective_scopes(ctx: Context) -> tuple[set[str], frozenset[str]]:
         # Fallback: if not initialized, allow all (backwards compatible)
         all_tools = {m.name for m in server.registry.list_all_tools()}
         return all_tools, frozenset({"*"})
-
-    # Check for OAuth token scopes
-    token_scopes = _extract_token_scopes(ctx)
 
     if token_scopes is None:
         # No auth or no scope claim — fall back to instance ceiling
@@ -199,6 +201,18 @@ def get_effective_scopes(ctx: Context) -> tuple[set[str], frozenset[str]]:
     )
 
     return effective_permitted, effective_scopes
+
+
+def get_effective_scopes(ctx: Context) -> tuple[set[str], frozenset[str]]:
+    """Resolve effective permitted tools for the current MCP request (see ``effective_permitted_tools``).
+
+    Args:
+        ctx: FastMCP Context
+
+    Returns:
+        Tuple of (permitted_tool_names, effective_scope_tokens)
+    """
+    return effective_permitted_tools(server_of(ctx), _extract_token_scopes(ctx))
 
 
 def _current_access_token() -> Any:
@@ -243,11 +257,11 @@ def _split_recognised_scopes(raw_scopes: list[str]) -> tuple[set[str], list[str]
     return recognised, ignored
 
 
-def _extract_token_scopes(ctx: Context) -> frozenset[str] | None:
-    """Extract scopes from OAuth access token if present.
+def token_scopes_from_claims(claims: dict[str, Any]) -> frozenset[str] | None:
+    """The Axmem scopes that the claims of a verified token carry.
 
-    Returns None if no auth is configured or token has no scope claim, in which
-    case the instance ceiling applies unchanged.
+    Returns None if the token has no scope claim, in which case the instance ceiling
+    applies unchanged.
 
     The scopes are read from the `scope` claim, then the `scp` claim (the same
     precedence as FastMCP's JWTVerifier). Each claim may be a space-separated
@@ -259,11 +273,7 @@ def _extract_token_scopes(ctx: Context) -> frozenset[str] | None:
     empty set (nothing permitted): a token must never widen to the full instance
     ceiling because of scopes this module does not understand.
     """
-    token = _current_access_token()
-    if token is None:
-        return None
-
-    raw_scopes = _raw_token_scopes(token.claims)
+    raw_scopes = _raw_token_scopes(claims)
     if not raw_scopes:
         return None
 
@@ -279,3 +289,16 @@ def _extract_token_scopes(ctx: Context) -> frozenset[str] | None:
         logger.debug(f"Ignoring unrecognised OAuth token scopes: {ignored}")
 
     return frozenset(recognised)
+
+
+def _extract_token_scopes(ctx: Context) -> frozenset[str] | None:
+    """Extract scopes from the OAuth access token of the current MCP request, if there is one.
+
+    Returns None if no auth is configured or the token has no scope claim (see
+    ``token_scopes_from_claims``).
+    """
+    token = _current_access_token()
+    if token is None:
+        return None
+
+    return token_scopes_from_claims(token.claims)

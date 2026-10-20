@@ -156,15 +156,77 @@ class TestJsonBodies:
         assert response.status_code == 201
 
     async def test_non_object_body_message(self, client):
-        response = await client.post("/api/v1/memories", content=b"[1, 2]")
+        response = await client.post("/api/v1/memories", content=b"[1, 2]", headers=JSON_HEADERS)
         assert response.status_code == 400
         assert response.json() == {"error": "Invalid request body: Request body must be a JSON object"}
 
     async def test_invalid_json_message(self, client):
-        response = await client.post("/api/v1/memories", content=b"{bad")
+        response = await client.post("/api/v1/memories", content=b"{bad", headers=JSON_HEADERS)
         assert response.status_code == 400
         assert response.json() == {"error": "Invalid request body: Invalid JSON body"}
 
     async def test_valid_object_body_still_works(self, client):
         response = await client.post("/api/v1/memories", json=MEMORY)
         assert response.status_code == 201
+
+
+class TestContentType:
+    """A body that does not say it is JSON is 415: a web page can send ``text/plain`` without a preflight."""
+
+    async def test_every_body_route_refuses_a_body_that_is_not_declared_as_json(self, client):
+        failures = []
+        for method, template in ROUTES_WITH_BODY:
+            path = _concrete(template)
+            for content_type in ("text/plain", "text/plain;charset=UTF-8", "application/x-www-form-urlencoded", ""):
+                headers = {"content-type": content_type} if content_type else {}
+                response = await client.request(method, path, content=json.dumps(MEMORY).encode(), headers=headers)
+                if response.status_code != 415 or response.json() != {"error": "Content-Type must be application/json"}:
+                    failures.append(f"{method} {path} {content_type!r} -> {response.status_code}")
+        assert not failures, "\n".join(failures)
+
+    async def test_a_text_plain_post_does_not_create_a_memory(self, client):
+        refused = await client.post(
+            "/api/v1/memories", content=json.dumps(MEMORY).encode(), headers={"content-type": "text/plain"},
+        )
+        listed = await client.get("/api/v1/memories")
+
+        assert refused.status_code == 415
+        assert listed.json()["memories"] == []
+
+    async def test_a_delete_that_carries_a_text_body_is_refused(self, client):
+        memory = (await client.post("/api/v1/memories", json=MEMORY)).json()
+
+        refused = await client.request(
+            "DELETE", f"/api/v1/memories/{memory['id']}", content=b"x", headers={"content-type": "text/plain"},
+        )
+        kept = await client.get(f"/api/v1/memories/{memory['id']}")
+
+        assert refused.status_code == 415
+        assert kept.json()["is_obsolete"] is False
+
+    @pytest.mark.parametrize("content_type", ["application/json", "Application/JSON; charset=utf-8", "application/merge-patch+json"])
+    async def test_json_media_types_are_accepted(self, client, content_type):
+        response = await client.post(
+            "/api/v1/memories", content=json.dumps(MEMORY).encode(), headers={"content-type": content_type},
+        )
+
+        assert response.status_code == 201
+
+    async def test_a_chunked_body_that_is_not_declared_as_json_is_refused(self, client):
+        """No ``Content-Length`` at all: the request still carries a body, and still has to say it is JSON."""
+
+        async def chunks():
+            yield json.dumps(MEMORY).encode()
+
+        refused = await client.post("/api/v1/memories", content=chunks(), headers={"content-type": "text/plain"})
+        accepted = await client.post("/api/v1/memories", content=chunks(), headers=JSON_HEADERS)
+
+        assert refused.status_code == 415
+        assert accepted.status_code == 201
+
+    async def test_a_request_without_a_body_needs_no_content_type(self, client):
+        memory = (await client.post("/api/v1/memories", json=MEMORY)).json()
+
+        assert (await client.get(f"/api/v1/memories/{memory['id']}")).status_code == 200
+        assert (await client.delete(f"/api/v1/memories/{memory['id']}")).status_code == 200
+        assert (await client.post("/api/v1/memories/search")).status_code == 400  # body missing, content type irrelevant

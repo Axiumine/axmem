@@ -50,7 +50,8 @@ no-auth single-tenant mode for stdio and loopback binds; deployed servers use be
 memories. `AXMEM_SCOPES` on the server
 side sets a capability ceiling (e.g. read-only) that both MCP and CLI honour; a client that
 should only recall can be scoped so writes are refused. A bearer token's own `scope`/`scp`
-claim narrows access further (unrelated scopes such as `openid` are ignored); a token whose
+claim narrows access further, on the REST routes as well as in the MCP tools (a route answers `403`
+for a tool that is not permitted; unrelated scopes such as `openid` are ignored); a token whose
 scopes include no Axmem scope (`*`, `read`, `write`, `read:<category>`, `write:<category>`)
 is refused every tool.
 

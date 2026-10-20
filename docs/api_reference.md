@@ -12,10 +12,10 @@ server fails closed: with `AUTH_MODE` unset it does not start (see the
 
 | `AUTH_MODE` | What the REST API requires |
 |---|---|
-| `jwt` | `Authorization: Bearer <JWT>`; signature, issuer, audience and expiry are checked |
-| `introspection` | `Authorization: Bearer <opaque token>`; the token must be active at the introspection endpoint |
+| `jwt` | `Authorization: Bearer <JWT>`; signature, issuer, audience and expiry are checked (the server is configured with an issuer and an audience, and a token without an `exp` claim is refused) |
+| `introspection` | `Authorization: Bearer <opaque token>`; the token must be active at the introspection endpoint, and when an audience is configured its `aud` must name it |
 | `static` | `Authorization: Bearer <token>`; the token must match a configured tenant's SHA-256 hash |
-| `none` | Nothing; every request is the `DEFAULT_TENANT` tenant. Accepted only on a loopback bind |
+| `none` | Nothing; every request is the `DEFAULT_TENANT` tenant. Accepted only on a loopback bind, where a request with a `Host` that is not a loopback name (or one listed in `AXMEM_ALLOWED_HOSTS`) answers `421` and one with a foreign `Origin` answers `403` |
 
 ### Tenants
 
@@ -33,6 +33,33 @@ Authorization: Bearer <token>
 A missing header, a malformed header, and a token that is invalid, expired or inactive all answer `401`
 with `{"error": "..."}`. A token that names no tenant (none of the three claims) is refused as well. Tokens
 are never logged or echoed back.
+
+### Scopes and routes
+
+The instance ceiling (`AXMEM_SCOPES`) and the scopes of the token limit the REST routes as they limit the MCP
+tools. Each route stands for one tool, and answers `403` (`Tool '<tool>' is not permitted under current scopes.
+Required scope: '<scope>'`) when that tool is not permitted, after the credential has been accepted:
+
+| Route | Tool | Scope needed |
+|---|---|---|
+| `GET /api/v1/memories` | `get_recent_memories` | `read:memories` |
+| `GET /api/v1/memories/{id}` | `get_memory` | `read:memories` |
+| `GET /api/v1/memories/{id}/links` | `get_memory` | `read:memories` |
+| `POST /api/v1/memories/search` | `query_memory` | `read:memories` |
+| `POST /api/v1/memories` | `create_memory` | `write:memories` |
+| `PUT /api/v1/memories/{id}` | `update_memory` | `write:memories` |
+| `DELETE /api/v1/memories/{id}` | `mark_memory_obsolete` | `write:memories` |
+| `POST /api/v1/memories/{id}/links` | `link_memories` | `write:memories` |
+| `DELETE /api/v1/memories/{id}/links/{target_id}` | `unlink_memories` | `write:memories` |
+
+`GET /health`, `GET /api/v1/auth/info` and the service information at `/` read no memory and need no scope. How
+the scopes of a token are read is described in the
+[Configuration Reference](./configuration.md#security-best-practices).
+
+### Request bodies
+
+A request that carries a body must declare `Content-Type: application/json` (or an `application/*+json` type);
+anything else answers `415` before the body is read. A request without a body needs no content type.
 
 ### GET /api/v1/auth/info
 
@@ -52,8 +79,11 @@ Public endpoint (no credential) for clients to detect the mode before sending on
 | 201 | Created |
 | 400 | Bad Request (validation error, malformed or non-object JSON body, `NaN`/infinite numbers in a body, invalid query parameter) |
 | 401 | Unauthorized (missing, invalid or expired token) |
+| 403 | Forbidden (the instance ceiling or the token's scopes do not permit the tool the route stands for; on a server without a credential, a request with a foreign `Origin`) |
 | 404 | Not Found (including a path id that is not a UUID, such as `/api/v1/memories/abc`, and a memory that belongs to another tenant) |
 | 409 | Conflict (concurrent changes to the same memory kept an update or an obsolete mark from being applied; the request can be repeated) |
+| 415 | Unsupported Media Type (a body that is not declared as `application/json`) |
+| 421 | Misdirected Request (on a server without a credential, a `Host` that is not `localhost` or a loopback address) |
 | 422 | Unprocessable Entity (`InvalidStateTransitionError` -- for example marking an already obsolete memory obsolete) |
 | 500 | Internal Server Error |
 

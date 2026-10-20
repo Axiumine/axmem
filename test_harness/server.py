@@ -41,6 +41,11 @@ class HarnessInfraError(RuntimeError):
     """The harness itself failed - not a finding about the agent or the docs."""
 
 
+# The name under which the sandbox container reaches the host. The throwaway server has no credential, so it answers
+# the Host names of a loopback address only: this one has to be named as well, or it answers the container with 421.
+HOST_ALIAS = "host.docker.internal"
+
+
 # Machine plumbing rather than instance behaviour: the warm model and engine directories are
 # wherever the developer keeps them, so these keep resolving as usual.
 _HOST_PASSTHROUGH = frozenset({
@@ -158,6 +163,7 @@ class ThrowawayAxmem:
             # The server refuses to start without an auth mode; the throwaway instance only
             # listens on 127.0.0.1, the one bind where AUTH_MODE=none is accepted.
             "AUTH_MODE": "none",
+            "AXMEM_ALLOWED_HOSTS": json.dumps([HOST_ALIAS]),
             "AXMEM_SERVER": "",
             "CORS_ENABLED": "false",
             "LOG_LEVEL": "INFO",

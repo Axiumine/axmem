@@ -89,6 +89,9 @@ class Settings(BaseSettings):
     # CORS Configuration (HTTP transport only)
     CORS_ENABLED: bool = False
     CORS_ORIGINS: list[str] = ["*"]
+    # Host names besides localhost and loopback addresses that a server running AUTH_MODE=none answers to
+    # (for example host.docker.internal, for a client in a container on this machine). See loopback_guard.
+    AXMEM_ALLOWED_HOSTS: list[str] = []
 
     # Qdrant: the only datastore. Memories, their links and their vectors all live in it.
     # One URL for a single node, or several comma separated URLs for the nodes of a cluster
@@ -114,7 +117,8 @@ class Settings(BaseSettings):
     # Authentication. The server fails closed: with AUTH_MODE unset it refuses to start.
     #   none          one local tenant (DEFAULT_TENANT) for every request; accepted only on stdio
     #                 or when the HTTP server binds a loopback address
-    #   jwt           signed bearer tokens; the tenant is the claim tenant_id, else tenant, else sub
+    #   jwt           signed bearer tokens (signature, exp, issuer and audience are checked; issuer and audience
+    #                 are required); the tenant is the claim tenant_id, else tenant, else sub
     #   introspection bearer tokens checked at an RFC 7662 endpoint; same tenant claims
     #   static        fixed bearer tokens, one per tenant, configured as SHA-256 hashes
     AUTH_MODE: str = ""
@@ -136,6 +140,7 @@ class Settings(BaseSettings):
     FASTMCP_SERVER_AUTH_INTROSPECTION_CLIENT_ID: str = ""
     FASTMCP_SERVER_AUTH_INTROSPECTION_CLIENT_SECRET: str = ""
     FASTMCP_SERVER_AUTH_INTROSPECTION_REQUIRED_SCOPES: str = ""
+    FASTMCP_SERVER_AUTH_INTROSPECTION_AUDIENCE: str = ""  # when set, the answer's aud claim must name it
 
     # Token Cache Configuration (for HTTP/REST auth performance)
     TOKEN_CACHE_ENABLED: bool = True           # Enable/disable token caching

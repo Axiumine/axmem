@@ -79,3 +79,30 @@ async def read_json_object(request: Request) -> dict[str, Any]:
     if not isinstance(body, dict):
         raise RequestError("Request body must be a JSON object")
     return body
+
+
+def _is_json_media_type(content_type: str) -> bool:
+    """Whether a ``Content-Type`` header names JSON (``application/json`` or an ``application/*+json`` type)."""
+    media_type = content_type.split(";", 1)[0].strip().lower()
+    return media_type == "application/json" or (
+        media_type.startswith("application/") and media_type.endswith("+json")
+    )
+
+
+def _carries_body(request: Request) -> bool:
+    """Whether the request declares a body: a non-zero ``Content-Length`` or any ``Transfer-Encoding``."""
+    if "transfer-encoding" in request.headers:
+        return True
+    return request.headers.get("content-length", "0").strip() != "0"
+
+
+def require_json_content_type(request: Request) -> None:
+    """Raise a 415 unless a request that carries a body declares a JSON content type.
+
+    A browser sends ``text/plain``, form and multipart bodies cross-origin without a preflight, and the
+    body parsers below read the bytes whatever their type. Insisting on ``application/json`` makes such a
+    request impossible to forge from a web page: that content type needs a preflight, which a server
+    without CORS (the default) refuses. A request without a body is not affected.
+    """
+    if _carries_body(request) and not _is_json_media_type(request.headers.get("content-type", "")):
+        raise RequestError("Content-Type must be application/json", status_code=415)

@@ -61,8 +61,10 @@ async def lifespan(app):
 
     logger.info("Services initialized and attached to FastMCP instance")
 
-    # Initialize token cache for HTTP auth performance
-    if settings.TOKEN_CACHE_ENABLED:
+    # Token cache of the REST routes. The introspection verifier already caches its answers for MCP and REST
+    # alike, for TOKEN_CACHE_TTL_SECONDS: a second cache on top would add a second TTL to the first, and a
+    # revoked token could stay accepted for twice as long as the documented time.
+    if settings.TOKEN_CACHE_ENABLED and settings.AUTH_MODE != "introspection":
         from app.middleware.auth import TokenCache
         mcp.token_cache = TokenCache(
             ttl_seconds=settings.TOKEN_CACHE_TTL_SECONDS,
@@ -71,7 +73,7 @@ async def lifespan(app):
         logger.info(f"Token cache initialized (TTL: {settings.TOKEN_CACHE_TTL_SECONDS}s, max: {settings.TOKEN_CACHE_MAX_SIZE})")
     else:
         mcp.token_cache = None
-        logger.info("Token cache disabled")
+        logger.info("REST token cache not used (disabled, or the introspection verifier caches its own answers)")
 
     mcp.registry = runtime.registry
     mcp._instance_permitted_tools = runtime.permitted_tools
@@ -308,17 +310,63 @@ async def _run_reembed(args):
         await stack.close()
 
 
+def _http_middleware():
+    """The Starlette middleware of the HTTP app, outermost first.
+
+    - ``AUTH_MODE=none`` (a loopback bind with no credential): the loopback guard, so that a web page
+      cannot reach the server by DNS rebinding or a cross-origin request. The origins that ``CORS_ORIGINS``
+      lists by name pass it too (a ``*`` never does), and so do the hosts that ``AXMEM_ALLOWED_HOSTS`` names:
+      naming an origin or a host is the operator's decision.
+    - ``CORS_ENABLED``: CORS headers.
+    """
+    from starlette.middleware import Middleware
+
+    middleware = []
+    if settings.AUTH_MODE == "none":
+        from app.middleware.loopback_guard import LoopbackGuardMiddleware
+
+        named = [origin for origin in settings.CORS_ORIGINS if origin != "*"] if settings.CORS_ENABLED else []
+        middleware.append(
+            Middleware(LoopbackGuardMiddleware, allowed_origins=named, allowed_hosts=settings.AXMEM_ALLOWED_HOSTS),
+        )
+    if settings.CORS_ENABLED:
+        from starlette.middleware.cors import CORSMiddleware
+
+        middleware.append(
+            Middleware(
+                CORSMiddleware,
+                allow_origins=settings.CORS_ORIGINS,
+                allow_credentials=True,
+                allow_methods=["*"],
+                allow_headers=[
+                    "mcp-protocol-version",
+                    "mcp-session-id",
+                    "Authorization",
+                    "Content-Type",
+                ],
+                expose_headers=["mcp-session-id"],
+            ),
+        )
+    return middleware
+
+
 def _serve(transport, host, port):
     """Run the MCP server on the given transport (shared by legacy and new spellings).
 
-    Fails closed first: a server without a configured authentication mode, or one that
-    would serve anonymous requests on a non-loopback address, does not start.
+    Fails closed first: a server without a configured authentication mode, one that
+    would serve anonymous requests on a non-loopback address, and one whose old
+    ``FORGETFUL_SCOPES`` would turn into the allow-everything ceiling do not start.
     """
     from app.config.auth import AuthConfigError, ensure_startup_allowed
+    from app.config.legacy_settings import (
+        LegacySettingsError,
+        ensure_legacy_scopes_replaced,
+    )
 
     try:
         ensure_startup_allowed(transport, host)
-    except AuthConfigError as exc:
+        ensure_legacy_scopes_replaced()
+    except (AuthConfigError, LegacySettingsError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
 
@@ -347,7 +395,7 @@ def _serve(transport, host, port):
         import fastmcp
         import uvicorn
 
-        app = mcp.http_app()
+        app = mcp.http_app(middleware=_http_middleware())
         uvicorn.run(
             app,
             host=host,
@@ -359,27 +407,8 @@ def _serve(transport, host, port):
         )
     else:
         # CORS enabled - use http_app with middleware
-        from starlette.middleware import Middleware
-        from starlette.middleware.cors import CORSMiddleware
-
-        middleware = [
-            Middleware(
-                CORSMiddleware,
-                allow_origins=settings.CORS_ORIGINS,
-                allow_credentials=True,
-                allow_methods=["*"],
-                allow_headers=[
-                    "mcp-protocol-version",
-                    "mcp-session-id",
-                    "Authorization",
-                    "Content-Type",
-                ],
-                expose_headers=["mcp-session-id"],
-            ),
-        ]
-
         import uvicorn
-        app = mcp.http_app(middleware=middleware)
+        app = mcp.http_app(middleware=_http_middleware())
         uvicorn.run(app, host=host, port=port)
 
 

@@ -10,6 +10,7 @@ import pytest
 import uvicorn
 
 import main
+from app.config import legacy_settings
 from app.config.settings import settings
 
 ANYWHERE = "0.0.0.0"  # noqa: S104 - the bind-all address is what the guard must refuse
@@ -81,3 +82,34 @@ def test_the_serve_command_reports_the_refusal_with_exit_code_one(monkeypatch, r
     assert main.cli() == 1
     assert runners == []
     assert "AUTH_MODE" in capsys.readouterr().err
+
+
+@pytest.fixture
+def old_scopes_only(monkeypatch):
+    """An environment with the old scope ceiling and no new one, and no dotenv file that could add one."""
+    monkeypatch.setitem(legacy_settings.Settings.model_config, "env_file", [])
+    monkeypatch.setenv("FORGETFUL_SCOPES", "read")
+    monkeypatch.delenv("AXMEM_SCOPES", raising=False)
+
+
+@pytest.mark.parametrize("transport", ["http", "stdio"])
+def test_an_old_scope_ceiling_that_nothing_replaces_means_no_server(monkeypatch, runners, capsys, old_scopes_only, transport):
+    monkeypatch.setattr(settings, "AUTH_MODE", "none")
+
+    code = main._serve(transport, "127.0.0.1", 8020)
+
+    err = capsys.readouterr().err
+    assert code == 1
+    assert runners == []
+    assert "FORGETFUL_SCOPES" in err
+    assert "AXMEM_SCOPES" in err
+
+
+def test_the_old_scope_ceiling_is_no_obstacle_once_the_new_one_is_set(monkeypatch, runners, old_scopes_only):
+    monkeypatch.setattr(settings, "AUTH_MODE", "none")
+    monkeypatch.setattr(settings, "CORS_ENABLED", False)
+    monkeypatch.setenv("AXMEM_SCOPES", "read")
+
+    main._serve("http", "127.0.0.1", 8020)
+
+    assert runners == ["http"]

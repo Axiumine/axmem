@@ -8,7 +8,7 @@ import pytest
 from starlette.requests import Request
 
 from app.config.settings import settings
-from app.middleware.auth import TokenCache, get_tenant_from_request
+from app.middleware.auth import RequestIdentity, TokenCache, get_identity_from_request
 from app.models.tenant_models import Tenant
 
 
@@ -48,12 +48,13 @@ async def test_token_cache_basic_set_get():
 
     tenant = Tenant("test-user-123")
 
-    await cache.set("test-token", tenant)
+    await cache.set("test-token", RequestIdentity(tenant))
     cached = await cache.get("test-token")
 
     assert cached is not None
-    assert cached.name == "test-user-123"
-    assert cached == tenant
+    assert cached.tenant.name == "test-user-123"
+    assert cached.tenant == tenant
+    assert cached.token_scopes is None
 
 
 @pytest.mark.asyncio
@@ -77,10 +78,10 @@ async def test_token_cache_expiration():
     # Control the wall clock used by the cache rather than relying on a real sleep.
     with patch("app.middleware.auth.time") as clock:
         clock.time.return_value = 1000.0
-        await cache.set("expiring-token", user)
+        await cache.set("expiring-token", RequestIdentity(user))
 
         clock.time.return_value = 1000.999
-        assert await cache.get("expiring-token") == user
+        assert (await cache.get("expiring-token")).tenant == user
 
         clock.time.return_value = 1001.0
         assert await cache.get("expiring-token") is None
@@ -94,14 +95,14 @@ async def test_token_cache_lru_eviction():
     # Add 3 users
     for i in range(3):
         user = Tenant(f"user-{i}")
-        await cache.set(f"token-{i}", user)
+        await cache.set(f"token-{i}", RequestIdentity(user))
 
     # Verify cache size is 3
     assert cache.stats["size"] == 3
 
     # Add a 4th user - should evict oldest (token-0)
     user4 = Tenant("user-3")
-    await cache.set("token-3", user4)
+    await cache.set("token-3", RequestIdentity(user4))
 
     # Cache size should still be 3
     assert cache.stats["size"] == 3
@@ -121,7 +122,7 @@ async def test_token_cache_hash_security():
     user = Tenant("secure-user")
     token = "secret-bearer-token-12345"
 
-    await cache.set(token, user)
+    await cache.set(token, RequestIdentity(user))
 
     # Verify raw token is not stored in cache keys
     for key in cache._cache.keys():
@@ -136,7 +137,7 @@ async def test_token_cache_stats():
     cache = TokenCache(ttl_seconds=300, max_size=100)
 
     user = Tenant("stats-user")
-    await cache.set("stats-token", user)
+    await cache.set("stats-token", RequestIdentity(user))
 
     # 1 hit
     await cache.get("stats-token")
@@ -160,7 +161,7 @@ async def test_token_cache_clear():
     # Add multiple entries
     for i in range(5):
         user = Tenant(f"clear-{i}")
-        await cache.set(f"clear-token-{i}", user)
+        await cache.set(f"clear-token-{i}", RequestIdentity(user))
 
     assert cache.stats["size"] == 5
 
@@ -172,7 +173,7 @@ async def test_token_cache_clear():
 
 
 # ============================================
-# Integration with get_tenant_from_request
+# Integration with get_identity_from_request
 # ============================================
 
 
@@ -201,11 +202,11 @@ async def test_cache_hit_avoids_verify_token():
 
     # First call - should call verify_token
     with patch.object(settings, "TOKEN_CACHE_ENABLED", True):
-        user1 = await get_tenant_from_request(request, mcp)
+        user1 = (await get_identity_from_request(request, mcp)).tenant
         assert call_count == 1
 
         # Second call - should use cache
-        user2 = await get_tenant_from_request(request, mcp)
+        user2 = (await get_identity_from_request(request, mcp)).tenant
         assert call_count == 1  # Still 1, cache hit!
 
         # Same user
@@ -236,12 +237,12 @@ async def test_different_tokens_different_cache_entries():
     with patch.object(settings, "TOKEN_CACHE_ENABLED", True):
         # First token
         request1 = create_mock_request("token-aaaaa")
-        user1 = await get_tenant_from_request(request1, mcp)
+        user1 = (await get_identity_from_request(request1, mcp)).tenant
         assert call_count == 1
 
         # Second token - should call verify_token
         request2 = create_mock_request("token-bbbbb")
-        user2 = await get_tenant_from_request(request2, mcp)
+        user2 = (await get_identity_from_request(request2, mcp)).tenant
         assert call_count == 2
 
         # Different users
@@ -272,11 +273,11 @@ async def test_cache_disabled_via_setting():
 
     with patch.object(settings, "TOKEN_CACHE_ENABLED", False):
         # First call
-        await get_tenant_from_request(request, mcp)
+        await get_identity_from_request(request, mcp)
         assert call_count == 1
 
         # Second call - should still call verify_token (cache disabled)
-        await get_tenant_from_request(request, mcp)
+        await get_identity_from_request(request, mcp)
         assert call_count == 2
 
 
@@ -297,7 +298,7 @@ async def test_invalid_token_not_cached():
     with patch.object(settings, "TOKEN_CACHE_ENABLED", True):
         # Should raise ValueError
         with pytest.raises(ValueError, match="Invalid or expired token"):
-            await get_tenant_from_request(request, mcp)
+            await get_identity_from_request(request, mcp)
 
         # Cache should be empty
         assert cache.stats["size"] == 0
@@ -327,6 +328,6 @@ async def test_no_cache_when_cache_not_attached():
 
     with patch.object(settings, "TOKEN_CACHE_ENABLED", True):
         # Both calls should verify_token since no cache
-        await get_tenant_from_request(request, mcp)
-        await get_tenant_from_request(request, mcp)
+        await get_identity_from_request(request, mcp)
+        await get_identity_from_request(request, mcp)
         assert call_count == 2

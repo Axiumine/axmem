@@ -20,13 +20,14 @@ from app.config.auth import build_auth_provider
 from app.config.settings import settings
 from app.middleware import auth as auth_middleware
 from app.middleware.auth import (
+    RequestIdentity,
     TokenCache,
+    get_identity_from_request,
     get_tenant_from_auth,
-    get_tenant_from_request,
 )
 from app.models.tenant_models import Tenant
 
-INTROSPECTION_CLASS = "fastmcp.server.auth.providers.introspection.IntrospectionTokenVerifier"
+INTROSPECTION_CLASS = "app.middleware.token_verifiers.AudienceIntrospectionVerifier"
 
 
 class MockFastMCP:
@@ -66,7 +67,7 @@ async def test_cache_entry_is_capped_at_token_expiry():
 
     with patch("app.middleware.auth.time") as clock:
         clock.time.return_value = 1000.0
-        await cache.set("short-lived", make_tenant(1), token_expires_at=1010)
+        await cache.set("short-lived", RequestIdentity(make_tenant(1)), token_expires_at=1010)
 
         clock.time.return_value = 1009.0
         assert await cache.get("short-lived") is not None
@@ -82,7 +83,7 @@ async def test_cache_ttl_still_applies_when_token_outlives_it():
 
     with patch("app.middleware.auth.time") as clock:
         clock.time.return_value = 1000.0
-        await cache.set("long-lived", make_tenant(1), token_expires_at=1000 + 86400)
+        await cache.set("long-lived", RequestIdentity(make_tenant(1)), token_expires_at=1000 + 86400)
 
         clock.time.return_value = 1299.0
         assert await cache.get("long-lived") is not None
@@ -97,13 +98,13 @@ async def test_already_expired_token_is_not_cached():
 
     with patch("app.middleware.auth.time") as clock:
         clock.time.return_value = 1000.0
-        await cache.set("dead-token", make_tenant(1), token_expires_at=999)
+        await cache.set("dead-token", RequestIdentity(make_tenant(1)), token_expires_at=999)
 
     assert cache.stats["size"] == 0
 
 
 @pytest.mark.asyncio
-async def test_get_tenant_from_request_revalidates_after_token_expiry():
+async def test_get_identity_from_request_revalidates_after_token_expiry():
     """Cache hit while the token is valid; verifier is consulted again (and rejects) once it expired"""
     verifier = AsyncMock()
     verifier.verify_token = AsyncMock(
@@ -114,16 +115,16 @@ async def test_get_tenant_from_request_revalidates_after_token_expiry():
 
     with patch.object(settings, "TOKEN_CACHE_ENABLED", True), patch("app.middleware.auth.time") as clock:
         clock.time.return_value = 1000.0
-        await get_tenant_from_request(request, mcp)
+        await get_identity_from_request(request, mcp)
         clock.time.return_value = 1005.0
-        await get_tenant_from_request(request, mcp)
+        await get_identity_from_request(request, mcp)
         assert verifier.verify_token.await_count == 1  # second call was a cache hit
 
         # Token expired: the issuer-side verifier now rejects it, so the cache must not mask that
         clock.time.return_value = 1011.0
         verifier.verify_token.return_value = None
         with pytest.raises(ValueError, match="Invalid or expired token"):
-            await get_tenant_from_request(request, mcp)
+            await get_identity_from_request(request, mcp)
 
         assert verifier.verify_token.await_count == 2
 
@@ -138,14 +139,14 @@ async def test_get_tenant_from_request_revalidates_after_token_expiry():
 async def test_non_positive_max_size_disables_caching(max_size):
     cache = TokenCache(ttl_seconds=300, max_size=max_size)
 
-    await cache.set("tok", make_tenant(1))
+    await cache.set("tok", RequestIdentity(make_tenant(1)))
 
     assert cache.stats["size"] == 0
     assert await cache.get("tok") is None
 
 
 @pytest.mark.asyncio
-async def test_get_tenant_from_request_with_zero_max_size_still_authenticates():
+async def test_get_identity_from_request_with_zero_max_size_still_authenticates():
     """TOKEN_CACHE_MAX_SIZE=0 must not turn a successful validation into an error"""
     verifier = AsyncMock()
     verifier.verify_token = AsyncMock(
@@ -154,8 +155,8 @@ async def test_get_tenant_from_request_with_zero_max_size_still_authenticates():
     mcp = MockFastMCP(auth_provider=verifier, token_cache=TokenCache(ttl_seconds=300, max_size=0))
 
     with patch.object(settings, "TOKEN_CACHE_ENABLED", True):
-        user = await get_tenant_from_request(create_mock_request("zero-token"), mcp)
-        again = await get_tenant_from_request(create_mock_request("zero-token"), mcp)
+        user = (await get_identity_from_request(create_mock_request("zero-token"), mcp)).tenant
+        again = (await get_identity_from_request(create_mock_request("zero-token"), mcp)).tenant
 
     assert user.name == "zero-user"
     assert again.name == "zero-user"
@@ -165,11 +166,11 @@ async def test_get_tenant_from_request_with_zero_max_size_still_authenticates():
 @pytest.mark.asyncio
 async def test_refreshing_existing_key_at_capacity_does_not_evict_others():
     cache = TokenCache(ttl_seconds=300, max_size=2)
-    await cache.set("a", make_tenant(1))
-    await cache.set("b", make_tenant(2))
+    await cache.set("a", RequestIdentity(make_tenant(1)))
+    await cache.set("b", RequestIdentity(make_tenant(2)))
 
     # e.g. two concurrent first requests with the same token both end up here
-    await cache.set("b", make_tenant(2))
+    await cache.set("b", RequestIdentity(make_tenant(2)))
 
     assert cache.stats["size"] == 2
     assert await cache.get("a") is not None
@@ -179,11 +180,11 @@ async def test_refreshing_existing_key_at_capacity_does_not_evict_others():
 @pytest.mark.asyncio
 async def test_refreshed_key_becomes_most_recently_used():
     cache = TokenCache(ttl_seconds=300, max_size=2)
-    await cache.set("a", make_tenant(1))
-    await cache.set("b", make_tenant(2))
-    await cache.set("a", make_tenant(1))  # refresh: "b" is now the least recently used
+    await cache.set("a", RequestIdentity(make_tenant(1)))
+    await cache.set("b", RequestIdentity(make_tenant(2)))
+    await cache.set("a", RequestIdentity(make_tenant(1)))  # refresh: "b" is now the least recently used
 
-    await cache.set("c", make_tenant(3))  # needs a slot
+    await cache.set("c", RequestIdentity(make_tenant(3)))  # needs a slot
 
     assert await cache.get("b") is None
     assert await cache.get("a") is not None
@@ -197,6 +198,7 @@ async def test_refreshed_key_becomes_most_recently_used():
 
 def _introspection_settings(mock_settings, enabled: bool) -> None:
     mock_settings.AUTH_MODE = "introspection"
+    mock_settings.FASTMCP_SERVER_AUTH_INTROSPECTION_AUDIENCE = ""
     mock_settings.FASTMCP_SERVER_AUTH_INTROSPECTION_URL = "https://auth.example.com/introspect"
     mock_settings.FASTMCP_SERVER_AUTH_INTROSPECTION_CLIENT_ID = "intro-client"
     mock_settings.FASTMCP_SERVER_AUTH_INTROSPECTION_CLIENT_SECRET = "intro-secret"
@@ -236,12 +238,12 @@ def test_introspection_cache_configured_when_token_cache_enabled(MockIntrospecti
 
 
 @pytest.mark.asyncio
-async def test_get_tenant_from_request_names_the_tenant_by_a_numeric_sub():
+async def test_get_identity_from_request_names_the_tenant_by_a_numeric_sub():
     verifier = AsyncMock()
     verifier.verify_token = AsyncMock(return_value=make_access_token({"sub": 12345, "name": 678, "email": 9}))
     mcp = MockFastMCP(auth_provider=verifier)
 
-    tenant = await get_tenant_from_request(create_mock_request("numeric-token"), mcp)
+    tenant = (await get_identity_from_request(create_mock_request("numeric-token"), mcp)).tenant
 
     assert tenant.name == "12345"
 
@@ -266,6 +268,6 @@ async def test_a_rejected_tenant_claim_is_never_cached():
 
     with patch.object(settings, "TOKEN_CACHE_ENABLED", True):
         with pytest.raises(ValueError, match="not a valid tenant name"):
-            await get_tenant_from_request(create_mock_request("odd-token"), mcp)
+            await get_identity_from_request(create_mock_request("odd-token"), mcp)
 
     assert cache.stats["size"] == 0

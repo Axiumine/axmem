@@ -30,7 +30,7 @@ from pathlib import Path
 
 from test_harness.config import HarnessConfig
 from test_harness.safe_io import write_text
-from test_harness.server import HarnessInfraError
+from test_harness.server import HOST_ALIAS, HarnessInfraError
 from test_harness.walkthrough import SessionOutcome
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -48,7 +48,6 @@ CONTAINER_HOME = "/home/node"
 SKILLS_MOUNT = "/skills"
 HARNESS_MOUNT = "/harness"
 DECOY_QDRANT_URL = "http://127.0.0.1:9"  # nothing listens there inside the container: a --local detour reaches no data
-HOST_ALIAS = "host.docker.internal"
 
 # GET <argv[1]> from inside the container; stdlib only, so the probe needs nothing
 # beyond the image's python. Any failure prints the reason and exits non-zero.

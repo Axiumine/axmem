@@ -91,4 +91,25 @@ def test_provider_map_covers_the_modes_that_are_not_jwt():
     assert AUTH_MODE_BY_PROVIDER == {
         "StaticTokenVerifier": "static",
         "IntrospectionTokenVerifier": "introspection",
+        "AudienceIntrospectionVerifier": "introspection",
     }
+
+
+@pytest.mark.parametrize("mode", ["jwt", "introspection", "static"])
+def test_the_provider_that_the_server_builds_for_a_mode_reports_that_mode(monkeypatch, mode):
+    """The endpoint names the mode by the class of the provider, so a verifier class that is renamed or
+    subclassed must still map to its own mode (the server builds ``ExpiringJWTVerifier`` and
+    ``AudienceIntrospectionVerifier``, not FastMCP's classes)."""
+    from app.config.auth import build_auth_provider
+    from app.config.settings import settings
+
+    monkeypatch.setattr(settings, "AUTH_MODE", mode)
+    monkeypatch.setattr(settings, "FASTMCP_SERVER_AUTH_JWT_PUBLIC_KEY", "-----BEGIN PUBLIC KEY-----\nx\n-----END PUBLIC KEY-----")
+    monkeypatch.setattr(settings, "FASTMCP_SERVER_AUTH_JWT_ISSUER", "https://idp.example.test")
+    monkeypatch.setattr(settings, "FASTMCP_SERVER_AUTH_JWT_AUDIENCE", "axmem-api")
+    monkeypatch.setattr(settings, "FASTMCP_SERVER_AUTH_INTROSPECTION_URL", "https://idp.example.test/introspect")
+    monkeypatch.setattr(settings, "FASTMCP_SERVER_AUTH_INTROSPECTION_CLIENT_ID", "axmem")
+    monkeypatch.setattr(settings, "FASTMCP_SERVER_AUTH_INTROSPECTION_CLIENT_SECRET", "secret")
+    monkeypatch.setattr(settings, "AUTH_STATIC_TOKEN_HASHES", {"alice": "0" * 64})
+
+    assert _auth_info(build_auth_provider())["authMode"] == mode

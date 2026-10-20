@@ -1,4 +1,4 @@
-"""Integration tests for REST API authentication (get_tenant_from_request)
+"""Integration tests for REST API authentication (get_identity_from_request)
 
 Tests the HTTP auth path: the bearer token is verified by the auth provider and the tenant is
 named by its claims. Without a provider only AUTH_MODE=none serves the local tenant.
@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from app.config.settings import settings
-from app.middleware.auth import get_tenant_from_request
+from app.middleware.auth import TokenCache, get_identity_from_request
 from app.middleware.static_token import StaticTokenVerifier, hash_token
 
 
@@ -42,6 +42,10 @@ def _bearer(token: str) -> MockRequest:
     return MockRequest(headers={"Authorization": f"Bearer {token}"})
 
 
+async def _tenant(request, mcp):
+    return (await get_identity_from_request(request, mcp)).tenant
+
+
 # ============================================
 # No provider (mcp.auth = None): AUTH_MODE=none only
 # ============================================
@@ -51,7 +55,7 @@ def _bearer(token: str) -> MockRequest:
 async def test_no_auth_returns_the_local_tenant():
     mcp = MockFastMCP(auth_provider=None)
 
-    tenant = await get_tenant_from_request(MockRequest(), mcp)
+    tenant = await _tenant(MockRequest(), mcp)
 
     assert tenant.name == settings.DEFAULT_TENANT
     assert tenant.name == settings.DEFAULT_TENANT
@@ -61,8 +65,8 @@ async def test_no_auth_returns_the_local_tenant():
 async def test_no_auth_idempotent():
     mcp = MockFastMCP(auth_provider=None)
 
-    first = await get_tenant_from_request(MockRequest(), mcp)
-    second = await get_tenant_from_request(MockRequest(), mcp)
+    first = await _tenant(MockRequest(), mcp)
+    second = await _tenant(MockRequest(), mcp)
 
     assert first.id == second.id
 
@@ -74,7 +78,7 @@ async def test_no_provider_fails_closed_unless_auth_mode_is_none(monkeypatch, mo
     mcp = MockFastMCP(auth_provider=None)
 
     with pytest.raises(ValueError, match="Authentication is not configured"):
-        await get_tenant_from_request(MockRequest(), mcp)
+        await _tenant(MockRequest(), mcp)
 
 
 # ============================================
@@ -87,7 +91,7 @@ async def test_missing_auth_header_raises():
     mcp = MockFastMCP(auth_provider=AsyncMock())
 
     with pytest.raises(ValueError, match="Missing or invalid Authorization header"):
-        await get_tenant_from_request(MockRequest(headers={}), mcp)
+        await _tenant(MockRequest(headers={}), mcp)
 
 
 @pytest.mark.asyncio
@@ -95,7 +99,7 @@ async def test_invalid_bearer_format_raises():
     mcp = MockFastMCP(auth_provider=AsyncMock())
 
     with pytest.raises(ValueError, match="Missing or invalid Authorization header"):
-        await get_tenant_from_request(MockRequest(headers={"Authorization": "Basic abc123"}), mcp)
+        await _tenant(MockRequest(headers={"Authorization": "Basic abc123"}), mcp)
 
 
 @pytest.mark.asyncio
@@ -103,7 +107,7 @@ async def test_invalid_token_raises():
     mcp = MockFastMCP(auth_provider=_provider(None))
 
     with pytest.raises(ValueError, match="Invalid or expired token"):
-        await get_tenant_from_request(_bearer("invalid-token"), mcp)
+        await _tenant(_bearer("invalid-token"), mcp)
 
 
 @pytest.mark.asyncio
@@ -111,7 +115,7 @@ async def test_token_naming_no_tenant_raises():
     mcp = MockFastMCP(auth_provider=_provider({"name": "x"}))
 
     with pytest.raises(ValueError, match="no 'tenant_id', 'tenant' or 'sub' claim"):
-        await get_tenant_from_request(_bearer("token-without-tenant"), mcp)
+        await _tenant(_bearer("token-without-tenant"), mcp)
 
 
 @pytest.mark.asyncio
@@ -119,7 +123,7 @@ async def test_valid_token_names_the_tenant_by_sub():
     provider = _provider({"sub": "auth0|user-123", "name": "Ignored", "email": "ignored@example.com"})
     mcp = MockFastMCP(auth_provider=provider)
 
-    tenant = await get_tenant_from_request(_bearer("valid-token"), mcp)
+    tenant = await _tenant(_bearer("valid-token"), mcp)
 
     assert tenant.name == "auth0|user-123"
     provider.verify_token.assert_called_once_with("valid-token")
@@ -139,7 +143,7 @@ async def test_valid_token_names_the_tenant_by_sub():
 async def test_tenant_claim_precedence(claims, expected):
     mcp = MockFastMCP(auth_provider=_provider(claims))
 
-    tenant = await get_tenant_from_request(_bearer("some-token"), mcp)
+    tenant = await _tenant(_bearer("some-token"), mcp)
 
     assert tenant.name == expected
 
@@ -149,7 +153,7 @@ async def test_invalid_tenant_claim_raises():
     mcp = MockFastMCP(auth_provider=_provider({"tenant_id": ["a", "b"], "sub": "u1"}))
 
     with pytest.raises(ValueError, match="'tenant_id' is not a valid tenant name"):
-        await get_tenant_from_request(_bearer("some-token"), mcp)
+        await _tenant(_bearer("some-token"), mcp)
 
 
 @pytest.mark.asyncio
@@ -157,8 +161,8 @@ async def test_auth_idempotent():
     mcp = MockFastMCP(auth_provider=_provider({"sub": "repeat-user-999"}))
     request = _bearer("same-token")
 
-    first = await get_tenant_from_request(request, mcp)
-    second = await get_tenant_from_request(request, mcp)
+    first = await _tenant(request, mcp)
+    second = await _tenant(request, mcp)
 
     assert first.id == second.id
     assert first.name == second.name
@@ -170,7 +174,7 @@ async def test_lowercase_bearer_accepted():
     provider = _provider({"sub": "case-user-111"})
     mcp = MockFastMCP(auth_provider=provider)
 
-    tenant = await get_tenant_from_request(MockRequest(headers={"Authorization": "bearer lowercase-token"}), mcp)
+    tenant = await _tenant(MockRequest(headers={"Authorization": "bearer lowercase-token"}), mcp)
 
     assert tenant.name == "case-user-111"
     provider.verify_token.assert_called_once_with("lowercase-token")
@@ -190,8 +194,8 @@ def _static_mcp(**tenant_by_token):
 async def test_static_token_resolves_to_its_own_tenant():
     mcp = _static_mcp(alice="alice-secret-token", bob="bob-secret-token")
 
-    alice = await get_tenant_from_request(_bearer("alice-secret-token"), mcp)
-    bob = await get_tenant_from_request(_bearer("bob-secret-token"), mcp)
+    alice = await _tenant(_bearer("alice-secret-token"), mcp)
+    bob = await _tenant(_bearer("bob-secret-token"), mcp)
 
     assert (alice.name, bob.name) == ("alice", "bob")
     assert alice.id != bob.id
@@ -203,7 +207,7 @@ async def test_static_token_mismatch_is_refused(presented):
     mcp = _static_mcp(alice="alice-secret-token")
 
     with pytest.raises(ValueError, match="Invalid or expired token"):
-        await get_tenant_from_request(_bearer(presented), mcp)
+        await _tenant(_bearer(presented), mcp)
 
 
 @pytest.mark.asyncio
@@ -211,4 +215,42 @@ async def test_static_mode_without_a_header_is_refused():
     mcp = _static_mcp(alice="alice-secret-token")
 
     with pytest.raises(ValueError, match="Missing or invalid Authorization header"):
-        await get_tenant_from_request(MockRequest(), mcp)
+        await _tenant(MockRequest(), mcp)
+
+
+# ============================================
+# The token's scopes travel with the tenant
+# ============================================
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("claims", "expected"),
+    [
+        ({"sub": "u1"}, None),
+        ({"sub": "u1", "scope": "read"}, frozenset({"read"})),
+        ({"sub": "u1", "scope": "read write:memories"}, frozenset({"read", "write:memories"})),
+        ({"sub": "u1", "scp": ["read:memories"]}, frozenset({"read:memories"})),
+        ({"sub": "u1", "scope": "profile email"}, frozenset()),
+    ],
+)
+async def test_the_identity_carries_the_axmem_scopes_of_the_token(claims, expected):
+    mcp = MockFastMCP(auth_provider=_provider(claims))
+
+    identity = await get_identity_from_request(_bearer("scoped-token"), mcp)
+
+    assert identity.token_scopes == expected
+
+
+@pytest.mark.asyncio
+async def test_a_cached_identity_keeps_the_scopes_of_its_token():
+    provider = _provider({"sub": "u1", "scope": "read"})
+    mcp = MockFastMCP(auth_provider=provider)
+    mcp.token_cache = TokenCache()
+
+    first = await get_identity_from_request(_bearer("cached-token"), mcp)
+    second = await get_identity_from_request(_bearer("cached-token"), mcp)
+
+    assert first == second
+    assert second.token_scopes == frozenset({"read"})
+    provider.verify_token.assert_called_once_with("cached-token")

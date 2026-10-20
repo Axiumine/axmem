@@ -6,6 +6,7 @@ restricting the instance's scopes, and an un-activated venv with a proxy configu
 every non-loopback request. A write tool call (create_memory) is the canary - it needs
 the write scopes and a working harness-to-server connection.
 """
+import httpx
 import pytest
 
 from test_harness.server import ThrowawayAxmem, _ephemeral_port
@@ -91,3 +92,22 @@ async def test_boots_and_takes_writes_from_an_unactivated_venv_behind_a_proxy(
 
     # Assert
     assert written == TITLE
+
+
+@pytest.mark.asyncio
+async def test_the_credential_free_server_answers_the_sandbox_container_and_nobody_else(run_dir):
+    """The container reaches the host as ``host.docker.internal``; a rebound page's host name is refused."""
+    server = ThrowawayAxmem(run_dir=run_dir)
+    server.start()
+    try:
+        async with httpx.AsyncClient(base_url=server.url, trust_env=False) as client:
+            own = await client.get("/health")
+            container = await client.get("/health", headers={"Host": f"host.docker.internal:{server.port}"})
+            rebound = await client.get("/health", headers={"Host": f"rebind.evil.example:{server.port}"})
+            page = await client.get("/health", headers={"Origin": "https://evil.example"})
+    finally:
+        server.stop()
+
+    assert [own.status_code, container.status_code] == [200, 200]
+    assert rebound.status_code == 421
+    assert page.status_code == 403

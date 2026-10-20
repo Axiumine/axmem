@@ -17,7 +17,8 @@ TensorRT model directory is warm.
 
 - Docker running, with Docker Desktop as the supported setup: the agent reaches the
   host-side throwaway server (bound to `127.0.0.1`) through `host.docker.internal`,
-  which only Docker Desktop routes to a loopback listener. On Docker Engine for Linux
+  which only Docker Desktop routes to a loopback listener (the server has no credential, so it answers that
+  host name only because the harness lists it in `AXMEM_ALLOWED_HOSTS`). On Docker Engine for Linux
   the name resolves (the harness maps it to the host gateway) but the bridge cannot
   reach a loopback-only server, so the run stops at the reachability preflight with
   exit code `2` instead of walking skills against a dead server

@@ -11,7 +11,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.config.settings import settings
-from app.middleware.auth import get_tenant_from_auth, get_tenant_from_request
+from app.middleware.auth import get_identity_from_request, get_tenant_from_auth
 from app.models.tenant_models import Tenant
 from app.routes.server_state import AxmemMCP, server_of
 
@@ -36,10 +36,12 @@ async def test_http_tenant_is_the_local_tenant_without_an_auth_provider(monkeypa
     monkeypatch.setattr(settings, "DEFAULT_TENANT", "local-person")
     mcp = SimpleNamespace(auth=None)
 
-    tenant = await get_tenant_from_request(SimpleNamespace(headers={}), mcp)
+    identity = await get_identity_from_request(SimpleNamespace(headers={}), mcp)
+    tenant = identity.tenant
 
     assert tenant == Tenant("local-person")
     assert tenant.id == Tenant("local-person").id
+    assert identity.token_scopes is None
 
 
 async def test_mcp_call_without_a_credential_is_refused_when_auth_is_required(monkeypatch):
@@ -55,4 +57,4 @@ async def test_http_request_without_a_credential_is_refused_when_auth_is_require
     mcp = SimpleNamespace(auth=None)
 
     with pytest.raises(ValueError, match="Authentication is not configured"):
-        await get_tenant_from_request(SimpleNamespace(headers={}), mcp)
+        await get_identity_from_request(SimpleNamespace(headers={}), mcp)

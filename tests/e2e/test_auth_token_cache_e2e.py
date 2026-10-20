@@ -130,7 +130,9 @@ def fake_async_client(idp: FakeIdP):
                 return {"active": False}
             return {
                 "active": True, "sub": "introspected-user", "client_id": "axmem",
-                "name": "Introspected", "email": "introspected@example.test", "scope": "api:read",
+                "name": "Introspected", "email": "introspected@example.test",
+                # api:read is the verifier's own requirement; the Axmem scope is what the routes check
+                "scope": "api:read read",
             }
 
     class _FakeAsyncClient:
@@ -150,7 +152,7 @@ def fake_async_client(idp: FakeIdP):
     return _FakeAsyncClient
 
 
-def build_introspection_verifier(idp: FakeIdP, cache_enabled: bool):
+def build_introspection_verifier(idp: FakeIdP, cache_enabled: bool, ttl_seconds: int = 300):
     """Build the real introspection verifier through the factory; only the IdP network edge is faked"""
     with (
         patch.object(settings, "AUTH_MODE", "introspection"),
@@ -159,7 +161,7 @@ def build_introspection_verifier(idp: FakeIdP, cache_enabled: bool):
         patch.object(settings, "FASTMCP_SERVER_AUTH_INTROSPECTION_CLIENT_SECRET", "secret"),
         patch.object(settings, "FASTMCP_SERVER_AUTH_INTROSPECTION_REQUIRED_SCOPES", ""),
         patch.object(settings, "TOKEN_CACHE_ENABLED", cache_enabled),
-        patch.object(settings, "TOKEN_CACHE_TTL_SECONDS", 300),
+        patch.object(settings, "TOKEN_CACHE_TTL_SECONDS", ttl_seconds),
         patch.object(settings, "TOKEN_CACHE_MAX_SIZE", 1000),
     ):
         return build_auth_provider()
@@ -201,6 +203,28 @@ async def test_introspection_results_are_cached_when_token_cache_enabled(http_cl
         assert (await http_client.get("/api/v1/memories", headers=headers)).status_code == 200
 
     assert idp.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_a_revoked_introspected_token_is_refused_once_the_one_ttl_has_passed(http_client, qdrant_app):
+    """With ``main.lifespan`` the verifier's cache is the only cache of this mode (no REST ``TokenCache`` on top),
+    so the delay before a revocation is seen is one TTL, not two."""
+    idp = FakeIdP()
+    with (
+        patch("fastmcp.server.auth.providers.introspection.httpx.AsyncClient", fake_async_client(idp)),
+        patch.object(settings, "TOKEN_CACHE_ENABLED", True),
+    ):
+        qdrant_app.auth = build_introspection_verifier(idp, cache_enabled=True, ttl_seconds=1)
+        qdrant_app.token_cache = None
+        headers = bearer("opaque-token")
+
+        assert (await http_client.get("/api/v1/memories", headers=headers)).status_code == 200
+        idp.active = False  # revoked at the IdP
+        assert (await http_client.get("/api/v1/memories", headers=headers)).status_code == 200  # still within the TTL
+
+        await asyncio.sleep(1.2)
+
+        assert (await http_client.get("/api/v1/memories", headers=headers)).status_code == 401
 
 
 # ============================================

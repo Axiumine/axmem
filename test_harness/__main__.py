@@ -19,8 +19,8 @@ from pydantic import ValidationError
 from pydantic_settings import SettingsError
 
 from test_harness.config import HarnessConfig
-from test_harness.container import HOST_ALIAS, AgentContainer, docker_sdk, ensure_image
-from test_harness.server import HarnessInfraError, ThrowawayAxmem
+from test_harness.container import AgentContainer, docker_sdk, ensure_image
+from test_harness.server import HOST_ALIAS, HarnessInfraError, ThrowawayAxmem
 from test_harness.walkthrough import (
     FIXTURE_SKILL,
     SkillRunResult,

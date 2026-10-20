@@ -180,8 +180,8 @@ without the mark, with the commit that landed it, in the commit that lands it.
   - Environment variables: `FORGETFUL_SERVER`, `FORGETFUL_TOKEN` and `FORGETFUL_SCOPES` become `AXMEM_SERVER`,
     `AXMEM_TOKEN` and `AXMEM_SCOPES`, and the Nix build variable `FORGETFUL_VERSION` becomes `AXMEM_VERSION`. The old
     names are not read, so a deployment that sets them runs with the defaults (local mode, no token, scope `*`)
-    until it is changed: an instance that limited its tools with `FORGETFUL_SCOPES` permits every tool until
-    `AXMEM_SCOPES` is set, so set it before the upgrade.
+    until it is changed. An instance that sets `FORGETFUL_SCOPES` without `AXMEM_SCOPES` refuses to start (see the
+    review fixes), so set `AXMEM_SCOPES` before the upgrade.
   - Directories: the user config directory is `~/.config/axmem` and the data directory `~/.local/share/axmem`
     (models and engine caches under `models/`); nothing is read from or moved out of the `forgetful` directories, so
     an existing config file has to be moved and the models are downloaded and built again. The git-ignored local
@@ -323,11 +323,47 @@ Fixes found by reviewing the feature cuts (no upstream counterpart: the code the
 
 - **Start-up:** a Qdrant node that does not answer is logged and skipped while another one does, so a cluster that
   lost a node still starts and can be inspected (the alias and collection reads try each node in turn; every node that
-  answers must still be 1.19.0 or later; with no answering node the start is refused as before). Settings of earlier versions that are ignored now (`DATABASE`, `POSTGRES_*`, `SQLITE_*`,
-  the GitHub and Google OAuth names, `DEFAULT_USER_*`, `FORGETFUL_*`) are named in one warning with what replaces
-  each, read from the environment and from dotenv files; an old `FORGETFUL_SCOPES` also warns that the instance now
-  allows every tool while `AXMEM_SCOPES` is `*`. Log records go to stderr during the TensorRT warm-up, so the
-  engine build and the cause of a refusal are visible before logging is configured.
+  answers must still be 1.19.0 or later; with no answering node the start is refused as before). Settings of earlier
+  versions that are ignored now are named in one warning with what replaces each, read from the environment and from
+  dotenv files: the SQL store (`DATABASE`, `DB_LOGGING`, `PGPORT`, `POSTGRES_DB`, `POSTGRES_HOST`, `POSTGRES_PASSWORD`,
+  `POSTGRES_USER`, `SQLITE_MEMORY`, `SQLITE_PATH`), the OAuth providers and `DEFAULT_USER_*`, the FastEmbed and ONNX
+  Runtime settings (`FASTEMBED_*`, `EMBEDDING_ONNX_PROVIDERS`, `RERANKING_ONNX_PROVIDERS`, `RERANKING_THREADS`), the
+  caps and switches of the removed features (activity, files, planning, skills, documents, entities, code artifacts,
+  `MAX_GRAPH_LIMIT`) and `FORGETFUL_SCOPES`, `FORGETFUL_SERVER` and `FORGETFUL_TOKEN`. The list holds exact names
+  matched without regard to case, as the settings are read: a name that merely shares a prefix (`POSTGRES_PORT`,
+  `SQLITE_TMPDIR`, `DEFAULT_USER_AGENT`) belongs to other software and is no longer reported, and a bare dotenv key
+  that sets nothing is not counted. An old `FORGETFUL_SCOPES` that nothing replaces now refuses the start (`serve`,
+  `build_runtime` and so every command) and names both settings, instead of warning while the instance allowed every
+  tool: set `AXMEM_SCOPES` to the scopes you want, or to `*` on purpose. Log records go to stderr during the TensorRT
+  warm-up, so the engine build and the cause of a refusal are visible before logging is configured.
+- **Authentication:** `AUTH_MODE=jwt` requires `FASTMCP_SERVER_AUTH_JWT_ISSUER` and `FASTMCP_SERVER_AUTH_JWT_AUDIENCE`
+  and refuses to start without them (before, both were passed on as unset and a token that the same identity provider
+  issued for any other application was accepted), and a signed token without an `exp` claim is refused (it never
+  expired). `AUTH_MODE=introspection` checks the `aud` of the endpoint's answer against the new
+  `FASTMCP_SERVER_AUTH_INTROSPECTION_AUDIENCE` when it is set (a string or a list that names it); without it the
+  audience is not checked, and the issuer never is, because the endpoint is the authority. `nbf` is not checked in
+  either mode. In introspection mode the REST token cache is no longer stacked on the verifier's own cache, which
+  made a revoked token valid for up to twice `TOKEN_CACHE_TTL_SECONDS`; the verifier's cache is the only one, for MCP
+  and REST alike. The configuration reference says exactly what each mode checks.
+- **REST routes honour the scopes:** the memory REST routes ignored `AXMEM_SCOPES` and the scopes of the token, which
+  only the MCP meta-tools enforced, so a read-only instance or token could still create, change, link and obsolete
+  memories over REST. Each route now stands for a registry tool (`GET /api/v1/memories` is `get_recent_memories`,
+  `POST /api/v1/memories` is `create_memory`, and so on, listed in the API reference) and answers `403` with the same
+  message as the MCP call when the instance ceiling or the token's scopes do not permit that tool; the credential is
+  still checked first (`401`). A token whose scopes are only a verifier requirement such as `api:read` (no Axmem scope) was
+  already refused every tool over MCP and now is over REST too, so it needs an Axmem scope such as `read` or `*`. The cached
+  identity of a token keeps its scopes. A route cannot be registered without a
+  tool (a start-up error), and an end-to-end test fails for any route that is neither mapped nor public.
+- **Request bodies must be JSON:** a REST request that carries a body without a JSON content type answers `415`
+  before the body is read. A web page can send `text/plain` cross-origin with no preflight, and the routes used to
+  parse such a body as JSON.
+- **No credential, no web page:** with `AUTH_MODE=none` the HTTP server (REST and `/mcp`) answers `421` to a request
+  whose `Host` is not `localhost` or a loopback address (DNS rebinding) and `403` to one whose `Origin` is neither a
+  loopback origin nor an origin named in `CORS_ORIGINS` (a `*` never counts, `null` is refused). The new setting
+  `AXMEM_ALLOWED_HOSTS` (a JSON list, empty by default) names further hosts that the server answers, such as
+  `host.docker.internal` for a client in a container, which the test harness' throwaway server now lists. Clients that
+  are not browsers send neither a foreign `Host` nor an `Origin` and are not affected. The credential modes are
+  unchanged.
 - **Operator commands:** `axmem import` creates the collections when they are missing (a new Qdrant), and
   `axmem export` and `axmem backup` on a store without collections stop with `The alias <name> does not exist yet`
   instead of a raw 404; an export reads the live generation it resolved first. `--re-embed` that fails or is

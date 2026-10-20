@@ -16,7 +16,6 @@ from app.exceptions import (
     InvalidStateTransitionError,
     NotFoundError,
 )
-from app.middleware.auth import get_tenant_from_request
 from app.models.memory_models import (
     Memory,
     MemoryCreate,
@@ -27,12 +26,10 @@ from app.models.memory_models import (
     MemoryUpdate,
     clean_scope,
 )
+from app.models.tenant_models import Tenant
+from app.routes.api.access import rest_route
 from app.routes.api.query_params import parse_int_param
-from app.routes.api.request_utils import (
-    handle_request_errors,
-    path_id,
-    read_json_object,
-)
+from app.routes.api.request_utils import path_id, read_json_object
 from app.routes.api.validation import validation_error_response
 from app.routes.server_state import AxmemMCP
 
@@ -46,9 +43,8 @@ VALID_SORT_ORDER = {"asc", "desc"}
 def register(mcp: AxmemMCP):
     """Register memory REST routes with FastMCP"""
 
-    @mcp.custom_route("/api/v1/memories", methods=["GET"])
-    @handle_request_errors
-    async def list_memories(request: Request) -> JSONResponse:
+    @rest_route(mcp, "GET", "/api/v1/memories")
+    async def list_memories(request: Request, tenant: Tenant) -> JSONResponse:
         """List memories with pagination, sorting, and filtering.
 
         Query params:
@@ -61,11 +57,6 @@ def register(mcp: AxmemMCP):
             tags: Comma-separated tags (optional)
             include_obsolete: Include obsolete memories (default false)
         """
-        try:
-            tenant = await get_tenant_from_request(request, mcp)
-        except ValueError as e:
-            return JSONResponse({"error": str(e)}, status_code=401)
-
         params = request.query_params
 
         # Parse and validate query params with strict validation
@@ -145,15 +136,9 @@ def register(mcp: AxmemMCP):
 
         return JSONResponse(response.model_dump(mode="json"))
 
-    @mcp.custom_route("/api/v1/memories/{memory_id}", methods=["GET"])
-    @handle_request_errors
-    async def get_memory(request: Request) -> JSONResponse:
+    @rest_route(mcp, "GET", "/api/v1/memories/{memory_id}")
+    async def get_memory(request: Request, tenant: Tenant) -> JSONResponse:
         """Get a single memory by ID."""
-        try:
-            tenant = await get_tenant_from_request(request, mcp)
-        except ValueError as e:
-            return JSONResponse({"error": str(e)}, status_code=401)
-
         memory_id = path_id(request, "memory_id")
 
         try:
@@ -169,15 +154,9 @@ def register(mcp: AxmemMCP):
 
         return JSONResponse(memory.model_dump(mode="json"))
 
-    @mcp.custom_route("/api/v1/memories", methods=["POST"])
-    @handle_request_errors
-    async def create_memory(request: Request) -> JSONResponse:
+    @rest_route(mcp, "POST", "/api/v1/memories")
+    async def create_memory(request: Request, tenant: Tenant) -> JSONResponse:
         """Create a new memory."""
-        try:
-            tenant = await get_tenant_from_request(request, mcp)
-        except ValueError as e:
-            return JSONResponse({"error": str(e)}, status_code=401)
-
         try:
             body = await read_json_object(request)
             memory_data = MemoryCreate(**body)
@@ -206,15 +185,9 @@ def register(mcp: AxmemMCP):
 
         return JSONResponse(response.model_dump(mode="json"), status_code=201)
 
-    @mcp.custom_route("/api/v1/memories/{memory_id}", methods=["PUT"])
-    @handle_request_errors
-    async def update_memory(request: Request) -> JSONResponse:
+    @rest_route(mcp, "PUT", "/api/v1/memories/{memory_id}")
+    async def update_memory(request: Request, tenant: Tenant) -> JSONResponse:
         """Update an existing memory."""
-        try:
-            tenant = await get_tenant_from_request(request, mcp)
-        except ValueError as e:
-            return JSONResponse({"error": str(e)}, status_code=401)
-
         memory_id = path_id(request, "memory_id")
 
         try:
@@ -241,15 +214,9 @@ def register(mcp: AxmemMCP):
 
         return JSONResponse(memory.model_dump(mode="json"))
 
-    @mcp.custom_route("/api/v1/memories/{memory_id}", methods=["DELETE"])
-    @handle_request_errors
-    async def delete_memory(request: Request) -> JSONResponse:
+    @rest_route(mcp, "DELETE", "/api/v1/memories/{memory_id}")
+    async def delete_memory(request: Request, tenant: Tenant) -> JSONResponse:
         """Mark a memory as obsolete (soft delete)."""
-        try:
-            tenant = await get_tenant_from_request(request, mcp)
-        except ValueError as e:
-            return JSONResponse({"error": str(e)}, status_code=401)
-
         memory_id = path_id(request, "memory_id")
 
         try:
@@ -289,15 +256,9 @@ def register(mcp: AxmemMCP):
 
         return JSONResponse({"success": True})
 
-    @mcp.custom_route("/api/v1/memories/search", methods=["POST"])
-    @handle_request_errors
-    async def search_memories(request: Request) -> JSONResponse:
+    @rest_route(mcp, "POST", "/api/v1/memories/search")
+    async def search_memories(request: Request, tenant: Tenant) -> JSONResponse:
         """Semantic search across memories."""
-        try:
-            tenant = await get_tenant_from_request(request, mcp)
-        except ValueError as e:
-            return JSONResponse({"error": str(e)}, status_code=401)
-
         try:
             body = await read_json_object(request)
             query_request = MemoryQueryRequest(**body)
@@ -313,15 +274,9 @@ def register(mcp: AxmemMCP):
 
         return JSONResponse(result.model_dump(mode="json"))
 
-    @mcp.custom_route("/api/v1/memories/{memory_id}/links", methods=["POST"])
-    @handle_request_errors
-    async def link_memories(request: Request) -> JSONResponse:
+    @rest_route(mcp, "POST", "/api/v1/memories/{memory_id}/links")
+    async def link_memories(request: Request, tenant: Tenant) -> JSONResponse:
         """Link memories together (appends to existing links)."""
-        try:
-            tenant = await get_tenant_from_request(request, mcp)
-        except ValueError as e:
-            return JSONResponse({"error": str(e)}, status_code=401)
-
         memory_id = path_id(request, "memory_id")
 
         try:
@@ -352,20 +307,14 @@ def register(mcp: AxmemMCP):
 
         return JSONResponse({"linked_ids": [str(linked_id) for linked_id in linked_ids]})
 
-    @mcp.custom_route("/api/v1/memories/{memory_id}/links", methods=["GET"])
-    @handle_request_errors
-    async def get_memory_links(request: Request) -> JSONResponse:
+    @rest_route(mcp, "GET", "/api/v1/memories/{memory_id}/links")
+    async def get_memory_links(request: Request, tenant: Tenant) -> JSONResponse:
         """Get memories linked to this memory.
 
         Query params:
             limit: Max linked memories to return, at least 1 (default 20, capped at 100)
             include_obsolete: Include obsolete linked memories (default false)
         """
-        try:
-            tenant = await get_tenant_from_request(request, mcp)
-        except ValueError as e:
-            return JSONResponse({"error": str(e)}, status_code=401)
-
         memory_id = path_id(request, "memory_id")
 
         params = request.query_params
@@ -415,15 +364,9 @@ def register(mcp: AxmemMCP):
             "linked_memories": [m.model_dump(mode="json") for m in linked_memories],
         })
 
-    @mcp.custom_route("/api/v1/memories/{memory_id}/links/{target_id}", methods=["DELETE"])
-    @handle_request_errors
-    async def delete_memory_link(request: Request) -> JSONResponse:
+    @rest_route(mcp, "DELETE", "/api/v1/memories/{memory_id}/links/{target_id}")
+    async def delete_memory_link(request: Request, tenant: Tenant) -> JSONResponse:
         """Remove a specific link between memories."""
-        try:
-            tenant = await get_tenant_from_request(request, mcp)
-        except ValueError as e:
-            return JSONResponse({"error": str(e)}, status_code=401)
-
         memory_id = path_id(request, "memory_id")
         target_id = path_id(request, "target_id")
 

@@ -338,6 +338,13 @@ def test_child_settings_ignore_host_shell_and_user_config(tmp_path, monkeypatch)
     assert leaky["EMBEDDING_MODEL_DIR"] == str(tmp_path / "warm-cache")
 
 
+def test_the_child_answers_the_host_name_of_the_sandbox_container(tmp_path):
+    """The container reaches the credential-free server as ``host.docker.internal``, which the server must answer."""
+    resolved = _resolved_settings(tmp_path, "clean", user_config=None)
+
+    assert resolved["AXMEM_ALLOWED_HOSTS"] == ["host.docker.internal"]
+
+
 # ---------------------------------------------------------------------------
 # Teardown of the run's collections
 # ---------------------------------------------------------------------------

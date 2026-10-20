@@ -55,6 +55,16 @@ uv run main.py --transport http
 - **Note**: If changed, update your MCP client configuration
 - **Example**: `SERVER_PORT=8020`
 
+### `CORS_ENABLED`, `CORS_ORIGINS`
+- **Default**: `false`, `["*"]`
+- **Description**: Adds CORS headers to the HTTP server for browser clients. `CORS_ORIGINS` is a JSON list of the origins that may call it. With `AUTH_MODE=none` the origins you name here (a `*` does not count) also pass the `Host`/`Origin` check of a credential-free server, see [Authentication Configuration](#authentication-configuration); any other cross-origin request is refused with `403`
+- **Example**: `CORS_ENABLED=true`, `CORS_ORIGINS=["http://localhost:3001"]`
+
+### `AXMEM_ALLOWED_HOSTS`
+- **Default**: `[]`
+- **Description**: A JSON list of host names, besides `localhost` and the loopback addresses, that a server running `AUTH_MODE=none` answers to (compared without regard to case and port; a blank entry or `*` names nothing). Needed when a client reaches the server under another name, such as `host.docker.internal` from a container on the same machine; without it that request is refused with `421`. Never list a name that a page you do not control can point at your machine
+- **Example**: `AXMEM_ALLOWED_HOSTS=["host.docker.internal"]`
+
 ### `LOG_LEVEL`
 - **Default**: `INFO`
 - **Description**: Logging verbosity level
@@ -167,6 +177,15 @@ proxy on the same host, an SSH port forward, a container port mapping) makes eve
 with no credential, so `AUTH_MODE=none` is safe only while nothing forwards to the port. A proxied or otherwise
 exposed deployment must use `jwt`, `introspection` or `static`.
 
+A web page on the same machine can reach a loopback port too, so with `AUTH_MODE=none` the HTTP server (the REST
+routes and `/mcp`) also looks at the request itself. A request whose `Host` is not `localhost` or a loopback address
+(or that `AXMEM_ALLOWED_HOSTS` does not name) is answered `421` (DNS rebinding makes a page's own host name resolve to `127.0.0.1`), and a request that carries an
+`Origin` which is neither a loopback origin (`http://localhost:5173`, `http://127.0.0.1:3000`) nor one of the origins
+named in `CORS_ORIGINS` (with `CORS_ENABLED=true`) is answered `403` (a cross-origin `no-cors` POST needs no preflight; `Origin: null` is
+refused; a `*` in `CORS_ORIGINS` does not count). MCP clients, the CLI, `curl` and other programs that are not
+browsers send neither, so they are not affected. The credential modes do not use this check: a page cannot attach a
+bearer token.
+
 The GitHub and Google OAuth providers and the browser login of the CLI are removed. Use a token issued
 by your identity provider (`jwt`, `introspection`) or a static token.
 
@@ -229,8 +248,12 @@ FASTMCP_SERVER_AUTH_JWT_AUDIENCE=axmem-api
 FASTMCP_SERVER_AUTH_JWT_REQUIRED_SCOPES=api:read,api:write
 ```
 
-Either `FASTMCP_SERVER_AUTH_JWT_JWKS_URI` or `FASTMCP_SERVER_AUTH_JWT_PUBLIC_KEY` is required. Axmem
-validates the signature, issuer, audience and expiry; an expired or invalid token gets `401`.
+Either `FASTMCP_SERVER_AUTH_JWT_JWKS_URI` or `FASTMCP_SERVER_AUTH_JWT_PUBLIC_KEY` is required, and so are
+`FASTMCP_SERVER_AUTH_JWT_ISSUER` and `FASTMCP_SERVER_AUTH_JWT_AUDIENCE`: the server refuses to start without them,
+because a token that the same identity provider issued for another application would otherwise be accepted. A token
+is accepted when its signature, `iss`, `aud` and `exp` check out (and it carries the required scopes); an expired
+token, a token without an `exp` claim (it would never expire), a token of another issuer or audience and an invalid
+one get `401`. `nbf` (not before) is not checked.
 
 ### Token introspection (`AUTH_MODE=introspection`)
 
@@ -243,10 +266,16 @@ FASTMCP_SERVER_AUTH_INTROSPECTION_URL=https://auth.yourcompany.com/oauth/introsp
 FASTMCP_SERVER_AUTH_INTROSPECTION_CLIENT_ID=axmem-resource-server
 FASTMCP_SERVER_AUTH_INTROSPECTION_CLIENT_SECRET=your-client-secret
 FASTMCP_SERVER_AUTH_INTROSPECTION_REQUIRED_SCOPES=api:read,api:write
+FASTMCP_SERVER_AUTH_INTROSPECTION_AUDIENCE=axmem-api
 ```
 
-A token the endpoint reports as inactive, or whose `exp` has passed, gets `401`. Results are cached for
-`TOKEN_CACHE_TTL_SECONDS` (see below).
+A token the endpoint reports as inactive, or whose `exp` has passed, gets `401`, and so does one that lacks a
+required scope. With `FASTMCP_SERVER_AUTH_INTROSPECTION_AUDIENCE` set, the `aud` of the endpoint's answer (a string or
+a list) must name that audience, so an active token that the authorization server issued for another resource
+server is refused; leave it unset only when the authorization server issues tokens for this server alone, because
+nothing else tells the two apart. The issuer is not checked: the endpoint is the authority that says whether the
+token is valid. Answers are cached for `TOKEN_CACHE_TTL_SECONDS` (see below), and that is the only cache in this mode,
+so a revoked token is accepted for at most that long.
 
 ---
 
@@ -267,15 +296,32 @@ A token the endpoint reports as inactive, or whose `exp` has passed, gets `401`.
 - **Description**: JSON object of tenant name to the SHA-256 hex digest of that tenant's token. Required when `AUTH_MODE=static`.
 - **Example**: `AUTH_STATIC_TOKEN_HASHES={"acme": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"}`
 
+#### `FASTMCP_SERVER_AUTH_JWT_ISSUER`, `FASTMCP_SERVER_AUTH_JWT_AUDIENCE`
+- **Default**: unset
+- **Description**: Required when `AUTH_MODE=jwt` (the server refuses to start without both): the `iss` and the `aud` that a token must carry.
+- **Example**: `FASTMCP_SERVER_AUTH_JWT_ISSUER=https://auth.yourcompany.com`, `FASTMCP_SERVER_AUTH_JWT_AUDIENCE=axmem-api`
+
+#### `FASTMCP_SERVER_AUTH_INTROSPECTION_AUDIENCE`
+- **Default**: empty (the audience of the introspection answer is not checked)
+- **Description**: With `AUTH_MODE=introspection`, the audience that the `aud` of the introspection answer (a string or a list) must name. A token for another audience gets `401`.
+- **Example**: `FASTMCP_SERVER_AUTH_INTROSPECTION_AUDIENCE=axmem-api`
+
 #### `TOKEN_CACHE_ENABLED`, `TOKEN_CACHE_TTL_SECONDS`, `TOKEN_CACHE_MAX_SIZE`
 - **Default**: `true`, `300`, `1000`
-- **Description**: Cache of verified tokens for the HTTP and REST paths. Applies to `jwt` and `introspection`; a static token is a hash lookup and needs no cache. Set `TOKEN_CACHE_ENABLED=false` for revocation to take effect on the next request.
+- **Description**: Cache of verified tokens. With `jwt` it spares the REST routes the signature check and keeps the tenant and the token's scopes; with `introspection` it is the verifier's own cache of the endpoint's answers, shared by MCP and REST (there is no second cache on top, so revocation takes at most one TTL); a static token is a hash lookup and needs no cache. Set `TOKEN_CACHE_ENABLED=false` for revocation to take effect on the next request.
 
 #### Removed settings
 `FASTMCP_SERVER_AUTH`, `FASTMCP_SERVER_AUTH_GITHUB_*`, `FASTMCP_SERVER_AUTH_GOOGLE_*`, `OAUTH_STORAGE_PATH`
 and `DEFAULT_USER_ID`, `DEFAULT_USER_NAME`, `DEFAULT_USER_EMAIL` no longer exist. Replace
 `FASTMCP_SERVER_AUTH=...JWTVerifier` with `AUTH_MODE=jwt` (and `...IntrospectionTokenVerifier` with
-`AUTH_MODE=introspection`), and `DEFAULT_USER_ID` with `DEFAULT_TENANT`. The SQL databases are gone and nothing
+`AUTH_MODE=introspection`), and `DEFAULT_USER_ID` with `DEFAULT_TENANT`. The FastEmbed and ONNX Runtime settings
+(`FASTEMBED_*`, `EMBEDDING_ONNX_PROVIDERS`, `RERANKING_ONNX_PROVIDERS`, `RERANKING_THREADS`) and the caps and
+switches of the removed features (files, planning, skills, activity, documents, entities, code artifacts) are gone
+too. `FORGETFUL_SERVER`, `FORGETFUL_TOKEN` and `FORGETFUL_SCOPES` became `AXMEM_SERVER`, `AXMEM_TOKEN` and
+`AXMEM_SCOPES`. The server names every removed setting it finds in the environment or a dotenv file at start (names are
+matched without regard to case). A `FORGETFUL_SCOPES` that `AXMEM_SCOPES` does not replace is the one that stops the
+start: it used to limit the tools, and `AXMEM_SCOPES` defaults to `*`, so the instance would allow every tool without
+a word. Set `AXMEM_SCOPES` to the old value, or to `*` to allow every tool on purpose. The SQL databases are gone and nothing
 is migrated in place, and `axmem import` reads only the `axmem-export` JSON lines format that `axmem export` writes, which
 no earlier deployment produced: memories held in SQL cannot be carried over by a command and are created again (or
 converted by hand to that format).
@@ -293,6 +339,9 @@ converted by hand to that format).
 2. **Token scopes**:
    - Define required scopes: `FASTMCP_SERVER_AUTH_*_REQUIRED_SCOPES`
    - Implement least-privilege access
+   - `AXMEM_SCOPES` and the scopes of a token limit the REST routes exactly as they limit the MCP tools: a route
+     answers `403` when the tool it stands for (listed in the [API reference](api_reference.md#scopes-and-routes))
+     is not permitted, so a read-only instance cannot create, change, link or obsolete a memory over REST either.
    - Axmem narrows the tools a token can use from its `scope` (or `scp`) claim, given as a
      space-separated string or a list. Axmem scopes are `*`, `read`, `write`, `read:<category>`
      and `write:<category>`, applied within the `AXMEM_SCOPES` ceiling. Any other scope
@@ -334,8 +383,23 @@ converted by hand to that format).
 - Verify the token with a JWT debugger
 
 **401 Unauthorized**:
-- Token expired, invalid signature, wrong audience, inactive at the introspection endpoint, or not a configured static token
+- Token expired, without an `exp` claim, invalid signature, wrong issuer or audience, inactive at the introspection endpoint, or not a configured static token
 - Enable debug logging: `LOG_LEVEL=DEBUG` (tokens are never logged)
+
+**"AUTH_MODE=jwt requires both FASTMCP_SERVER_AUTH_JWT_ISSUER and FASTMCP_SERVER_AUTH_JWT_AUDIENCE"**:
+- Set both to the `iss` and `aud` that your identity provider puts in the tokens for Axmem
+
+**403 "Tool '...' is not permitted under current scopes" from a REST route**:
+- `AXMEM_SCOPES`, or the `scope`/`scp` claim of the token, does not permit the tool the route stands for; give the token a scope that does (for example `read` or `write:memories`)
+
+**415 "Content-Type must be application/json"**:
+- A REST request with a body must send `Content-Type: application/json`
+
+**421 / 403 from a server running `AUTH_MODE=none`**:
+- The request came with a `Host` that is not `localhost` or a loopback address (`421`), or an `Origin` that is not a loopback origin and not in `CORS_ORIGINS` with `CORS_ENABLED=true` (`403`). Reach the server through `127.0.0.1`, `::1` or `localhost` (or list the name in `AXMEM_ALLOWED_HOSTS`); a browser app on another origin must be named in `CORS_ORIGINS`. This is how a web page is kept from a credential-free server
+
+**"FORGETFUL_SCOPES is set but is not read any more"**:
+- Set `AXMEM_SCOPES` (to the old value, or `*` to allow every tool on purpose) and remove `FORGETFUL_SCOPES`
 
 ---
 
@@ -942,7 +1006,7 @@ DENSE_SEARCH_CANDIDATES=100
 
 ### Qdrant Connection Issues
 - The server refuses to start with `Qdrant at <url> cannot be reached or did not report its version` when no node answers or the API key is wrong: check `QDRANT_URL` and `QDRANT_API_KEY`. A node that does not answer while another one does is logged (`A Qdrant node did not answer; going on with the others`) and skipped, so a cluster that lost a node still starts; every node that answers must still be version 1.19.0 or later
-- `Settings of an earlier version are ignored (...)` at start: the environment or a dotenv file still names a setting of the SQL store, the OAuth providers, `DEFAULT_USER_*` or a `FORGETFUL_*` variable. Axmem reads none of them; the warning names each one and what replaces it. Data held in a SQL database is not read or migrated
+- `Settings of an earlier version are ignored (...)` at start: the environment or a dotenv file still names a setting of the SQL store, the OAuth providers, `DEFAULT_USER_*`, the FastEmbed and ONNX providers, a removed feature or a `FORGETFUL_*` variable. Axmem reads none of them; the warning names each one and what replaces it (an old `FORGETFUL_SCOPES` without `AXMEM_SCOPES` stops the start instead, see above). Data held in a SQL database is not read or migrated
 - `Qdrant <version> at <url> is too old: version 1.19.0 or later is required`: upgrade the node
 - `Qdrant collection <name> does not match the settings`: the shard, replica or vector layout of the existing collection differs from `QDRANT_*` or `EMBEDDING_DIMENSIONS`; see above
 - A `409` on an update means another writer changed the memory in the same moment; read it again and repeat the change

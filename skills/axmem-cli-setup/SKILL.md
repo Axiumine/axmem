@@ -84,7 +84,9 @@ same operations.
 - The server refuses to start without `AUTH_MODE`. `AUTH_MODE=none` serves one local tenant and is
   accepted only on stdio or on a loopback bind: `AUTH_MODE=none axmem serve --transport http
   --host 127.0.0.1 --port 8020` (or `--transport stdio` for MCP clients that spawn a process). A
-  server bound to another address needs `AUTH_MODE=jwt`, `introspection` or `static`.
+  server bound to another address needs `AUTH_MODE=jwt`, `introspection` or `static`. A credential-free HTTP
+  server also answers `421` to a `Host` that is not `localhost` or a loopback address and `403` to a foreign
+  `Origin`, so point `AXMEM_SERVER` at `http://127.0.0.1:<port>` (or `localhost`), not at another name for the machine.
 - Storage via env: Qdrant is the only store. `QDRANT_URL` (one node or a comma-separated cluster, default
   `http://127.0.0.1:6333`), `QDRANT_API_KEY`, and `QDRANT_COLLECTION_PREFIX` to keep several deployments apart.
 - Operator commands against the configured Qdrant: `axmem backup`, `axmem restore <dir> --yes` (stop the

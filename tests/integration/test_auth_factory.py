@@ -100,9 +100,9 @@ def test_build_returns_none_without_a_credential_mode(mock_settings, mode):
 
 
 @patch("app.config.auth.settings")
-@patch("fastmcp.server.auth.providers.jwt.JWTVerifier")
+@patch("app.middleware.token_verifiers.ExpiringJWTVerifier")
 def test_build_jwt_with_jwks_uri(MockJWT, mock_settings):
-    """JWT factory passes JWKS URI when provided"""
+    """JWT factory passes JWKS URI, issuer and audience when provided"""
     mock_settings.AUTH_MODE = "jwt"
     mock_settings.FASTMCP_SERVER_AUTH_JWT_JWKS_URI = "https://auth.example.com/.well-known/jwks.json"
     mock_settings.FASTMCP_SERVER_AUTH_JWT_PUBLIC_KEY = ""
@@ -123,14 +123,14 @@ def test_build_jwt_with_jwks_uri(MockJWT, mock_settings):
 
 
 @patch("app.config.auth.settings")
-@patch("fastmcp.server.auth.providers.jwt.JWTVerifier")
+@patch("app.middleware.token_verifiers.ExpiringJWTVerifier")
 def test_build_jwt_with_public_key(MockJWT, mock_settings):
-    """JWT factory passes public key when JWKS URI not provided"""
+    """JWT factory passes public key when JWKS URI not provided; issuer and audience are trimmed"""
     mock_settings.AUTH_MODE = "jwt"
     mock_settings.FASTMCP_SERVER_AUTH_JWT_JWKS_URI = ""
     mock_settings.FASTMCP_SERVER_AUTH_JWT_PUBLIC_KEY = "-----BEGIN PUBLIC KEY-----\nMIIB..."
-    mock_settings.FASTMCP_SERVER_AUTH_JWT_ISSUER = ""
-    mock_settings.FASTMCP_SERVER_AUTH_JWT_AUDIENCE = ""
+    mock_settings.FASTMCP_SERVER_AUTH_JWT_ISSUER = " https://auth.example.com "
+    mock_settings.FASTMCP_SERVER_AUTH_JWT_AUDIENCE = " my-api "
     mock_settings.FASTMCP_SERVER_AUTH_JWT_REQUIRED_SCOPES = ""
 
     result = build_auth_provider()
@@ -138,11 +138,38 @@ def test_build_jwt_with_public_key(MockJWT, mock_settings):
     MockJWT.assert_called_once_with(
         jwks_uri=None,
         public_key="-----BEGIN PUBLIC KEY-----\nMIIB...",
-        issuer=None,
-        audience=None,
+        issuer="https://auth.example.com",
+        audience="my-api",
         required_scopes=None,
     )
     assert result == MockJWT.return_value
+
+
+@pytest.mark.parametrize(
+    ("issuer", "audience", "not_set"),
+    [
+        ("", "", "FASTMCP_SERVER_AUTH_JWT_ISSUER, FASTMCP_SERVER_AUTH_JWT_AUDIENCE"),
+        ("https://auth.example.com", "", "FASTMCP_SERVER_AUTH_JWT_AUDIENCE"),
+        ("", "my-api", "FASTMCP_SERVER_AUTH_JWT_ISSUER"),
+        ("  ", "my-api", "FASTMCP_SERVER_AUTH_JWT_ISSUER"),
+    ],
+)
+@patch("app.config.auth.settings")
+def test_build_jwt_refuses_to_start_without_issuer_and_audience(mock_settings, issuer, audience, not_set):
+    """A JWKS that serves several applications would otherwise accept a token meant for another one"""
+    mock_settings.AUTH_MODE = "jwt"
+    mock_settings.FASTMCP_SERVER_AUTH_JWT_JWKS_URI = "https://auth.example.com/.well-known/jwks.json"
+    mock_settings.FASTMCP_SERVER_AUTH_JWT_PUBLIC_KEY = ""
+    mock_settings.FASTMCP_SERVER_AUTH_JWT_ISSUER = issuer
+    mock_settings.FASTMCP_SERVER_AUTH_JWT_AUDIENCE = audience
+    mock_settings.FASTMCP_SERVER_AUTH_JWT_REQUIRED_SCOPES = ""
+
+    with pytest.raises(ValueError, match="requires both") as refused:
+        build_auth_provider()
+
+    message = str(refused.value)
+    assert "FASTMCP_SERVER_AUTH_JWT_ISSUER and FASTMCP_SERVER_AUTH_JWT_AUDIENCE" in message
+    assert f"not set: {not_set}" in message
 
 
 @patch("app.config.auth.settings")
@@ -162,10 +189,11 @@ def test_build_jwt_missing_both_key_sources(mock_settings):
 
 
 @patch("app.config.auth.settings")
-@patch("fastmcp.server.auth.providers.introspection.IntrospectionTokenVerifier")
+@patch("app.middleware.token_verifiers.AudienceIntrospectionVerifier")
 def test_build_introspection_provider(MockIntrospection, mock_settings):
-    """Introspection factory passes correct settings including cache params"""
+    """Introspection factory passes correct settings including cache params and the audience"""
     mock_settings.AUTH_MODE = "introspection"
+    mock_settings.FASTMCP_SERVER_AUTH_INTROSPECTION_AUDIENCE = " axmem-api "
     mock_settings.FASTMCP_SERVER_AUTH_INTROSPECTION_URL = "https://auth.example.com/introspect"
     mock_settings.FASTMCP_SERVER_AUTH_INTROSPECTION_CLIENT_ID = "intro-client"
     mock_settings.FASTMCP_SERVER_AUTH_INTROSPECTION_CLIENT_SECRET = "intro-secret"
@@ -177,6 +205,7 @@ def test_build_introspection_provider(MockIntrospection, mock_settings):
     result = build_auth_provider()
 
     MockIntrospection.assert_called_once_with(
+        audience="axmem-api",
         introspection_url="https://auth.example.com/introspect",
         client_id="intro-client",
         client_secret="intro-secret",
