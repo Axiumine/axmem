@@ -13,7 +13,7 @@
 </p>
 
 
-**Axmem** is a storage and retrieval tool for AI agents, built as a Model Context Protocol (MCP) server on the FastMCP framework. Once connected, MCP clients such as coding agents, chatbots or your own custom agents can store and retrieve information from the same knowledge base.
+**Axmem** is a standalone memory server for AI agents, built as a Model Context Protocol (MCP) server on the FastMCP framework. Once connected, MCP clients such as coding agents, chatbots or your own custom agents can store and retrieve information from the same knowledge base. It is one process and one [Qdrant](https://qdrant.tech/) database: the embeddings model and the reranking model run inside the server on an NVIDIA GPU, so no other service is needed.
 
 > **Axmem** is maintained by [Axiumine](https://github.com/Axiumine). It starts from the
 > [Forgetful](https://github.com/ScottRBK/forgetful) codebase by Scott Raisbeck (MIT) and goes
@@ -60,6 +60,12 @@ In this sense **Axmem** becomes a little like Obsidian for AI agents, where the 
 We find, [as do others (A-MEM: Agentic Memory for LLM Agents)](https://arxiv.org/abs/2502.12110), all this helps in ensuring that when the agent requires relevant information from the memory system later, the correct information is returned.
 
 Memories belong to a **tenant**, the owner of a set of memories, and a tenant never sees another tenant's memories. A memory can also carry an optional **project** scope, a free-form label that groups memories and narrows a search.
+
+### Standalone
+
+Axmem is complete without any other system. With its defaults it needs an NVIDIA GPU with the model files (fetched once from Hugging Face, or copied in), a Qdrant server and a value for `AUTH_MODE`. Remote embeddings (Azure, Google, OpenAI, Ollama or an HTTP gateway), a remote rerank service and JWT or introspection authentication are optional integrations: nothing contacts them unless you select them. The standalone end-to-end test runs the whole memory workflow with only the GPU, the model files and a Qdrant node, and it refuses every other network connection.
+
+Axmem does one job: store, link, rank and retrieve memories. It has no task or plan tracker, document or file store, skills, entity graph or activity stream, and it keeps no user or project registry. A tenant is a name taken from the credential and a project is a label on a memory. Keep the other kinds of information in the tools built for them, and let an agent save the conclusions it draws from them as memories.
 
 
 ![Architecture](docs/images/Forgetful%20Architecture.drawio_transparent.png)

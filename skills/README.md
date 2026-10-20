@@ -22,7 +22,7 @@ files rather than maintaining their own copies.
 
 | Skill | Invocation | Fires when |
 |---|---|---|
-| `axmem-remember` | model | Knowledge worth keeping appears; routes to the right store |
+| `axmem-remember` | model | Knowledge worth keeping appears; decides what is worth a memory |
 | `axmem-recall` | model | Context needed: task start, "have we solved this before" |
 | `axmem-explore` | model | Flat search isn't enough; the connected picture matters |
 | `axmem-context-gather` | user | Deep pre-work sweep producing a cited context pack |

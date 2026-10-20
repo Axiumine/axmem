@@ -3,7 +3,7 @@ name: axmem-remember
 description: >-
   Remember knowledge worth keeping — a decision made, a solution found, a preference stated,
   a pattern confirmed. Use when work surfaces something future sessions will need, or the
-  user asks to remember something. Routes content to the right store and enforces
+  user asks to remember something. Decides what is worth a memory and enforces
   query-before-create.
 license: MIT
 tags: [memory, capture, curation, knowledge-management]
@@ -16,7 +16,7 @@ allowed-tools:
 
 # Remembering knowledge in Axmem
 
-Capture is a sequence, not a single call: route the content to the right store, ground it in
+Capture is a sequence, not a single call: decide that the content is a memory, ground it in
 a project, check what already exists, then create atomically and link. Removal and rewriting
 happen by supersession only — a memory does not become less true because it hasn't been
 queried lately.
@@ -38,9 +38,9 @@ Get any operation's schema at runtime: `how_to_use_axmem_tool` (MCP) or
 |---|---|---|
 | A single fact, decision, or preference | Memory | this skill, step 4 |
 | Detailed analysis or a guide (>300 words) | Several linked atomic memories | this skill, step 4 |
-| A goal decomposing into steps / a work item | Plan / Task | feature-flagged; check discovery |
+| A goal decomposing into steps / a work item | Not a memory | Axmem has no plan or task store; keep it in the tracker the project already uses |
 
-Done when: exactly one type is chosen, and routed-away types are handled by their skill.
+Done when: exactly one type is chosen, and content that is not a memory is left out.
 
 ## Step 2 — Resolve the project
 

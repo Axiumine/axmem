@@ -116,8 +116,8 @@ without the mark, with the commit that landed it, in the commit that lands it.
   The remote embeddings providers, `RERANKING_PROVIDER=HTTP` and `RERANKING_ENABLED=false` are the explicit ways
   to run without one.
 - Embeddings are computed in the server process on the GPU by default (`EMBEDDING_PROVIDER=TensorRT`) instead of
-  coming only from the router. The earlier plan for router-only embeddings is replaced; the `gateway` provider stays
-  optional and no `GATEWAY_*` setting is read unless it is selected. `EMBEDDING_PROVIDER` defaults to `TensorRT`
+  coming from a remote embeddings service. The `gateway` provider stays optional and no `GATEWAY_*` setting is read
+  unless it is selected. `EMBEDDING_PROVIDER` defaults to `TensorRT`
   (it was `FastEmbed`) and an empty value selects it; existing databases need `forgetful --re-embed` only when the
   provider, model or width changes. `RerankerError` and `RerankerStartupError` are now `TensorRTError` and
   `TensorRTStartupError` (they cover both models), `reranker_model.py` is `tensorrt_model.py` and
@@ -205,6 +205,13 @@ without the mark, with the commit that landed it, in the commit that lands it.
     (the image text says Forgetful and it shows the upstream architecture; the README says so). `AGENTS.md`
     describes the Qdrant end-to-end suite instead of the SQLite and PostgreSQL ones, and its GitNexus section no
     longer names the index.
+- Axmem is documented as a standalone memory server. The README opens with what it needs (Qdrant, an NVIDIA GPU with
+  the model files, an `AUTH_MODE`), says that remote embeddings, a remote rerank service and token providers are
+  optional integrations nothing contacts unless selected, and says what it does not do (no plans, tasks, skills,
+  files, documents, entities, activity stream or user and project registries). `docs/changes-from-forgetful.md`
+  states the reason for each cut without naming a system outside the repository, and its Tests row is Done: the
+  contract tests of the `gateway` adapter run against an in-process fake gateway. The `axmem-remember` skill no longer
+  sends work items to a plan or task store. Documentation only; no setting, route, tool or schema changed.
 
 ### Removed
 

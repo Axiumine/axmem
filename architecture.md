@@ -9,7 +9,8 @@ fail-closed authentication and projects reduced to a scope string, and for batch
 cross-encoder), and for the in-process TensorRT embeddings provider that is now the default, and for the removal of
 ONNX Runtime and the FastEmbed CPU embedder, and for Qdrant as the only store (SQLite, PostgreSQL, SQLAlchemy and
 Alembic are gone; memory ids are UUIDs; tenants have no stored record), and for the rename of the product, package, CLI
-and environment variables to Axmem, on the `axmem` branch.
+and environment variables to Axmem, and for the documentation that positions Axmem as a standalone memory server (no
+code changed), on the `axmem` branch.
 This is a selective interpretation, not an exhaustive dependency inventory.
 The component groupings below are inferred for readability; the described execution paths
 and wiring were verified against source. Line numbers are inspection starting points and may drift.
@@ -22,6 +23,10 @@ Qdrant, provider clients, and the HTTP clients of remote providers normally stay
 Operational exceptions are called out below rather than hidden by the diagram.
 The server runs natively (`uv run main.py`, see the README); the repository ships no container image or compose files.
 Docker appears only as a test dependency (the real Qdrant nodes the suites run against).
+Axmem is a standalone memory server: besides Qdrant it needs no other service. The remote embeddings providers, the
+HTTP rerank provider and the `jwt` and `introspection` credential modes reach out only when selected. With
+`AUTH_MODE=static` and the model files present, the server contacts nothing but Qdrant, which
+[test_standalone_e2e.py](tests/e2e/test_standalone_e2e.py) proves with a connection guard.
 
 ## Component view
 
