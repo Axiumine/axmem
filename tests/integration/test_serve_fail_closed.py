@@ -11,6 +11,7 @@ import uvicorn
 
 import main
 from app.config import legacy_settings
+from app.config.auth import AuthConfigError
 from app.config.settings import settings
 
 ANYWHERE = "0.0.0.0"  # noqa: S104 - the bind-all address is what the guard must refuse
@@ -82,6 +83,56 @@ def test_the_serve_command_reports_the_refusal_with_exit_code_one(monkeypatch, r
     assert main.cli() == 1
     assert runners == []
     assert "AUTH_MODE" in capsys.readouterr().err
+
+
+def test_a_mode_that_could_not_build_its_provider_means_no_server(monkeypatch, runners, capsys):
+    """``jwt`` without an issuer and an audience: the import of ``main`` kept the reason, ``serve`` reports it."""
+    monkeypatch.setattr(settings, "AUTH_MODE", "jwt")
+    monkeypatch.setattr(main, "_auth_refusal", AuthConfigError("AUTH_MODE=jwt requires both of two settings"))
+
+    code = main._serve("http", "127.0.0.1", 8020)
+
+    assert code == 1
+    assert runners == []
+    assert capsys.readouterr().err == "Error: AUTH_MODE=jwt requires both of two settings\n"
+
+
+def test_the_start_up_refusals_come_before_the_one_of_the_provider(monkeypatch, runners, capsys):
+    """A credential mode on stdio is refused for what it is, not for the settings its provider lacks."""
+    monkeypatch.setattr(settings, "AUTH_MODE", "jwt")
+    monkeypatch.setattr(main, "_auth_refusal", AuthConfigError("the provider cannot be built"))
+
+    assert main._serve("stdio", "127.0.0.1", 8020) == 1
+
+    err = capsys.readouterr().err
+    assert "needs a bearer token" in err
+    assert "the provider cannot be built" not in err
+
+
+def test_a_complete_mode_builds_its_provider_and_keeps_no_refusal(monkeypatch):
+    monkeypatch.setattr(settings, "AUTH_MODE", "jwt")
+    monkeypatch.setattr(settings, "FASTMCP_SERVER_AUTH_JWT_JWKS_URI", "https://auth.example/jwks.json")
+    monkeypatch.setattr(settings, "FASTMCP_SERVER_AUTH_JWT_ISSUER", "https://auth.example")
+    monkeypatch.setattr(settings, "FASTMCP_SERVER_AUTH_JWT_AUDIENCE", "axmem")
+
+    provider, refusal = main._auth_provider_or_refusal()
+
+    assert provider is not None
+    assert refusal is None
+
+
+def test_an_incomplete_mode_builds_no_provider_and_keeps_the_refusal(monkeypatch):
+    """Importing ``main`` must not raise for it: ``backup``, ``export`` and the tool commands never serve."""
+    monkeypatch.setattr(settings, "AUTH_MODE", "jwt")
+    monkeypatch.setattr(settings, "FASTMCP_SERVER_AUTH_JWT_JWKS_URI", "https://auth.example/jwks.json")
+    monkeypatch.setattr(settings, "FASTMCP_SERVER_AUTH_JWT_ISSUER", "")
+    monkeypatch.setattr(settings, "FASTMCP_SERVER_AUTH_JWT_AUDIENCE", "")
+
+    provider, refusal = main._auth_provider_or_refusal()
+
+    assert provider is None
+    assert isinstance(refusal, AuthConfigError)
+    assert "FASTMCP_SERVER_AUTH_JWT_ISSUER, FASTMCP_SERVER_AUTH_JWT_AUDIENCE" in str(refusal)
 
 
 @pytest.fixture

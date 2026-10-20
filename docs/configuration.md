@@ -57,7 +57,7 @@ uv run main.py --transport http
 
 ### `CORS_ENABLED`, `CORS_ORIGINS`
 - **Default**: `false`, `["*"]`
-- **Description**: Adds CORS headers to the HTTP server for browser clients. `CORS_ORIGINS` is a JSON list of the origins that may call it. With `AUTH_MODE=none` the origins you name here (a `*` does not count) also pass the `Host`/`Origin` check of a credential-free server, see [Authentication Configuration](#authentication-configuration); any other cross-origin request is refused with `403`
+- **Description**: Adds CORS headers to the HTTP server for browser clients. `CORS_ORIGINS` is a JSON list of the origins that may call it. With `AUTH_MODE=none` and `CORS_ENABLED=true` the origins you name here (a `*` does not count) also pass the `Host`/`Origin` check of a credential-free server, see [Authentication Configuration](#authentication-configuration); any other cross-origin request is refused with `403`
 - **Example**: `CORS_ENABLED=true`, `CORS_ORIGINS=["http://localhost:3001"]`
 
 ### `AXMEM_ALLOWED_HOSTS`
@@ -320,7 +320,7 @@ switches of the removed features (files, planning, skills, activity, documents, 
 too. `FORGETFUL_SERVER`, `FORGETFUL_TOKEN` and `FORGETFUL_SCOPES` became `AXMEM_SERVER`, `AXMEM_TOKEN` and
 `AXMEM_SCOPES`. The server names every removed setting it finds in the environment or a dotenv file at start (names are
 matched without regard to case). A `FORGETFUL_SCOPES` that `AXMEM_SCOPES` does not replace is the one that stops the
-start: it used to limit the tools, and `AXMEM_SCOPES` defaults to `*`, so the instance would allow every tool without
+start of the server and of the CLI in local mode (`--local`, or no `--server` and no `AXMEM_SERVER`): it used to limit the tools, and `AXMEM_SCOPES` defaults to `*`, so the instance would allow every tool without
 a word. Set `AXMEM_SCOPES` to the old value, or to `*` to allow every tool on purpose. The SQL databases are gone and nothing
 is migrated in place, and `axmem import` reads only the `axmem-export` JSON lines format that `axmem export` writes, which
 no earlier deployment produced: memories held in SQL cannot be carried over by a command and are created again (or
@@ -388,6 +388,7 @@ converted by hand to that format).
 
 **"AUTH_MODE=jwt requires both FASTMCP_SERVER_AUTH_JWT_ISSUER and FASTMCP_SERVER_AUTH_JWT_AUDIENCE"**:
 - Set both to the `iss` and `aud` that your identity provider puts in the tokens for Axmem
+- Only `axmem serve` refuses (it prints `Error: ...` and exits with code 1). `backup`, `export`, `re-embed` and the tool commands never serve a request and run with the same environment. The same goes for the other modes that lack settings: `static` without `AUTH_STATIC_TOKEN_HASHES`, `introspection` without its URL, client id or client secret
 
 **403 "Tool '...' is not permitted under current scopes" from a REST route**:
 - `AXMEM_SCOPES`, or the `scope`/`scp` claim of the token, does not permit the tool the route stands for; give the token a scope that does (for example `read` or `write:memories`)
@@ -399,6 +400,7 @@ converted by hand to that format).
 - The request came with a `Host` that is not `localhost` or a loopback address (`421`), or an `Origin` that is not a loopback origin and not in `CORS_ORIGINS` with `CORS_ENABLED=true` (`403`). Reach the server through `127.0.0.1`, `::1` or `localhost` (or list the name in `AXMEM_ALLOWED_HOSTS`); a browser app on another origin must be named in `CORS_ORIGINS`. This is how a web page is kept from a credential-free server
 
 **"FORGETFUL_SCOPES is set but is not read any more"**:
+- Printed by `axmem serve` and by the tool commands that run in process (`--local`, or no `--server` and no `AXMEM_SERVER`); `backup`, `restore`, `export`, `import`, `qdrant-check`, `re-embed` and the tool commands that call a remote server do not use the scope ceiling and do not check it
 - Set `AXMEM_SCOPES` (to the old value, or `*` to allow every tool on purpose) and remove `FORGETFUL_SCOPES`
 
 ---
@@ -1006,7 +1008,7 @@ DENSE_SEARCH_CANDIDATES=100
 
 ### Qdrant Connection Issues
 - The server refuses to start with `Qdrant at <url> cannot be reached or did not report its version` when no node answers or the API key is wrong: check `QDRANT_URL` and `QDRANT_API_KEY`. A node that does not answer while another one does is logged (`A Qdrant node did not answer; going on with the others`) and skipped, so a cluster that lost a node still starts; every node that answers must still be version 1.19.0 or later
-- `Settings of an earlier version are ignored (...)` at start: the environment or a dotenv file still names a setting of the SQL store, the OAuth providers, `DEFAULT_USER_*`, the FastEmbed and ONNX providers, a removed feature or a `FORGETFUL_*` variable. Axmem reads none of them; the warning names each one and what replaces it (an old `FORGETFUL_SCOPES` without `AXMEM_SCOPES` stops the start instead, see above). Data held in a SQL database is not read or migrated
+- `Settings of an earlier version are ignored (...)` at start: the environment or a dotenv file still names a setting of the SQL store, the OAuth providers, `DEFAULT_USER_*`, the FastEmbed and ONNX providers, a removed feature, or `FORGETFUL_SCOPES`, `FORGETFUL_SERVER` or `FORGETFUL_TOKEN`. Axmem reads none of them; the warning names each one and what replaces it (an old `FORGETFUL_SCOPES` without `AXMEM_SCOPES` stops the start instead, see above). Data held in a SQL database is not read or migrated
 - `Qdrant <version> at <url> is too old: version 1.19.0 or later is required`: upgrade the node
 - `Qdrant collection <name> does not match the settings`: the shard, replica or vector layout of the existing collection differs from `QDRANT_*` or `EMBEDDING_DIMENSIONS`; see above
 - A `409` on an update means another writer changed the memory in the same moment; read it again and repeat the change

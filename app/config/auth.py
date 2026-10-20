@@ -50,7 +50,7 @@ def _register(mode: str) -> Callable[[_ProviderFactory], _ProviderFactory]:
 def _required(value: str, field_name: str) -> str:
     """Validate a required setting is not empty."""
     if not value:
-        raise ValueError(
+        raise AuthConfigError(
             f"{field_name} is required when using this auth provider",
         )
     return value
@@ -71,7 +71,7 @@ def _build_jwt() -> AuthProvider:
     public_key = settings.FASTMCP_SERVER_AUTH_JWT_PUBLIC_KEY or None
 
     if not jwks_uri and not public_key:
-        raise ValueError(
+        raise AuthConfigError(
             "Either FASTMCP_SERVER_AUTH_JWT_JWKS_URI or "
             "FASTMCP_SERVER_AUTH_JWT_PUBLIC_KEY is required for JWTVerifier",
         )
@@ -87,7 +87,7 @@ def _build_jwt() -> AuthProvider:
         if not value
     ]
     if missing:
-        raise ValueError(
+        raise AuthConfigError(
             "AUTH_MODE=jwt requires both FASTMCP_SERVER_AUTH_JWT_ISSUER and "
             f"FASTMCP_SERVER_AUTH_JWT_AUDIENCE (not set: {', '.join(missing)}). Without them a token "
             "that the same identity provider issued for another application would be accepted.",
@@ -123,7 +123,7 @@ def _build_static() -> AuthProvider:
     from app.middleware.static_token import StaticTokenVerifier
 
     if not settings.AUTH_STATIC_TOKEN_HASHES:
-        raise ValueError(
+        raise AuthConfigError(
             "AUTH_STATIC_TOKEN_HASHES is required when AUTH_MODE=static: "
             "a JSON object of tenant -> SHA-256 hex digest of the tenant's token",
         )
@@ -136,7 +136,8 @@ def build_auth_provider() -> AuthProvider | None:
     Returns None when AUTH_MODE is ``none`` or unset; an unset mode is refused separately,
     when the server starts (``ensure_startup_allowed``), and again for every request
     (``app.middleware.auth``), so None never means "open".
-    Raises ValueError when the selected mode is missing its settings.
+    Raises AuthConfigError (a ValueError) when the selected mode is missing its settings. ``main`` catches
+    it when it builds the server and has ``serve`` report it, so that only a server that would serve refuses.
     """
     mode = settings.AUTH_MODE
 

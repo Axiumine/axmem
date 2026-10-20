@@ -30,7 +30,7 @@ def test_required_returns_value_when_present():
 
 def test_required_raises_on_empty_string():
     """Empty string raises ValueError with field name"""
-    with pytest.raises(ValueError, match="CLIENT_ID is required"):
+    with pytest.raises(AuthConfigError, match="CLIENT_ID is required"):
         _required("", "CLIENT_ID")
 
 
@@ -164,7 +164,7 @@ def test_build_jwt_refuses_to_start_without_issuer_and_audience(mock_settings, i
     mock_settings.FASTMCP_SERVER_AUTH_JWT_AUDIENCE = audience
     mock_settings.FASTMCP_SERVER_AUTH_JWT_REQUIRED_SCOPES = ""
 
-    with pytest.raises(ValueError, match="requires both") as refused:
+    with pytest.raises(AuthConfigError, match="requires both") as refused:
         build_auth_provider()
 
     message = str(refused.value)
@@ -179,7 +179,7 @@ def test_build_jwt_missing_both_key_sources(mock_settings):
     mock_settings.FASTMCP_SERVER_AUTH_JWT_JWKS_URI = ""
     mock_settings.FASTMCP_SERVER_AUTH_JWT_PUBLIC_KEY = ""
 
-    with pytest.raises(ValueError, match="Either FASTMCP_SERVER_AUTH_JWT_JWKS_URI or FASTMCP_SERVER_AUTH_JWT_PUBLIC_KEY is required"):
+    with pytest.raises(AuthConfigError, match="Either FASTMCP_SERVER_AUTH_JWT_JWKS_URI or FASTMCP_SERVER_AUTH_JWT_PUBLIC_KEY is required"):
         build_auth_provider()
 
 
@@ -228,7 +228,7 @@ def test_build_introspection_missing_required_field(mock_settings):
     mock_settings.TOKEN_CACHE_TTL_SECONDS = 300
     mock_settings.TOKEN_CACHE_MAX_SIZE = 1000
 
-    with pytest.raises(ValueError, match="FASTMCP_SERVER_AUTH_INTROSPECTION_CLIENT_ID is required"):
+    with pytest.raises(AuthConfigError, match="FASTMCP_SERVER_AUTH_INTROSPECTION_CLIENT_ID is required"):
         build_auth_provider()
 
 
@@ -253,7 +253,7 @@ def test_build_static_requires_at_least_one_tenant(mock_settings, hashes):
     mock_settings.AUTH_MODE = "static"
     mock_settings.AUTH_STATIC_TOKEN_HASHES = hashes
 
-    with pytest.raises(ValueError, match="AUTH_STATIC_TOKEN_HASHES is required when AUTH_MODE=static"):
+    with pytest.raises(AuthConfigError, match="AUTH_STATIC_TOKEN_HASHES is required when AUTH_MODE=static"):
         build_auth_provider()
 
 

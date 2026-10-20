@@ -332,8 +332,10 @@ Fixes found by reviewing the feature cuts (no upstream counterpart: the code the
   `MAX_GRAPH_LIMIT`) and `FORGETFUL_SCOPES`, `FORGETFUL_SERVER` and `FORGETFUL_TOKEN`. The list holds exact names
   matched without regard to case, as the settings are read: a name that merely shares a prefix (`POSTGRES_PORT`,
   `SQLITE_TMPDIR`, `DEFAULT_USER_AGENT`) belongs to other software and is no longer reported, and a bare dotenv key
-  that sets nothing is not counted. An old `FORGETFUL_SCOPES` that nothing replaces now refuses the start (`serve`,
-  `build_runtime` and so every command) and names both settings, instead of warning while the instance allowed every
+  that sets nothing is not counted. An old `FORGETFUL_SCOPES` that nothing replaces now refuses the start of `serve`
+  and of the tool commands that run in process (both build the runtime; `backup`, `restore`, `export`, `import`,
+  `qdrant-check`, `re-embed` and the tool commands that call a remote server never use the scope ceiling and do not
+  check it) and names both settings, instead of warning while the instance allowed every
   tool: set `AXMEM_SCOPES` to the scopes you want, or to `*` on purpose. Log records go to stderr during the TensorRT
   warm-up, so the engine build and the cause of a refusal are visible before logging is configured.
 - **Authentication:** `AUTH_MODE=jwt` requires `FASTMCP_SERVER_AUTH_JWT_ISSUER` and `FASTMCP_SERVER_AUTH_JWT_AUDIENCE`
@@ -344,7 +346,11 @@ Fixes found by reviewing the feature cuts (no upstream counterpart: the code the
   audience is not checked, and the issuer never is, because the endpoint is the authority. `nbf` is not checked in
   either mode. In introspection mode the REST token cache is no longer stacked on the verifier's own cache, which
   made a revoked token valid for up to twice `TOKEN_CACHE_TTL_SECONDS`; the verifier's cache is the only one, for MCP
-  and REST alike. The configuration reference says exactly what each mode checks.
+  and REST alike. The configuration reference says exactly what each mode checks. A mode whose settings are incomplete (`jwt`
+  without an issuer and an audience, `static` without token hashes, `introspection` without its endpoint) refuses
+  only the server: `axmem serve` prints `Error: <cause>` and exits with code 1, and `backup`, `export`, `re-embed` and
+  the tool commands, which never serve a request, run as before. The provider is built when `main` is imported, and a
+  mode that lacked settings used to end every command in a traceback from that import.
 - **REST routes honour the scopes:** the memory REST routes ignored `AXMEM_SCOPES` and the scopes of the token, which
   only the MCP meta-tools enforced, so a read-only instance or token could still create, change, link and obsolete
   memories over REST. Each route now stands for a registry tool (`GET /api/v1/memories` is `get_recent_memories`,
@@ -359,7 +365,8 @@ Fixes found by reviewing the feature cuts (no upstream counterpart: the code the
   parse such a body as JSON.
 - **No credential, no web page:** with `AUTH_MODE=none` the HTTP server (REST and `/mcp`) answers `421` to a request
   whose `Host` is not `localhost` or a loopback address (DNS rebinding) and `403` to one whose `Origin` is neither a
-  loopback origin nor an origin named in `CORS_ORIGINS` (a `*` never counts, `null` is refused). The new setting
+  loopback origin nor an origin named in `CORS_ORIGINS` while `CORS_ENABLED=true` (a `*` never counts, `null` is
+  refused, and with CORS off no origin counts). The new setting
   `AXMEM_ALLOWED_HOSTS` (a JSON list, empty by default) names further hosts that the server answers, such as
   `host.docker.internal` for a client in a container, which the test harness' throwaway server now lists. Clients that
   are not browsers send neither a foreign `Host` nor an `Origin` and are not affected. The credential modes are

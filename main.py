@@ -21,7 +21,7 @@ from app.bootstrap import (
     get_reranker_adapter,
     start_tensorrt_embedder,
 )
-from app.config.auth import build_auth_provider
+from app.config.auth import AuthConfigError, build_auth_provider
 from app.config.settings import settings
 from app.exceptions import QdrantStartupError, TensorRTError
 from app.routes.api import (
@@ -88,7 +88,25 @@ async def lifespan(app):
     logger.info("Session shutdown complete")
 
 
-mcp = AxmemMCP(settings.SERVICE_NAME, lifespan=lifespan, auth=build_auth_provider())
+def _auth_provider_or_refusal():
+    """The auth provider that FastMCP takes in its constructor, or the reason why the mode cannot build one.
+
+    The provider is built when this module is imported, which every command does. A mode whose settings are
+    incomplete (``jwt`` without an issuer and an audience, ``static`` without token hashes, ...) must refuse the
+    one thing that needs it, the server, and not turn ``backup``, ``export``, ``re-embed`` or a tool command into
+    a traceback. So the refusal is returned and ``_serve`` reports it as ``Error: ...`` with exit code 1, before
+    anything is bound. Meanwhile the server object has no provider, and without one every request of a mode
+    but ``none`` is refused (``app.middleware.auth``), so nothing is served open.
+    """
+    try:
+        return build_auth_provider(), None
+    except AuthConfigError as exc:
+        return None, exc
+
+
+_auth_provider, _auth_refusal = _auth_provider_or_refusal()
+
+mcp = AxmemMCP(settings.SERVICE_NAME, lifespan=lifespan, auth=_auth_provider)
 
 
 @mcp.custom_route("/", methods=["GET"])
@@ -314,9 +332,9 @@ def _http_middleware():
     """The Starlette middleware of the HTTP app, outermost first.
 
     - ``AUTH_MODE=none`` (a loopback bind with no credential): the loopback guard, so that a web page
-      cannot reach the server by DNS rebinding or a cross-origin request. The origins that ``CORS_ORIGINS``
-      lists by name pass it too (a ``*`` never does), and so do the hosts that ``AXMEM_ALLOWED_HOSTS`` names:
-      naming an origin or a host is the operator's decision.
+      cannot reach the server by DNS rebinding or a cross-origin request. With ``CORS_ENABLED`` the origins
+      that ``CORS_ORIGINS`` lists by name pass it too (a ``*`` never does), and so do the hosts that
+      ``AXMEM_ALLOWED_HOSTS`` names: naming an origin or a host is the operator's decision.
     - ``CORS_ENABLED``: CORS headers.
     """
     from starlette.middleware import Middleware
@@ -353,7 +371,8 @@ def _http_middleware():
 def _serve(transport, host, port):
     """Run the MCP server on the given transport (shared by legacy and new spellings).
 
-    Fails closed first: a server without a configured authentication mode, one that
+    Fails closed first: a server without a configured authentication mode, one whose mode lacks its
+    settings (no issuer and audience for ``jwt``, no token hashes for ``static``, ...), one that
     would serve anonymous requests on a non-loopback address, and one whose old
     ``FORGETFUL_SCOPES`` would turn into the allow-everything ceiling do not start.
     """
@@ -365,6 +384,8 @@ def _serve(transport, host, port):
 
     try:
         ensure_startup_allowed(transport, host)
+        if _auth_refusal is not None:
+            raise _auth_refusal
         ensure_legacy_scopes_replaced()
     except (AuthConfigError, LegacySettingsError) as exc:
         print(f"Error: {exc}", file=sys.stderr)

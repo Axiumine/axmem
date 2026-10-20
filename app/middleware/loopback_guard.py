@@ -12,9 +12,9 @@ Both are stopped by looking at the request. A browser always sends the real ``Ho
 and sends ``Origin`` on every cross-origin request and every ``POST``. A request whose ``Host`` is not a
 loopback name (``localhost`` or a loopback address) or one the operator named in ``AXMEM_ALLOWED_HOSTS`` is
 answered 421, and a request that carries an ``Origin`` that is neither a loopback origin nor one the operator named
-in ``CORS_ORIGINS`` is answered 403, for the REST routes and for the MCP endpoint alike (the check runs before
-routing, so no route can forget it). Clients that are not browsers send neither a foreign
-``Host`` nor an ``Origin`` and are not affected. The MCP SDK has a check of the same kind, but FastMCP does not
+in ``CORS_ORIGINS`` (which counts only with ``CORS_ENABLED``) is answered 403, for the REST routes and for the MCP
+endpoint alike (the check runs before routing, so no route can forget it). Clients that are not browsers send
+neither a foreign ``Host`` nor an ``Origin`` and are not affected. The MCP SDK has a check of the same kind, but FastMCP does not
 pass it to its HTTP transport, so this middleware does the work for the whole application.
 
 The middleware is added only to the HTTP app of ``AUTH_MODE=none`` (``main._http_middleware``); stdio has no

@@ -31,7 +31,7 @@ Axmem fails closed: a server with no `AUTH_MODE` refuses to start (see the
 - **HTTP on this machine**: start the server with `AUTH_MODE=none` and `SERVER_HOST=127.0.0.1`. `AUTH_MODE=none`
   is refused on any other bind address, so the server cannot be exposed without a credential. Reach it as `127.0.0.1`,
   `::1` or `localhost` (or a name listed in `AXMEM_ALLOWED_HOSTS`): a request with any other `Host` answers `421`, and one with an `Origin` that is not a loopback
-  origin (or one named in `CORS_ORIGINS`) answers `403`, which keeps a web page from driving it.
+  origin (or one named in `CORS_ORIGINS` while `CORS_ENABLED=true`) answers `403`, which keeps a web page from driving it.
 - **HTTP on a network**: the server runs `AUTH_MODE=jwt`, `introspection` or `static`, and the client sends
   `Authorization: Bearer <token>`. The token names the tenant, and a tenant sees only its own memories.
   Examples that pass the header are under Claude Code and VS Code; any client that can set a request

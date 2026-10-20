@@ -1,7 +1,7 @@
 """Settings of earlier versions are ignored, and the start-up says so instead of staying silent.
 
 ``Settings`` ignores names it does not know. An environment or dotenv file that still names the SQL store, the
-OAuth providers, the removed ONNX and feature settings or the old ``FORGETFUL_*`` variables would otherwise
+OAuth providers, the removed ONNX and feature settings or the three old ``FORGETFUL_`` variables would otherwise
 start the server on an empty Qdrant, or lift the instance scope ceiling without a word. An old
 ``FORGETFUL_SCOPES`` that nothing replaces is the one case that refuses to start.
 """
@@ -12,6 +12,7 @@ import pytest
 from app.bootstrap import build_runtime, dispose_runtime
 from app.config import legacy_settings
 from app.config.legacy_settings import (
+    LEGACY_SETTINGS,
     LegacySettingsError,
     ensure_legacy_scopes_replaced,
     legacy_setting_names,
@@ -58,6 +59,22 @@ def no_dotenv(monkeypatch):
 ])
 def test_each_removed_setting_is_recognised_with_what_replaces_it(name, mentions):
     assert mentions in legacy_setting_names({name: "x"}, [])[name]
+
+
+def test_every_cap_and_switch_of_the_removed_skills_is_recognised():
+    """The nine settings the earlier version read for skills, ``SKILL_TAG_MAX_LENGTH`` (singular ``TAG``) included."""
+    earlier = {
+        "SKILLS_ENABLED", "SKILL_ALLOWED_TOOLS_MAX_LENGTH", "SKILL_COMPATIBILITY_MAX_LENGTH", "SKILL_CONTENT_MAX_LENGTH",
+        "SKILL_DESCRIPTION_MAX_LENGTH", "SKILL_LICENSE_MAX_LENGTH", "SKILL_NAME_MAX_LENGTH", "SKILL_TAG_MAX_LENGTH",
+        "SKILL_TAGS_MAX_COUNT",
+    }
+
+    assert set(legacy_setting_names(dict.fromkeys(earlier, "10"), [])) == earlier
+
+
+def test_no_setting_that_is_read_now_is_reported_as_ignored():
+    """A name in the list that ``Settings`` still has would be warned about while it works."""
+    assert {name.upper() for name in legacy_settings.Settings.model_fields} & set(LEGACY_SETTINGS) == set()
 
 
 @pytest.mark.parametrize("name", [

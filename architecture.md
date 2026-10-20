@@ -11,7 +11,7 @@ ONNX Runtime and the FastEmbed CPU embedder, and for Qdrant as the only store (S
 Alembic are gone; memory ids are UUIDs; tenants have no stored record), and for the rename of the product, package, CLI
 and environment variables to Axmem, and for the documentation that positions Axmem as a standalone memory server (no
 code changed), and for the review of authentication and the REST routes (token verifiers, scope checks on the REST routes,
-the loopback guard, the refusal of an old `FORGETFUL_SCOPES`), on the `axmem` branch.
+the loopback guard, the refusal of an old `FORGETFUL_SCOPES`, an incomplete auth mode that refuses only `serve`), on the `axmem` branch.
 This is a selective interpretation, not an exhaustive dependency inventory.
 The component groupings below are inferred for readability; the described execution paths
 and wiring were verified against source. Line numbers are inspection starting points and may drift.
@@ -74,9 +74,9 @@ commands have additional paths omitted here; the diagram does not assert univers
 | Inspection point | Responsibility |
 | --- | --- |
 | [main.py:42](main.py#L42) | Server lifespan configures logging, calls `build_runtime`, attaches services/registry/scopes to the typed `AxmemMCP` instance ([server_state.py](app/routes/server_state.py)), then disposes the runtime on normal shutdown. Logging is deferred to protect STDIO transport; `_serve` therefore runs the TensorRT warm-up inside `logging_while_starting` ([logging_config.py](app/config/logging_config.py)), which sends log records to stderr for that time, so the engine build and the cause of a refusal are visible before the lifespan configures logging. |
-| [main.py:91](main.py#L91), [main.py:353](main.py#L353) | Construct the typed FastMCP subclass with the configured authentication provider; `_serve` first asks `ensure_startup_allowed` ([auth.py:164](app/config/auth.py#L164)) and `ensure_legacy_scopes_replaced` and exits with code 1 when either refuses the configuration (see "MCP, HTTP, and identity"), then builds the embedder (`start_tensorrt_embedder`, only when `EMBEDDING_PROVIDER` is `TensorRT`) and the reranker (`get_reranker_adapter`) and exits with code 1 and `Error: the embedder cannot start: <cause>` or `Error: the reranker cannot start: <cause>` when a TensorRT engine cannot run (no GPU, missing libraries, driver, model, build failure or an embedding width that is not `EMBEDDING_DIMENSIONS`; see "Contracts, storage, and implementation variants"), then runs the app over STDIO or HTTP. Both HTTP branches run the app under Uvicorn directly so lifespan teardown (`dispose_runtime`) completes before a shutdown signal is re-raised; both branches build the app with the Starlette middleware of `_http_middleware` ([main.py:313](main.py#L313)): the loopback guard when `AUTH_MODE=none`, then CORS when it is enabled. |
-| [main.py:508](main.py#L508) | Console entry point `cli`: a known subcommand goes to `parser.dispatch`; any other argv falls through to the permanent legacy launcher (`--transport`, `--re-embed`, ...), which rejects the re-embed-only flags when `--re-embed` is absent. |
-| [bootstrap.py:201](app/bootstrap.py#L201) | Composition root: first refuse an old `FORGETFUL_SCOPES` that `AXMEM_SCOPES` does not replace (`ensure_legacy_scopes_replaced`, which would otherwise leave the ceiling at `*`) and warn about the other settings of earlier versions that are ignored now (`warn_about_legacy_settings`, [legacy_settings.py](app/config/legacy_settings.py): exact names, matched without regard to case, of the SQL store, the OAuth providers, `DEFAULT_USER_*`, the FastEmbed and ONNX settings, removed feature caps and `FORGETFUL_*` in the environment or a dotenv file, with what replaces each), choose providers, connect to Qdrant and make the collections exist (`QdrantSchema.ensure` checks the server version of every node that answers, logs and skips a node that does not while another one does, and refuses a layout that differs from the settings), construct the repository, services, tool registry, and instance scope ceiling, and log what the TensorRT models did at start-up together with the GPU memory they hold and the one CUDA context they share (`log_tensorrt_models`). |
+| [main.py:91](main.py#L91), [main.py:109](main.py#L109), [main.py:371](main.py#L371) | Build the authentication provider when the module is imported, which every command does (`_auth_provider_or_refusal`: a mode whose settings are incomplete yields no provider and keeps the refusal, so `backup`, `export`, `re-embed` and the tool commands do not die in a traceback), and construct the typed FastMCP subclass with it; `_serve` first asks `ensure_startup_allowed` ([auth.py:165](app/config/auth.py#L165)), reports the kept refusal of the provider and asks `ensure_legacy_scopes_replaced`, and exits with code 1 and `Error: <cause>` when any of them refuses the configuration (see "MCP, HTTP, and identity"), then builds the embedder (`start_tensorrt_embedder`, only when `EMBEDDING_PROVIDER` is `TensorRT`) and the reranker (`get_reranker_adapter`) and exits with code 1 and `Error: the embedder cannot start: <cause>` or `Error: the reranker cannot start: <cause>` when a TensorRT engine cannot run (no GPU, missing libraries, driver, model, build failure or an embedding width that is not `EMBEDDING_DIMENSIONS`; see "Contracts, storage, and implementation variants"), then runs the app over STDIO or HTTP. Both HTTP branches run the app under Uvicorn directly so lifespan teardown (`dispose_runtime`) completes before a shutdown signal is re-raised; both branches build the app with the Starlette middleware of `_http_middleware` ([main.py:331](main.py#L331)): the loopback guard when `AUTH_MODE=none`, then CORS when it is enabled. |
+| [main.py:529](main.py#L529) | Console entry point `cli`: a known subcommand goes to `parser.dispatch`; any other argv falls through to the permanent legacy launcher (`--transport`, `--re-embed`, ...), which rejects the re-embed-only flags when `--re-embed` is absent. |
+| [bootstrap.py:201](app/bootstrap.py#L201) | Composition root: first refuse an old `FORGETFUL_SCOPES` that `AXMEM_SCOPES` does not replace (`ensure_legacy_scopes_replaced`, which would otherwise leave the ceiling at `*`) and warn about the other settings of earlier versions that are ignored now (`warn_about_legacy_settings`, [legacy_settings.py](app/config/legacy_settings.py): exact names, matched without regard to case, of the SQL store, the OAuth providers, `DEFAULT_USER_*`, the FastEmbed and ONNX settings, removed feature caps and the three `FORGETFUL_` variables (`FORGETFUL_SCOPES`, `FORGETFUL_SERVER`, `FORGETFUL_TOKEN`) in the environment or a dotenv file, with what replaces each; `build_runtime` is what the server lifespan and the in-process tool commands call, so `backup`, `restore`, `export`, `import`, `qdrant-check`, `re-embed` and the remote tool commands, which do not use the ceiling, do not check it), choose providers, connect to Qdrant and make the collections exist (`QdrantSchema.ensure` checks the server version of every node that answers, logs and skips a node that does not while another one does, and refuses a layout that differs from the settings), construct the repository, services, tool registry, and instance scope ceiling, and log what the TensorRT models did at start-up together with the GPU memory they hold and the one CUDA context they share (`log_tensorrt_models`). |
 | [bootstrap.py:182](app/bootstrap.py#L182) | `Services` and `Runtime` (the services, the registry and the `QdrantStack` to close) collect the instances for front doors. This is explicit constructor injection, not a DI container. |
 | [parser.py:268](app/routes/cli/parser.py#L268) | Dispatch CLI serve, re-embed, tool discovery/calls, memory verbs (a `-p/--project` scope string, no project resolver, UUID memory ids), the `auth login` / `auth status` commands, and the operator commands `backup`, `restore`, `export`, `import` and `qdrant-check` ([operator_commands.py](app/routes/cli/operator_commands.py)), which talk to Qdrant directly. |
 
@@ -111,7 +111,7 @@ first because CPython copies an unknown keyword verbatim into the `TypeError` th
 traceback would carry.
 
 The full operation set is dynamic: scopes affect what a caller sees.
-[tool_metadata_registry.py:858](app/routes/mcp/tool_metadata_registry.py#L858) constructs adapter
+[tool_metadata_registry.py:783](app/routes/mcp/tool_metadata_registry.py#L783) constructs adapter
 callables and registers metadata/implementations together. Despite its filename, this is a module
 of registration helpers, not a second `ToolMetadataRegistry` class.
 [ToolRegistry.execute:183](app/routes/mcp/tool_registry.py#L183) looks up and awaits the callable.
@@ -122,7 +122,7 @@ adapters are gone), with argument coercion shared in
 and the tests keep one import path.
 [MemoryToolAdapters.create_memory:53](app/routes/mcp/adapters/memory.py#L53) illustrates identity
 resolution, argument conversion, model construction, service delegation, and response formatting.
-`main.py` mounts only `meta_tools` ([line 109](main.py#L112)); there are no per-category MCP tool
+`main.py` mounts only `meta_tools` ([line 130](main.py#L130)); there are no per-category MCP tool
 modules (the seven unmounted `*_tools.py` modules were removed), so every operation is reachable
 only through the registry and these three meta-tools.
 
@@ -132,9 +132,9 @@ The services, registry and scope ceiling that the lifespan attaches are declared
 [AxmemMCP:29](app/routes/server_state.py#L29), a `FastMCP` subclass; routes, middleware and
 `register(mcp)` take that type, and [server_of:43](app/routes/server_state.py#L43) narrows an MCP
 request context to it (the in-process CLI passes a duck-typed shim carrying only the attributes adapters read).
-[main.py:108](main.py#L108) mounts health, auth info, and the memory routes.
+[main.py:126](main.py#L126) mounts health, auth info, and the memory routes.
 The root service-info route starts at
-[main.py:94](main.py#L94). Route modules share small helpers so bad client input answers
+[main.py:112](main.py#L112). Route modules share small helpers so bad client input answers
 4xx instead of 500: [request_utils.py](app/routes/api/request_utils.py) (`read_json_object`, `path_id`,
 `handle_request_errors`, and `require_json_content_type`, a 415 for a body that is not declared as JSON),
 [query_params.py](app/routes/api/query_params.py) (strict integer and
@@ -160,10 +160,13 @@ what FastMCP leaves optional: `ExpiringJWTVerifier` ([line 26](app/middleware/to
 ([line 49](app/middleware/token_verifiers.py#L49)) checks the `aud` of the introspection answer against
 `FASTMCP_SERVER_AUTH_INTROSPECTION_AUDIENCE` when it is set. Neither mode checks `nbf`, and introspection never checks the
 issuer. `/api/v1/auth/info` names the mode by the provider's class name, so a new verifier class has to be added to its map.
-[ensure_startup_allowed:146](app/config/auth.py#L164) runs first in `_serve` and refuses to start when `AUTH_MODE`
+[ensure_startup_allowed:165](app/config/auth.py#L165) runs first in `_serve` and refuses to start when `AUTH_MODE`
 is unset, when a credential mode is asked to run on STDIO (which carries no bearer token), and when `none` is asked
 to serve HTTP on anything but a loopback literal (`127.0.0.1`, `::1`; hostnames do not count). A request-level
-backstop in the identity code raises when no provider is attached and the mode is not `none`.
+backstop in the identity code raises when no provider is attached and the mode is not `none`. The same backstop is what
+keeps a mode that could not build its provider from serving open: `main` builds the provider on import, so that
+mode (`jwt` without an issuer and an audience, `static` without hashes, `introspection` without its endpoint) is caught
+as an `AuthConfigError` and kept, `_serve` reports it as `Error: <cause>` with exit code 1, and every other command runs.
 
 **Tenants.** A request acts as one tenant, a string. MCP identity comes from the validated token claims, or from
 `DEFAULT_TENANT` when `AUTH_MODE=none` ([get_tenant_from_auth:191](app/middleware/auth.py#L191)); HTTP identity has
@@ -193,7 +196,7 @@ nor public (`/`, `/health`, `/api/v1/auth/info`), so a new route cannot silently
 web page on the same machine can still reach (DNS rebinding, or a no-cors cross-origin POST).
 [LoopbackGuardMiddleware](app/middleware/loopback_guard.py#L91) is therefore installed by `_http_middleware` for that mode only,
 outside CORS and in front of every route including `/mcp`: a `Host` that is neither a loopback name nor listed in
-`AXMEM_ALLOWED_HOSTS` is answered 421, an `Origin` that is neither loopback nor named in `CORS_ORIGINS` is answered 403 (the MCP SDK has
+`AXMEM_ALLOWED_HOSTS` is answered 421, an `Origin` that is neither loopback nor named in `CORS_ORIGINS` (counted only with `CORS_ENABLED`) is answered 403 (the MCP SDK has
 a check of this kind that FastMCP does not pass to its HTTP transport). The credential modes need none, since a page cannot attach
 a bearer token. This overview is not a security audit.
 
