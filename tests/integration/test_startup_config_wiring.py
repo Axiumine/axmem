@@ -15,6 +15,8 @@ import importlib
 import inspect
 import logging
 import pkgutil
+from dataclasses import replace
+from types import SimpleNamespace
 
 import httpx
 import pytest
@@ -29,7 +31,7 @@ from app.config.settings import (
     Settings,
     settings,
 )
-from app.exceptions import RerankerError
+from app.exceptions import TensorRTError
 from app.repositories.embeddings import embedding_adapter as embedding_module
 from app.repositories.embeddings import gateway_adapter as gateway_module
 from app.repositories.embeddings import reranker_adapter as reranker_module
@@ -73,6 +75,7 @@ def fake_adapters(monkeypatch):
         ("EMBEDDING_PROVIDER", " azure ", "Azure"),
         ("EMBEDDING_PROVIDER", "google", "Google"),
         ("EMBEDDING_PROVIDER", "fastembed", "FastEmbed"),
+        ("EMBEDDING_PROVIDER", " tensorrt ", "TensorRT"),
         ("EMBEDDING_PROVIDER", " Gateway ", "gateway"),
         ("RERANKING_PROVIDER", "http", "HTTP"),
         ("RERANKING_PROVIDER", "tensorrt", "TensorRT"),
@@ -128,6 +131,23 @@ def test_embedding_factory_selects_provider_ignoring_case(monkeypatch, fake_adap
     assert type(bootstrap.get_embedding_adapter()).__name__ == adapter
 
 
+@pytest.mark.parametrize("value", ["TensorRT", "tensorrt", "TENSORRT", ""])
+def test_tensorrt_embedding_factory_returns_the_shared_engine_ignoring_case(monkeypatch, tensorrt_embedder, value):
+    monkeypatch.setattr(settings, "EMBEDDING_PROVIDER", value)  # blank means the default, which is TensorRT
+
+    assert bootstrap.get_embedding_adapter() is tensorrt_embedder
+    assert bootstrap.get_embedding_adapter() is bootstrap.get_embedding_adapter()
+
+
+def test_the_tensorrt_embedder_starts_early_only_when_it_is_the_provider(monkeypatch, fake_adapters, tensorrt_embedder):
+    monkeypatch.setattr(settings, "EMBEDDING_PROVIDER", "TensorRT")
+    assert bootstrap.start_tensorrt_embedder() is tensorrt_embedder
+
+    for other in ("OpenAI", "FastEmbed", "gateway"):
+        monkeypatch.setattr(settings, "EMBEDDING_PROVIDER", other)
+        assert bootstrap.start_tensorrt_embedder() is None  # built later, with the runtime
+
+
 def test_embedding_factory_rejects_unknown_provider(monkeypatch, fake_adapters):
     monkeypatch.setattr(settings, "EMBEDDING_PROVIDER", "Opnai")
 
@@ -155,7 +175,7 @@ def test_tensorrt_reranker_factory_returns_the_shared_engine_ignoring_case(
 
 
 def test_shared_rerankers_are_closed_when_the_process_releases_them(monkeypatch, tensorrt_reranker):
-    monkeypatch.setattr(bootstrap, "_TENSORRT_RERANKERS", {})
+    monkeypatch.setattr(bootstrap, "_TENSORRT_ADAPTERS", {})
     monkeypatch.setattr(settings, "RERANKING_ENABLED", True)
     monkeypatch.setattr(settings, "RERANKING_PROVIDER", "TensorRT")
     monkeypatch.setattr(settings, "RERANKING_WORKERS", 2)  # another cache key: a second adapter, same cached engine
@@ -164,11 +184,63 @@ def test_shared_rerankers_are_closed_when_the_process_releases_them(monkeypatch,
     assert second is not tensorrt_reranker
     assert len(second.score("query", ["document"])) == 1
 
-    bootstrap._release_tensorrt_rerankers()
+    bootstrap._release_tensorrt_adapters()
 
-    assert bootstrap._TENSORRT_RERANKERS == {}
-    with pytest.raises(RerankerError, match="closed"):
+    assert bootstrap._TENSORRT_ADAPTERS == {}
+    with pytest.raises(TensorRTError, match="closed"):
         second.score("query", ["document"])
+
+
+def test_shared_embedders_are_closed_when_the_process_releases_them(monkeypatch, tensorrt_embedder):
+    monkeypatch.setattr(bootstrap, "_TENSORRT_ADAPTERS", {})
+    monkeypatch.setattr(settings, "EMBEDDING_PROVIDER", "TensorRT")
+    monkeypatch.setattr(settings, "EMBEDDING_MODEL_DIR", settings.EMBEDDING_MODEL_DIR + "/")  # another key, same files
+
+    second = bootstrap.get_embedding_adapter()
+    assert second is not tensorrt_embedder
+    assert len(second.embed(["document"])) == 1
+
+    bootstrap._release_tensorrt_adapters()
+
+    assert bootstrap._TENSORRT_ADAPTERS == {}
+    with pytest.raises(TensorRTError, match="closed"):
+        second.embed(["document"])
+
+
+def test_both_tensorrt_models_are_logged_with_the_memory_and_context_they_share(
+    tensorrt_embedder, tensorrt_reranker, caplog,
+):
+    caplog.set_level(logging.INFO, logger="app.bootstrap")
+
+    bootstrap.log_tensorrt_models(tensorrt_embedder, tensorrt_reranker, None)
+
+    messages = [record.getMessage() for record in caplog.records]
+    assert messages[0] == tensorrt_embedder.startup.summary()
+    assert messages[1] == tensorrt_reranker.startup.summary()
+    combined = messages[2]
+    assert "GPU memory with the embedder and reranker loaded: this process holds" in combined
+    assert f"one CUDA context ({tensorrt_embedder.startup.cuda_context:#x}) shared by the embedder and reranker" in combined
+    assert len(messages) == 3
+
+
+def test_models_on_different_cuda_contexts_are_reported_as_a_warning(tensorrt_embedder, tensorrt_reranker, caplog):
+    other = SimpleNamespace(startup=replace(tensorrt_reranker.startup, cuda_context=1))
+    caplog.set_level(logging.INFO, logger="app.bootstrap")
+
+    bootstrap.log_tensorrt_models(tensorrt_embedder, other)
+
+    warnings = [record for record in caplog.records if record.levelno == logging.WARNING]
+    assert [record.getMessage() for record in warnings] == [
+        "2 different CUDA contexts for the embedder and reranker, which should not happen",
+    ]
+
+
+def test_providers_without_a_gpu_have_nothing_to_log(caplog):
+    caplog.set_level(logging.INFO, logger="app.bootstrap")
+
+    bootstrap.log_tensorrt_models(object(), None)
+
+    assert caplog.records == []
 
 
 @pytest.mark.parametrize("provider", ["Htp", "FastEmbed"])

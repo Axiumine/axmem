@@ -2,7 +2,7 @@
 
 Requires:
 - PostgreSQL with pgvector running in Docker
-- FastEmbed embeddings adapter
+- TensorRT embeddings adapter (the production embedder, on the GPU)
 
 Provenance Tracking Tests (Issue #9): create, backward compatibility, update,
 query results and confidence boundaries.

@@ -25,7 +25,7 @@ def reranker_adapter(monkeypatch, two_worker_reranker):
     return two_worker_reranker
 
 
-async def test_concurrent_searches_match_sequential_rankings(http_client, monkeypatch):
+async def test_concurrent_searches_match_sequential_rankings(http_client, monkeypatch, two_worker_reranker):
     memories = [
         ("Redis", "Redis offers fast in-memory caching and session storage."),
         ("PostgreSQL", "PostgreSQL supports ACID transactions and relational SQL queries."),
@@ -69,8 +69,9 @@ async def test_concurrent_searches_match_sequential_rankings(http_client, monkey
 
     sequential = [await search(request) for request in requests]
 
-    # Require two real model calls in flight, not just overlapping HTTP requests.
+    # Require two real rerank calls in flight, not just overlapping HTTP requests.
     # A single worker times out at the gate instead of silently passing serially.
+    # Only the reranker's engine is gated: the embedder's calls (one per query) pass straight through.
     rendezvous = Barrier(2, timeout=5)
     lock = Lock()
     started = 0
@@ -78,6 +79,8 @@ async def test_concurrent_searches_match_sequential_rankings(http_client, monkey
 
     def synchronized_infer(engine, arrays):
         nonlocal started
+        if engine is not two_worker_reranker._engine:
+            return real_infer(engine, arrays)
         with lock:
             paired = started < 2
             started += 1

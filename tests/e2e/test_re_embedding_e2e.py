@@ -2,7 +2,7 @@
 
 Tests the full stack: ReEmbeddingService -> PostgresMemoryRepository -> pgvector
 
-Uses the configured embedding provider (e.g. OpenAI, FastEmbed). Migration tests
+Uses the TensorRT embedder of the test session. Migration tests
 seed storage with old dimensions while keeping the ORM at the target dimensions,
 matching a fresh process started after changing the embedding configuration.
 """

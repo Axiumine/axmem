@@ -574,8 +574,39 @@ def clean_environment(monkeypatch):
         monkeypatch.delenv(name, raising=False)
 
 
-def test_the_default_provider_is_unchanged(clean_environment):
-    assert Settings(_env_file=None).EMBEDDING_PROVIDER == "FastEmbed"
+def test_the_default_provider_is_the_local_tensorrt_embedder_not_the_gateway(clean_environment):
+    assert Settings(_env_file=None).EMBEDDING_PROVIDER == "TensorRT"
+
+
+def test_the_default_provider_runs_without_any_gateway_setting_or_gateway_code(
+    monkeypatch, clean_environment, tensorrt_embedder,
+):
+    """GATEWAY_* is read only by the gateway adapter, which the bootstrap does not even construct."""
+    from app.bootstrap import get_embedding_adapter
+    from app.repositories.embeddings import gateway_adapter as gateway_module
+
+    class MustNotBeBuilt:
+        def __init__(self, *args, **kwargs):
+            raise AssertionError("the gateway adapter was built although EMBEDDING_PROVIDER is TensorRT")
+
+    monkeypatch.setattr(gateway_module, "GatewayEmbeddingsAdapter", MustNotBeBuilt)
+    for name in (name for name in Settings.model_fields if name.startswith("GATEWAY_")):
+        monkeypatch.setattr(settings, name, Settings.model_fields[name].default)
+    monkeypatch.setattr(settings, "EMBEDDING_PROVIDER", "TensorRT")
+    monkeypatch.setattr(settings, "EMBEDDING_DIMENSIONS", 384)  # this module's fixture narrows it for the fake gateway
+
+    assert get_embedding_adapter() is tensorrt_embedder
+
+
+def test_selecting_the_gateway_without_its_settings_is_the_only_way_to_need_them(monkeypatch):
+    from app.bootstrap import get_embedding_adapter
+
+    for name in (name for name in Settings.model_fields if name.startswith("GATEWAY_")):
+        monkeypatch.setattr(settings, name, Settings.model_fields[name].default)
+    monkeypatch.setattr(settings, "EMBEDDING_PROVIDER", "gateway")
+
+    with pytest.raises(ValueError, match="GATEWAY_URL"):
+        get_embedding_adapter()
 
 
 def test_gateway_settings_default_to_empty_and_nothing_requires_them(clean_environment):
@@ -658,6 +689,7 @@ async def test_a_full_re_embed_sends_each_batch_of_memories_in_one_request():
     ("gateway", "embed-small"),
     ("Azure", "azure-deployment"),
     ("FastEmbed", "some/local-model"),
+    ("TensorRT", "some/local-model"),
 ])
 def test_the_re_embed_preview_names_the_model_the_provider_uses(monkeypatch, capsys, provider, shown):
     import main

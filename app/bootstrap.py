@@ -38,7 +38,15 @@ def create_backup_service(database_type: str | None = None):
 
 
 def get_embedding_adapter():
-    """Create embedding adapter based on settings."""
+    """Create embedding adapter based on settings.
+
+    The default ``TensorRT`` provider runs the model on the NVIDIA GPU of this machine and raises
+    ``TensorRTStartupError`` when it cannot start; there is no fallback to another provider. The
+    ``gateway`` provider (and its ``GATEWAY_*`` settings) is only touched when it is selected.
+    """
+    provider = canonical_choice("EMBEDDING_PROVIDER", settings.EMBEDDING_PROVIDER, EMBEDDING_PROVIDERS)
+    if provider == "TensorRT":
+        return _shared_tensorrt_embedder()
     from app.repositories.embeddings.embedding_adapter import (
         AzureOpenAIAdapter,
         FastEmbeddingAdapter,
@@ -46,9 +54,7 @@ def get_embedding_adapter():
         OllamaEmbeddingsAdapter,
         OpenAIEmbeddingsAdapter,
     )
-    from app.repositories.embeddings.gateway_adapter import GatewayEmbeddingsAdapter
 
-    provider = canonical_choice("EMBEDDING_PROVIDER", settings.EMBEDDING_PROVIDER, EMBEDDING_PROVIDERS)
     if provider == "Azure":
         return AzureOpenAIAdapter()
     if provider == "Google":
@@ -58,46 +64,76 @@ def get_embedding_adapter():
     if provider == "Ollama":
         return OllamaEmbeddingsAdapter()
     if provider == "gateway":
+        from app.repositories.embeddings.gateway_adapter import GatewayEmbeddingsAdapter
         return GatewayEmbeddingsAdapter()
     return FastEmbeddingAdapter(providers=settings.embedding_onnx_providers)
 
 
-_TENSORRT_RERANKERS: dict[tuple, Any] = {}
+_TENSORRT_ADAPTERS: dict[tuple, Any] = {}
 
 
-def _shared_tensorrt_reranker():
-    """The process-wide TensorRT reranker for the current settings, built on first use.
+def _shared_tensorrt_embedder():
+    """The process-wide TensorRT embedder for the current settings, built on first use.
 
     Building one means a GPU probe, a model check and an engine build or load, and every
     instance holds its own device memory, so runtimes built in one process share the engine.
     It is released when the process exits.
     """
+    from app.repositories.embeddings.tensorrt_embedder import TensorRTEmbeddingsAdapter
+
+    key = (
+        "embedder",
+        settings.EMBEDDING_MODEL,
+        settings.EMBEDDING_DIMENSIONS,
+        settings.EMBEDDING_TF32,
+        settings.EMBEDDING_MODEL_DIR,
+        settings.EMBEDDING_ENGINE_CACHE_DIR,
+    )
+    if key not in _TENSORRT_ADAPTERS:
+        _TENSORRT_ADAPTERS[key] = TensorRTEmbeddingsAdapter()
+    return _TENSORRT_ADAPTERS[key]
+
+
+def _shared_tensorrt_reranker():
+    """The process-wide TensorRT reranker for the current settings, built on first use (see the embedder)."""
     from app.repositories.embeddings.tensorrt_reranker import TensorRTRerankAdapter
 
     key = (
+        "reranker",
         settings.RERANKING_MODEL,
         settings.RERANKING_WORKERS,
         settings.RERANKING_TF32,
         settings.RERANKING_MODEL_DIR,
         settings.RERANKING_ENGINE_CACHE_DIR,
     )
-    if key not in _TENSORRT_RERANKERS:
-        _TENSORRT_RERANKERS[key] = TensorRTRerankAdapter()
-    return _TENSORRT_RERANKERS[key]
+    if key not in _TENSORRT_ADAPTERS:
+        _TENSORRT_ADAPTERS[key] = TensorRTRerankAdapter()
+    return _TENSORRT_ADAPTERS[key]
 
 
-def _release_tensorrt_rerankers() -> None:
-    while _TENSORRT_RERANKERS:
-        _TENSORRT_RERANKERS.popitem()[1].close()
+def _release_tensorrt_adapters() -> None:
+    while _TENSORRT_ADAPTERS:
+        _TENSORRT_ADAPTERS.popitem()[1].close()
 
 
-atexit.register(_release_tensorrt_rerankers)
+atexit.register(_release_tensorrt_adapters)
+
+
+def start_tensorrt_embedder():
+    """Build or load the TensorRT embedder now when it is the configured provider; otherwise do nothing.
+
+    The server calls this before it binds a port, so a machine that cannot run the embedder refuses
+    to start with the cause. Any other provider is built later, with the runtime.
+    """
+    if canonical_choice("EMBEDDING_PROVIDER", settings.EMBEDDING_PROVIDER, EMBEDDING_PROVIDERS) == "TensorRT":
+        return get_embedding_adapter()
+    return None
 
 
 def get_reranker_adapter():
     """Create the reranker adapter if enabled.
 
-    The TensorRT provider needs an NVIDIA GPU and raises ``RerankerStartupError`` when it cannot
+    The TensorRT provider needs an NVIDIA GPU and raises ``TensorRTStartupError`` when it cannot
     start; there is no fallback to another provider.
     """
     if not settings.RERANKING_ENABLED:
@@ -109,8 +145,29 @@ def get_reranker_adapter():
     return _shared_tensorrt_reranker()
 
 
+def log_tensorrt_models(*adapters) -> None:
+    """Log what each TensorRT model did at start-up and the GPU memory and CUDA context they share."""
+    reports = [adapter.startup for adapter in adapters if hasattr(adapter, "startup")]
+    if not reports:
+        return
+    from app.repositories.embeddings.tensorrt_runtime import gpu_memory
+
+    for report in reports:
+        logger.info(report.summary())
+    roles = " and ".join(report.role for report in reports)
+    contexts = {report.cuda_context for report in reports}
+    if len(contexts) == 1:
+        sharing = f"one CUDA context ({contexts.pop():#x}) shared by the {roles}"
+    else:
+        sharing = f"{len(contexts)} different CUDA contexts for the {roles}, which should not happen"
+        logger.warning(sharing)
+    logger.info(f"GPU memory with the {roles} loaded: {gpu_memory().describe()}; {sharing}")
+
+
 def check_first_run_models():
-    """Log message on first run when models need to be downloaded."""
+    """Log message on first run when FastEmbed models need to be downloaded."""
+    if canonical_choice("EMBEDDING_PROVIDER", settings.EMBEDDING_PROVIDER, EMBEDDING_PROVIDERS) != "FastEmbed":
+        return
     cache_dir = Path(settings.FASTEMBED_CACHE_DIR)
     if not cache_dir.exists() or not any(cache_dir.iterdir()):
         if settings.FASTEMBED_LOCAL_FILES_ONLY:
@@ -194,8 +251,7 @@ async def build_runtime() -> Runtime:
     embeddings_adapter = get_embedding_adapter()
     reranker_adapter = get_reranker_adapter()
     logger.info("Embedding adapters initialized")
-    if reranker_adapter is not None and hasattr(reranker_adapter, "startup"):
-        logger.info(reranker_adapter.startup.summary())
+    log_tensorrt_models(embeddings_adapter, reranker_adapter)
 
     db_adapter = create_db_adapter()
 

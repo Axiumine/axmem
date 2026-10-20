@@ -2,7 +2,7 @@
 
 Requires:
 - PostgreSQL with pgvector running in Docker
-- FastEmbed embeddings adapter
+- TensorRT embeddings adapter (the production embedder, on the GPU)
 
 Covers importance and creation-time filters applied before pagination,
 deterministic tie-breaking and obsolete/sort options.

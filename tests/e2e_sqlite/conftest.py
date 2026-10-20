@@ -15,13 +15,6 @@ import pytest
 from fastmcp import FastMCP
 
 # Shared imports
-from app.repositories.embeddings.embedding_adapter import (
-    AzureOpenAIAdapter,
-    FastEmbeddingAdapter,
-    GoogleEmbeddingsAdapter,
-    OllamaEmbeddingsAdapter,
-    OpenAIEmbeddingsAdapter,
-)
 from app.repositories.sqlite.memory_repository import SqliteMemoryRepository
 
 # SQLite repository imports
@@ -43,33 +36,14 @@ from tests.gpu_preflight import require_gpu
 
 
 def pytest_collection_modifyitems(config, items):
-    """The reranker runs on the NVIDIA GPU with no CPU path: without one this run ends, it never skips."""
+    """The embedder and the reranker run on the NVIDIA GPU with no CPU path: without one this run ends, it never skips."""
     require_gpu()
 
 
 @pytest.fixture(scope="module")
-def embedding_adapter():
-    """Module-scoped embedding adapter to avoid reloading model for each test.
-
-    Dynamically selects adapter based on EMBEDDING_PROVIDER setting:
-    - Azure: AzureOpenAIAdapter (requires AZURE_* env vars)
-    - Google: GoogleEmbeddingsAdapter (requires GOOGLE_AI_API_KEY)
-    - Default: FastEmbeddingAdapter (local, zero-config)
-
-    FastEmbed model loading is expensive (~1-2 seconds), so we share the adapter
-    across all tests in the module for better performance.
-    """
-    from app.config.settings import settings
-
-    if settings.EMBEDDING_PROVIDER == "Azure":
-        return AzureOpenAIAdapter()
-    if settings.EMBEDDING_PROVIDER == "Google":
-        return GoogleEmbeddingsAdapter()
-    if settings.EMBEDDING_PROVIDER == "OpenAI":
-        return OpenAIEmbeddingsAdapter()
-    if settings.EMBEDDING_PROVIDER == "Ollama":
-        return OllamaEmbeddingsAdapter()
-    return FastEmbeddingAdapter()
+def embedding_adapter(tensorrt_embedder):
+    """The real TensorRT embedder of the test session (production settings, one engine for all tests)."""
+    return tensorrt_embedder
 
 
 @pytest.fixture(scope="module")

@@ -397,7 +397,7 @@ each request 300 seconds.
 1. Per-invocation flags: `--server URL` / `--local`
 2. Shell environment: `FORGETFUL_SERVER`, `FORGETFUL_TOKEN`
 3. User config file: `~/.config/forgetful/.env` (`forgetful auth login --server URL` saves `FORGETFUL_SERVER` there)
-4. Defaults: local mode, SQLite at the platform data path, FastEmbed embeddings, TensorRT reranking (needs an NVIDIA GPU; `RERANKING_ENABLED=false` runs without)
+4. Defaults: local mode, SQLite at the platform data path, TensorRT embeddings and TensorRT reranking (both need an NVIDIA GPU)
 
 ### `forgetful auth`
 
@@ -580,24 +580,48 @@ ENFORCE_ENV_OVERWRITE=true
 ## Search Configuration
 
 ### `EMBEDDING_PROVIDER`
-- **Default**: `FastEmbed`
+- **Default**: `TensorRT`
 - **Description**: Embedding generation provider
-- **Current Support**: FastEmbed | Azure | Google | OpenAI | Ollama | gateway
-- **Note**: Matched case-insensitively. Any other value stops startup with an error naming the setting; an empty value keeps the default. Changing the provider needs a re-embed of all existing memories, see the [Embedding Migration Guide](./embedding_migration.md). `gateway` is optional: no `GATEWAY_*` setting is read or required while another provider is selected
-- **Example**: `EMBEDDING_PROVIDER=FastEmbed`
+- **Current Support**: TensorRT | FastEmbed | Azure | Google | OpenAI | Ollama | gateway
+- **Values**:
+  - `TensorRT` - The model runs in the server process on an NVIDIA GPU with TensorRT, in strict fp32 (CLS pooling, unit-length vectors). No other service is needed. There is no CPU path and no fallback: a server that cannot start the engine refuses to start and says why. See [GPU models](gpu-models.md)
+  - `FastEmbed` - The earlier local ONNX Runtime embedder; it needs `EMBEDDING_MODEL=BAAI/bge-small-en-v1.5` or another FastEmbed model name, and is slated for removal
+  - `Azure`, `Google`, `OpenAI`, `Ollama` - Remote providers, configured below
+  - `gateway` - An optional HTTP embeddings gateway, configured below
+- **Note**: Matched case-insensitively. Any other value stops startup with an error naming the setting; an empty value keeps the default. Changing the provider needs a re-embed of all existing memories, see the [Embedding Migration Guide](./embedding_migration.md). `gateway` is optional: no `GATEWAY_*` setting is read or required while another provider is selected, and the default configuration needs no network access once the model files are on disk
+- **Example**: `EMBEDDING_PROVIDER=TensorRT`
 
 ### `EMBEDDING_MODEL`
 - **Default**: `BAAI/bge-small-en-v1.5`
 - **Description**: Embedding model identifier
 - **Properties**: 384 dimensions, optimized for semantic similarity
-- **Note**: Changing this requires re-embedding all existing memories. See [Embedding Migration Guide](./embedding_migration.md)
+- **Note**: For `TensorRT`, a Hugging Face repository id (`owner/name`) holding `onnx/model.onnx` and `tokenizer.json` of a BERT-style model whose first token (`[CLS]`) carries the embedding, as the bge models define it. The default is fetched at a pinned revision, and `Xenova/bge-small-en-v1.5` is the same file (same SHA-256). For the other providers it is the model name that provider expects. Changing this requires re-embedding all existing memories. See [Embedding Migration Guide](./embedding_migration.md)
 - **Example**: `EMBEDDING_MODEL=BAAI/bge-small-en-v1.5`
 
 ### `EMBEDDING_DIMENSIONS`
 - **Default**: `384`
 - **Description**: Vector dimensions for embeddings
-- **Note**: Must match the model's output dimensions
+- **Note**: Must match the model's output dimensions. With `TensorRT` the server embeds one text at startup and refuses to start with an error that names both widths when they differ; with `gateway` every reply is checked. Changing it for an existing database needs `--re-embed`
 - **Example**: `EMBEDDING_DIMENSIONS=384`
+
+### `EMBEDDING_TF32`
+- **Default**: `false`
+- **Values**: `true`, `false`
+- **Description**: Let the embeddings engine build use TF32 tensor-core math, which is faster on recent NVIDIA GPUs and no longer bit-exact fp32
+- **Note**: Only used when `EMBEDDING_PROVIDER=TensorRT`. The default builds a strict fp32 engine (the TensorRT TF32 flag is cleared explicitly). fp16 and bf16 are not supported at all. Changing the value changes the engine fingerprint and rebuilds the engine on the next start
+- **Example**: `EMBEDDING_TF32=true`
+
+### `EMBEDDING_MODEL_DIR`
+- **Default**: `models/embedder` in the platform user data directory (e.g., `~/.local/share/forgetful/models/embedder`)
+- **Description**: Where the TensorRT embedder keeps the model files (`onnx/model.onnx`, `tokenizer.json`) and a `manifest.json` with their SHA-256, under a directory named after the repository (`BAAI--bge-small-en-v1.5`)
+- **Note**: Only used when `EMBEDDING_PROVIDER=TensorRT`. Files already present are never downloaded, so a host without internet access can be seeded by copying the directory, and `HF_HUB_OFFLINE=1` then keeps the Hugging Face client from trying (see [Offline Setup Guide](OFFLINE_SETUP.md)). A file that no longer matches its recorded SHA-256 stops startup
+- **Example**: `EMBEDDING_MODEL_DIR=/var/lib/forgetful/models/embedder`
+
+### `EMBEDDING_ENGINE_CACHE_DIR`
+- **Default**: `models/tensorrt` in the platform user data directory (e.g., `~/.local/share/forgetful/models/tensorrt`), the same default as `RERANKING_ENGINE_CACHE_DIR`
+- **Description**: Where the built embeddings engine is cached, one directory per fingerprint, inside a directory named after the model
+- **Note**: Only used when `EMBEDDING_PROVIDER=TensorRT`. The fingerprint covers the model SHA-256, TensorRT version, GPU name, compute capability, driver major version, `EMBEDDING_TF32` and the optimization profile (batch 1 to 64, sequence 2 to 512); a change in any of them rebuilds the engine. The embedder and the reranker may share one cache directory because each engine has a directory of its own. See [GPU models](gpu-models.md#engine-cache)
+- **Example**: `EMBEDDING_ENGINE_CACHE_DIR=/var/lib/forgetful/models/tensorrt`
 
 ### `EMBEDDING_ONNX_PROVIDERS`
 - **Default**: (empty string)
@@ -610,7 +634,7 @@ ENFORCE_ENV_OVERWRITE=true
 - **Default**: `60`
 - **Values**: Positive number of seconds
 - **Description**: Per-request timeout for the remote embedding providers (Azure, Google, OpenAI, Ollama and the gateway), so a server that accepts a connection but never answers fails the request instead of hanging it
-- **Note**: Ignored by FastEmbed (local). The OpenAI and Azure SDK clients retry failed requests twice, so a single call can take up to three times this value; the gateway adapter makes up to four attempts per request. Raise it if your server needs longer to answer, for example while an Ollama model is loading
+- **Note**: Ignored by TensorRT and FastEmbed (local). The OpenAI and Azure SDK clients retry failed requests twice, so a single call can take up to three times this value; the gateway adapter makes up to four attempts per request. Raise it if your server needs longer to answer, for example while an Ollama model is loading
 - **Example**: `EMBEDDING_REQUEST_TIMEOUT_SECONDS=120`
 
 ### `DENSE_SEARCH_CANDIDATES`
@@ -666,7 +690,7 @@ ENFORCE_ENV_OVERWRITE=true
 
 **Note**: These settings only apply when `EMBEDDING_PROVIDER=OpenAI`
 
-> **Dimension mismatch warning**: If switching from another provider (e.g., FastEmbed at 384 dimensions) to OpenAI, existing memory embeddings will be incompatible. You must re-embed all existing memories after changing providers. See the [Embedding Migration Guide](./embedding_migration.md) for instructions.
+> **Dimension mismatch warning**: If switching from another provider (e.g., TensorRT at 384 dimensions) to OpenAI, existing memory embeddings will be incompatible. You must re-embed all existing memories after changing providers. See the [Embedding Migration Guide](./embedding_migration.md) for instructions.
 
 #### `OPENAI_API_KEY`
 - **Default**: (empty string)
@@ -773,7 +797,7 @@ A reply is checked before anything is stored: the number of vectors must equal t
 - **Default**: `true`
 - **Description**: Enable re-ranking of search results for improved relevance
 - **Values**: `true`, `false`
-- **Note**: Improves search quality at the cost of additional processing. With the default `TensorRT` provider, `true` means an NVIDIA GPU is required: see [GPU reranking](gpu-reranking.md). `false` needs no GPU and no TensorRT libraries
+- **Note**: Improves search quality at the cost of additional processing. With the default `TensorRT` provider, `true` means an NVIDIA GPU is required: see [GPU models](gpu-models.md). `false` needs no GPU and no TensorRT libraries
 - **Example**: `RERANKING_ENABLED=true`
 
 #### `RERANKING_PROVIDER`
@@ -797,7 +821,7 @@ A reply is checked before anything is stored: the number of vectors must equal t
 - **Default**: `1`
 - **Values**: Positive integers
 - **Description**: Maximum reranking jobs running concurrently on one local adapter. Each worker owns one TensorRT execution context and CUDA stream on the shared engine
-- **Note**: Only used when `RERANKING_PROVIDER=TensorRT`; does not limit HTTP requests. One worker costs about 2.2 GiB of GPU memory per server process and every further worker about 1.8 GiB more, because an execution context reserves memory for the largest shape in the engine profile
+- **Note**: Only used when `RERANKING_PROVIDER=TensorRT`; does not limit HTTP requests. The embedder and one reranker worker together cost about 4.1 GiB of GPU memory per server process (one shared CUDA context) and every further worker about 1.8 GiB more, because an execution context reserves memory for the largest shape in the engine profile
 - **Example**: `RERANKING_WORKERS=2`
 
 The worker limit bounds active jobs, not the waiting queue. Cancelling a request cannot stop
@@ -823,7 +847,7 @@ service, not this local setting.
 #### `RERANKING_ENGINE_CACHE_DIR`
 - **Default**: `models/tensorrt` in the platform user data directory (e.g., `~/.local/share/forgetful/models/tensorrt`)
 - **Description**: Where built TensorRT engines are cached, one directory per fingerprint
-- **Note**: Only used when `RERANKING_PROVIDER=TensorRT`. The fingerprint covers the model SHA-256, TensorRT version, GPU name, compute capability, driver major version, `RERANKING_TF32` and the optimization profile; a change in any of them rebuilds the engine, and directories of other fingerprints are removed and logged. See [GPU reranking](gpu-reranking.md#engine-cache)
+- **Note**: Only used when `RERANKING_PROVIDER=TensorRT`. The fingerprint covers the model SHA-256, TensorRT version, GPU name, compute capability, driver major version, `RERANKING_TF32` and the optimization profile; a change in any of them rebuilds the engine, and directories of other fingerprints are removed and logged. See [GPU models](gpu-models.md#engine-cache)
 - **Example**: `RERANKING_ENGINE_CACHE_DIR=/var/lib/forgetful/models/tensorrt`
 
 #### `RERANKING_URL`
@@ -863,7 +887,7 @@ service, not this local setting.
 #### `FASTEMBED_LOCAL_FILES_ONLY`
 
 - **Default**: `false`
-- **Description**: Restrict the FastEmbed embedding model to files already present in `FASTEMBED_CACHE_DIR`. The TensorRT reranker is not affected: it never downloads files that are already in `RERANKING_MODEL_DIR`
+- **Description**: Restrict the FastEmbed embedding model to files already present in `FASTEMBED_CACHE_DIR`. The TensorRT embedder and reranker are not affected: they never download files that are already in `EMBEDDING_MODEL_DIR` and `RERANKING_MODEL_DIR`
 - **Purpose**: Prevents HuggingFace/GCS download attempts in locked-down or offline environments
 - **Note**: When enabled, pre-populate the cache first or startup fails with a local-cache error
 - **Example**: `FASTEMBED_LOCAL_FILES_ONLY=true`
@@ -954,9 +978,9 @@ DENSE_SEARCH_CANDIDATES=100
 - Change `SERVER_PORT` and `PGPORT` if defaults conflict
 - Update MCP client configuration
 
-### Reranker Does Not Start
-- The server refuses to start with `Error: the reranker cannot start: <cause>` when `RERANKING_PROVIDER=TensorRT` cannot run: no NVIDIA GPU visible to CUDA, TensorRT or CUDA Python libraries missing, driver too old, model files unavailable, or an engine build failure
-- There is no CPU fallback. Fix the host (see [GPU reranking](gpu-reranking.md)), or set `RERANKING_PROVIDER=HTTP`, or `RERANKING_ENABLED=false`
+### Embedder or Reranker Does Not Start
+- The server refuses to start with `Error: the embedder cannot start: <cause>` when `EMBEDDING_PROVIDER=TensorRT` cannot run, and with `Error: the reranker cannot start: <cause>` when `RERANKING_PROVIDER=TensorRT` cannot: no NVIDIA GPU visible to CUDA, TensorRT or CUDA Python libraries missing, driver too old, model files unavailable, an engine build failure, or (embedder only) an `EMBEDDING_DIMENSIONS` that differs from the model's width
+- There is no CPU fallback. Fix the host (see [GPU models](gpu-models.md)), or choose another `EMBEDDING_PROVIDER` and set `RERANKING_PROVIDER=HTTP` or `RERANKING_ENABLED=false`
 
 ### Search Performance
 - Increase `DENSE_SEARCH_CANDIDATES` for better results

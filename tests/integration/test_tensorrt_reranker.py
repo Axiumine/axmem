@@ -13,11 +13,11 @@ from cuda.bindings import runtime as cudart
 from pydantic import ValidationError
 
 from app.config.settings import Settings, settings
-from app.exceptions import RerankerError
+from app.exceptions import TensorRTError
+from app.repositories.embeddings.tensorrt_common import ensure_finite
 from app.repositories.embeddings.tensorrt_reranker import (
     MAX_BATCH,
     TensorRTRerankAdapter,
-    ensure_finite,
 )
 
 TOLERANCE = 2e-3
@@ -225,11 +225,11 @@ async def test_rerank_works_on_a_fresh_loop_in_a_plain_thread(tensorrt_reranker)
 
 
 def test_non_finite_scores_are_refused():
-    ensure_finite(np.array([1.0, -2.5], dtype=np.float32))
+    ensure_finite(np.array([1.0, -2.5], dtype=np.float32), "reranker", "scores")
 
     for bad in (np.nan, np.inf, -np.inf):
-        with pytest.raises(RerankerError, match="non-finite"):
-            ensure_finite(np.array([1.0, bad], dtype=np.float32))
+        with pytest.raises(TensorRTError, match="non-finite"):
+            ensure_finite(np.array([1.0, bad], dtype=np.float32), "reranker", "scores")
 
 
 def test_a_cuda_error_makes_the_adapter_refuse_further_work(tensorrt_reranker):
@@ -238,9 +238,9 @@ def test_a_cuda_error_makes_the_adapter_refuse_further_work(tensorrt_reranker):
         assert adapter.score(QUERY, DOCUMENTS)
         cudart.cudaMemcpy(0, 0, 4, cudart.cudaMemcpyKind.cudaMemcpyHostToDevice)  # a failing CUDA call
 
-        with pytest.raises(RerankerError, match="cudaErrorInvalidValue"):
+        with pytest.raises(TensorRTError, match="cudaErrorInvalidValue"):
             adapter._engine.verify()  # the guard every score() ends with
-        with pytest.raises(RerankerError, match="unusable after an earlier failure"):
+        with pytest.raises(TensorRTError, match="unusable after an earlier failure"):
             adapter.score(QUERY, DOCUMENTS)
     finally:
         adapter.close()

@@ -34,7 +34,7 @@ without the mark, with the commit that landed it, in the commit that lands it.
   `RERANKING_MODEL_DIR`, `RERANKING_ENGINE_CACHE_DIR`; `RERANKING_WORKERS` now sets the execution contexts, each
   about 1.8 GiB of GPU memory beyond the first. A server or CLI command that cannot run the engine refuses to start
   with `Error: the reranker cannot start: <cause>` and exit code 1 (no GPU, driver older than R580, TensorRT or CUDA
-  libraries missing, model unavailable, build failure). New [docs/gpu-reranking.md](docs/gpu-reranking.md) (host
+  libraries missing, model unavailable, build failure). New [docs/gpu-models.md](docs/gpu-models.md) (host
   requirements, TensorRT pin and bump policy, TF32, engine cache, GPU memory); dependencies `tensorrt-cu13`,
   `tensorrt-cu13-bindings`, `tensorrt-cu13-libs` (11.4.0.106, from the NVIDIA index), `cuda-python`, `tokenizers`,
   `huggingface-hub` and `numpy`.
@@ -43,6 +43,23 @@ without the mark, with the commit that landed it, in the commit that lands it.
   exceeds the GPU memory. New tests run the real engine: golden scores, chunking, concurrent workers, engine cache
   rebuild and pruning, damaged plans, and subprocess runs with `CUDA_VISIBLE_DEVICES=-1` and with the TensorRT
   libraries hidden.
+- In-process TensorRT embeddings provider (`EMBEDDING_PROVIDER=TensorRT`, the new default), strict fp32, on the
+  same runner, engine cache, fingerprint, warm-up and startup refusal as the reranker. The model is
+  `BAAI/bge-small-en-v1.5` (its `onnx/model.onnx` and `tokenizer.json` are byte-identical to the Xenova export; both
+  repositories are pinned and the SHA-256 is recorded), with CLS pooling, L2 normalisation, truncation at 512 tokens,
+  padding to the longest text of a batch and an engine profile of batch 1 to 64 and sequence 2 to 512; more than 64
+  texts are embedded in chunks of 64, on one execution context and one worker thread. `generate_embeddings` is native.
+  New settings: `EMBEDDING_TF32` (default `false`), `EMBEDDING_MODEL_DIR` and `EMBEDDING_ENGINE_CACHE_DIR`.
+  `EMBEDDING_DIMENSIONS` (default 384) is checked at start: a model that produces another width refuses to start with
+  the cause `dimensions` and releases the engine. A server, `--re-embed` or other command that cannot run the
+  embedder exits with code 1 and `Error: the embedder cannot start: <cause>`. The embedder and the reranker share one
+  CUDA context; the server logs the start-up line of each and the combined GPU memory of the process (about 4.1 GiB
+  for the pair). Offline hosts copy `EMBEDDING_MODEL_DIR` and set `HF_HUB_OFFLINE=1` (`docs/OFFLINE_SETUP.md`).
+  `docs/embedding_migration.md` gains the FastEmbed to TensorRT and wrong-width cases.
+- Standalone end-to-end test (`tests/e2e_sqlite/test_standalone_sqlite.py`): the real server in a subprocess with the
+  GPU models, a static token, no `GATEWAY_*` variable and `HF_HUB_OFFLINE=1`, behind a guard that refuses and records
+  every connection that is not loopback, runs create, auto-link, a reranked query, link and mark-obsolete. It uses
+  file-backed SQLite until the Qdrant store lands.
 - Tenants and static bearer tokens (`3201a2c3`). `AUTH_MODE=static` maps a fixed bearer token to one tenant: `AUTH_STATIC_TOKEN_HASHES` holds only the SHA-256 hash per tenant (never the token), a presented token is hashed and compared with every hash in constant time, one token belongs to one tenant, and a token never reaches a log line. For `jwt` and `introspection` the tenant is the claim `tenant_id`, else `tenant`, else `sub`; a blank claim falls through, and a claim of another type or over 255 characters is refused. `DEFAULT_TENANT` names the tenant of `AUTH_MODE=none`. Tests cover each mode (valid, invalid, expired and missing token), the claim order, the hash comparison and tenant isolation over REST, MCP and the CLI.
 - `project` argument (a free-form string, trimmed, 1 to 500 characters, created on first use) on `create_memory`, `update_memory` (an empty string clears it), `query_memory`, `get_recent_memories` and `rebuild_embeddings`, the `project` field and query parameter of the REST memory routes, and `-p/--project` on the CLI memory verbs.
 - **(planned)** Qdrant as the only store, authenticated with a Qdrant API key.
@@ -66,13 +83,21 @@ without the mark, with the commit that landed it, in the commit that lands it.
   because `parallel = true` makes every measured process write its own `.coverage.*` fragment, and interrupted
   runs left them behind. `.coverage-data/` is ignored by Git, semgrep, trivy, Qodana and radon.
 - **(planned)** NVIDIA GPU is a hard requirement for development and runtime; there is no CPU path and no skip.
-  Landed for the reranker and the test suites; embeddings still have a CPU path until the embedder is replaced.
-- **(planned)** Embeddings come only from the router (`gateway`); reranking runs locally on the GPU.
+  Landed for the reranker, the default embedder and the test suites; the FastEmbed CPU provider stays selectable
+  until it is removed (see Removed).
+- Embeddings are computed in the server process on the GPU by default (`EMBEDDING_PROVIDER=TensorRT`) instead of
+  coming only from the router. The earlier plan for router-only embeddings is replaced; the `gateway` provider stays
+  optional and no `GATEWAY_*` setting is read unless it is selected. `EMBEDDING_PROVIDER` defaults to `TensorRT`
+  (it was `FastEmbed`) and an empty value selects it; existing databases need `forgetful --re-embed` only when the
+  provider, model or width changes. `RerankerError` and `RerankerStartupError` are now `TensorRTError` and
+  `TensorRTStartupError` (they cover both models), `reranker_model.py` is `tensorrt_model.py` and
+  `docs/gpu-reranking.md` is `docs/gpu-models.md`.
 - Users become tenants and projects become an optional scope string created on first use. The stored `users` row is the tenant record (matched by name in `external_id`) and `projects` is the table behind the scope, because the storage layer is replaced later and not migrated; no revision touches either table. A scope belongs to one tenant, so two tenants that use the same label have two scopes. Memory responses carry `project` (a string or null) instead of `project_ids`, and `ObsoleteMatch` does the same. The `AUTH_MODE` setting replaces `FASTMCP_SERVER_AUTH`, `DEFAULT_TENANT` replaces `DEFAULT_USER_ID`, `DEFAULT_USER_NAME` and `DEFAULT_USER_EMAIL`; an existing deployment keeps its memories by setting `DEFAULT_TENANT` to the old `DEFAULT_USER_ID` value. `GET /api/v1/auth/info` reports `authMode` as `disabled`, `jwt`, `introspection` or `static`. The tool scopes `users` and `projects` no longer exist (`read:memories` and `write:memories` remain). `.env.example` now sets `AUTH_MODE=none` and `SERVER_HOST=127.0.0.1`. The stdio and the HTTP examples in the README and the connectivity guide pass `AUTH_MODE=none` or a bearer token. The tool count goes from 17 to 10. The test harness server runs with `AUTH_MODE=none` on its loopback bind.
 - **(planned)** Memory ids become UUIDs.
-- The integration and end-to-end suites run the real TensorRT reranker on the GPU, with no stub reranker, fake module,
-  `gpu` marker or skip; HTTP mock transports, embedding stubs, spies that delegate to the real reranker and fault
-  injection (a barrier around `TensorRTEngine.infer`, hidden libraries in a subprocess, one invalid `cudaMemcpy`)
+- The integration and end-to-end suites run the real TensorRT embedder and reranker on the GPU through the session
+  fixtures `tensorrt_embedder` and `tensorrt_reranker` (the production adapters; there is no test-only embedder), with
+  no stub reranker, fake module, `gpu` marker or skip; HTTP mock transports, embedding stubs for tests whose subject
+  is not the vectors, spies that delegate to the real adapters and fault injection (a barrier around `TensorRTEngine.infer`, hidden libraries in a subprocess, one invalid `cudaMemcpy`)
   remain. Every CI job that runs tests or coverage (`ci.yml` `test`, `e2e.yml`, and the `snapshots`, `coverage`,
   `memory` and `mutation` jobs of `quality.yml`) moves to `runs-on: [self-hosted, linux, gpu]`; the static gates,
   the architecture tests, `trivy`, `qodana` and the wheel smoke test stay on hosted runners, and the static job

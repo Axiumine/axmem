@@ -16,10 +16,15 @@ from typing import Any, cast
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-from app.bootstrap import build_runtime, dispose_runtime, get_reranker_adapter
+from app.bootstrap import (
+    build_runtime,
+    dispose_runtime,
+    get_reranker_adapter,
+    start_tensorrt_embedder,
+)
 from app.config.auth import build_auth_provider
 from app.config.settings import settings
-from app.exceptions import RerankerError
+from app.exceptions import TensorRTError
 from app.routes.api import (
     auth,
     health,
@@ -376,7 +381,11 @@ async def _run_reembed(args):
 
     from app.bootstrap import create_backup_service, get_embedding_adapter
 
-    embeddings_adapter = get_embedding_adapter()
+    try:
+        embeddings_adapter = get_embedding_adapter()
+    except TensorRTError as exc:
+        print(f"Error: the embedder cannot start: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
     backup_service = create_backup_service()
 
     _print_reembed_configuration(args.batch_size)
@@ -419,13 +428,14 @@ def _serve(transport, host, port):
         print(f"Error: {exc}", file=sys.stderr)
         return 1
 
-    # Build or load the reranker engine before the server reports ready: a server that cannot
-    # rerank refuses to start, and says why, instead of failing inside the lifespan.
-    try:
-        get_reranker_adapter()
-    except RerankerError as exc:
-        print(f"Error: the reranker cannot start: {exc}", file=sys.stderr)
-        return 1
+    # Build or load the TensorRT engines before the server reports ready: a server that cannot
+    # embed or rerank refuses to start, and says why, instead of failing inside the lifespan.
+    for model, start in (("embedder", start_tensorrt_embedder), ("reranker", get_reranker_adapter)):
+        try:
+            start()
+        except TensorRTError as exc:
+            print(f"Error: the {model} cannot start: {exc}", file=sys.stderr)
+            return 1
 
     if transport == "stdio":
         import warnings

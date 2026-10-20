@@ -1,4 +1,4 @@
-"""E2E tests for re-embedding with real in-memory SQLite and real embedding adapters.
+"""E2E tests for re-embedding with real in-memory SQLite and the real TensorRT embedder.
 
 Tests the full stack: ReEmbeddingService -> SqliteMemoryRepository -> sqlite-vec
 """
@@ -10,31 +10,15 @@ from sqlalchemy import text
 
 from app.config.settings import settings
 from app.models.memory_models import MemoryCreate
-from app.repositories.embeddings.embedding_adapter import FastEmbeddingAdapter
 from app.repositories.sqlite.memory_repository import SqliteMemoryRepository
 from app.repositories.sqlite.sqlite_adapter import SqliteDatabaseAdapter
 from app.services.re_embedding_service import ReEmbeddingService
 
 
 @pytest.fixture(scope="module")
-def embedding_adapter():
-    """Module-scoped embedding adapter (expensive to load).
-
-    Forces FastEmbed-compatible model regardless of env config (e.g. a local
-    settings file may set EMBEDDING_MODEL to an OpenAI model). Skips the whole module when
-    the model cannot be downloaded (offline runners).
-    """
-    original_model = settings.EMBEDDING_MODEL
-    original_dims = settings.EMBEDDING_DIMENSIONS
-    settings.EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5"
-    settings.EMBEDDING_DIMENSIONS = 384
-    try:
-        return FastEmbeddingAdapter()
-    except Exception as exc:  # noqa: BLE001 - HF/httpx network errors vary
-        pytest.skip(f"FastEmbed model unavailable (offline?): {exc}")
-    finally:
-        settings.EMBEDDING_MODEL = original_model
-        settings.EMBEDDING_DIMENSIONS = original_dims
+def embedding_adapter(tensorrt_embedder):
+    """The real TensorRT embedder of the test session (production settings, one engine for all tests)."""
+    return tensorrt_embedder
 
 
 @pytest.fixture

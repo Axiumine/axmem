@@ -8,13 +8,15 @@ from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 import pytest
+from cuda.bindings import driver
 from cuda.bindings import runtime as cudart
 
 from app.config.settings import settings
-from app.exceptions import RerankerError, RerankerStartupError
-from app.repositories.embeddings.reranker_model import fetch_model
+from app.exceptions import TensorRTError, TensorRTStartupError
+from app.repositories.embeddings.tensorrt_model import fetch_model
 from app.repositories.embeddings.tensorrt_reranker import PROFILE
 from app.repositories.embeddings.tensorrt_runtime import (
+    GpuMemory,
     OptimizationProfile,
     PlanRejectedError,
     ProfileError,
@@ -22,7 +24,9 @@ from app.repositories.embeddings.tensorrt_runtime import (
     _Slot,
     build_plan,
     cuda_check,
+    cuda_context_handle,
     device_failure,
+    gpu_memory,
     probe_gpu,
 )
 
@@ -57,7 +61,7 @@ def test_cuda_check_unpacks_each_kind_of_result():
 
 
 def test_cuda_check_raises_on_a_cuda_error_and_clears_it():
-    with pytest.raises(RerankerError, match="cudaErrorInvalidDevice"):
+    with pytest.raises(TensorRTError, match="cudaErrorInvalidDevice"):
         cuda_check(cudart.cudaSetDevice(10_000))
 
     assert cudart.cudaPeekAtLastError()[0] == cudart.cudaError_t.cudaSuccess
@@ -76,7 +80,7 @@ def test_cuda_check_raises_on_a_cuda_error_and_clears_it():
 def test_device_failure_names_the_cause(error, cause):
     failure = device_failure(error)
 
-    assert isinstance(failure, RerankerStartupError)
+    assert isinstance(failure, TensorRTStartupError)
     assert failure.cause == cause
     assert error.name in str(failure)
 
@@ -115,7 +119,7 @@ def test_infer_rejects_shapes_outside_the_profile(engine, shape):
 
 
 def test_infer_rejects_wrong_input_names(engine):
-    with pytest.raises(RerankerError, match="takes the inputs"):
+    with pytest.raises(TensorRTError, match="takes the inputs"):
         engine.infer({"input_ids": np.ones((1, 4), dtype=np.int64)})
 
 
@@ -129,7 +133,7 @@ def test_infer_converts_the_dtype_of_the_inputs(engine):
 def test_slot_reports_a_refused_launch(plan_bytes):
     fresh = TensorRTEngine(plan_bytes, PROFILE)
     try:
-        with fresh._borrowed() as slot, pytest.raises(RerankerError, match="could not run the engine"):
+        with fresh._borrowed() as slot, pytest.raises(TensorRTError, match="could not run the engine"):
             slot._enqueue()  # no device addresses are bound on a slot that has not run yet
     finally:
         fresh.close()
@@ -142,14 +146,14 @@ def test_slot_reports_an_engine_that_cannot_create_an_execution_context():
         def create_execution_context():
             return None
 
-    with pytest.raises(RerankerStartupError, match="cannot create an execution context") as raised:
+    with pytest.raises(TensorRTStartupError, match="cannot create an execution context") as raised:
         _Slot(OutOfMemoryEngine(), list(INPUTS), "logits", PROFILE)
 
     assert raised.value.cause == "engine-unusable"
 
 
 def test_slot_reports_a_refused_binding(engine):
-    with engine._borrowed() as slot, pytest.raises(RerankerError, match="device address of tensor 'nope'"):
+    with engine._borrowed() as slot, pytest.raises(TensorRTError, match="device address of tensor 'nope'"):
         slot._bind("nope", 0)
 
 
@@ -180,11 +184,11 @@ def test_failed_cuda_state_is_reported_then_refuses_all_work(plan_bytes):
     engine.verify()  # healthy engine: nothing recorded
 
     cudart.cudaMemcpy(0, 0, 4, cudart.cudaMemcpyKind.cudaMemcpyHostToDevice)  # a CUDA call that fails
-    with pytest.raises(RerankerError, match="cudaErrorInvalidValue"):
+    with pytest.raises(TensorRTError, match="cudaErrorInvalidValue"):
         engine.verify()
 
     for call in (engine.verify, lambda: engine.infer(make_inputs(1, 4))):
-        with pytest.raises(RerankerError, match="unusable after an earlier failure"):
+        with pytest.raises(TensorRTError, match="unusable after an earlier failure"):
             call()
     engine.close()
 
@@ -196,9 +200,9 @@ def test_closed_engine_refuses_work_and_closing_twice_is_harmless(plan_bytes):
     engine.close()
     engine.close()
 
-    with pytest.raises(RerankerError, match="closed"):
+    with pytest.raises(TensorRTError, match="closed"):
         engine.infer(make_inputs(1, 4))
-    with pytest.raises(RerankerError, match="closed"):
+    with pytest.raises(TensorRTError, match="closed"):
         engine.verify()
 
 
@@ -206,7 +210,7 @@ def test_build_rejects_a_file_that_is_not_onnx(tmp_path):
     broken = tmp_path / "model.onnx"
     broken.write_text("this is not an ONNX model")
 
-    with pytest.raises(RerankerStartupError, match="cannot parse .* as an ONNX model") as raised:
+    with pytest.raises(TensorRTStartupError, match="cannot parse .* as an ONNX model") as raised:
         build_plan(broken, PROFILE, tf32=False)
 
     assert raised.value.cause == "build-failed"
@@ -220,7 +224,7 @@ def model_onnx(tensorrt_reranker):
 def test_build_rejects_an_invalid_profile(model_onnx):
     inverted = OptimizationProfile(min_shape=(10, 2), opt_shape=(5, 100), max_shape=(64, 512))
 
-    with pytest.raises(RerankerStartupError, match="rejected the optimisation profile") as raised:
+    with pytest.raises(TensorRTStartupError, match="rejected the optimisation profile") as raised:
         build_plan(model_onnx, inverted, tf32=False)
 
     assert raised.value.cause == "build-failed"
@@ -229,7 +233,40 @@ def test_build_rejects_an_invalid_profile(model_onnx):
 def test_build_reports_the_error_tensorrt_logged_when_no_engine_can_be_made(model_onnx):
     beyond_the_model = OptimizationProfile(min_shape=(1, 2), opt_shape=(1, 4096), max_shape=(1, 4096))
 
-    with pytest.raises(RerankerStartupError, match="could not build an engine.*4096 != 512") as raised:
+    with pytest.raises(TensorRTStartupError, match="could not build an engine.*4096 != 512") as raised:
         build_plan(model_onnx, beyond_the_model, tf32=False)
 
     assert raised.value.cause == "build-failed"
+
+
+def test_every_thread_runs_on_the_same_cuda_context():
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        handles = {pool.submit(cuda_context_handle).result() for _ in range(6)}
+
+    assert handles == {cuda_context_handle()}
+    assert 0 not in handles
+
+
+def test_a_driver_error_while_reading_the_context_is_reported(monkeypatch):
+    monkeypatch.setattr(driver, "cuCtxGetCurrent", lambda: (driver.CUresult.CUDA_ERROR_INVALID_CONTEXT, None))
+
+    with pytest.raises(TensorRTError, match="CUDA could not report the current context: CUDA_ERROR_INVALID_CONTEXT"):
+        cuda_context_handle()
+
+
+def test_gpu_memory_reads_what_the_device_has_in_use():
+    memory = gpu_memory()
+
+    assert 0 < memory.used_bytes <= memory.total_bytes
+    assert memory.total_bytes == probe_gpu().total_bytes
+    assert memory.process_bytes is None or 0 < memory.process_bytes <= memory.used_bytes
+
+
+@pytest.mark.parametrize(
+    ("process_bytes", "held"),
+    [(3 * 1024**3, "this process holds 3.00 GiB"), (None, "this process holds unknown (NVML cannot report it)")],
+)
+def test_gpu_memory_describes_itself_in_gibibytes(process_bytes, held):
+    memory = GpuMemory(process_bytes=process_bytes, used_bytes=4 * 1024**3, total_bytes=24 * 1024**3)
+
+    assert memory.describe() == f"{held}; the device has 4.00 of 24 GiB in use"

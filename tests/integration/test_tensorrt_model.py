@@ -12,8 +12,8 @@ from tokenizers import Tokenizer
 from tokenizers.models import WordLevel
 
 from app.config.settings import settings
-from app.exceptions import RerankerStartupError
-from app.repositories.embeddings.reranker_model import (
+from app.exceptions import TensorRTStartupError
+from app.repositories.embeddings.tensorrt_model import (
     MANIFEST_FILE,
     MAX_SEQUENCE,
     ONNX_FILE,
@@ -52,7 +52,7 @@ def test_slug_names_a_directory_for_a_repository_id():
     "repository", ["", "..", "../etc", "a/b/c", "owner/", "/name", "owner/na me", "jina reranker"],
 )
 def test_slug_refuses_anything_that_is_not_a_repository_id(repository):
-    with pytest.raises(RerankerStartupError, match="not a Hugging Face repository id") as raised:
+    with pytest.raises(TensorRTStartupError, match="not a Hugging Face repository id") as raised:
         model_slug(repository)
 
     assert raised.value.cause == "model-unavailable"
@@ -97,7 +97,7 @@ def test_a_file_that_no_longer_matches_its_record_is_refused(copied_model):
     fetch_model(REPOSITORY, model_dir)
     (root / TOKENIZER_FILE).write_text("{}")
 
-    with pytest.raises(RerankerStartupError, match=r"tokenizer\.json .*no longer matches the SHA-256") as raised:
+    with pytest.raises(TensorRTStartupError, match=r"tokenizer\.json .*no longer matches the SHA-256") as raised:
         fetch_model(REPOSITORY, model_dir)
 
     assert raised.value.cause == "model-unavailable"
@@ -115,7 +115,7 @@ def test_a_missing_file_is_downloaded_and_checked_against_the_record(copied_mode
 
 
 def test_an_unknown_repository_cannot_be_fetched(tmp_path):
-    with pytest.raises(RerankerStartupError, match="cannot fetch onnx/model.onnx of") as raised:
+    with pytest.raises(TensorRTStartupError, match="cannot fetch onnx/model.onnx of") as raised:
         fetch_model("axmem-tests/this-model-does-not-exist", tmp_path)
 
     assert raised.value.cause == "model-unavailable"
@@ -136,7 +136,7 @@ def test_a_tokenizer_without_a_pad_token_is_refused(tmp_path):
     path = tmp_path / "tokenizer.json"
     Tokenizer(WordLevel({"[UNK]": 0, "word": 1}, unk_token="[UNK]")).save(str(path))
 
-    with pytest.raises(RerankerStartupError, match=r"no \[PAD\] token") as raised:
+    with pytest.raises(TensorRTStartupError, match=r"no \[PAD\] token") as raised:
         load_tokenizer(path)
 
     assert raised.value.cause == "model-unavailable"

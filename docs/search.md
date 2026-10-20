@@ -33,16 +33,19 @@ cross-encoder reranking.
 
 `query_memory` searches by vector similarity. When reranking is enabled and more
 than `k` candidates are returned, a cross-encoder reranks them using `query` and
-`query_context`. The local reranker runs on an NVIDIA GPU with TensorRT in strict fp32 (see
-[GPU reranking](gpu-reranking.md)); `RERANKING_PROVIDER=HTTP` sends the candidates to a rerank service
+`query_context`. The query and every memory are embedded on the NVIDIA GPU with TensorRT in strict fp32
+by default (see [GPU models](gpu-models.md)), and the local reranker runs there too; `RERANKING_PROVIDER=HTTP` sends the candidates to a rerank service
 instead. There is no sparse full-text search or reciprocal rank fusion.
 
 ---
 
 ## Embedding Providers
 
+### TensorRT (default)
+`EMBEDDING_PROVIDER=TensorRT` embeds in the server process on the NVIDIA GPU with `BAAI/bge-small-en-v1.5` (CLS pooling, L2 normalised, 384 dimensions, texts truncated to 512 tokens), in strict fp32. There is no CPU path: a host without a usable GPU refuses to start and says why. See [GPU models](gpu-models.md).
+
 ### [FastEmbed](https://github.com/qdrant/fastembed)
-For local embeddings we support the use of the excellent embedding solution developed by Qdrant. Local re-ranking does not use FastEmbed: it runs a cross-encoder on the GPU through TensorRT, see [GPU reranking](gpu-reranking.md).
+For local CPU embeddings the excellent embedding solution developed by Qdrant is still selectable (`EMBEDDING_PROVIDER=FastEmbed`). Local re-ranking does not use FastEmbed: it runs a cross-encoder on the GPU through TensorRT, see [GPU models](gpu-models.md).
 
 
 ### [Google](https://ai.google.dev/gemini-api/docs/embeddings)

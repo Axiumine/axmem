@@ -54,11 +54,12 @@ relevant staged) reports `SKIP` with the reason and does not fail the stage.
 
 **GPU requirement.** Every gate that runs `tests/integration`, `tests/e2e_sqlite` or `tests/e2e` (`snapshots`,
 `tests-fast`, `tests`, `e2e-postgres`, `memray`, `mutation`) needs an NVIDIA GPU with driver R580 or newer
-and about 2.5 GiB of free GPU memory per pytest process. The reranker tests run the real TensorRT engine;
+and about 4.1 GiB of free GPU memory per pytest process (embedder and reranker, plus the same again for the
+standalone test's server process). The embedder and reranker tests run the real TensorRT engines;
 there is no CPU path, no stub and no skip. Each of these suites starts with a preflight that ends the pytest
 run with exit code 2 and the cause when no GPU is visible, TensorRT cannot be imported, or `-n` (pytest-xdist, if
 installed) asks for more pytest workers than the GPU memory holds. These gates do not report `SKIP` without a GPU: they fail. See
-[GPU reranking](gpu-reranking.md) for the host requirements. The static gates (ruff, imports, bandit, semgrep,
+[GPU models](gpu-models.md) for the host requirements. The static gates (ruff, imports, bandit, semgrep,
 vulture, radon, mypy, pylint) and `tests/architecture` need no GPU.
 
 | Stage | Pipeline |
@@ -91,10 +92,10 @@ across jobs:
 
 The GPU runner is a self-hosted GitHub Actions runner carrying the labels `self-hosted`, `linux` and `gpu`
 (`runs-on: [self-hosted, linux, gpu]`). Its host needs an NVIDIA GPU with driver R580 or newer and enough
-free GPU memory for one pytest process (about 2.5 GiB), Docker for the PostgreSQL jobs, `postgresql-client`
+free GPU memory for one pytest process (about 4.1 GiB, and the same again while the standalone test's server process runs), Docker for the PostgreSQL jobs, `postgresql-client`
 and `uv`. The repository does not install or configure the runner; the driver is the only part of the
 TensorRT stack that belongs to the host, the rest is installed by `uv sync`. Hosted runners cannot run
-these jobs because they have no GPU, and the Windows test matrix was removed because the TensorRT reranker is
+these jobs because they have no GPU, and the Windows test matrix was removed because the TensorRT embedder and reranker are
 Linux-only (its engine cache locks with `fcntl`).
 
 ## Gates
@@ -161,8 +162,8 @@ commit the refreshed files with the change that caused them.
 ### Memory budgets
 
 `tests/e2e_sqlite/test_memory_budget_sqlite.py` (marker `memory`) seeds memories through the MCP tools and
-holds `@pytest.mark.limit_memory` budgets (bulk create, query with reranking). The embedding model and the
-TensorRT reranker engine are loaded before the measured section, and the budgets are generous multiples of the measured peak so they fail on a
+holds `@pytest.mark.limit_memory` budgets (bulk create, query with reranking). The TensorRT embedder and
+reranker engines are loaded before the measured section, and the budgets are generous multiples of the measured peak so they fail on a
 leak or an accidental full-table load, not on noise. Without `--memray` the tests run as ordinary smoke
 tests; on Windows the gate is skipped because memray is not available there. Change a budget only with the
 new measurement in a comment next to it.

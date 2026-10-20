@@ -10,7 +10,6 @@ import shutil
 import pytest
 
 from app.config.settings import settings
-from app.repositories.embeddings.reranker_model import fetch_model
 from app.repositories.embeddings.tensorrt_cache import (
     FINGERPRINT_NAME,
     LOCK_NAME,
@@ -19,6 +18,7 @@ from app.repositories.embeddings.tensorrt_cache import (
     fingerprint_key,
     open_engine,
 )
+from app.repositories.embeddings.tensorrt_model import fetch_model
 from app.repositories.embeddings.tensorrt_reranker import PROFILE
 from app.repositories.embeddings.tensorrt_runtime import OptimizationProfile, probe_gpu
 

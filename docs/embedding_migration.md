@@ -1,6 +1,8 @@
 # Embedding Provider Migration
 
-When you switch embedding providers or models (e.g., from FastEmbed to OpenAI, or from `bge-small-en-v1.5` to `text-embedding-3-small`), existing memory embeddings become incompatible. Different providers produce vectors with different dimensions and semantic spaces, so a search query embedded with the new provider won't match memories embedded with the old one.
+When you switch embedding providers or models (e.g., from the default `TensorRT` provider to OpenAI, or from `bge-small-en-v1.5` to `text-embedding-3-small`), existing memory embeddings become incompatible. Different providers produce vectors with different dimensions and semantic spaces, so a search query embedded with the new provider won't match memories embedded with the old one.
+
+The default provider, `TensorRT`, embeds on the NVIDIA GPU of the machine that runs Axmem with `BAAI/bge-small-en-v1.5` (384 dimensions). Axmem refuses to start when `EMBEDDING_DIMENSIONS` is not the width the model produces, and the message points here. Moving to another provider, or to a model of another width, is done with the steps below.
 
 Forgetful includes a built-in CLI tool to handle this migration safely.
 
@@ -12,9 +14,10 @@ You need to run a re-embedding migration whenever you change any of these settin
 
 | Setting | Example Change |
 |---------|---------------|
-| `EMBEDDING_PROVIDER` | `FastEmbed` -> `OpenAI`, or any provider -> `gateway` |
+| `EMBEDDING_PROVIDER` | `TensorRT` -> `OpenAI`, `FastEmbed` -> `TensorRT`, or any provider -> `gateway` |
 | `EMBEDDING_MODEL` | `bge-small-en-v1.5` -> `text-embedding-3-small` |
 | `EMBEDDING_DIMENSIONS` | `384` -> `1536` |
+| `EMBEDDING_TF32` | `false` -> `true` (TensorRT only; TF32 changes the vectors slightly) |
 | `GATEWAY_BACKEND`, `GATEWAY_MODEL` | another backend or model behind the same gateway |
 
 If you only change non-embedding settings (database, auth, reranking, etc.), no re-embedding is needed.
@@ -66,7 +69,7 @@ forgetful --re-embed [--batch-size N] [--dry-run]
 
 Number of memories to process per batch. Must be a whole number of at least `1`; anything else is rejected before any backup or schema change. Default: `20`.
 
-Lower values use less memory and are safer for rate-limited APIs. Higher values are faster for local providers like FastEmbed. Each batch is handed to the provider as one list of texts: FastEmbed embeds it natively and the `gateway` provider sends it as one request (split into requests of at most 256 texts when the batch is larger); the other remote providers still embed the texts of a batch one at a time.
+Lower values use less memory and are safer for rate-limited APIs. Higher values are faster for local providers like TensorRT. Each batch is handed to the provider as one list of texts: TensorRT and FastEmbed embed it natively (TensorRT in chunks of 64 texts, one GPU call per chunk) and the `gateway` provider sends it as one request (split into requests of at most 256 texts when the batch is larger); the other remote providers still embed the texts of a batch one at a time.
 
 ```bash
 forgetful --re-embed --batch-size 50    # faster for local providers
@@ -234,7 +237,27 @@ rm /path/to/forgetful-pg-*.sql          # PostgreSQL
 
 ## Common Migration Scenarios
 
-### FastEmbed (local) to OpenAI (cloud)
+### FastEmbed (CPU) to TensorRT (local GPU)
+
+`TensorRT` is the default provider. A database that was filled by the `FastEmbed` provider is moved over like any other provider change:
+
+```bash
+# .env (or remove the line: TensorRT is the default)
+EMBEDDING_PROVIDER=TensorRT
+EMBEDDING_MODEL=BAAI/bge-small-en-v1.5
+EMBEDDING_DIMENSIONS=384
+
+# Migrate
+forgetful --re-embed --batch-size 50
+```
+
+The first start downloads the model files once into `EMBEDDING_MODEL_DIR` and builds the engine (a few seconds); see [GPU models](./gpu-models.md) and [offline setup](./OFFLINE_SETUP.md). If the GPU, the TensorRT libraries or the model files are missing, `--re-embed` stops before any backup or schema change with `Error: the embedder cannot start: ...`.
+
+### Wrong width at start-up
+
+`EMBEDDING_DIMENSIONS` must equal the width the model produces. With the TensorRT provider the check runs at every start (and before `--re-embed` changes anything) and refuses with a `dimensions` cause that names both widths. Change `EMBEDDING_DIMENSIONS` to the width of the model, or choose a model of the width you configured; when the width of an existing database changes, `forgetful --re-embed` resizes the vector storage and rebuilds every vector.
+
+### TensorRT (local GPU) to OpenAI (cloud)
 
 ```bash
 # .env
@@ -247,7 +270,7 @@ OPENAI_API_KEY=sk-...
 forgetful --re-embed --batch-size 20
 ```
 
-### FastEmbed to Ollama (local)
+### TensorRT to Ollama (local)
 
 ```bash
 # .env
@@ -357,7 +380,7 @@ By default the backup is written in the directory of `SQLITE_PATH`, for SQLite a
 
 - **Always dry-run first** to verify your configuration and memory count
 - **Use a conservative batch size** (10-20) for cloud providers to avoid rate limits
-- **Use a larger batch size** (50-100) for local providers (FastEmbed, Ollama) for faster processing, and for the `gateway` provider, which sends a batch as a single request
+- **Use a larger batch size** (50-100) for local providers (TensorRT, Ollama) for faster processing, and for the `gateway` provider, which sends a batch as a single request
 - **Don't delete backups immediately** - verify search quality first by querying a few memories
 - **Stop the server** before running re-embed to avoid concurrent access issues
 - The migration processes all users' memories in a single run (it's a global operation)

@@ -2,7 +2,7 @@
 
 Requires:
 - PostgreSQL with pgvector running in Docker
-- FastEmbed embeddings adapter
+- TensorRT embeddings adapter (the production embedder, on the GPU)
 
 Tests the complete stack: FastMCP Client -> MCP Protocol -> Service -> Repository
 -> PostgreSQL + embeddings. Sibling modules cover update/get, obsolete handling,

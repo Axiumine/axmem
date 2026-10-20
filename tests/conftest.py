@@ -35,3 +35,24 @@ def tensorrt_reranker():
         yield get_reranker_adapter()
     finally:
         settings_before.undo()
+
+
+@pytest.fixture(scope="session")
+def tensorrt_embedder():
+    """The real TensorRT embedder, built (or loaded from the engine cache) once per test process.
+
+    It is the production adapter with production defaults: strict fp32, the default model and
+    cache directories, 384 dimensions. ``get_embedding_adapter`` returns this same engine to every
+    runtime built under these settings, so suites share one copy of it in GPU memory and no test
+    needs an embedding stand-in to get real vectors.
+    """
+    from app.bootstrap import get_embedding_adapter
+
+    settings_before = pytest.MonkeyPatch()
+    settings_before.setattr(settings, "EMBEDDING_PROVIDER", "TensorRT")
+    settings_before.setattr(settings, "EMBEDDING_TF32", False)
+    settings_before.setattr(settings, "EMBEDDING_DIMENSIONS", 384)
+    try:
+        yield get_embedding_adapter()
+    finally:
+        settings_before.undo()

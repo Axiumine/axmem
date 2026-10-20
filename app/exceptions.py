@@ -16,15 +16,15 @@ class InvalidStateTransitionError(Exception):
     """Raised when a state machine transition is not allowed"""
 
 
-class RerankerError(RuntimeError):
-    """The local TensorRT reranker failed; the message names the cause."""
+class TensorRTError(RuntimeError):
+    """A local TensorRT model (the embedder or the reranker) failed; the message names the cause."""
 
 
-class RerankerStartupError(RerankerError):
-    """The local reranker cannot start, so the server refuses to start.
+class TensorRTStartupError(TensorRTError):
+    """A local TensorRT model cannot start, so the server refuses to start.
 
     ``cause`` is one of ``no-gpu``, ``driver``, ``gpu-error``, ``tensorrt-missing``,
-    ``model-unavailable``, ``build-failed`` or ``engine-unusable``.
+    ``model-unavailable``, ``build-failed``, ``engine-unusable`` or ``dimensions``.
     """
 
     def __init__(self, cause: str, message: str) -> None:

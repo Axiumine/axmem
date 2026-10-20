@@ -24,7 +24,7 @@ _default_config_dir = Path(user_config_dir("forgetful", ensure_exists=False))
 
 # Accepted values of the enumerated settings; the first entry is the default. Matching is
 # case-insensitive and the spelling below is the canonical one the rest of the code compares to.
-EMBEDDING_PROVIDERS = ("FastEmbed", "Azure", "Google", "OpenAI", "Ollama", "gateway")
+EMBEDDING_PROVIDERS = ("TensorRT", "FastEmbed", "Azure", "Google", "OpenAI", "Ollama", "gateway")
 RERANKING_PROVIDERS = ("TensorRT", "HTTP")
 LOG_FORMATS = ("console", "json")
 # AUTH_MODE has no default choice: a blank value stays blank and the server refuses to start
@@ -184,10 +184,15 @@ class Settings(BaseSettings):
     ENFORCE_ENV_OVERWRITE: bool = False  # When True, env values override agent-provided values
 
     # Search Configuration
-    EMBEDDING_PROVIDER: str = "FastEmbed" # FastEmbed | Azure | Google | OpenAI | Ollama | gateway
+    EMBEDDING_PROVIDER: str = "TensorRT" # TensorRT | FastEmbed | Azure | Google | OpenAI | Ollama | gateway
+    # TensorRT: the Hugging Face repository the ONNX model and tokenizer come from. Other providers: their model name.
     EMBEDDING_MODEL: str = "BAAI/bge-small-en-v1.5"
-    EMBEDDING_DIMENSIONS: int = 384
+    EMBEDDING_DIMENSIONS: int = 384              # TensorRT checks it against the width the model returns at startup
     EMBEDDING_ONNX_PROVIDERS: str = ""  # FastEmbed only; comma-separated ONNX Runtime providers, empty = default
+    # Local TensorRT embeddings only.
+    EMBEDDING_TF32: bool = False                 # True lets the engine use TF32 tensor cores (faster, not exact fp32)
+    EMBEDDING_MODEL_DIR: str = str(_default_data_dir / "models" / "embedder")  # model.onnx and tokenizer.json, fetched once
+    EMBEDDING_ENGINE_CACHE_DIR: str = str(_default_data_dir / "models" / "tensorrt")  # built engines, one directory per fingerprint
     # Per-request timeout (seconds) for the remote providers (Azure | Google | OpenAI | Ollama | gateway).
     # The OpenAI/Azure SDK clients retry failed requests, so a call can take (retries + 1) x this value.
     EMBEDDING_REQUEST_TIMEOUT_SECONDS: float = Field(default=60.0, gt=0, allow_inf_nan=False)

@@ -1,7 +1,8 @@
 """Run an ONNX model directly on TensorRT: probe the GPU, build a plan, load it and execute it.
 
-There is no ONNX Runtime here, no CPU path and no fallback: when the GPU, the driver or the
-TensorRT libraries are not usable the caller gets a ``RerankerStartupError`` naming the cause.
+The embedder and the reranker both run on this module. There is no ONNX Runtime here, no CPU
+path and no fallback: when the GPU, the driver or the TensorRT libraries are not usable the
+caller gets a ``TensorRTStartupError`` naming the cause.
 TensorRT only logs most of its failures and reports them through return values, so every
 return value is checked and turned into an error that carries TensorRT's own message.
 
@@ -12,6 +13,7 @@ for its whole duration.
 from __future__ import annotations
 
 import logging
+import os
 import queue
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
@@ -21,18 +23,19 @@ from typing import Any
 
 import numpy as np
 
-from app.exceptions import RerankerError, RerankerStartupError
+from app.exceptions import TensorRTError, TensorRTStartupError
 
 try:
     import tensorrt as trt
-    from cuda.bindings import nvml
+    from cuda.bindings import driver, nvml
     from cuda.bindings import runtime as cudart
 except ImportError as exc:
-    raise RerankerStartupError(
+    raise TensorRTStartupError(
         "tensorrt-missing",
-        f"TensorRT or the CUDA Python bindings cannot be imported ({exc}). The local reranker needs "
-        "the TensorRT 11 libraries and the CUDA 13 runtime (see docs/requirements.md). Install the "
-        "locked dependencies with `uv sync`, or set RERANKING_PROVIDER=HTTP or RERANKING_ENABLED=false.",
+        f"TensorRT or the CUDA Python bindings cannot be imported ({exc}). The local TensorRT embedder "
+        "and reranker need the TensorRT 11 libraries and the CUDA 13 runtime (see docs/gpu-models.md). "
+        "Install the locked dependencies with `uv sync`, or choose another EMBEDDING_PROVIDER and set "
+        "RERANKING_PROVIDER=HTTP or RERANKING_ENABLED=false.",
     ) from exc
 
 logger = logging.getLogger(__name__)
@@ -55,11 +58,11 @@ _SEVERITY_LEVELS = {
 _ERROR_SEVERITIES = (trt.ILogger.Severity.INTERNAL_ERROR, trt.ILogger.Severity.ERROR)
 
 
-class ProfileError(RerankerError, ValueError):
+class ProfileError(TensorRTError, ValueError):
     """An input shape falls outside the optimisation profile the engine was built for."""
 
 
-class PlanRejectedError(RerankerStartupError):
+class PlanRejectedError(TensorRTStartupError):
     """TensorRT refused to deserialize a plan (damaged file, or built by another TensorRT version)."""
 
 
@@ -85,7 +88,7 @@ def cuda_check(result: tuple[Any, ...]) -> Any:
     error, *values = result
     if error != _SUCCESS:
         cudart.cudaGetLastError()  # a recoverable error must not make the post-call guard fail later
-        raise RerankerError(f"CUDA call failed: {error.name} ({_error_text(error)})")
+        raise TensorRTError(f"CUDA call failed: {error.name} ({_error_text(error)})")
     if not values:
         return None
     return values[0] if len(values) == 1 else tuple(values)
@@ -95,22 +98,22 @@ def _error_text(error: Any) -> str:
     return cudart.cudaGetErrorString(error)[1].decode(errors="replace")
 
 
-def device_failure(error: Any) -> RerankerStartupError:
+def device_failure(error: Any) -> TensorRTStartupError:
     """The startup error that explains why CUDA reported ``error`` while looking for the GPU."""
     if error in _NO_GPU_ERRORS:
-        return RerankerStartupError(
+        return TensorRTStartupError(
             "no-gpu",
-            f"no NVIDIA GPU is visible to CUDA ({error.name}). The local TensorRT reranker needs an NVIDIA "
-            "GPU and has no CPU path. Check the driver and CUDA_VISIBLE_DEVICES, or set "
-            "RERANKING_PROVIDER=HTTP or RERANKING_ENABLED=false.",
+            f"no NVIDIA GPU is visible to CUDA ({error.name}). The local TensorRT embedder and reranker need "
+            "an NVIDIA GPU and have no CPU path. Check the driver and CUDA_VISIBLE_DEVICES, or choose another "
+            "EMBEDDING_PROVIDER and set RERANKING_PROVIDER=HTTP or RERANKING_ENABLED=false.",
         )
     if error in _DRIVER_ERRORS:
-        return RerankerStartupError(
+        return TensorRTStartupError(
             "driver",
             f"the NVIDIA driver does not match the CUDA 13 runtime ({error.name}). Install a driver that "
             "supports CUDA 13 (R580 or newer) and reboot or reload its kernel modules.",
         )
-    return RerankerStartupError(
+    return TensorRTStartupError(
         "gpu-error", f"CUDA could not initialise the GPU: {error.name} ({_error_text(error)})",
     )
 
@@ -152,6 +155,69 @@ def probe_gpu() -> GpuInfo:
     )
 
 
+def cuda_context_handle() -> int:
+    """Address of the CUDA context the calling thread runs on.
+
+    The CUDA runtime API gives every thread of a process the primary context of the device, so
+    each TensorRT engine of the process shares this one context (and its fixed memory cost).
+    """
+    cuda_check(cudart.cudaFree(0))  # binds the thread to the primary context
+    error, context = driver.cuCtxGetCurrent()
+    if error != driver.CUresult.CUDA_SUCCESS:
+        raise TensorRTError(f"CUDA could not report the current context: {error.name}")
+    return int(context)
+
+
+# NVML answers with this value when it cannot tell how much memory a process holds.
+_NVML_NOT_AVAILABLE = 2**63
+
+
+def process_gpu_bytes() -> int | None:
+    """GPU memory this process holds on all devices according to NVML; None when NVML cannot say.
+
+    NVML reports processes by the pid of the host, so inside a container with its own pid
+    namespace the process is not found and the answer is None.
+    """
+    pid = os.getpid()
+    held = 0
+    try:
+        nvml.init_v2()
+        try:
+            for index in range(nvml.device_get_count_v2()):
+                handle = nvml.device_get_handle_by_index_v2(index)
+                for process in nvml.device_get_compute_running_processes_v3(handle):
+                    if process.pid == pid:
+                        if process.used_gpu_memory >= _NVML_NOT_AVAILABLE:
+                            return None
+                        held += int(process.used_gpu_memory)
+        finally:
+            nvml.shutdown()
+    except nvml.NvmlError as exc:
+        logger.debug(f"NVML cannot report the GPU memory of this process: {exc}")
+        return None
+    return held or None
+
+
+@dataclass(frozen=True)
+class GpuMemory:
+    """GPU memory at one moment: what this process holds and what the device has in use."""
+
+    process_bytes: int | None
+    used_bytes: int
+    total_bytes: int
+
+    def describe(self) -> str:
+        gib = 1024**3
+        held = "unknown (NVML cannot report it)" if self.process_bytes is None else f"{self.process_bytes / gib:.2f} GiB"
+        return f"this process holds {held}; the device has {self.used_bytes / gib:.2f} of {self.total_bytes / gib:.0f} GiB in use"
+
+
+def gpu_memory() -> GpuMemory:
+    """Read the GPU memory in use now."""
+    free, total = cuda_check(cudart.cudaMemGetInfo())
+    return GpuMemory(process_bytes=process_gpu_bytes(), used_bytes=int(total - free), total_bytes=int(total))
+
+
 @dataclass(frozen=True)
 class OptimizationProfile:
     """The (batch, sequence) range, minimum, tuned-for and maximum, that every input is built for."""
@@ -179,7 +245,7 @@ def build_plan(onnx_path: Path, profile: OptimizationProfile, *, tf32: bool) -> 
     parsed = parser.parse_from_file(str(onnx_path))
     if not parsed or not network.num_outputs:  # arbitrary bytes can "parse" into an empty network
         problems = "; ".join(str(parser.get_error(i)) for i in range(parser.num_errors))
-        raise RerankerStartupError(
+        raise TensorRTStartupError(
             "build-failed", f"TensorRT cannot parse {onnx_path} as an ONNX model: {problems or 'no network outputs'}",
         )
     config = builder.create_builder_config()
@@ -191,10 +257,10 @@ def build_plan(onnx_path: Path, profile: OptimizationProfile, *, tf32: bool) -> 
             network.get_input(index).name, profile.min_shape, profile.opt_shape, profile.max_shape,
         )
     if config.add_optimization_profile(optimization) < 0:
-        raise RerankerStartupError("build-failed", f"TensorRT rejected the optimisation profile {profile}")
+        raise TensorRTStartupError("build-failed", f"TensorRT rejected the optimisation profile {profile}")
     plan = builder.build_serialized_network(network, config)
     if plan is None:
-        raise RerankerStartupError(
+        raise TensorRTStartupError(
             "build-failed", f"TensorRT could not build an engine from {onnx_path}: {TRT_LOGGER.last_error}",
         )
     return bytes(plan)
@@ -213,7 +279,7 @@ class _Slot:
     def __init__(self, engine: Any, inputs: list[str], output: str, profile: OptimizationProfile) -> None:
         context = engine.create_execution_context()
         if context is None:
-            raise RerankerStartupError(
+            raise TensorRTStartupError(
                 "engine-unusable", f"TensorRT cannot create an execution context: {TRT_LOGGER.last_error}",
             )
         self.context: Any = context
@@ -254,11 +320,11 @@ class _Slot:
 
     def _bind(self, name: str, pointer: int) -> None:
         if not self.context.set_tensor_address(name, int(pointer)):
-            raise RerankerError(f"TensorRT rejected the device address of tensor {name!r}: {TRT_LOGGER.last_error}")
+            raise TensorRTError(f"TensorRT rejected the device address of tensor {name!r}: {TRT_LOGGER.last_error}")
 
     def _enqueue(self) -> None:
         if not self.context.execute_async_v3(int(self.stream)):
-            raise RerankerError(f"TensorRT could not run the engine: {TRT_LOGGER.last_error}")
+            raise TensorRTError(f"TensorRT could not run the engine: {TRT_LOGGER.last_error}")
 
     def release(self) -> None:
         self.context = None
@@ -297,7 +363,7 @@ class TensorRTEngine:
         """Run the model on ``arrays`` (one per input name) and return its output."""
         self._ensure_usable()
         if set(arrays) != set(self.input_names):
-            raise RerankerError(f"the model takes the inputs {sorted(self.input_names)}, got {sorted(arrays)}")
+            raise TensorRTError(f"the model takes the inputs {sorted(self.input_names)}, got {sorted(arrays)}")
         with self._borrowed() as slot:
             return slot.run(arrays)
 
@@ -306,7 +372,7 @@ class TensorRTEngine:
         self._ensure_usable()
         try:
             cuda_check(cudart.cudaPeekAtLastError())
-        except RerankerError as exc:
+        except TensorRTError as exc:
             self._failure = str(exc)
             raise
 
@@ -330,8 +396,8 @@ class TensorRTEngine:
 
     def _ensure_usable(self) -> None:
         if self._closed:
-            raise RerankerError("the TensorRT engine is closed")
+            raise TensorRTError("the TensorRT engine is closed")
         if self._failure:
-            raise RerankerError(
+            raise TensorRTError(
                 f"the TensorRT engine is unusable after an earlier failure ({self._failure}); restart the server",
             )

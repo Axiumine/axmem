@@ -29,13 +29,6 @@ from httpx import ASGITransport, AsyncByteStream, AsyncClient, Request, Response
 
 from app.bootstrap import create_repositories
 from app.config.settings import settings
-from app.repositories.embeddings.embedding_adapter import (
-    AzureOpenAIAdapter,
-    FastEmbeddingAdapter,
-    GoogleEmbeddingsAdapter,
-    OllamaEmbeddingsAdapter,
-    OpenAIEmbeddingsAdapter,
-)
 from app.repositories.postgres.postgres_adapter import PostgresDatabaseAdapter
 from app.repositories.postgres.postgres_tables import Base
 from app.routes.api import (
@@ -53,7 +46,7 @@ from tests.gpu_preflight import require_gpu
 
 
 def pytest_collection_modifyitems(config, items):
-    """The reranker runs on the NVIDIA GPU with no CPU path: without one this run ends, it never skips."""
+    """The embedder and the reranker run on the NVIDIA GPU with no CPU path: without one this run ends, it never skips."""
     require_gpu()
 
 # Force all async tests in this directory onto the session event loop.
@@ -316,17 +309,9 @@ async def db_adapter(postgres_container):
 
 
 @pytest.fixture(scope="session")
-def embedding_adapter():
-    """Session-scoped embedding adapter (model loading is expensive ~1-2s)."""
-    if settings.EMBEDDING_PROVIDER == "Azure":
-        return AzureOpenAIAdapter()
-    if settings.EMBEDDING_PROVIDER == "Google":
-        return GoogleEmbeddingsAdapter()
-    if settings.EMBEDDING_PROVIDER == "OpenAI":
-        return OpenAIEmbeddingsAdapter()
-    if settings.EMBEDDING_PROVIDER == "Ollama":
-        return OllamaEmbeddingsAdapter()
-    return FastEmbeddingAdapter()
+def embedding_adapter(tensorrt_embedder):
+    """The real TensorRT embedder of the test session (production settings, one engine for all tests)."""
+    return tensorrt_embedder
 
 
 @pytest.fixture(scope="session")

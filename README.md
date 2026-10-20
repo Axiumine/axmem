@@ -7,8 +7,8 @@
   <a href="https://github.com/jlowin/fastmcp">
     <img src="https://img.shields.io/badge/FastMCP-powered-orange" alt="FastMCP">
   </a>
-  <a href="https://github.com/qdrant/fastembed">
-    <img src="https://img.shields.io/badge/FastEmbed-powered-orange" alt="FastEmbed">
+  <a href="https://developer.nvidia.com/tensorrt">
+    <img src="https://img.shields.io/badge/TensorRT-powered-orange" alt="TensorRT">
   </a>
 </p>
 
@@ -17,10 +17,10 @@
 
 > **Axmem** is maintained by [Axiumine](https://github.com/Axiumine). It starts from the
 > [Forgetful](https://github.com/ScottRBK/forgetful) codebase by Scott Raisbeck (MIT) and goes
-> in directions an upstream-tracking fork cannot. Planned direction, not yet shipped: fewer features,
-> **Qdrant as the only store** (SQLite, PostgreSQL and Alembic removed), embeddings computed in-process on the GPU
-> (or through an optional HTTP gateway) and GPU reranking (reranking now runs on an NVIDIA GPU with TensorRT,
-> see [GPU reranking](docs/gpu-reranking.md)). Every change, its reason and its status are listed in
+> in directions an upstream-tracking fork cannot. Shipped so far: fewer features, and embeddings and reranking
+> computed in this process on an NVIDIA GPU with TensorRT (see [GPU models](docs/gpu-models.md)), so Axmem needs no
+> model service on the network. Planned, not yet shipped: **Qdrant as the only store** (SQLite, PostgreSQL and
+> Alembic removed). Every change, its reason and its status are listed in
 > [docs/changes-from-forgetful.md](docs/changes-from-forgetful.md) and [CHANGELOG.md](CHANGELOG.md).
 >
 > Until the rename lands, the commands, package names and environment variables below still say
@@ -72,8 +72,8 @@ Memories belong to a **tenant**, the owner of a set of memories, and a tenant ne
 - Meta-tool discovery: only three tools are exposed to the client application to preserve the context window.
 - Flexible storage – SQLite (default, zero-config; slated for removal, see the note above) or PostgreSQL (for scale and production deployments)
 - Stores memories as vectors so they can be retrieved with natural-language queries from AI agents.
-- Cross-encoder reranking to improve recall and precision of memory retrieval. It runs on an NVIDIA GPU with TensorRT 11 in strict fp32 and has no CPU path; see [GPU reranking](docs/gpu-reranking.md). A remote rerank service (`RERANKING_PROVIDER=HTTP`) or `RERANKING_ENABLED=false` runs without a GPU.
-- Flexible embedding providers; run embeddings locally without calls to the cloud thanks to FastEmbed, or send them to an optional HTTP embeddings gateway (`EMBEDDING_PROVIDER=gateway`; switching providers needs a re-embed, see [Embedding Migration](docs/embedding_migration.md))
+- Cross-encoder reranking to improve recall and precision of memory retrieval. It runs on an NVIDIA GPU with TensorRT 11 in strict fp32 and has no CPU path; see [GPU models](docs/gpu-models.md). A remote rerank service (`RERANKING_PROVIDER=HTTP`) or `RERANKING_ENABLED=false` runs without a GPU.
+- Standalone embeddings: the default `TensorRT` provider runs `BAAI/bge-small-en-v1.5` in this process on an NVIDIA GPU (strict fp32, CLS pooling, unit-length vectors) with no model service on the network. It has no CPU path; see [GPU models](docs/gpu-models.md). Other providers are explicit choices: the optional HTTP embeddings gateway (`EMBEDDING_PROVIDER=gateway`, nothing reads a `GATEWAY_*` setting unless it is selected), FastEmbed, Azure, Google, OpenAI or Ollama. Switching providers or dimensions needs a re-embed, see [Embedding Migration](docs/embedding_migration.md)
 - Automatic linking of semantically similar memories, automating the creation of the knowledge graph.
 
 For the complete roadmap, see [Features Roadmap](docs/features_roadmap.md).
@@ -84,10 +84,16 @@ For the complete roadmap, see [Features Roadmap](docs/features_roadmap.md).
 
 ### Option 1: From Source
 
-Reranking is on by default and needs an NVIDIA GPU with driver R580 or newer (CUDA 13). The CUDA
-runtime and TensorRT 11 come from `uv sync`; nothing else is installed system-wide. Without a
-visible GPU the server refuses to start and names the cause. To run on a host without one, set
-`RERANKING_ENABLED=false` or `RERANKING_PROVIDER=HTTP`. Details: [GPU reranking](docs/gpu-reranking.md).
+Axmem runs alone: the embeddings model and the reranking model both run in the server process on an
+NVIDIA GPU (driver R580 or newer, CUDA 13), so besides the database no other service is needed. The CUDA
+runtime and TensorRT 11 come from `uv sync`; nothing else is installed system-wide. Without a visible
+GPU, or without the TensorRT libraries or the model files, the server refuses to start and names the
+cause; there is no CPU path and no fallback. The first start downloads the two models from Hugging Face
+(about 260 MB) and builds one TensorRT engine for each (about 6 to 8 seconds each); later starts load the
+cached engines in well under a second. On a host without internet access, copy the model directories
+beforehand and set `HF_HUB_OFFLINE=1` ([Offline setup](docs/OFFLINE_SETUP.md)). The explicit ways to run
+without a GPU are another `EMBEDDING_PROVIDER` and `RERANKING_PROVIDER=HTTP` or `RERANKING_ENABLED=false`.
+Details: [GPU models](docs/gpu-models.md).
 
 ```bash
 git clone https://github.com/Axiumine/axmem.git
@@ -101,9 +107,23 @@ uv sync
 # when the HTTP server binds a loopback address (127.0.0.1 or ::1)
 AUTH_MODE=none uv run main.py
 ```
-Data stored in platform-appropriate locations (`~/.local/share/forgetful` on Linux/Mac, `AppData` on Windows).
+Data stored in platform-appropriate locations (`~/.local/share/forgetful` on Linux, the models and engines under its `models` directory).
 
 The server starts with stdio transport, which is what MCP clients expect. For HTTP on this machine: `AUTH_MODE=none uv run main.py --transport http --host 127.0.0.1 --port 8020`. To keep `AUTH_MODE=none` out of every command, put it in `~/.config/forgetful/.env`.
+
+**Standalone HTTP server with a static bearer token**, using nothing but the GPU, the model files and the database:
+
+```bash
+# the token stays secret; the server is configured with its SHA-256 hash only
+TOKEN=$(openssl rand -hex 24)
+echo "Authorization: Bearer $TOKEN"
+AUTH_MODE=static \
+AUTH_STATIC_TOKEN_HASHES="{\"me\": \"$(printf %s "$TOKEN" | sha256sum | cut -d' ' -f1)\"}" \
+uv run main.py --transport http --host 0.0.0.0 --port 8020
+```
+
+No `EMBEDDING_PROVIDER`, `EMBEDDING_*` or `GATEWAY_*` setting is needed: the defaults are the TensorRT embedder
+and the TensorRT reranker. The `/health` route answers without a token once both engines are loaded.
 
 > **Note**: Axmem is not published to PyPI. `uvx forgetful-ai` installs the upstream Forgetful package, not Axmem.
 
@@ -307,7 +327,7 @@ For detailed content, split it into 3-7 atomic memories and link them to each ot
 ### Automatic Knowledge Graph
 
 When you create a memory:
-1. **Embedding generated** – FastEmbed converts content to 384-dimensional vector
+1. **Embedding generated** – the embeddings model (`bge-small-en-v1.5` on the GPU by default) converts content to a 384-dimensional unit-length vector
 2. **Similarity search** – Finds related memories (similarity ≥0.7 by default)
 3. **Auto-linking** – Creates bidirectional links to top 3-5 matches (configurable)
 4. **Graph traversal** – Queries return primary results + 1-hop linked memories
@@ -335,8 +355,9 @@ For vector search and optional cross-encoder reranking, see
 ### Key Settings (Optional)
 
 - `MEMORY_TOKEN_BUDGET` – Max tokens for query results (default: `8000`)
-- `EMBEDDING_PROVIDER` – `FastEmbed` (default), `Azure`, `Google`, `OpenAI`, `Ollama` or `gateway`
-- `EMBEDDING_MODEL` – Embedding model (default: `BAAI/bge-small-en-v1.5`)
+- `EMBEDDING_PROVIDER` – `TensorRT` (default, in-process on the GPU), `FastEmbed`, `Azure`, `Google`, `OpenAI`, `Ollama` or `gateway`
+- `EMBEDDING_MODEL` – For `TensorRT`, the Hugging Face repository of the ONNX model (default: `BAAI/bge-small-en-v1.5`)
+- `EMBEDDING_DIMENSIONS` – Vector width (default: `384`); checked against the model at startup
 - `RERANKING_ENABLED` – Rerank search results (default: `true`; needs an NVIDIA GPU unless `RERANKING_PROVIDER=HTTP`)
 - `RERANKING_PROVIDER` – `TensorRT` (default, local GPU) or `HTTP`
 - `MEMORY_NUM_AUTO_LINK` – Auto-link count (default: `3`, set `0` to disable)
@@ -360,7 +381,7 @@ For all environment variables with detailed explanations, see [Configuration Gui
 - [Nix Guide](docs/nix.md) – Reproducible dev shell and builds with Nix flakes
 - [Search Documentation](docs/search.md) – Embedding pipeline and retrieval architecture
 - [Embedding Migration](docs/embedding_migration.md) – Switch embedding providers safely
-- [GPU Reranking](docs/gpu-reranking.md) – NVIDIA host requirements, TensorRT engine cache, TF32 and GPU memory
+- [GPU models](docs/gpu-models.md) – NVIDIA host requirements, the embedder and the reranker, TensorRT engine cache, TF32 and GPU memory
 - [Features Roadmap](docs/features_roadmap.md) – Planned features and priorities
 - [Changelog](CHANGELOG.md) – Notable changes to Axmem by section
 - [Changes from Forgetful](docs/changes-from-forgetful.md) – Every difference from upstream, the reason and its status
@@ -369,15 +390,15 @@ For all environment variables with detailed explanations, see [Configuration Gui
 
 - [MCP Protocol Specification](https://modelcontextprotocol.io/) – Model Context Protocol docs
 - [pgvector](https://github.com/pgvector/pgvector) – PostgreSQL vector extension
-- [FastEmbed](https://github.com/qdrant/fastembed) – Local embedding generation
-- [TensorRT](https://developer.nvidia.com/tensorrt) – GPU inference for the reranker
+- [FastEmbed](https://github.com/qdrant/fastembed) – Optional CPU embedding provider
+- [TensorRT](https://developer.nvidia.com/tensorrt) – GPU inference for the embedder and the reranker
 - [Zettelkasten Principle](https://en.wikipedia.org/wiki/Zettelkasten) – Atomic note-taking method
 
 ---
 
 ## Contributing
 
-We welcome contributions! Axmem uses integration + E2E testing on a real NVIDIA GPU (the reranker tests run the actual TensorRT engine; there is no CPU or skip path). Docker is needed only for the PostgreSQL E2E database.
+We welcome contributions! Axmem uses integration + E2E testing on a real NVIDIA GPU (the embedder and reranker tests run the actual TensorRT engines; there is no CPU or skip path). Docker is needed only for the PostgreSQL E2E database.
 
 See [Contributors Guide](docs/contributors.md) for:
 - Testing workflows (integration tests, E2E tests, GitHub Actions)

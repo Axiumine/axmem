@@ -99,9 +99,9 @@ We focus on **integration and E2E tests** over unit tests. Tests should cover cr
 
 ### Tests need an NVIDIA GPU
 
-The integration, SQLite e2e and PostgreSQL e2e suites run the real TensorRT reranker on the GPU. There is
-no CPU path, no stub reranker, no fake `tensorrt` module and no `gpu` marker to deselect: a machine without
-a usable GPU cannot run these suites. Requirements are in [GPU reranking](gpu-reranking.md) (driver R580 or
+The integration, SQLite e2e and PostgreSQL e2e suites run the real TensorRT embedder and reranker on the
+GPU. There is no CPU path, no test-only embedder or reranker, no fake `tensorrt` module and no `gpu` marker
+to deselect: a machine without a usable GPU cannot run these suites. Requirements are in [GPU models](gpu-models.md) (driver R580 or
 newer, Linux); `uv sync` installs CUDA 13 and TensorRT 11.
 
 Each of the three suites begins with a hard preflight (`tests/gpu_preflight.py`, called from the suite's
@@ -109,18 +109,32 @@ Each of the three suites begins with a hard preflight (`tests/gpu_preflight.py`,
 runs no test, when no NVIDIA GPU is visible, TensorRT or the CUDA bindings cannot be imported, or
 `pytest -n N` asks for more workers than the GPU memory holds (pytest-xdist is not a project dependency; the
 check only applies when you install it yourself). Each pytest process loads its
-own engine and holds about 2.2 GiB of GPU memory (about 1.8 GiB more for each extra reranker worker), so
-`-n` is limited to what fits in 90 % of the card. The suites share one reranker engine per process through
-the session fixture `tensorrt_reranker` in `tests/conftest.py`, so the engine is loaded once per run (about
-0.3 s from the cache, 5 to 7 s when it has to be built).
+own engines and holds about 4.1 GiB of GPU memory (the embedder about 2.2 GiB and the reranker about 1.9 GiB
+more, in one CUDA context; about 1.8 GiB more for each extra reranker worker), and the standalone end-to-end
+test starts one more server process that loads the same pair, so `-n` is limited to what fits in 90 % of the
+card. The suites share one engine of each model per process through the session fixtures `tensorrt_embedder`
+and `tensorrt_reranker` in `tests/conftest.py`, so the engines are loaded once per run (under a second each
+from the cache, 6 to 9 s when one has to be built). The fixtures return the production adapters with
+production defaults (`get_embedding_adapter()`, `get_reranker_adapter()`), so a test that needs real vectors
+depends on `tensorrt_embedder` and sets `EMBEDDING_PROVIDER = "TensorRT"`.
 
 What stays a test double, and why: HTTP mock transports and loopback HTTP servers for `HttpRerankAdapter`
-(the code under test is the HTTP client); stub embedding adapters (no embedding model is the subject);
+and the gateway embeddings adapter (the code under test is the HTTP client); stub embedding adapters in
+tests whose subject is not the vectors (storage, ordering, error paths) and that need a vector they can
+choose;
 recorders and spies that delegate to the real reranker (to observe the candidates a search sends it);
 a barrier around `TensorRTEngine.infer` (to force two inferences to overlap); a module finder that hides
 `tensorrt` or `cuda` in a subprocess (to prove the server refuses to start rather than falling back); and
 one deliberately invalid `cudaMemcpy` (to prove a failed CUDA call is reported and cleared). Everything
-else about the reranker is the real engine on the real GPU.
+else about the embedder and the reranker is the real engine on the real GPU.
+
+The embedder tests (`tests/integration/test_tensorrt_embedder.py`) compare vectors with goldens computed
+once from the CPU fp32 model, check unit length, batching and chunking at 63, 64, 65 and 133 texts,
+truncation at 512 tokens, concurrency and cancellation, and that the embedder and the reranker report the same
+CUDA context. `tests/e2e_sqlite/test_standalone_sqlite.py` starts the real server in a subprocess with a
+static token, no `GATEWAY_*` variable, `HF_HUB_OFFLINE=1` and a guard that refuses and records every
+connection that is not loopback, then runs create, auto-link, a reranked query, link and mark-obsolete; it
+fails if the guard recorded anything.
 
 ### Integration Tests
 
@@ -133,7 +147,7 @@ else about the reranker is the real engine on the real GPU.
 uv run pytest tests/integration/
 ```
 
-These tests use in-memory stubs for storage and embeddings, run the real reranker and run fast (~seconds). They form the bulk of our test suite and catch 90% of issues.
+These tests use in-memory stubs for storage, run the real embedder and reranker where they are the subject or the runtime needs them, and run fast (~seconds). They form the bulk of our test suite and catch 90% of issues.
 
 ### End-to-End Tests
 

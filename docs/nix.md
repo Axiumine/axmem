@@ -73,10 +73,10 @@ the dev shell rather than the sandboxed flake check:
 nix develop -c pytest tests/integration/ -q
 ```
 
-The tests run the real TensorRT reranker, so the host needs an NVIDIA GPU and driver R580 or newer
-(see [GPU reranking](gpu-reranking.md)). The Nix build of the locked environment with the TensorRT and CUDA wheels
+The tests run the real TensorRT embedder and reranker, so the host needs an NVIDIA GPU and driver R580 or newer
+(see [GPU models](gpu-models.md)). The Nix build of the locked environment with the TensorRT and CUDA wheels
 (`tensorrt-cu13*`, `cuda-python`, from the NVIDIA package index) has not been verified: Nix was not available when the
-reranker landed. On NixOS the CUDA driver libraries must also be visible to the process (for example through
+GPU models landed. On NixOS the CUDA driver libraries must also be visible to the process (for example through
 `hardware.nvidia` and `LD_LIBRARY_PATH`).
 
 ## Troubleshooting

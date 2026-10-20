@@ -36,9 +36,11 @@ We focus on **integration and E2E tests** over unit tests. Tests should cover cr
 
 Aim for each test to finish in under 15 seconds; this is advisory, with no enforced timing checks.
 
-The integration, SQLite E2E and PostgreSQL E2E suites run the real TensorRT reranker, so they need an NVIDIA GPU
-(driver R580 or newer, see [docs/gpu-reranking.md](docs/gpu-reranking.md)). There is no CPU path, stub reranker or
-skip: each suite ends the pytest run with exit code 2 and the cause when the GPU is unusable.
+The integration, SQLite E2E and PostgreSQL E2E suites run the real TensorRT embedder and reranker, so they need an
+NVIDIA GPU (driver R580 or newer, see [docs/gpu-models.md](docs/gpu-models.md)). There is no CPU path, test-only
+embedder, stub reranker or skip: each suite ends the pytest run with exit code 2 and the cause when the GPU is
+unusable. The session fixtures `tensorrt_embedder` and `tensorrt_reranker` (`tests/conftest.py`) return the
+production adapters.
 
 ### Integration Tests
 **Location**: `tests/integration/`

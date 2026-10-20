@@ -17,6 +17,7 @@ from app.config.settings import settings
 def model_cache(tmp_path, monkeypatch):
     cache = tmp_path / "fastembed"
     monkeypatch.setattr(settings, "FASTEMBED_CACHE_DIR", str(cache))
+    monkeypatch.setattr(settings, "EMBEDDING_PROVIDER", "FastEmbed")
     return cache
 
 
@@ -44,6 +45,16 @@ def test_empty_model_cache_announces_the_first_run_download(model_cache, monkeyp
     assert _messages(caplog) == [
         "First run detected - downloading embedding models. This may take a minute...",
     ]
+
+
+@pytest.mark.parametrize("provider", ["TensorRT", "gateway", "OpenAI"])
+def test_providers_that_do_not_use_the_fastembed_cache_log_nothing(model_cache, monkeypatch, caplog, provider):
+    monkeypatch.setattr(settings, "EMBEDDING_PROVIDER", provider)
+    caplog.set_level(logging.INFO, logger="app.bootstrap")
+
+    bootstrap.check_first_run_models()
+
+    assert _messages(caplog) == []
 
 
 def test_empty_model_cache_in_local_only_mode_warns_models_must_exist(model_cache, monkeypatch, caplog):

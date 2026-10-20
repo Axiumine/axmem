@@ -27,14 +27,19 @@ def test_one_worker_fits_on_this_card():
 
 
 def test_workers_that_fit_in_gpu_memory_are_allowed():
-    assert worker_budget_problem(24 * GIB, 8) is None
+    assert worker_budget_problem(24 * GIB, 3) is None
+
+
+def test_the_server_process_of_the_standalone_test_counts_against_the_budget():
+    assert worker_budget_problem(24 * GIB, 4) is not None
 
 
 def test_too_many_workers_are_refused_with_the_number_that_fits():
     problem = worker_budget_problem(24 * GIB, 12)
 
     assert "12 pytest-xdist workers" in problem
-    assert "at most -n 8" in problem
+    assert "at most -n 3" in problem
+    assert "standalone test starts 1 server process more" in problem
 
 
 def test_a_card_too_small_for_one_engine_still_names_one_worker():

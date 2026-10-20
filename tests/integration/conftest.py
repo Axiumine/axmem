@@ -19,7 +19,7 @@ from tests.integration.stubs import (
 
 
 def pytest_collection_modifyitems(config, items):
-    """The reranker runs on the NVIDIA GPU with no CPU path: without one this run ends, it never skips."""
+    """The embedder and the reranker run on the NVIDIA GPU with no CPU path: without one this run ends, it never skips."""
     require_gpu()
 
 
@@ -78,7 +78,7 @@ _SQLITE_RUNTIME_FIELDS = [
 
 
 @pytest.fixture
-def sqlite_runtime_settings(tensorrt_reranker):
+def sqlite_runtime_settings(tensorrt_reranker, tensorrt_embedder):
     """Point the composition root at in-memory SQLite with deterministic feature flags.
 
     Reranking stays enabled: the runtime it builds shares the real TensorRT engine of the session.
@@ -88,7 +88,7 @@ def sqlite_runtime_settings(tensorrt_reranker):
     original = {name: getattr(settings, name) for name in _SQLITE_RUNTIME_FIELDS}
     settings.DATABASE = "SQLite"
     settings.SQLITE_MEMORY = True
-    settings.EMBEDDING_PROVIDER = "FastEmbed"
+    settings.EMBEDDING_PROVIDER = "TensorRT"
     settings.RERANKING_ENABLED = True
     settings.FORGETFUL_SCOPES = "*"
     yield settings
