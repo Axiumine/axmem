@@ -37,11 +37,17 @@ synced as above.
 
 `denylist-check` keeps terms that must not appear in the repository out of it. The terms live in
 `.git/info/denylist` (one extended regular expression per line, matched case-insensitively), a file that belongs
-to the clone and is never tracked, so no tracked file names them. Without the file nothing is checked. The guard
-never prints a term, and `SKIP` does not bypass it. It fails closed: when `grep` cannot use the list (an invalid
-expression, such as an unbalanced parenthesis, makes it exit with status 2) the hook exits 2 and names the line numbers
-of the list to fix, never their content, instead of letting everything through. Added lines are matched without the
-diff column, so `^term` anchors to the line, and a line that begins with `++` is scanned like any other (covered by
+to the clone and is never tracked, so no tracked file names them. Without the file, or with a list that has no
+term, nothing is checked. The guard never prints a term, and `SKIP` does not bypass it. Each line is its own
+pattern (grep takes them one per line, so a line is never merged with its neighbour and keeps its own
+back-reference groups). It fails closed, exiting 2 instead of letting everything through, when it cannot do its job:
+a path at `.git/info/denylist` that grep cannot read (a directory, a dangling symlink, a file without read
+permission), a line that is not a valid expression on its own (an unbalanced parenthesis, a term that ends in a
+backslash; the message names the line numbers to fix, never their content, and a line that would only join with its
+neighbour into a valid expression still counts as invalid), a `git` or `grep` call that fails, and a missing or
+failing `awk`. Every external call is captured on its own, because the status of a pipeline is the status of its
+last stage and would hide the failure of an earlier one. Added lines are matched without the diff column, so
+`^term` anchors to the line, and a line that begins with `++` is scanned like any other (covered by
 `tests/integration/test_denylist_check_hook.py`).
 
 `commit-msg` is stage-less: it only validates the message text, so it is not run by `scripts.quality stage`

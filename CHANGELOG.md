@@ -362,7 +362,13 @@ Fixes found by reviewing the feature cuts (no upstream counterpart: the code the
   mutated class, so mutmut's baseline run passes (checked with the gate on `app.utils.url_helpers*`). `denylist-check` fails closed
   (exit 2, naming the line numbers of the list that are not valid expressions, never the terms) when grep cannot use the
   list, no longer drops added lines that begin with `++`, matches against the line without the diff column (so `^term`
-  works) and accepts a term that begins with a dash. The settings-defaults snapshot masks only credentials, so the
+  works) and accepts a term that begins with a dash. It checks each line of the list on its own and passes grep the
+  lines as separate patterns, instead of joining them with `|` (two invalid lines, such as a term that ends in a
+  backslash followed by another term, could join into a valid expression and silently stop enforcing the neighbour; a
+  back-reference now keeps its own groups); a path that grep cannot read (a directory, a dangling symlink, a file
+  without read permission) also exits 2 instead of passing; and `git`, `grep` and `awk` calls are captured one by one, so
+  a failing or missing `awk`, a failing `git` or an unknown revision stops the check with exit 2 where the pipeline status
+  used to hide it. The settings-defaults snapshot masks only credentials, so the
   defaults of `MEMORY_TOKEN_BUDGET`, `MEMORY_KEYWORDS_MAX_COUNT`, `MEMORY_KEYWORD_MAX_LENGTH` and `TOKEN_CACHE_*` are
   pinned; a schema test no longer leaves a collection behind; the tenant id derivation is pinned by tests; the trivy
   image is pinned (`aquasec/trivy:0.75.0`); the wheel smoke test installs the dependencies from `uv.lock` (NVIDIA's
