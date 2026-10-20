@@ -322,35 +322,15 @@ A batch size of `2048` is recommended as a starting point. This is a server-side
 
 ---
 
-## Docker Deployments
-
-For Docker-based deployments, run the re-embed command inside the container:
-
-### Docker Compose
-
-```bash
-# SQLite
-docker compose exec forgetful-service python main.py --re-embed --dry-run
-docker compose exec forgetful-service python main.py --re-embed
-
-# PostgreSQL
-docker compose exec forgetful-service python main.py --re-embed --dry-run
-docker compose exec forgetful-service python main.py --re-embed
-```
-
-Make sure your updated `.env` is mounted in the container before running.
+## Backups
 
 ### PostgreSQL Backup Requirements
 
-For PostgreSQL backups to work in Docker, the container needs `pg_dump` and `psql` available. The standard Forgetful Docker image includes these tools. If using a custom image, ensure the PostgreSQL client tools are installed.
+For PostgreSQL backups to work, the machine running the migration needs `pg_dump` and `psql` available on `PATH` (the PostgreSQL client tools, for example the `postgresql-client` package).
 
-### Where Docker Backups Are Kept
+### Where Backups Are Kept
 
-The backup is written inside the `forgetful-service` container, so it must be on a volume to outlive the container.
-
-- `docker-compose.yml` and `docker-compose.postgres.yml` set `BACKUP_DIR=/app/backups` and mount the named volume `forgetful_backups` there, so backups survive `docker compose up --force-recreate` and image upgrades. Copy one out with `docker compose cp forgetful-service:/app/backups/. ./backups`.
-- `docker-compose.sqlite.yml` keeps SQLite backups next to the database, in the `./data` volume.
-- With your own compose file or `docker run`, mount a volume and set `BACKUP_DIR` to it, otherwise the backup is lost with the container.
+By default the backup is written in the directory of `SQLITE_PATH`, for SQLite and PostgreSQL alike. Set `BACKUP_DIR` to keep backups elsewhere, for example on separate storage; it is created as `0700` if missing and the backup files are `0600`.
 
 ---
 
@@ -369,4 +349,3 @@ The backup is written inside the `forgetful-service` container, so it must be on
 
 - [Configuration Guide](./configuration.md) - All embedding provider settings
 - [Search Documentation](./search.md) - How embeddings are used in search
-- [Self-Hosting Guide](./self-hosting-guide.md) - Deployment and backup strategies

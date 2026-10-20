@@ -98,35 +98,34 @@ The server starts with stdio transport, which is what MCP clients expect. For HT
 
 > **Note**: Axmem is not published to PyPI. `uvx forgetful-ai` installs the upstream Forgetful package, not Axmem.
 
-### Option 2: Docker Deployment (Production/Scale)
+### Option 2: Native Setup with PostgreSQL (multi-user)
 
-Axmem provides two Docker deployment options:
+Axmem runs directly on the host; there are no container images or compose files. You need:
 
-> **Note**: The compose files still pull the upstream image `ghcr.io/scottrbk/forgetful`; Axmem images are not published yet. To run this code, build the image from [docker/Dockerfile](/docker/Dockerfile) and point `image:` at it.
-
-#### SQLite with Docker (Simpler, Single-Container)
-
-See [docker-compose.sqlite.yml](/docker/docker-compose.sqlite.yml)
-
-```bash
-cd docker
-cp .env.example .env
-# Edit .env: Set DATABASE=SQLite and SQLITE_PATH=data/forgetful.db
-docker compose -f docker-compose.sqlite.yml up -d
-```
-
-The SQLite database persists in the `./data` directory on the host.
-
-#### PostgreSQL with Docker (Recommended for multitenant)
-
-See [docker-compose.postgres.yml](/docker/docker-compose.postgres.yml) and [.env.example](/docker/.env.example)
+- [uv](https://docs.astral.sh/uv/) (it installs the Python 3.14 the project pins in `.python-version`)
+- a PostgreSQL server with the [pgvector](https://github.com/pgvector/pgvector) extension available, and an empty
+  database and a role that can create tables in it. The server runs its Alembic migrations and
+  `CREATE EXTENSION IF NOT EXISTS vector` at startup, so either that role may create extensions or an admin runs
+  `CREATE EXTENSION vector` in the database once
 
 ```bash
-cd docker
+git clone https://github.com/Axiumine/axmem.git
+cd axmem
+uv sync --locked
+
+# Settings come from environment variables; copy the reference file and edit it
 cp .env.example .env
-# Edit .env: Set DATABASE=Postgres and configure POSTGRES_* settings
-docker compose -f docker-compose.postgres.yml up -d
+# In .env set at least:
+#   DATABASE=Postgres
+#   POSTGRES_HOST=127.0.0.1   PGPORT=5099   POSTGRES_DB=forgetful
+#   POSTGRES_USER=...         POSTGRES_PASSWORD=...
+
+# Run the HTTP server (stdio is the default transport)
+uv run main.py --transport http --port 8020
 ```
+
+Run it under your service manager of choice (for example a systemd unit whose `WorkingDirectory` is the clone and whose
+`ExecStart` is `uv run main.py --transport http`). Environment variables set in the unit take precedence over `.env`.
 
 **Note**: If no `.env` file exists, the application uses defaults from `app/config/settings.py`.
 For all configuration options, see [Configuration Guide](docs/configuration.md).
@@ -158,7 +157,7 @@ Add Axmem to your MCP client configuration (replace `/path/to/axmem` with your c
 }
 ```
 
-**HTTP transport (for Docker/remote):**
+**HTTP transport (for remote or shared use):**
 ```json
 {
   "mcpServers": {
@@ -333,8 +332,7 @@ For all environment variables with detailed explanations, see [Configuration Gui
 - [REST API Reference](docs/api_reference.md) – HTTP endpoints for web UI integration
 - [Configuration Guide](docs/configuration.md) – All environment variables explained
 - [Connectivity Guide](docs/connectivity_guide.md) – Connect Claude and other MCP clients
-- [Self-Hosting Guide](docs/self-hosting-guide.md) – Deploy on a VPS with Docker
-- [Nix Guide](docs/nix.md) – Reproducible dev shell, builds and OCI image with Nix flakes
+- [Nix Guide](docs/nix.md) – Reproducible dev shell and builds with Nix flakes
 - [Search Documentation](docs/search.md) – Embedding pipeline and retrieval architecture
 - [Embedding Migration](docs/embedding_migration.md) – Switch embedding providers safely
 - [Features Roadmap](docs/features_roadmap.md) – Planned features and priorities
@@ -352,11 +350,11 @@ For all environment variables with detailed explanations, see [Configuration Gui
 
 ## Contributing
 
-We welcome contributions! Axmem uses integration + E2E testing with Docker Compose orchestration.
+We welcome contributions! Axmem uses integration + E2E testing; Docker is needed only for the PostgreSQL E2E database.
 
 See [Contributors Guide](docs/contributors.md) for:
 - Testing workflows (integration tests, E2E tests, GitHub Actions)
-- Development setup (local vs Docker)
+- Development setup and running from source
 - CI/CD pipeline details
 - Release process
 

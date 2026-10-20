@@ -73,7 +73,7 @@ across jobs:
 | `quality.yml` jobs `memory`, `trivy` | `memray`, `trivy` | 3.14 |
 | `quality.yml` job `qodana` | Qodana action with the `QODANA_TOKEN` repository secret; not run for pull requests from forks | n/a |
 | `quality.yml` job `mutation` | `mutation` with `MUTATION=1`, weekly (Mondays 03:17 UTC) and on manual dispatch | 3.14 |
-| `ci.yml` | architecture, integration and SQLite e2e suites plus `ruff` on Ubuntu and Windows; wheel build smoke test; offline Docker image test | 3.14 (Ubuntu and Windows) |
+| `ci.yml` | architecture, integration and SQLite e2e suites plus `ruff` on Ubuntu and Windows; wheel build smoke test | 3.14 (Ubuntu and Windows) |
 | `e2e.yml` | `tests/e2e` against PostgreSQL | 3.14 |
 
 ## Gates
@@ -114,7 +114,7 @@ cannot be called covered. Branch coverage runs with `parallel = true` and `concu
 
 In parallel mode every measured process writes its own `.coverage.<host>.pid<N>.<random>` fragment, and
 `coverage combine` merges the fragments into one data file. `[tool.coverage.run] data_file` puts that data file
-and its fragments in `.coverage-data/` (ignored by Git, Docker, semgrep, trivy, Qodana and radon), so nothing
+and its fragments in `.coverage-data/` (ignored by Git, semgrep, trivy, Qodana and radon), so nothing
 named `.coverage*` is written to the repository root, not even by an interrupted run. `pytest --cov` combines
 when it finishes; `tests` starts with `coverage erase`, which removes the data file and any leftover fragments.
 To merge fragments by hand, run `coverage combine --append`; to start over, delete `.coverage-data/`.
@@ -165,8 +165,8 @@ of `main` (no diff against `origin/main`) it reports `SKIP` unless `MUTATION_TAR
 
 ## Secrets
 
-`QODANA_TOKEN` goes into the git-ignored dotenv file in the repository root (see `.env.example` for the
-key name) or the environment. The runner reads only the keys a gate declares, takes the process
+`QODANA_TOKEN` goes into the git-ignored dotenv file in the repository root (`.env.example` lists the
+key name, commented out, because an empty value counts as set) or the environment. The runner reads only the keys a gate declares, takes the process
 environment first, and never prints them; CI uses the `QODANA_TOKEN` repository secret. Do not put the
 token in `qodana.yaml`.
 
@@ -213,6 +213,6 @@ missing (for example no Docker for `e2e-postgres`) reports `SKIP` with the reaso
   `# type: ignore[<code>]` with a reason for mypy (`warn_unused_ignores` flags stale ones). The code base
   uses no inline pylint disables; a noisy check is disabled once, with a comment, in
   `[tool.pylint."messages control"]`.
-* Raise the Python version (`quality.yml`, `ci.yml`, `e2e.yml`, `build.yml`, `pyproject.toml`
-  `requires-python`, classifiers and the mypy, pylint and ruff targets, `.python-version`, the Dockerfiles)
-  together.
+* Raise the Python version (`quality.yml`, `ci.yml`, `e2e.yml`, `pyproject.toml`
+  `requires-python`, classifiers and the mypy, pylint and ruff targets, `.python-version`, `flake.nix`,
+  the test harness Dockerfile) together.

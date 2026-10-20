@@ -295,7 +295,7 @@ pytest_add_cli_args_test_selection = ["tests/architecture/", "tests/integration/
 do_not_mutate = ["app/_version.py", "app/repositories/postgres/*"]
 also_copy = [
     "alembic/", "alembic.ini", "pytest.ini", "main.py", "pyproject.toml", "ruff.toml",
-    "test_harness/", "scripts/", "skills/", "docs/", "docker/", "architecture.md", "README.md",
+    "test_harness/", "scripts/", "skills/", "docs/", "architecture.md", "README.md",
 ]
 # Modules that start Python child processes in other directories cannot run inside the mutmut
 # sandbox (an instrumented app module needs mutmut's config at import time), so they are skipped.

@@ -20,8 +20,8 @@ from app.services.re_embedding_service import ReEmbeddingService
 def embedding_adapter():
     """Module-scoped embedding adapter (expensive to load).
 
-    Forces FastEmbed-compatible model regardless of env config (e.g. docker/.env
-    may set EMBEDDING_MODEL to an OpenAI model). Skips the whole module when
+    Forces FastEmbed-compatible model regardless of env config (e.g. a local
+    settings file may set EMBEDDING_MODEL to an OpenAI model). Skips the whole module when
     the model cannot be downloaded (offline runners).
     """
     original_model = settings.EMBEDDING_MODEL

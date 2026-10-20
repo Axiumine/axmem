@@ -184,9 +184,9 @@ def requirements_hash(requirements: str) -> str:
 def docker_sdk():
     """Import docker-py, or fail as an infra error naming the missing dependency group.
 
-    Without the SDK, `import docker` can still succeed: the repo's top-level `docker/`
-    directory (compose files, no __init__.py) resolves as an empty namespace package
-    that has no `errors` or `from_env`.
+    Without the SDK, `import docker` can still succeed: any `docker/` directory without an
+    `__init__.py` on the path (older checkouts kept one at the repo root) resolves as an empty
+    namespace package that has no `errors` or `from_env`.
     """
     try:
         import docker

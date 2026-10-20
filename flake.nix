@@ -61,7 +61,7 @@
             sourcePreference = "wheel";
           };
 
-          # 3. Version (Dockerfile ARG VERSION parity): default dev, release injects real tag.
+          # 3. Version: default dev, release injects the real tag.
           # Pure builds (incl. `nix flake check`) always see "" -> "0.0.0+dev", never crash.
           # Release: FORGETFUL_VERSION=$(git describe --tags) nix build --impure
           version =
@@ -70,13 +70,6 @@
               e = if r.success then r.value else "";
             in
             if e != "" then e else "0.0.0+dev";
-
-          # Docker tag parity with docker/metadata-action (build.yml):
-          # CI pushes ghcr.io/<owner>/forgetful with semver + major.minor + latest.
-          # buildLayeredImage takes a single tag, so tag the versioned image here
-          # and `docker tag` the extra aliases after load (see docs/nix.md).
-          # Docker tags must match [\w][\w.-]{0,127}; `+` (e.g. 0.0.0+dev) is invalid.
-          dockerTag = builtins.replaceStrings [ "+" ] [ "-" ] version;
 
           myOverrides = _final: prev: {
             "forgetful-ai" = prev."forgetful-ai".overrideAttrs (_old: {
@@ -147,42 +140,10 @@
             ${lib.getExe config.pre-commit.settings.package} run --all-files --config ${config.pre-commit.settings.configFile}
           '';
 
-          # App + Docker (house patterns): stdenv+makeWrapper server + layered OCI image on 8020
-          # Image repo `forgetful` matches CI (ghcr.io/<owner>/forgetful) and
-          # docker-compose default (`forgetful:latest`); pname stays forgetful-ai.
+          # App package (house pattern: stdenv+makeWrapper server); pname stays forgetful-ai.
           packages = {
             forgetful-ai = appPkg;
             default = appPkg;
-            docker = pkgs.dockerTools.buildLayeredImage {
-              name = "forgetful";
-              tag = dockerTag;
-              created = "now";
-              contents = [
-                appPkg
-                pkgs.bashInteractive
-                pkgs.cacert
-              ];
-              config = {
-                Cmd = [
-                  "${appPkg}/bin/forgetful-ai"
-                  "--transport"
-                  "http"
-                  "--host"
-                  "0.0.0.0"
-                  "--port"
-                  "8020"
-                ];
-                ExposedPorts = {
-                  "8020/tcp" = { };
-                };
-                Labels = {
-                  "org.opencontainers.image.title" = "forgetful";
-                  "org.opencontainers.image.description" = "MCP Server for AI Agent Memory";
-                  "org.opencontainers.image.version" = version;
-                  "org.opencontainers.image.licenses" = "MIT";
-                };
-              };
-            };
           };
 
           apps = {

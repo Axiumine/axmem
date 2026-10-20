@@ -60,13 +60,13 @@ These tests use an in-memory SQLite database for test isolation. Fast execution 
 #### PostgreSQL E2E Tests
 **Location**: `tests/e2e/`
 **Purpose**: Test complete stack with real PostgreSQL
-**Requirements**: PostgreSQL running in Docker
+**Requirements**: Docker; the fixtures start (or reuse) a `forgetful-db` PostgreSQL container
 **Run locally**:
 ```bash
-cd docker && docker compose down -v  
+docker rm -f forgetful-db && docker volume rm forgetful_db_data  # optional: start from an empty database
 uv run pytest -m e2e
 ```
-**Remember**: rebuild docker image if running local container service, not required however for e2e tests.
+Docker is only a test dependency. The project has no container deployment: it runs natively (`uv run main.py`).
 
 
 ## Quality gates

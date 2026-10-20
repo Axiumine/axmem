@@ -73,26 +73,23 @@ live in `tests/e2e_sqlite/test_memory_budget_sqlite.py` and are enforced under `
 All of this, including the gate list, scoping rules and the cost of the mutation gate, is in
 [quality-gates.md](quality-gates.md).
 
-## Running with Docker with source 
-This will approach will fall back to using the build and as such allow you to check any changes you have made inside of a container. 
+## Running from source
+
+Clone the repository and install the locked dependencies (Python 3.14 and [uv](https://docs.astral.sh/uv/)):
 
 ```bash
 git clone https://github.com/ScottRBK/forgetful.git
 cd forgetful
-```
-
-```bash
-cd docker
-docker compose up -d --build
+uv sync --locked --all-extras --dev
+uv run main.py
 ```
 
 **Optional**: Customize configuration by copying the example environment file:
 
 ```bash
-cd docker
 cp .env.example .env
 # Edit .env with your custom values
-docker compose up -d
+uv run main.py --transport http
 ```
 
 
@@ -142,7 +139,7 @@ These tests use an in-memory SQLite database for test isolation, with automatic 
 
 **Run locally**:
 ```bash
-# The fixtures start (or reuse) the forgetful-db container from docker/docker-compose.yml
+# The fixtures start (or reuse) the forgetful-db Docker container (pgvector image, see tests/e2e/README.md)
 uv run pytest -m e2e
 ```
 
@@ -206,8 +203,8 @@ uv tool run ruff check .
 3. Run SQLite E2E tests (real SQLite, full stack).
 4. Run linting.
 
-Two further jobs follow: a wheel smoke test (build the wheel, check the Alembic files are included and
-`forgetful --help` works) and an offline Docker image test (`tests/docker/`).
+One further job follows: a wheel smoke test (build the wheel, check the Alembic files are included and
+`forgetful --help` works).
 
 **Merge requirements**: Configure branch rules to require this workflow's `test` check.
 The workflow alone does not make it mandatory for merging.
@@ -243,18 +240,11 @@ snapshot tests, on Python 3.14), `coverage` (SQLite and PostgreSQL suites combin
 `memory` (memray budgets), `trivy`, `qodana` (uses the `QODANA_TOKEN` repository secret; skipped for pull
 requests from forks) and `mutation` (weekly and manual only). See [quality-gates.md](quality-gates.md).
 
-### `build.yml` - Docker Image Build
+### `publish.yml` - PyPI Publication
 
-**Triggers**: Version tag push only (e.g., `v0.1.0`, `v1.0.0`)
+**Triggers**: A published GitHub release
 
-**Purpose**: Build and publish release images
-
-**Steps**:
-1. Build Docker image
-2. Tag with semver, SHA, and `latest`
-3. Push to GitHub Container Registry (`ghcr.io/scottrbk/forgetful`)
-
-**Note**: Only runs when you manually create a release tag
+**Purpose**: Build the package and publish it to PyPI
 
 ---
 
@@ -266,7 +256,7 @@ requests from forks) and `mutation` (weekly and manual only). See [quality-gates
    git tag v0.1.0
    git push origin v0.1.0
    ```
-3. Build workflow automatically creates Docker image
+3. Publish a GitHub release for the tag; `publish.yml` then builds the package and publishes it to PyPI
 
 ---
 

@@ -376,7 +376,7 @@ back-compat, so lead with a verb - `forgetful memory --help`, `forgetful tools
 
 ### Remote deployment with OAuth
 
-Against a Docker/Postgres deployment with authentication enabled (see
+Against a remote PostgreSQL-backed deployment with authentication enabled (see
 [Configuration Guide](configuration.md#authentication-configuration)):
 
 ```bash

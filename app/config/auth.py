@@ -5,7 +5,7 @@ variables. This factory reads the same FASTMCP_SERVER_AUTH + FASTMCP_SERVER_AUTH
 settings that users already configure and constructs providers explicitly.
 
 All auth settings flow through settings.py for consistency with the rest of
-the codebase (supports .env, docker/.env, and platform config .env files).
+the codebase (supports .env and platform config .env files).
 
 Users change nothing — same env vars, same behavior.
 """

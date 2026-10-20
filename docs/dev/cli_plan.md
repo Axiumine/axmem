@@ -11,7 +11,7 @@
 
 Add a first-party CLI to the existing `forgetful-ai` package so the memory system is usable
 from any terminal — against a local database by default, or against a remote deployment
-(Docker + Postgres) with full OAuth. The CLI is a fourth front door over the existing
+(Postgres) with full OAuth. The CLI is a fourth front door over the existing
 transport-agnostic core: it executes the same `ToolRegistry` the MCP meta-tools use, so the
 MCP surface, REST API, and terminal can never drift apart.
 

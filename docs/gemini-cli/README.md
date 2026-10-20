@@ -12,7 +12,7 @@ Ensure Forgetful MCP server is configured:
 # STDIO transport (recommended for local use)
 gemini mcp add forgetful uvx forgetful-ai
 
-# Or HTTP transport (for remote/Docker)
+# Or HTTP transport (for remote use)
 gemini mcp add -t http forgetful http://localhost:8020/mcp
 ```
 

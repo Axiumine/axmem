@@ -37,9 +37,17 @@ without the mark, with the commit that landed it, in the commit that lands it.
   kept (`b121d350`). The package, CLI and environment variables still say `forgetful`.
 - Python 3.14 is the only supported version: `requires-python`, classifiers, tool targets, CI, Dockerfiles and Nix
   (`1eea81a5`); the `compat` gate is gone; 142 ruff findings from the new target were auto-fixed (`c78d3f98`).
+- The environment reference moved from `docker/.env.example` to `.env.example` in the repository root, where the
+  `QODANA_TOKEN` key of the quality gates joins it (commented out, because an empty value counts as set). It now
+  shows the native defaults: SQLite, PostgreSQL on `127.0.0.1`, no `SQLITE_PATH` and no compose settings. Settings no
+  longer read `docker/.env`; the files read are `.env` in the working directory and `~/.config/forgetful/.env`.
+  The `SERVER_HOST` default stays `0.0.0.0` (its comment no longer calls it the container default).
+- The PostgreSQL e2e fixture creates the `forgetful-db` test container with `docker run` (image
+  `pgvector/pgvector:pg16`, volume `forgetful_db_data`) from the `POSTGRES_*` and `PGPORT` settings instead of the
+  removed compose file; an existing container is reused or restarted.
 - Coverage data is written to `.coverage-data/` (`[tool.coverage.run] data_file`) instead of the repository root,
   because `parallel = true` makes every measured process write its own `.coverage.*` fragment, and interrupted
-  runs left them behind. `.coverage-data/` is ignored by Git, Docker, semgrep, trivy, Qodana and radon.
+  runs left them behind. `.coverage-data/` is ignored by Git, semgrep, trivy, Qodana and radon.
 - **(planned)** NVIDIA GPU is a hard requirement for development and runtime; there is no CPU path and no skip.
 - **(planned)** Embeddings come only from the router (`gateway`); reranking runs locally on the GPU.
 - **(planned)** Users become tenants; projects become an optional scope string created on first use.
@@ -83,7 +91,7 @@ without the mark, with the commit that landed it, in the commit that lands it.
   `memory_entity_association` and deletes the entity activity rows; the downgrade recreates the empty tables. The
   `forgetful-entities` agent skill file is deleted and the other files in the `skills/` catalogue, the prompts and
   the agent commands in `docs/` are edited; the catalogue stays. The tool count goes from 33 to 17.
-- Activity: `EventBus` with its SSE stream, `ActivityService`, both activity repositories and the `activity_log`
+- Activity (`373e7eb5`): `EventBus` with its SSE stream, `ActivityService`, both activity repositories and the `activity_log`
   table, the REST routes `GET /api/v1/activity`, `/api/v1/activity/{entity_type}/{entity_id}` and
   `/api/v1/activity/stream`, the `ACTIVITY_ENABLED`, `ACTIVITY_RETENTION_DAYS`, `ACTIVITY_TRACK_READS` and
   `SSE_MAX_QUEUE_SIZE` settings, the event emission in the memory and project services, and the one-shot CLI wait for
@@ -95,7 +103,15 @@ without the mark, with the commit that landed it, in the commit that lands it.
   reads as never accessed). Older environment files that still set the removed settings keep working, because
   unknown settings are ignored. The removal tests of the earlier cuts now check their own revision instead of the
   head, because the log no longer exists there.
-- **(planned)** Container deployment (`docker/`, image jobs, Nix OCI image); Docker stays as a test dependency.
+- Container deployment: `docker/` (the Dockerfile and the SQLite, PostgreSQL and development compose files),
+  `.dockerignore`, the `build.yml` workflow that built, tested and pushed the image to a container registry, the
+  `docker-offline` job of `ci.yml` with its `tests/docker/` image test, the `docker` output of `flake.nix` (the
+  dev shell, the app package and the app stay), `docs/self-hosting-guide.md` and the Docker parts of the README,
+  `docs/configuration.md` (including `COMPOSE_PROJECT_NAME` and `BIND_ADDRESS`, which only the compose files read),
+  `docs/OFFLINE_SETUP.md`, `docs/embedding_migration.md`, `docs/nix.md` and `docs/contributors.md`. The compose
+  files still pulled the upstream image and no Axmem image was ever published. Docker stays as a test dependency
+  (the PostgreSQL e2e fixture, the quality gates that fall back to a tool image, the test harness image). No schema
+  change.
 - **(planned)** SQLite, PostgreSQL, pgvector and Alembic.
 - **(planned)** FastEmbed, ONNX Runtime and the local CPU embedder; GitHub and Google OAuth and the CLI browser
   login; the user and project CRUD tools.
@@ -125,6 +141,6 @@ Fixes to features that are removed above are moot once those features go.
   loopback address. Fixes the finding that, without `FASTMCP_SERVER_AUTH`, every request is the same default
   user (`app/middleware/auth.py`).
 - PostgreSQL has no row-level security: there is no `CREATE POLICY` in `app/` or `alembic/`, isolation is a
-  `user_id` predicate in each query, and the Docker deployment connects as the image's bootstrap superuser, which
-  would bypass row-level security anyway. This goes away with the move to Qdrant, where isolation is a tenant
+  `user_id` predicate in each query, and a role that connects as the PostgreSQL bootstrap superuser (as the removed
+  Docker deployment did) would bypass row-level security anyway. This goes away with the move to Qdrant, where isolation is a tenant
   filter applied in one place.

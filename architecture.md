@@ -3,7 +3,7 @@
 Reviewable, agent-authored overview, checked against source on 2026-10-08, with boundary changes checked on 2026-10-17
 and the structure re-verified on 2026-10-19 against the `quality-gates` branch (`37ee70f`), then updated for the
 removal of the graph REST view and subgraph traversal, of plans and tasks, of skills, of files, of documents and
-code artifacts, of entities, and of the activity bus and stream, on the `axmem` branch.
+code artifacts, of entities, of the activity bus and stream, and of the container deployment, on the `axmem` branch.
 This is a selective interpretation, not an exhaustive dependency inventory.
 The component groupings below are inferred for readability; the described execution paths
 and wiring were verified against source. Line numbers are inspection starting points and may drift.
@@ -14,6 +14,8 @@ MCP tools, HTTP endpoints, and a CLI. Its intended boundary is
 Protocols are Python contracts, not an extra runtime process: services call injected implementations.
 SQL, vector storage, provider clients, and database sessions normally stay behind those contracts.
 Operational exceptions are called out below rather than hidden by the diagram.
+The server runs natively (`uv run main.py`, see the README); the repository ships no container image or compose files.
+Docker appears only as a test dependency (the PostgreSQL end-to-end database).
 
 ## Component view
 
@@ -254,7 +256,7 @@ The CI test job runs the latter; [validation notes](docs/dev/architecture-tests.
 | --- | --- |
 | Integration | [tests/integration](tests/integration) uses stubbed I/O for service workflows. Start at [test_memory_service.py:13](tests/integration/test_memory_service.py#L13), [test_bootstrap.py](tests/integration/test_bootstrap.py), and the scope and CLI tests. Run `uv run pytest tests/integration/`. |
 | SQLite E2E | [tests/e2e_sqlite](tests/e2e_sqlite) exercises the stack with in-memory SQLite; [conftest.py:178](tests/e2e_sqlite/conftest.py#L178) builds the app. Run `uv run pytest tests/e2e_sqlite/`. |
-| PostgreSQL E2E | [tests/e2e](tests/e2e) exercises the PostgreSQL stack; [conftest.py:239](tests/e2e/conftest.py#L239) manages the Docker database fixture. Run `uv run pytest -m e2e` with Docker available. |
+| PostgreSQL E2E | [tests/e2e](tests/e2e) exercises the PostgreSQL stack; [conftest.py:268](tests/e2e/conftest.py#L268) starts or reuses the Docker database container (`docker run`, pgvector image). Run `uv run pytest -m e2e` with Docker available. |
 | Snapshots | Syrupy snapshots (`-m snapshot`) pin public surfaces: [test_snapshots.py](tests/integration/test_snapshots.py) covers CLI help, settings defaults and the database schema; [test_snapshots_sqlite.py](tests/e2e_sqlite/test_snapshots_sqlite.py) covers the MCP meta-tool signatures, the discovered tool catalogue and the HTTP route table. A changed snapshot is a contract change; refresh it deliberately with `uv run pytest -m snapshot --snapshot-update`. |
 | Memory budgets | [test_memory_budget_sqlite.py](tests/e2e_sqlite/test_memory_budget_sqlite.py) holds `limit_memory` budgets for bulk create and query; they are enforced only under `--memray` (Linux/macOS) and otherwise run as smoke tests. |
 | Agent walkthroughs | [test_harness/walkthrough.py:227](test_harness/walkthrough.py#L227) orchestrates agent sessions; this is evaluation infrastructure, not a production request path. Generated run workspaces are excluded from the map. |

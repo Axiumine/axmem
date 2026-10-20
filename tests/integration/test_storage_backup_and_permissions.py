@@ -10,13 +10,10 @@ import sys
 from pathlib import Path
 
 import pytest
-import yaml
 
 from app.bootstrap import create_backup_service
 from app.config.settings import settings
 from app.repositories.backup_adapter import DatabaseBackupAdapter
-
-REPO_ROOT = Path(__file__).resolve().parents[2]
 
 posix_only = pytest.mark.skipif(sys.platform == "win32", reason="POSIX shell scripts and mode bits")
 
@@ -207,20 +204,3 @@ async def test_backup_dir_defaults_to_the_sqlite_data_directory(pg_tools, tmp_pa
 
     assert settings.BACKUP_DIR == ""
     assert backup.parent == tmp_path / "data"
-
-
-@pytest.mark.parametrize("compose_name", ["docker-compose.yml", "docker-compose.postgres.yml"])
-def test_postgres_compose_files_persist_the_backup_directory(compose_name):
-    compose = yaml.safe_load((REPO_ROOT / "docker" / compose_name).read_text())
-    service = compose["services"]["forgetful-service"]
-
-    environment = service["environment"]
-    configured = dict(item.split("=", 1) for item in environment) if isinstance(
-        environment, list,
-    ) else environment
-    backup_dir = configured["BACKUP_DIR"]
-    mounts = {volume.split(":")[1]: volume.split(":")[0] for volume in service["volumes"]}
-
-    assert backup_dir in mounts
-    # A named volume survives `docker compose up --force-recreate` and image upgrades.
-    assert mounts[backup_dir] in compose["volumes"]

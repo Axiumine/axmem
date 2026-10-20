@@ -82,7 +82,7 @@ class Settings(BaseSettings):
     SERVICE_DESCRIPTION: str = "Forgetful Memory Service"
 
     # Server Configuration
-    SERVER_HOST: str = "0.0.0.0"  # nosec B104 - documented container default; set SERVER_HOST to narrow it
+    SERVER_HOST: str = "0.0.0.0"  # nosec B104 - documented default; set SERVER_HOST to narrow it
     SERVER_PORT: int = 8020
     LOG_LEVEL: str = "INFO"
     LOG_FORMAT: str = "console"
@@ -95,7 +95,7 @@ class Settings(BaseSettings):
     DATABASE: str = "SQLite"  # "Postgres" or "SQLite"
 
     # Postgres Configuration
-    POSTGRES_HOST: str = "127.0.0.1"  # 127.0.0.1 for local, forgetful-db for Docker
+    POSTGRES_HOST: str = "127.0.0.1"
     PGPORT: int = 5099
     POSTGRES_DB: str = "forgetful"
     POSTGRES_USER: str = "forgetful"
@@ -107,7 +107,7 @@ class Settings(BaseSettings):
 
     # Backup Configuration (re-embed backups, SQLite and Postgres)
     # Empty keeps backups in the directory of SQLITE_PATH. Point this at persistent storage
-    # when that directory is not (e.g. a Postgres deployment in a container).
+    # when that directory is not (for example when only PostgreSQL is used on this host).
     BACKUP_DIR: str = ""
 
     DB_LOGGING: bool = False
@@ -276,7 +276,6 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=[
             ".env",  # Local override
-            "docker/.env",  # Development/Docker
             str(_default_config_dir / ".env"),  # User config
         ],
         env_file_encoding="utf-8",

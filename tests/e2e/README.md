@@ -8,7 +8,9 @@ uv run pytest tests/e2e/test_reranking_e2e.py -m e2e
 uv run pytest tests/e2e/test_reranking_e2e.py::test_reranking_orders_by_score_e2e -m e2e
 ```
 
-The fixtures start or reuse the `forgetful-db` Docker container and clear its application tables.
+The fixtures start or reuse the `forgetful-db` Docker container (the `pgvector/pgvector:pg16` image with the
+named volume `forgetful_db_data`, created with `docker run` from the `POSTGRES_*` and `PGPORT` settings) and clear
+its application tables. Docker is the only container dependency; remove the container and volume to start fresh.
 Run these tests sequentially against the test database; concurrent runs share and clear the same
 data.
 

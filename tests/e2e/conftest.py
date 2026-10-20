@@ -7,9 +7,8 @@ Architecture:
 Each test creates all the data it needs. Background event handlers finish before
 the next test clears the tables. Tests sharing this database must run sequentially.
 
-This replaces the previous Docker Compose orchestration (which spun up both
-postgres + forgetful-service containers per module) with a much faster approach:
-only postgres runs in Docker, the FastMCP server runs in-process.
+Only postgres runs in Docker (one container for the whole session); the FastMCP server
+runs in-process.
 
 IMPORTANT: All async fixtures use loop_scope="session" because the asyncpg
 connection pool is session-scoped and its connections are bound to the event loop
@@ -22,7 +21,6 @@ import subprocess
 import time
 import typing
 from contextlib import asynccontextmanager
-from pathlib import Path
 
 import pytest
 import pytest_asyncio
@@ -176,6 +174,11 @@ class StreamingASGITransport(ASGITransport):
         return Response(status_code, headers=response_headers, stream=stream)
 
 
+# The shared test database: one named container and data volume, reused across test runs.
+POSTGRES_CONTAINER = "forgetful-db"
+POSTGRES_IMAGE = "pgvector/pgvector:pg16"
+POSTGRES_VOLUME = "forgetful_db_data"
+
 # Clear child/association tables before their parents, leaving migration history intact.
 ALL_TABLES = [
     "memory_links",
@@ -235,43 +238,57 @@ def postgres_backup_tools():
         pytest.skip(message)
 
 
+def _container_exists(container_name: str) -> bool:
+    """Check if a Docker container exists, running or not."""
+    result = subprocess.run(
+        ["docker", "inspect", "--format={{.Id}}", container_name],
+        capture_output=True, text=True, check=False,
+    )
+    return result.returncode == 0
+
+
+def _postgres_run_command() -> list[str]:
+    """Build the `docker run` that creates the test database from the settings the tests use."""
+    user, database, port = settings.POSTGRES_USER, settings.POSTGRES_DB, str(settings.PGPORT)
+    return [
+        "docker", "run", "-d", "--name", POSTGRES_CONTAINER, "--restart", "unless-stopped",
+        "-e", f"POSTGRES_USER={user}",
+        "-e", f"POSTGRES_PASSWORD={settings.POSTGRES_PASSWORD}",
+        "-e", f"POSTGRES_DB={database}",
+        "-e", f"PGPORT={port}",
+        "-p", f"127.0.0.1:{port}:{port}",
+        "-v", f"{POSTGRES_VOLUME}:/var/lib/postgresql/data",
+        "--health-cmd", f"pg_isready -U {user} -d {database}",
+        "--health-interval", "5s", "--health-timeout", "5s", "--health-retries", "5",
+        POSTGRES_IMAGE,
+    ]
+
+
 @pytest.fixture(scope="session")
 def postgres_container():
-    """Ensure forgetful-db container is running for the entire test session.
+    """Ensure the forgetful-db container is running for the entire test session.
 
-    Starts only the postgres container (not forgetful-service) via docker compose.
+    Creates it with `docker run` from the settings the tests connect with (pgvector image,
+    named data volume, localhost-only port), or starts it again when it was stopped.
     If already running, skips startup.
     """
-    project_root = Path(__file__).parent.parent.parent
-    compose_file = project_root / "docker" / "docker-compose.yml"
-    docker_dir = project_root / "docker"
-
-    # Ensure .env exists (copy from .env.example if missing, e.g. in CI)
-    env_file = docker_dir / ".env"
-    if not env_file.exists():
-        shutil.copy(docker_dir / ".env.example", env_file)
-        print("\n  Copied .env.example -> .env")
-
-    if _container_running("forgetful-db"):
-        print("\n  forgetful-db already running, reusing")
-        _wait_for_healthy("forgetful-db")
+    if _container_running(POSTGRES_CONTAINER):
+        print(f"\n  {POSTGRES_CONTAINER} already running, reusing")
     else:
-        print("\n  Starting forgetful-db via docker compose...")
-        env = {"COMPOSE_PROJECT_NAME": "forgetful"}
-        result = subprocess.run(
-            ["docker", "compose", "-f", str(compose_file), "up", "-d", "forgetful-db"],
-            env={**os.environ, **env},
-            capture_output=True, text=True, cwd=str(project_root),
-        )
+        print(f"\n  Starting {POSTGRES_CONTAINER} with docker...")
+        if _container_exists(POSTGRES_CONTAINER):
+            command = ["docker", "start", POSTGRES_CONTAINER]
+        else:
+            command = _postgres_run_command()
+        result = subprocess.run(command, capture_output=True, text=True, check=False)
         if result.returncode != 0:
             raise RuntimeError(
-                f"Failed to start forgetful-db:\nSTDOUT: {result.stdout}\nSTDERR: {result.stderr}",
+                f"Failed to start {POSTGRES_CONTAINER}:\nSTDOUT: {result.stdout}\nSTDERR: {result.stderr}",
             )
-        _wait_for_healthy("forgetful-db")
-
+    _wait_for_healthy(POSTGRES_CONTAINER)
 
     # Don't tear down — the container is reusable across test runs.
-    # Users can `docker compose down -v` manually if needed.
+    # Users can `docker rm -f forgetful-db && docker volume rm forgetful_db_data` manually if needed.
 
 
 @pytest_asyncio.fixture(scope="session", loop_scope="session")

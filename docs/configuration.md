@@ -6,53 +6,17 @@ This guide explains all available environment variables for configuring Forgetfu
 
 All configuration is optional. If no `.env` file exists, Forgetful uses sensible defaults from `app/config/settings.py`.
 
-To customize configuration:
+To customize configuration, copy the reference file from the repository root and edit it. Forgetful reads
+`.env` from the directory it is started in and `~/.config/forgetful/.env` (the user config file, which
+outranks the local one):
+
 ```bash
-cd docker
 cp .env.example .env
 # Edit .env with your values
-docker compose up -d
+uv run main.py --transport http
 ```
 
----
-
-## Docker Deployment Options
-
-Forgetful provides three Docker Compose configurations:
-
-### Local Development (`docker-compose.yml`)
-- **Use case**: Local development with hot reload and build context
-- **Features**: Builds from source, optional volume mounting for live code updates
-- **Command**: `docker compose up -d --build`
-
-### SQLite Deployment (`docker-compose.sqlite.yml`)
-- **Use case**: Production deployment with single-container simplicity
-- **Features**:
-  - Single container (no separate database service)
-  - Persistent storage via `./data:/app/data` volume mount
-  - Zero-config database setup
-- **Setup**:
-  ```bash
-  cd docker
-  cp .env.example .env
-  # Edit .env: Set DATABASE=SQLite, SQLITE_PATH=data/forgetful.db
-  docker compose -f docker-compose.sqlite.yml up -d
-  ```
-- **Important**: The `./data` directory persists your database across container restarts
-
-### PostgreSQL Deployment (`docker-compose.postgres.yml`)
-- **Use case**: Production deployment with PostgreSQL for scale and robustness
-- **Features**:
-  - Multi-container stack (app + PostgreSQL + pgvector)
-  - Named volume for database persistence
-  - Production-grade database with vector search
-- **Setup**:
-  ```bash
-  cd docker
-  cp .env.example .env
-  # Edit .env: Set DATABASE=Postgres, configure POSTGRES_* settings
-  docker compose -f docker-compose.postgres.yml up -d
-  ```
+[`.env.example`](../.env.example) lists every setting with its default and the provider blocks.
 
 ---
 
@@ -81,14 +45,14 @@ Forgetful provides three Docker Compose configurations:
 - **Default**: `0.0.0.0`
 - **Description**: Network interface the server binds to
 - **Values**:
-  - `0.0.0.0` - Listen on all interfaces (default for container)
+  - `0.0.0.0` - Listen on all interfaces (default)
   - `127.0.0.1` - Listen only on localhost
 - **Example**: `SERVER_HOST=0.0.0.0`
 
 ### `SERVER_PORT`
 - **Default**: `8020`
 - **Description**: Port number the MCP server listens on
-- **Note**: If changed, update your MCP client configuration and Docker port mapping
+- **Note**: If changed, update your MCP client configuration
 - **Example**: `SERVER_PORT=8020`
 
 ### `LOG_LEVEL`
@@ -117,23 +81,6 @@ Forgetful provides three Docker Compose configurations:
 
 ---
 
-## Docker Configuration
-
-### `COMPOSE_PROJECT_NAME`
-- **Default**: `forgetful`
-- **Description**: Docker Compose project name (prefixes container and volume names)
-- **Example**: `COMPOSE_PROJECT_NAME=my-forgetful-stack`
-
-### `BIND_ADDRESS`
-- **Default**: `127.0.0.1`
-- **Description**: Host address Docker exposes the service on
-- **Values**:
-  - `127.0.0.1` - Localhost only (secure, recommended)
-  - `0.0.0.0` - All interfaces (development only, insecure on public networks)
-- **Example**: `BIND_ADDRESS=127.0.0.1`
-
----
-
 ## Database Configuration (SQLite/PostgreSQL)
 
 ### `DATABASE`
@@ -150,10 +97,8 @@ Forgetful provides three Docker Compose configurations:
 - **Default**: `forgetful.db` in the platform-specific user data directory (e.g., `~/.local/share/forgetful/forgetful.db`)
 - **Description**: File path for SQLite database
 - **Notes**:
-  - Relative paths are relative to the project root (or `/app` in Docker containers)
-  - **Docker deployment**: Use `data/forgetful.db` with volume mount `./data:/app/data` to persist data across container restarts (see `docker-compose.sqlite.yml`)
-  - Without volume mounting, the database will be ephemeral and lost on container removal
-  - Forgetful creates the directory (when it does not exist yet) as `0700` and keeps the database, its `-wal`/`-shm` files and backups at `0600`, so only the owning account can read your data. Group and other access is also removed from an existing database file on startup; an existing directory is never changed. Windows is left alone. With the Docker SQLite setup the container's user owns `./data/forgetful.db`, so reading it from the host needs that user (typically `sudo`).
+  - Relative paths are relative to the directory the server is started from
+  - Forgetful creates the directory (when it does not exist yet) as `0700` and keeps the database, its `-wal`/`-shm` files and backups at `0600`, so only the owning account can read your data. Group and other access is also removed from an existing database file on startup; an existing directory is never changed. Windows is left alone.
 - **Example**: `SQLITE_PATH=data/forgetful.db`
 
 #### `SQLITE_MEMORY`
@@ -169,10 +114,8 @@ Forgetful provides three Docker Compose configurations:
 #### `POSTGRES_HOST`
 - **Default**: `127.0.0.1`
 - **Description**: PostgreSQL server hostname
-- **Values**:
-  - `forgetful-db` - When running in Docker (container name)
-  - `127.0.0.1` - When running locally outside Docker
-- **Example**: `POSTGRES_HOST=forgetful-db`
+- **Values**: a host name or address of the PostgreSQL server (it needs the pgvector extension)
+- **Example**: `POSTGRES_HOST=db.internal.example.com`
 
 ### `PGPORT`
 - **Default**: `5099`
@@ -204,7 +147,7 @@ Forgetful provides three Docker Compose configurations:
 - **Description**: Directory for the backups that `--re-embed` takes before changing anything (SQLite snapshot or PostgreSQL `pg_dump`)
 - **Notes**:
   - Created as `0700` if missing; the backup files themselves are `0600`
-  - Must be persistent storage. `docker-compose.yml` and `docker-compose.postgres.yml` set it to `/app/backups`, a named volume, because the default location (`/app/data`) is not a volume in a PostgreSQL deployment
+  - Must be persistent storage; with PostgreSQL the default location is still the directory of `SQLITE_PATH`, so point it elsewhere if that is not where you want the dumps
 - **Example**: `BACKUP_DIR=/var/backups/forgetful`
 
 #### `DB_LOGGING`
@@ -372,7 +315,7 @@ When authentication is enabled, Forgetful automatically provisions users from to
    - Always enable authentication (`FASTMCP_SERVER_AUTH`)
    - Use HTTPS for all endpoints
    - Rotate client secrets regularly
-   - Bind to localhost: `BIND_ADDRESS=127.0.0.1`
+   - Bind to localhost: `SERVER_HOST=127.0.0.1`
 
 2. **Token Scopes**:
    - Define required scopes: `FASTMCP_SERVER_AUTH_*_REQUIRED_SCOPES`
@@ -913,37 +856,28 @@ Settings are resolved in this order (highest priority first):
 
 ### Local Development
 ```bash
-# docker/.env
+# .env
 SERVER_PORT=8020
 POSTGRES_HOST=127.0.0.1
 LOG_LEVEL=DEBUG
 LOG_FORMAT=console
 ```
 
-### Docker Development
-```bash
-# docker/.env
-SERVER_PORT=8020
-POSTGRES_HOST=forgetful-db
-LOG_LEVEL=INFO
-LOG_FORMAT=console
-```
-
 ### Production
 ```bash
-# docker/.env
+# .env
 SERVER_PORT=8020
-POSTGRES_HOST=forgetful-db
+SERVER_HOST=127.0.0.1
+POSTGRES_HOST=db.internal.example.com
 POSTGRES_USER=secure_user
 POSTGRES_PASSWORD=<strong-password>
 LOG_LEVEL=WARNING
 LOG_FORMAT=json
-BIND_ADDRESS=127.0.0.1
 ```
 
 ### High-Volume / Large Context
 ```bash
-# docker/.env
+# .env
 MEMORY_TOKEN_BUDGET=16000
 MEMORY_MAX_MEMORIES=50
 DENSE_SEARCH_CANDIDATES=100
@@ -961,7 +895,7 @@ DENSE_SEARCH_CANDIDATES=100
 
 2. **Use localhost binding for security**
    ```bash
-   BIND_ADDRESS=127.0.0.1
+   SERVER_HOST=127.0.0.1
    ```
 
 3. **Use structured logging in production**
@@ -979,14 +913,11 @@ DENSE_SEARCH_CANDIDATES=100
 ## Troubleshooting
 
 ### Database Connection Issues
-- Verify `POSTGRES_HOST` matches your deployment:
-  - `forgetful-db` for Docker
-  - `127.0.0.1` for local
-- Check port with: `docker compose ps` or `netstat -an | grep 5099`
+- Verify `POSTGRES_HOST` and `PGPORT` match your PostgreSQL server (`127.0.0.1` and `5099` by default)
+- Check the port with: `netstat -an | grep 5099`
 
 ### Port Conflicts
 - Change `SERVER_PORT` and `PGPORT` if defaults conflict
-- Update Docker port mappings in `docker-compose.yml`
 - Update MCP client configuration
 
 ### Search Performance
