@@ -54,6 +54,6 @@ Found 3 memories about authentication patterns:
    Chose OAuth2 over API keys for user-facing auth...
    Tags: decision, oauth, security
 
-Related: Memory #45 (Session management approach)
+Related: Memory 3f2b8c1e (Session management approach)
 ```
 """

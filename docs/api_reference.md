@@ -52,7 +52,8 @@ Public endpoint (no credential) for clients to detect the mode before sending on
 | 201 | Created |
 | 400 | Bad Request (validation error, malformed or non-object JSON body, `NaN`/infinite numbers in a body, invalid query parameter) |
 | 401 | Unauthorized (missing, invalid or expired token) |
-| 404 | Not Found (including a path id that is not an integer id, such as `/api/v1/memories/abc`, and a memory that belongs to another tenant) |
+| 404 | Not Found (including a path id that is not a UUID, such as `/api/v1/memories/abc`, and a memory that belongs to another tenant) |
+| 409 | Conflict (concurrent changes to the same memory kept an update or an obsolete mark from being applied; the request can be repeated) |
 | 422 | Unprocessable Entity (`InvalidStateTransitionError` -- for example marking an already obsolete memory obsolete) |
 | 500 | Internal Server Error |
 
@@ -111,14 +112,14 @@ List memories with pagination, sorting, and filtering.
 {
   "memories": [
     {
-      "id": 1,
+      "id": "3f2b8c1e-5d4a-4e7b-9c6a-1b2d3e4f5a6b",
       "title": "Memory title",
       "content": "Memory content...",
       "importance": 7,
       "tags": ["tag1", "tag2"],
       "created_at": "2024-12-05T10:00:00Z",
       "updated_at": "2024-12-05T10:00:00Z",
-      "linked_memory_ids": [2, 3],
+      "linked_memory_ids": ["7a9d0e12-3b4c-4d5e-8f60-718293a4b5c6", "c1d2e3f4-a5b6-4c7d-8e9f-0a1b2c3d4e5f"],
       "project": "billing",
       "source_repo": "owner/repo",
       "source_files": ["path/to/file.py"],
@@ -187,7 +188,7 @@ blank `context`.
 **Response (201):**
 ```json
 {
-  "id": 1,
+  "id": "3f2b8c1e-5d4a-4e7b-9c6a-1b2d3e4f5a6b",
   "title": "Memory title",
   "linked_memory_ids": [],
   "project": "billing",
@@ -222,7 +223,8 @@ A field that is omitted or `null` is left unchanged. `project` replaces the memo
 
 **Response:** Updated memory object
 
-**Errors:** `404` with `Memory not found` when the memory does not exist or belongs to another tenant.
+**Errors:** `404` with `Memory not found` when the memory does not exist or belongs to another tenant. `409` when concurrent changes to
+the same memory kept the update from being applied after a few attempts; repeat the request.
 
 ### DELETE /api/v1/memories/{id}
 
@@ -232,7 +234,7 @@ Mark a memory as obsolete (soft delete).
 ```json
 {
   "reason": "No longer relevant",
-  "superseded_by": 42
+  "superseded_by": "0e9d8c7b-6a5f-4e3d-9c2b-1a0f9e8d7c6b"
 }
 ```
 
@@ -244,8 +246,9 @@ Mark a memory as obsolete (soft delete).
 ```
 
 **Errors:**
-- `400` when `superseded_by` is not an integer.
+- `400` when `superseded_by` is not a UUID memory id.
 - `404` with `Memory not found` when the memory does not exist, or with `Superseding memory {id} not found` when `superseded_by` does not reference one of your memories.
+- `409` when concurrent changes kept the mark from being applied; repeat the request.
 - `422` when the memory is already obsolete (restore it first; the original reason and timestamp are kept) or when `superseded_by` is the memory's own id.
 
 ### POST /api/v1/memories/search
@@ -285,17 +288,17 @@ Link memories together (bidirectional).
 **Request Body:**
 ```json
 {
-  "related_ids": [2, 3, 4]
+  "related_ids": ["7a9d0e12-3b4c-4d5e-8f60-718293a4b5c6", "c1d2e3f4-a5b6-4c7d-8e9f-0a1b2c3d4e5f", "0e9d8c7b-6a5f-4e3d-9c2b-1a0f9e8d7c6b"]
 }
 ```
 
-`related_ids` must be a non-empty list of integers and must not contain the memory's own id;
+`related_ids` must be a non-empty list of UUID memory ids and must not contain the memory's own id;
 anything else returns `400`.
 
 **Response:**
 ```json
 {
-  "linked_ids": [2, 3, 4]
+  "linked_ids": ["7a9d0e12-3b4c-4d5e-8f60-718293a4b5c6", "c1d2e3f4-a5b6-4c7d-8e9f-0a1b2c3d4e5f", "0e9d8c7b-6a5f-4e3d-9c2b-1a0f9e8d7c6b"]
 }
 ```
 
@@ -310,7 +313,7 @@ Get memories linked to this memory.
 **Response:**
 ```json
 {
-  "memory_id": 1,
+  "memory_id": "3f2b8c1e-5d4a-4e7b-9c6a-1b2d3e4f5a6b",
   "linked_memories": [...]
 }
 ```
@@ -363,5 +366,4 @@ For validation errors (400), the error may contain detailed field-level errors:
 
 Each entry contains only `type`, `loc` and `msg`; the rejected input value is not echoed back.
 Integer query parameters must fit in a signed 64-bit integer, and the identifiers in link request
-bodies (`memory_id`) must be JSON integers that fit
-too. Anything else returns HTTP 400 instead of reaching the database.
+bodies (`related_ids`) must be UUID strings. Anything else returns HTTP 400 instead of reaching the store.

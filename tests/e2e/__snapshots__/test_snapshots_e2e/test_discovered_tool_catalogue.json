@@ -1,0 +1,566 @@
+{
+  "categories_available": [
+    "memory"
+  ],
+  "filtered_by": null,
+  "tools_by_category": {
+    "memory": [
+      {
+        "category": "memory",
+        "description": "Create atomic memory with auto-linking and lifecycle management. Stores single concepts (<400 words).",
+        "example": "execute_forgetful_tool(\"create_memory\", {\"title\": \"FastAPI auth pattern\", \"content\": \"Use JWT with httponly cookies...\", \"context\": \"Security decision\", \"keywords\": [\"auth\", \"jwt\"], \"tags\": [\"security\"], \"importance\": 9})",
+        "mutates": true,
+        "name": "create_memory",
+        "parameters": {
+          "agent_id": {
+            "description": "Agent identity for provenance tracking",
+            "example": "CodeAgentUltra",
+            "required": false,
+            "type": "Optional[str]"
+          },
+          "agent_model": {
+            "description": "LLM model used for provenance tracking",
+            "example": "claude-sonnet-4-6",
+            "required": false,
+            "type": "Optional[str]"
+          },
+          "agent_version": {
+            "description": "Agent version for provenance tracking",
+            "example": "1.0",
+            "required": false,
+            "type": "Optional[str]"
+          },
+          "confidence": {
+            "description": "Encoding confidence score (0.0-1.0) for provenance tracking",
+            "example": 0.85,
+            "required": false,
+            "type": "Optional[float]"
+          },
+          "content": {
+            "description": "Memory content (max 2000 characters, ~300-400 words) - single concept",
+            "example": "Selected XTTS-v2 for voice cloning - provides high quality output with low latency",
+            "required": true,
+            "type": "str"
+          },
+          "context": {
+            "description": "WHY this memory matters, HOW it relates, WHAT implications (max 500 characters)",
+            "example": "Decision made while implementing voice integration with AI agent",
+            "required": true,
+            "type": "str"
+          },
+          "ctx": {
+            "description": "FastMCP Context (automatically injected)",
+            "example": null,
+            "required": true,
+            "type": "Context"
+          },
+          "encoding_agent": {
+            "description": "Agent/process that created this memory for provenance tracking",
+            "example": "claude-sonnet-4-20250514",
+            "required": false,
+            "type": "Optional[str]"
+          },
+          "encoding_version": {
+            "description": "Version of encoding process/prompt for provenance tracking",
+            "example": "0.1.0",
+            "required": false,
+            "type": "Optional[str]"
+          },
+          "importance": {
+            "description": "Score 1-10. 9-10: Personal/foundational, 8-9: Critical solutions, 7-8: Useful patterns, 6-7: Milestones",
+            "example": 9,
+            "required": true,
+            "type": "int"
+          },
+          "keywords": {
+            "description": "Search keywords for semantic matching (max 10, each max 100 characters)",
+            "example": [
+              "tts",
+              "voice-cloning",
+              "xtts"
+            ],
+            "required": true,
+            "type": "List[str]"
+          },
+          "project": {
+            "description": "Optional free-form project scope label (max 500 characters); created on first use",
+            "example": "forgetful",
+            "required": false,
+            "type": "Optional[str]"
+          },
+          "source_files": {
+            "description": "Files that informed this memory (list of paths) for provenance tracking",
+            "example": [
+              "src/main.py",
+              "tests/test.py"
+            ],
+            "required": false,
+            "type": "Optional[List[str]]"
+          },
+          "source_repo": {
+            "description": "Repository/project source (e.g., 'owner/repo') for provenance tracking",
+            "example": "scottrbk/forgetful",
+            "required": false,
+            "type": "Optional[str]"
+          },
+          "source_url": {
+            "description": "URL to original source material for provenance tracking",
+            "example": "https://github.com/owner/repo/blob/main/README.md",
+            "required": false,
+            "type": "Optional[str]"
+          },
+          "tags": {
+            "description": "Categorization tags (max 10, each max 100 characters)",
+            "example": [
+              "decision",
+              "preference",
+              "audio"
+            ],
+            "required": true,
+            "type": "List[str]"
+          },
+          "title": {
+            "description": "Memory title (max 200 characters)",
+            "example": "TTS preference: XTTS-v2",
+            "required": true,
+            "type": "str"
+          }
+        },
+        "returns": "MemoryCreateResponse with id, title, linked_memory_ids, similar_memories, obsolete_matches"
+      },
+      {
+        "category": "memory",
+        "description": "Semantic search across memories to find relevant information",
+        "example": "execute_forgetful_tool(\"query_memory\", {\"query\": \"authentication patterns\", \"query_context\": \"building API login\", \"k\": 5})",
+        "mutates": false,
+        "name": "query_memory",
+        "parameters": {
+          "ctx": {
+            "description": "FastMCP Context (automatically injected)",
+            "example": null,
+            "required": true,
+            "type": "Context"
+          },
+          "importance_threshold": {
+            "description": "Minimum importance score (1-10) to include",
+            "example": 7,
+            "required": false,
+            "type": "Optional[int]"
+          },
+          "include_links": {
+            "description": "Whether to include linked memories for context",
+            "example": true,
+            "required": false,
+            "type": "bool"
+          },
+          "k": {
+            "description": "Number of primary results to return (1-20), use INSTEAD of LIMIT",
+            "example": 5,
+            "required": false,
+            "type": "int"
+          },
+          "max_links_per_primary": {
+            "description": "Maximum number of linked memories per primary memory",
+            "example": 3,
+            "required": false,
+            "type": "int"
+          },
+          "project": {
+            "description": "Only search memories in this project scope",
+            "example": "forgetful",
+            "required": false,
+            "type": "Optional[str]"
+          },
+          "query": {
+            "description": "Natural language search query",
+            "example": "What did we decide about authentication?",
+            "required": true,
+            "type": "str"
+          },
+          "query_context": {
+            "description": "Context explaining why you're searching (improves ranking)",
+            "example": "Implementing login system for new API",
+            "required": true,
+            "type": "str"
+          },
+          "strict_project_filter": {
+            "description": "If True, linked memories must also be in the specified project scope",
+            "example": false,
+            "required": false,
+            "type": "bool"
+          }
+        },
+        "returns": "MemoryQueryResult with primary_memories, linked_memories, scores, total_count, token_count, truncated flag"
+      },
+      {
+        "category": "memory",
+        "description": "Update existing memory fields using PATCH semantics (only specified fields are updated)",
+        "example": "execute_forgetful_tool(\"update_memory\", {\"memory_id\": \"018f2c3e-0000-7000-8000-000000000042\", \"importance\": 9})",
+        "mutates": true,
+        "name": "update_memory",
+        "parameters": {
+          "agent_id": {
+            "description": "Agent identity for provenance tracking",
+            "example": "CodeAgentUltra",
+            "required": false,
+            "type": "Optional[str]"
+          },
+          "agent_model": {
+            "description": "LLM model used for provenance tracking",
+            "example": "claude-sonnet-4-6",
+            "required": false,
+            "type": "Optional[str]"
+          },
+          "agent_version": {
+            "description": "Agent version for provenance tracking",
+            "example": "1.0",
+            "required": false,
+            "type": "Optional[str]"
+          },
+          "confidence": {
+            "description": "New encoding confidence score (0.0-1.0). Unchanged if null.",
+            "example": 0.85,
+            "required": false,
+            "type": "Optional[float]"
+          },
+          "content": {
+            "description": "New content (optional)",
+            "example": "Updated content with new information",
+            "required": false,
+            "type": "Optional[str]"
+          },
+          "context": {
+            "description": "New context (optional)",
+            "example": "Updated context explanation",
+            "required": false,
+            "type": "Optional[str]"
+          },
+          "ctx": {
+            "description": "FastMCP Context (automatically injected)",
+            "example": null,
+            "required": true,
+            "type": "Context"
+          },
+          "encoding_agent": {
+            "description": "New agent/process identifier. Unchanged if null.",
+            "example": "claude-sonnet-4-20250514",
+            "required": false,
+            "type": "Optional[str]"
+          },
+          "encoding_version": {
+            "description": "New encoding process version. Unchanged if null.",
+            "example": "0.1.0",
+            "required": false,
+            "type": "Optional[str]"
+          },
+          "importance": {
+            "description": "New importance score 1-10 (optional)",
+            "example": 8,
+            "required": false,
+            "type": "Optional[int]"
+          },
+          "keywords": {
+            "description": "New keywords - replaces existing (optional)",
+            "example": [
+              "new",
+              "keywords"
+            ],
+            "required": false,
+            "type": "Optional[List[str]]"
+          },
+          "memory_id": {
+            "description": "ID of the memory to update",
+            "example": "018f2c3e-0000-7000-8000-000000000042",
+            "required": true,
+            "type": "str"
+          },
+          "project": {
+            "description": "New project scope label - replaces the existing one; an empty string clears it (optional)",
+            "example": "forgetful",
+            "required": false,
+            "type": "Optional[str]"
+          },
+          "source_files": {
+            "description": "New source files list. Replaces existing if provided, unchanged if null.",
+            "example": [
+              "src/main.py",
+              "tests/test.py"
+            ],
+            "required": false,
+            "type": "Optional[List[str]]"
+          },
+          "source_repo": {
+            "description": "New repository/project source. Unchanged if null.",
+            "example": "scottrbk/forgetful",
+            "required": false,
+            "type": "Optional[str]"
+          },
+          "source_url": {
+            "description": "New URL to source material. Unchanged if null.",
+            "example": "https://github.com/owner/repo/blob/main/README.md",
+            "required": false,
+            "type": "Optional[str]"
+          },
+          "tags": {
+            "description": "New tags - replaces existing (optional)",
+            "example": [
+              "updated",
+              "tag"
+            ],
+            "required": false,
+            "type": "Optional[List[str]]"
+          },
+          "title": {
+            "description": "New title (optional)",
+            "example": "Updated title",
+            "required": false,
+            "type": "Optional[str]"
+          }
+        },
+        "returns": "Full Memory object after update"
+      },
+      {
+        "category": "memory",
+        "description": "Manually create bidirectional links between memories (symmetric linking). Accepts memory_id + related_ids (or aliases source_id + target_id/target_ids, memory_ids=[src, tgt])",
+        "example": "execute_forgetful_tool(\"link_memories\", {\"memory_id\": \"018f2c3e-0000-7000-8000-000000000042\", \"related_ids\": [\"018f2c3e-0000-7000-8000-000000000010\", \"018f2c3e-0000-7000-8000-000000000015\"]})",
+        "mutates": true,
+        "name": "link_memories",
+        "parameters": {
+          "ctx": {
+            "description": "FastMCP Context (automatically injected)",
+            "example": null,
+            "required": true,
+            "type": "Context"
+          },
+          "memory_id": {
+            "description": "Source memory ID (aliases: source_id, from_id, id)",
+            "example": "018f2c3e-0000-7000-8000-000000000042",
+            "required": true,
+            "type": "str"
+          },
+          "related_ids": {
+            "description": "List of target memory IDs to link (or a single id; aliases: target_id, target_ids, related_id)",
+            "example": [
+              "018f2c3e-0000-7000-8000-000000000010",
+              "018f2c3e-0000-7000-8000-000000000015",
+              "018f2c3e-0000-7000-8000-000000000020"
+            ],
+            "required": true,
+            "type": "List[str]"
+          }
+        },
+        "returns": "List of memory IDs that were successfully linked"
+      },
+      {
+        "category": "memory",
+        "description": "Remove bidirectional link(s) between memories. Accepts source_id + target_id (or aliases memory_id + related_id, target_ids, related_ids, memory_ids=[src, tgt, ...])",
+        "example": "execute_forgetful_tool(\"unlink_memories\", {\"source_id\": \"018f2c3e-0000-7000-8000-000000000042\", \"target_id\": \"018f2c3e-0000-7000-8000-000000000057\"})",
+        "mutates": true,
+        "name": "unlink_memories",
+        "parameters": {
+          "ctx": {
+            "description": "FastMCP Context (automatically injected)",
+            "example": null,
+            "required": true,
+            "type": "Context"
+          },
+          "source_id": {
+            "description": "Source memory ID (aliases: memory_id, from_id, id)",
+            "example": "018f2c3e-0000-7000-8000-000000000042",
+            "required": true,
+            "type": "str"
+          },
+          "target_id": {
+            "description": "Target memory ID(s) to unlink (aliases: target_ids, related_id, related_ids, to_id)",
+            "example": 57,
+            "required": true,
+            "type": "str"
+          }
+        },
+        "returns": "Dict with 'success' boolean (True if all requested links were removed, False if any link didn't exist)"
+      },
+      {
+        "category": "memory",
+        "description": "Retrieve complete memory details by ID",
+        "example": "execute_forgetful_tool(\"get_memory\", {\"memory_id\": \"018f2c3e-0000-7000-8000-000000000042\"})",
+        "mutates": false,
+        "name": "get_memory",
+        "parameters": {
+          "ctx": {
+            "description": "FastMCP Context (automatically injected)",
+            "example": null,
+            "required": true,
+            "type": "Context"
+          },
+          "memory_id": {
+            "description": "ID of the memory to retrieve",
+            "example": "018f2c3e-0000-7000-8000-000000000042",
+            "required": true,
+            "type": "str"
+          }
+        },
+        "returns": "Complete Memory object with all fields"
+      },
+      {
+        "category": "memory",
+        "description": "Mark a memory as obsolete (soft delete with audit trail). Restore with unobsolete_memory.",
+        "example": "execute_forgetful_tool(\"mark_memory_obsolete\", {\"memory_id\": \"018f2c3e-0000-7000-8000-000000000042\", \"reason\": \"Outdated approach\", \"superseded_by\": \"018f2c3e-0000-7000-8000-000000000100\"})",
+        "mutates": true,
+        "name": "mark_memory_obsolete",
+        "parameters": {
+          "ctx": {
+            "description": "FastMCP Context (automatically injected)",
+            "example": null,
+            "required": true,
+            "type": "Context"
+          },
+          "memory_id": {
+            "description": "ID of the memory to mark as obsolete",
+            "example": "018f2c3e-0000-7000-8000-000000000042",
+            "required": true,
+            "type": "str"
+          },
+          "reason": {
+            "description": "Explanation for why this memory is obsolete",
+            "example": "Superseded by a newer decision",
+            "required": true,
+            "type": "str"
+          },
+          "superseded_by": {
+            "description": "Optional ID of the replacement memory",
+            "example": "018f2c3e-0000-7000-8000-000000000100",
+            "required": false,
+            "type": "Optional[str]"
+          }
+        },
+        "returns": "Boolean indicating success"
+      },
+      {
+        "category": "memory",
+        "description": "Restore a memory previously marked obsolete (undo soft delete)",
+        "example": "execute_forgetful_tool(\"unobsolete_memory\", {\"memory_id\": \"018f2c3e-0000-7000-8000-000000000042\"})",
+        "mutates": true,
+        "name": "unobsolete_memory",
+        "parameters": {
+          "ctx": {
+            "description": "FastMCP Context (automatically injected)",
+            "example": null,
+            "required": true,
+            "type": "Context"
+          },
+          "memory_id": {
+            "description": "ID of the obsolete memory to restore",
+            "example": "018f2c3e-0000-7000-8000-000000000042",
+            "required": true,
+            "type": "str"
+          }
+        },
+        "returns": "Boolean indicating success"
+      },
+      {
+        "category": "memory",
+        "description": "Retrieve most recent memories sorted by creation timestamp (newest first by default)",
+        "example": "execute_forgetful_tool(\"get_recent_memories\", {\"limit\": 5})",
+        "mutates": false,
+        "name": "get_recent_memories",
+        "parameters": {
+          "created_since": {
+            "description": "Inclusive ISO 8601 creation timestamp with timezone",
+            "example": "2026-08-01T00:00:00Z",
+            "required": false,
+            "type": "Optional[str]"
+          },
+          "ctx": {
+            "description": "FastMCP Context (automatically injected)",
+            "example": null,
+            "required": true,
+            "type": "Context"
+          },
+          "importance_min": {
+            "description": "Minimum importance (1-10, inclusive)",
+            "example": 8,
+            "required": false,
+            "type": "Optional[int]"
+          },
+          "include_obsolete": {
+            "description": "Include obsolete memories when true",
+            "example": false,
+            "required": false,
+            "type": "bool"
+          },
+          "limit": {
+            "description": "Maximum number of memories to return (1-100)",
+            "example": 10,
+            "required": false,
+            "type": "int"
+          },
+          "offset": {
+            "description": "Number of memories to skip for pagination",
+            "example": 0,
+            "required": false,
+            "type": "int"
+          },
+          "project": {
+            "description": "Optional filter to one project scope",
+            "example": "forgetful",
+            "required": false,
+            "type": "Optional[str]"
+          },
+          "sort_by": {
+            "description": "Sort field: created_at, updated_at, or importance",
+            "example": "created_at",
+            "required": false,
+            "type": "str"
+          },
+          "sort_order": {
+            "description": "Sort direction: asc or desc",
+            "example": "desc",
+            "required": false,
+            "type": "str"
+          },
+          "tags": {
+            "description": "Optional tag filter (OR semantics when multiple tags)",
+            "example": [
+              "ai-champion"
+            ],
+            "required": false,
+            "type": "Optional[List[str]]"
+          }
+        },
+        "returns": "Dictionary with memories list (sorted per sort_by/sort_order) and total_count"
+      },
+      {
+        "category": "memory",
+        "description": "Rebuild embeddings for a tenant-scoped subset of memories without resetting global vector storage. Targets explicit memory ids, a single project scope, or all caller-owned memories.",
+        "example": "execute_forgetful_tool(\"rebuild_embeddings\", {\"memory_ids\": [\"018f2c3e-0000-7000-8000-000000000123\", \"018f2c3e-0000-7000-8000-000000000124\"]})",
+        "mutates": true,
+        "name": "rebuild_embeddings",
+        "parameters": {
+          "ctx": {
+            "description": "FastMCP Context (automatically injected)",
+            "example": null,
+            "required": true,
+            "type": "Context"
+          },
+          "memory_ids": {
+            "description": "Explicit memory ids owned by the caller; leave null to use project or the whole tenant",
+            "example": [
+              "018f2c3e-0000-7000-8000-000000000123",
+              "018f2c3e-0000-7000-8000-000000000124"
+            ],
+            "required": false,
+            "type": "Optional[List[str]]"
+          },
+          "project": {
+            "description": "Restrict the rebuild to memories in this project scope of the caller",
+            "example": "forgetful",
+            "required": false,
+            "type": "Optional[str]"
+          }
+        },
+        "returns": "Dict with rebuilt_ids (List[str]), skipped_ids (List[str]; not owned, or edited while the rebuild ran so a newer embedding was kept), failed (List[Dict[memory_id, reason]]; reason is a code such as embedding_failed, persistence_failed or not_found_or_not_owned). An unknown project scope is rejected with VALIDATION_ERROR"
+      }
+    ]
+  },
+  "total_count": 10
+}

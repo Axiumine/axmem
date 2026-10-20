@@ -5,7 +5,7 @@ instance under test must not depend on who runs the harness: not on settings exp
 in the shell or kept in the user-config dotenv file, not on which `forgetful` happens to
 be first on PATH, and not on proxy variables. Everything here is host-side mechanics
 exercised without booting a server (the real boot lives in
-tests/e2e_sqlite/test_harness_throwaway_server_sqlite.py).
+tests/e2e/test_harness_throwaway_server_e2e.py).
 """
 import asyncio
 import json
@@ -322,7 +322,8 @@ def test_child_settings_ignore_host_shell_and_user_config(tmp_path, monkeypatch)
     leaky = _resolved_settings(tmp_path, "leaky", user_config=user_config)
 
     # Assert: the instance under test is the same as on a clean host ...
-    machine_plumbing = {"EMBEDDING_MODEL_DIR"}
+    # (the collection prefix is made per instance: each run has its own)
+    machine_plumbing = {"EMBEDDING_MODEL_DIR", "QDRANT_COLLECTION_PREFIX"}
     assert {k: v for k, v in leaky.items() if k not in machine_plumbing} == {
         k: v for k, v in baseline.items() if k not in machine_plumbing
     }
@@ -332,5 +333,32 @@ def test_child_settings_ignore_host_shell_and_user_config(tmp_path, monkeypatch)
     assert baseline["MEMORY_NUM_AUTO_LINK"] == 3
     assert baseline["MEMORY_TITLE_MAX_LENGTH"] == 200
     assert baseline["LOG_FORMAT"] == "console"
+    assert baseline["QDRANT_COLLECTION_PREFIX"].startswith("harness")
     # The developer's warm model directory is machine plumbing and keeps resolving
     assert leaky["EMBEDDING_MODEL_DIR"] == str(tmp_path / "warm-cache")
+
+
+# ---------------------------------------------------------------------------
+# Teardown of the run's collections
+# ---------------------------------------------------------------------------
+
+def test_a_failed_collection_cleanup_does_not_hide_the_run(tmp_path, monkeypatch, caplog):
+    import httpx
+
+    def unreachable(*args, **kwargs):
+        raise httpx.ConnectError("no Qdrant")
+
+    monkeypatch.setattr(httpx.Client, "get", unreachable)
+    server = ThrowawayForgetful(tmp_path)
+
+    with caplog.at_level("WARNING", logger="test_harness.server"):
+        server.stop()
+
+    assert "could not delete the throwaway collections" in caplog.text
+
+
+def test_each_run_has_a_collection_prefix_of_its_own(tmp_path):
+    prefixes = {ThrowawayForgetful(tmp_path).collection_prefix for _ in range(5)}
+
+    assert len(prefixes) == 5
+    assert all(prefix.startswith("harness") for prefix in prefixes)

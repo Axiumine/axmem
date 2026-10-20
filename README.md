@@ -19,8 +19,8 @@
 > [Forgetful](https://github.com/ScottRBK/forgetful) codebase by Scott Raisbeck (MIT) and goes
 > in directions an upstream-tracking fork cannot. Shipped so far: fewer features, and embeddings and reranking
 > computed in this process on an NVIDIA GPU with TensorRT (see [GPU models](docs/gpu-models.md)), so Axmem needs no
-> model service on the network. Planned, not yet shipped: **Qdrant as the only store** (SQLite, PostgreSQL and
-> Alembic removed). Every change, its reason and its status are listed in
+> model service on the network, and **Qdrant as the only store** (SQLite, PostgreSQL and Alembic are gone, and
+> memory ids are UUIDs). Every change, its reason and its status are listed in
 > [docs/changes-from-forgetful.md](docs/changes-from-forgetful.md) and [CHANGELOG.md](CHANGELOG.md).
 >
 > Until the rename lands, the commands, package names and environment variables below still say
@@ -70,7 +70,7 @@ Memories belong to a **tenant**, the owner of a set of memories, and a tenant ne
 - Fail-closed authentication: JWT, token introspection or static bearer tokens, one tenant per credential; a server with no `AUTH_MODE` refuses to start
 - Tenant isolation: a tenant reads and changes only its own memories, over MCP, REST and the CLI
 - Meta-tool discovery: only three tools are exposed to the client application to preserve the context window.
-- Flexible storage – SQLite (default, zero-config; slated for removal, see the note above) or PostgreSQL (for scale and production deployments)
+- One datastore: [Qdrant](https://qdrant.tech/) 1.19 or newer holds the memories, their links and their vectors, on a single node or on a three-node cluster. No SQL database, no migrations. Every write waits for the server and is made conditional where two writers could meet, so concurrent updates never silently lose one another (a lost race answers 409).
 - Stores memories as vectors so they can be retrieved with natural-language queries from AI agents.
 - Cross-encoder reranking to improve recall and precision of memory retrieval. It runs on an NVIDIA GPU with TensorRT 11 in strict fp32 and has no CPU path; see [GPU models](docs/gpu-models.md). A remote rerank service (`RERANKING_PROVIDER=HTTP`) or `RERANKING_ENABLED=false` runs without a GPU.
 - Standalone embeddings: the default `TensorRT` provider runs `BAAI/bge-small-en-v1.5` in this process on an NVIDIA GPU (strict fp32, CLS pooling, unit-length vectors) with no model service on the network. It has no CPU path; see [GPU models](docs/gpu-models.md). Other providers are explicit choices: the optional HTTP embeddings gateway (`EMBEDDING_PROVIDER=gateway`, nothing reads a `GATEWAY_*` setting unless it is selected), Azure, Google, OpenAI or Ollama. Switching providers or dimensions needs a re-embed, see [Embedding Migration](docs/embedding_migration.md)
@@ -85,7 +85,7 @@ For the complete roadmap, see [Features Roadmap](docs/features_roadmap.md).
 ### Option 1: From Source
 
 Axmem runs alone: the embeddings model and the reranking model both run in the server process on an
-NVIDIA GPU (driver R580 or newer, CUDA 13), so besides the database no other service is needed. The CUDA
+NVIDIA GPU (driver R580 or newer, CUDA 13), so besides Qdrant no other service is needed. The CUDA
 runtime and TensorRT 11 come from `uv sync`; nothing else is installed system-wide. Without a visible
 GPU, or without the TensorRT libraries or the model files, the server refuses to start and names the
 cause; there is no CPU path and no fallback. The first start downloads the two models from Hugging Face
@@ -102,16 +102,16 @@ cd axmem
 # Install dependencies with uv (downloads about 4 GB of TensorRT and CUDA libraries)
 uv sync
 
-# Run the server (uses SQLite by default). The server fails closed: with no AUTH_MODE it
+# Qdrant must be running (see "Qdrant" below). Run the server. It fails closed: with no AUTH_MODE it
 # refuses to start. AUTH_MODE=none serves one local tenant and is accepted only on stdio or
 # when the HTTP server binds a loopback address (127.0.0.1 or ::1)
-AUTH_MODE=none uv run main.py
+QDRANT_URL=http://127.0.0.1:6333 AUTH_MODE=none uv run main.py
 ```
-Data stored in platform-appropriate locations (`~/.local/share/forgetful` on Linux, the models and engines under its `models` directory).
+The memories live in Qdrant. The models and engines are kept in platform-appropriate locations (`~/.local/share/forgetful/models` on Linux).
 
 The server starts with stdio transport, which is what MCP clients expect. For HTTP on this machine: `AUTH_MODE=none uv run main.py --transport http --host 127.0.0.1 --port 8020`. To keep `AUTH_MODE=none` out of every command, put it in `~/.config/forgetful/.env`.
 
-**Standalone HTTP server with a static bearer token**, using nothing but the GPU, the model files and the database:
+**Standalone HTTP server with a static bearer token**, using nothing but the GPU, the model files and Qdrant:
 
 ```bash
 # the token stays secret; the server is configured with its SHA-256 hash only
@@ -127,15 +127,12 @@ and the TensorRT reranker. The `/health` route answers without a token once both
 
 > **Note**: Axmem is not published to PyPI. `uvx forgetful-ai` installs the upstream Forgetful package, not Axmem.
 
-### Option 2: Native Setup with PostgreSQL (multi-user)
+### Option 2: Native setup for a shared server
 
-Axmem runs directly on the host; there are no container images or compose files. You need:
+Axmem runs directly on the host; there are no container images or compose files of its own. You need:
 
 - [uv](https://docs.astral.sh/uv/) (it installs the Python 3.14 the project pins in `.python-version`)
-- a PostgreSQL server with the [pgvector](https://github.com/pgvector/pgvector) extension available, and an empty
-  database and a role that can create tables in it. The server runs its Alembic migrations and
-  `CREATE EXTENSION IF NOT EXISTS vector` at startup, so either that role may create extensions or an admin runs
-  `CREATE EXTENSION vector` in the database once
+- a Qdrant server of version 1.19.0 or newer (the tests run 1.19.2). The server checks the version of every node at start and refuses an older one
 
 ```bash
 git clone https://github.com/Axiumine/axmem.git
@@ -144,10 +141,8 @@ uv sync --locked
 
 # Settings come from environment variables; copy the reference file and edit it
 cp .env.example .env
-# In .env set at least:
-#   DATABASE=Postgres
-#   POSTGRES_HOST=127.0.0.1   PGPORT=5099   POSTGRES_DB=forgetful
-#   POSTGRES_USER=...         POSTGRES_PASSWORD=...
+# In it set at least:
+#   QDRANT_URL=http://127.0.0.1:6333   QDRANT_API_KEY=...
 #   AUTH_MODE=jwt | introspection | static   (a shared server needs a credential, see below)
 
 # Run the HTTP server (stdio is the default transport). Bound to all interfaces by default, it
@@ -156,10 +151,36 @@ uv run main.py --transport http --port 8020
 ```
 
 Run it under your service manager of choice (for example a systemd unit whose `WorkingDirectory` is the clone and whose
-`ExecStart` is `uv run main.py --transport http`). Environment variables set in the unit take precedence over `.env`.
+`ExecStart` is `uv run main.py --transport http`). Environment variables set in the unit take precedence over the file.
 
-**Note**: If no `.env` file exists, the application uses defaults from `app/config/settings.py`, except
+**Note**: If no settings file exists, the application uses defaults from `app/config/settings.py`, except
 `AUTH_MODE`, which has no default. For all configuration options, see [Configuration Guide](docs/configuration.md).
+
+### Qdrant
+
+Axmem keeps everything in Qdrant, in two collections: `<prefix>_memories` (an alias onto the live generation of the
+memories and their vectors) and `<prefix>_links`. `QDRANT_COLLECTION_PREFIX` defaults to `axmem`. The collections are
+created at start; an existing collection whose layout differs from the settings stops the server with an explanation
+and is never changed silently.
+
+**One node** is the default (`QDRANT_URL=http://127.0.0.1:6333`). Give the node an API key (`QDRANT__SERVICE__API_KEY`)
+and put the same value in `QDRANT_API_KEY`; it is a secret and is never logged. The key admits every tenant of the
+instance, so tenant isolation is Axmem's job: use one Qdrant per trust domain.
+
+**A three-node cluster** is the verified profile for availability: list the node URLs in `QDRANT_URL` separated by
+commas, and set `QDRANT_SHARD_NUMBER=3`, `QDRANT_REPLICATION_FACTOR=3`, `QDRANT_WRITE_CONSISTENCY_FACTOR=2` before the
+first start. Run the nodes with `QDRANT__CLUSTER__ENABLED=true`, the same API key on every node and
+`QDRANT__SERVICE__ENFORCE_INTERNAL_AUTH=true`, so the nodes also authenticate to each other. Axmem sends every write
+with strong ordering, waits for it, and reads back at quorum consistency. `forgetful qdrant-check` reads each node on
+its own and reports any node whose points differ; it only reports, repair is the operator's decision.
+
+**Backups** have two lines. Qdrant snapshots (`forgetful backup`) are the fast restore. The JSONL export
+(`forgetful export`, restored with `forgetful import`) is the second line: it holds the memories and links without
+vectors, and an import computes the vectors again with the configured model, so it also moves memories between
+embedding models and between Qdrant versions. On a cluster a snapshot is per node and per shard: stop the writers,
+check that the nodes agree (`forgetful qdrant-check`), snapshot every node, and restore on one node with the snapshot
+as the source of truth, then check for leftover partial replicas. Aliases are not part of a snapshot. Details:
+[Configuration Guide](docs/configuration.md#qdrant-configuration).
 
 ### Authentication and tenants
 
@@ -225,7 +246,7 @@ A local HTTP server started with `AUTH_MODE=none` needs no header (`http://local
 ## CLI
 
 The `forgetful` command is also a full terminal client over the same tool registry the
-MCP meta-tools use - against your local database by default (as the `DEFAULT_TENANT` tenant), or a remote
+MCP meta-tools use - against your local Qdrant by default (as the `DEFAULT_TENANT` tenant), or a remote
 deployment after `auth login`, as the tenant that `FORGETFUL_TOKEN` names.
 
 ```bash
@@ -236,7 +257,7 @@ uv tool install .
 forgetful memory save "Set generateResolvConf false to fix WSL2 DNS" \
     --title "WSL2 DNS fix" --importance 7
 forgetful memory search "wsl dns" -c "wsl networking" -n 5
-forgetful memory get 812
+forgetful memory get 018f2c3e-0000-7000-8000-000000000042
 forgetful memory recent -n 10 -p my-project
 
 # Generic passthrough to any available tool
@@ -253,6 +274,13 @@ forgetful memory search "wsl dns" -c "wsl networking" --local  # force local mod
 
 # Scripting: --json emits machine-readable output
 forgetful memory search "wsl dns" -c "wsl networking" --json | jq '.primary_memories[0].id'
+
+# Operator commands, run against Qdrant itself (see "Qdrant" above)
+forgetful backup                     # snapshot every node into the backup directory
+forgetful restore <backup-dir> --yes # stop the server first
+forgetful export memories.jsonl      # portable, without vectors
+forgetful import memories.jsonl      # embeds each memory again
+forgetful qdrant-check               # compare the nodes of a cluster, report only
 ```
 
 `forgetful serve` is the canonical way to run the MCP server (`forgetful serve
@@ -389,7 +417,7 @@ For all environment variables with detailed explanations, see [Configuration Gui
 ### External Resources
 
 - [MCP Protocol Specification](https://modelcontextprotocol.io/) – Model Context Protocol docs
-- [pgvector](https://github.com/pgvector/pgvector) – PostgreSQL vector extension
+- [Qdrant](https://qdrant.tech/) – vector database, the only datastore
 - [TensorRT](https://developer.nvidia.com/tensorrt) – GPU inference for the embedder and the reranker
 - [Zettelkasten Principle](https://en.wikipedia.org/wiki/Zettelkasten) – Atomic note-taking method
 
@@ -397,7 +425,7 @@ For all environment variables with detailed explanations, see [Configuration Gui
 
 ## Contributing
 
-We welcome contributions! Axmem uses integration + E2E testing on a real NVIDIA GPU (the embedder and reranker tests run the actual TensorRT engines; there is no CPU or skip path). Docker is needed only for the PostgreSQL E2E database.
+We welcome contributions! Axmem uses integration + E2E testing on a real NVIDIA GPU (the embedder and reranker tests run the actual TensorRT engines; there is no CPU or skip path). Docker is needed to start the real Qdrant node (and the three-node cluster) the suites run against.
 
 See [Contributors Guide](docs/contributors.md) for:
 - Testing workflows (integration tests, E2E tests, GitHub Actions)

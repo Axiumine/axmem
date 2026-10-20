@@ -22,13 +22,11 @@ if TYPE_CHECKING:
     from app.routes.mcp.tool_registry import ToolRegistry
     from app.services.memory_service import MemoryService
     from app.services.re_embedding_service import ReEmbeddingService
-    from app.services.tenant_service import TenantService
 
 
 class ForgetfulMCP(FastMCP[Any]):
     """FastMCP server with the services and registry that ``main.lifespan`` attaches."""
 
-    tenant_service: TenantService
     memory_service: MemoryService
     re_embedding_service: ReEmbeddingService
 

@@ -1,0 +1,207 @@
+"""Real Qdrant servers for the tests: a throwaway single node, and a throwaway three-node cluster.
+
+Nothing is simulated. The suites talk to ``qdrant/qdrant`` (the version the service requires and the CI
+pins) started through Docker with an API key, on random loopback ports, and removed at the end. A run that
+cannot start the container ends at once, it never skips (see ``require_docker``). ``AXMEM_TEST_QDRANT_URL``
+(with ``AXMEM_TEST_QDRANT_API_KEY``) points the suites at a server that already runs, such as a service
+container of a CI job; the tests then keep to collections of their own and delete them afterwards.
+"""
+import contextlib
+import os
+import socket
+import subprocess  # nosec B404 - runs docker with fixed argument lists, never a shell
+import time
+import uuid
+from dataclasses import dataclass, field
+
+import httpx
+import pytest
+
+IMAGE = "qdrant/qdrant:v1.19.2"
+API_KEY = "axmem-test-api-key-0123456789abcdef"
+READY_TIMEOUT_SECONDS = 90
+LABEL = "axmem-test=1"
+
+
+def _docker(*args: str, check: bool = True, timeout: float = 120) -> str:
+    result = subprocess.run(  # noqa: S603 - fixed argument list  # nosec B603 B607
+        ["docker", *args],  # noqa: S607
+        capture_output=True, text=True, timeout=timeout, check=False,
+    )
+    if check and result.returncode:
+        raise RuntimeError(f"docker {' '.join(args[:2])} failed: {result.stderr.strip() or result.stdout.strip()}")
+    return result.stdout.strip()
+
+
+def require_docker() -> None:
+    """End the pytest run (never skip) when no Qdrant server can be started for the suites."""
+    if os.environ.get("AXMEM_TEST_QDRANT_URL"):
+        return
+    try:
+        _docker("image", "inspect", IMAGE, timeout=30)
+    except (RuntimeError, FileNotFoundError, subprocess.TimeoutExpired) as exc:
+        pytest.exit(
+            f"Qdrant preflight failed: {exc}\n"
+            f"These suites run against a real {IMAGE} started through Docker (pull the image first, or set "
+            "AXMEM_TEST_QDRANT_URL to a running server); nothing is skipped.",
+            returncode=2,
+        )
+
+
+def unique_prefix() -> str:
+    """A collection prefix no other test uses."""
+    return f"t{uuid.uuid4().hex[:12]}"
+
+
+def drop_prefix(url: str, api_key: str, prefix: str) -> None:
+    """Delete every collection and alias a test run created under ``prefix``."""
+    headers = {"api-key": api_key}
+    with httpx.Client(base_url=url, headers=headers, timeout=30) as http:
+        aliases = http.get("/aliases").json()["result"]["aliases"]
+        for alias in aliases:
+            if alias["alias_name"].startswith(f"{prefix}_"):
+                http.delete(f"/collections/{alias['collection_name']}")
+        for collection in http.get("/collections").json()["result"]["collections"]:
+            if collection["name"].startswith(f"{prefix}_"):
+                http.delete(f"/collections/{collection['name']}")
+
+
+def wait_ready(url: str, api_key: str, timeout: float = READY_TIMEOUT_SECONDS) -> None:
+    deadline = time.monotonic() + timeout
+    last = ""
+    while time.monotonic() < deadline:
+        try:
+            if httpx.get(f"{url}/collections", headers={"api-key": api_key}, timeout=3).status_code == 200:
+                return
+        except httpx.HTTPError as exc:
+            last = type(exc).__name__
+        time.sleep(0.3)
+    raise RuntimeError(f"Qdrant at {url} was not ready after {timeout:.0f}s ({last})")
+
+
+@dataclass
+class QdrantServer:
+    """Where the suites reach their Qdrant node."""
+
+    url: str
+    api_key: str
+    container: str | None = None
+    extra: dict[str, str] = field(default_factory=dict)
+
+
+def start_single_node() -> QdrantServer:
+    """Start (or attach to) the single node the integration and end-to-end suites share."""
+    external = os.environ.get("AXMEM_TEST_QDRANT_URL")
+    if external:
+        key = os.environ.get("AXMEM_TEST_QDRANT_API_KEY", "")
+        wait_ready(external, key)
+        return QdrantServer(url=external, api_key=key)
+    name = f"axmem-test-{uuid.uuid4().hex[:8]}"
+    _docker(
+        "run", "-d", "--rm", "--name", name, "--label", LABEL,
+        "-e", f"QDRANT__SERVICE__API_KEY={API_KEY}",
+        "-p", "127.0.0.1::6333", IMAGE,
+    )
+    try:
+        mapping = _docker("port", name, "6333/tcp").splitlines()[0]
+        url = f"http://127.0.0.1:{mapping.rsplit(':', 1)[1]}"
+        wait_ready(url, API_KEY)
+    except BaseException:
+        stop(name)
+        raise
+    return QdrantServer(url=url, api_key=API_KEY, container=name)
+
+
+def stop(container: str | None) -> None:
+    if container:
+        _docker("rm", "-f", "-v", container, check=False)
+
+
+# ---- three-node cluster ---------------------------------------------------------------------------
+
+NODES = 3
+
+
+@dataclass
+class QdrantCluster:
+    """A three-node cluster: containers, their loopback REST URLs and the network that joins them."""
+
+    network: str
+    containers: list[str]
+    urls: list[str]
+    api_key: str
+
+    def stop_node(self, index: int) -> None:
+        _docker("stop", "-t", "1", self.containers[index])
+
+    def kill_node(self, index: int) -> None:
+        _docker("kill", self.containers[index])
+
+    def start_node(self, index: int) -> None:
+        _docker("start", self.containers[index])
+
+    def peers_of(self, index: int) -> int:
+        """How many peers node ``index`` sees, 0 while it has no leader."""
+        try:
+            reply = httpx.get(
+                f"{self.urls[index]}/cluster", headers={"api-key": self.api_key}, timeout=3,
+            ).json()["result"]
+        except (httpx.HTTPError, KeyError, ValueError):
+            return 0
+        return len(reply["peers"]) if reply["raft_info"].get("leader") else 0
+
+    def wait_formed(self, timeout: float = READY_TIMEOUT_SECONDS) -> None:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if all(self.peers_of(i) == NODES for i in range(NODES)):
+                return
+            time.sleep(0.5)
+        raise RuntimeError("the Qdrant cluster did not form")
+
+
+def free_loopback_port() -> int:
+    """A port nothing listens on now; a node that is stopped and started again must keep the one it was given."""
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        return probe.getsockname()[1]
+
+
+def start_cluster() -> QdrantCluster:
+    """Start three nodes that form one cluster with internal authentication, ``QDRANT__SERVICE__API_KEY`` set.
+
+    The containers are not started with ``--rm`` (a stopped node has to be started again with its data) and their
+    REST ports are fixed; ``stop_cluster`` removes them, and the ``axmem-test`` label finds any a killed run left.
+    """
+    tag = uuid.uuid4().hex[:6]
+    network = f"axmem-net-{tag}"
+    _docker("network", "create", network)
+    containers = [f"axmem-q{tag}-{i + 1}" for i in range(NODES)]
+    urls: list[str] = []
+    try:
+        for index, name in enumerate(containers):
+            command = ["./qdrant", "--uri", f"http://{name}:6335"]
+            if index:
+                command = ["./qdrant", "--bootstrap", f"http://{containers[0]}:6335", "--uri", f"http://{name}:6335"]
+            port = free_loopback_port()
+            urls.append(f"http://127.0.0.1:{port}")
+            _docker(
+                "run", "-d", "--name", name, "--label", LABEL, "--network", network,
+                "-e", "QDRANT__CLUSTER__ENABLED=true",
+                "-e", f"QDRANT__SERVICE__API_KEY={API_KEY}",
+                "-e", "QDRANT__SERVICE__ENFORCE_INTERNAL_AUTH=true",
+                "-p", f"127.0.0.1:{port}:6333", IMAGE, *command,
+            )
+            time.sleep(3 if index == 0 else 1)
+        cluster = QdrantCluster(network=network, containers=containers, urls=urls, api_key=API_KEY)
+        cluster.wait_formed()
+    except BaseException:
+        stop_cluster(QdrantCluster(network, containers, urls, API_KEY))
+        raise
+    return cluster
+
+
+def stop_cluster(cluster: QdrantCluster) -> None:
+    for name in cluster.containers:
+        _docker("rm", "-f", "-v", name, check=False)
+    with contextlib.suppress(RuntimeError):
+        _docker("network", "rm", cluster.network, check=False)

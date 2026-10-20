@@ -7,13 +7,14 @@ falls back to the legacy launcher so every documented pre-CLI invocation keeps w
 import argparse
 import asyncio
 import json
+from uuid import UUID
 
 from app.version import get_version
 
 # Tokens that route to the subcommand tree. Bare invocations and legacy flags
 # (--transport, --re-embed, --version) never appear here, so they fall through
 # to the legacy launcher permanently.
-KNOWN = {"serve", "re-embed", "tools", "call", "auth", "memory"}
+KNOWN = {"serve", "re-embed", "tools", "call", "auth", "memory", "backup", "restore", "export", "import", "qdrant-check"}
 
 
 def _json_object(value: str) -> dict:
@@ -25,6 +26,14 @@ def _json_object(value: str) -> dict:
     if not isinstance(parsed, dict):
         raise argparse.ArgumentTypeError("must be a JSON object of tool arguments")
     return parsed
+
+
+def uuid_value(value: str) -> UUID:
+    """argparse type for a memory id: a UUID."""
+    try:
+        return UUID(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"invalid memory id: {value!r} (ids are UUIDs)")
 
 
 def positive_int(value: str) -> int:
@@ -88,6 +97,24 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Show what would happen without making changes",
     )
+
+    backup = subparsers.add_parser(
+        "backup",
+        help="Snapshot the Qdrant collections of every node into the backup directory",
+    )
+    backup.add_argument(
+        "--force",
+        action="store_true",
+        help="Back up even if the nodes of a replicated deployment disagree",
+    )
+    restore = subparsers.add_parser("restore", help="Restore a snapshot set made by 'backup' (stop the server first)")
+    restore.add_argument("path", help="Directory of the backup set")
+    restore.add_argument("--yes", action="store_true", help="Confirm that the data in Qdrant is replaced")
+    export = subparsers.add_parser("export", help="Write every memory and link to a portable JSON lines file")
+    export.add_argument("path", help="File to write")
+    import_ = subparsers.add_parser("import", help="Read an export back, embedding each memory with the configured provider")
+    import_.add_argument("path", help="File to read")
+    subparsers.add_parser("qdrant-check", help="Compare the Qdrant nodes of a cluster by reading each one on its own")
 
     # Flags shared by every tool command
     output_flags = argparse.ArgumentParser(add_help=False)
@@ -180,7 +207,7 @@ def build_parser() -> argparse.ArgumentParser:
         parents=[output_flags],
         help="Show a memory by id",
     )
-    memory_get.add_argument("memory_id", type=int, help="Memory id")
+    memory_get.add_argument("memory_id", type=uuid_value, help="Memory id")
 
     memory_recent = memory_sub.add_parser(
         "recent",
@@ -276,6 +303,10 @@ def dispatch(argv, *, serve_runner, reembed_runner):
         return asyncio.run(reembed_runner(args))
     if args.command in {"tools", "call", "memory"}:
         return asyncio.run(_run_tool_command(args))
+    if args.command in {"backup", "restore", "export", "import", "qdrant-check"}:
+        from app.routes.cli.operator_commands import run_operator_command
+
+        return asyncio.run(run_operator_command(args))
     # The subparsers are required and KNOWN lists every one of them: "auth" is what is left
     return asyncio.run(_run_auth_command(args))
 

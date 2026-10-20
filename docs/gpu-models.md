@@ -238,7 +238,7 @@ uv run python -c 'from app.utils.token_counter import TokenCounter; TokenCounter
 TIKTOKEN_CACHE_DIR=/opt/models/tiktoken
 ```
 
-Fully offline operation also needs a locally reachable database and authentication service, as
+Fully offline operation also needs a locally reachable Qdrant and authentication service, as
 applicable. The embeddings provider and the reranker are local in the default setup, so the server
 makes no call to any other host.
 

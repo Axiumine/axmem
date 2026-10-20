@@ -40,8 +40,6 @@ def run_program(code=None, argv=None, **env):
     environment = {
         **os.environ,
         "AUTH_MODE": "none",
-        "DATABASE": "SQLite",
-        "SQLITE_MEMORY": "true",
         "EMBEDDING_PROVIDER": "TensorRT",
         "RERANKING_ENABLED": "true",
         "RERANKING_PROVIDER": "TensorRT",
@@ -130,13 +128,17 @@ def test_serve_without_importable_tensorrt_libraries_exits_with_the_cause_of_the
     assert "Traceback" not in result.stderr
 
 
-def test_without_the_local_models_no_gpu_is_needed():
+def test_without_the_local_models_no_gpu_is_needed(qdrant_server):
     """Another embeddings provider and no reranking: the program starts on a machine with no GPU at all."""
+    server, prefix = qdrant_server
     result = run_program(
         code=HIDE_AND_RUN.format(hidden={*TENSORRT_HIDDEN, "cuda"}, argv=["tools", "list"]),
         EMBEDDING_PROVIDER="Ollama",
         RERANKING_ENABLED="false",
         CUDA_VISIBLE_DEVICES="-1",
+        QDRANT_URL=server.url,
+        QDRANT_API_KEY=server.api_key,
+        QDRANT_COLLECTION_PREFIX=prefix,
     )
 
     assert result.returncode == 0

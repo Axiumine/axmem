@@ -1,67 +1,34 @@
-"""E2E tests for re-embedding with real PostgreSQL and real embedding adapters.
+"""E2E tests for re-embedding on a real Qdrant node with the real TensorRT embedder.
 
-Tests the full stack: ReEmbeddingService -> PostgresMemoryRepository -> pgvector
-
-Uses the TensorRT embedder of the test session. Migration tests
-seed storage with old dimensions while keeping the ORM at the target dimensions,
-matching a fresh process started after changing the embedding configuration.
+Tests the full stack: ReEmbeddingService -> QdrantMemoryRepository -> Qdrant collections. Every test
+runs on collections of its own (``isolated_stack``), so counts and generations are exact.
 """
-from datetime import UTC
 from uuid import uuid4
 
 import pytest
-import pytest_asyncio
-from sqlalchemy import text
 
 from app.config.settings import settings
-from app.models.memory_models import MemoryCreate
-from app.repositories.postgres.memory_repository import PostgresMemoryRepository
+from app.models.memory_models import MemoryCreate, MemoryUpdate
+from app.repositories.qdrant.memory_repository import QdrantStack
+from app.repositories.qdrant.store import SYSTEM
 from app.services.re_embedding_service import ReEmbeddingService
-
-pytestmark = pytest.mark.asyncio(loop_scope="session")
-
-
-@pytest_asyncio.fixture(loop_scope="session")
-async def memory_repo(db_adapter, embedding_adapter):
-    """Repo using the configured embedding adapter (matches DB schema)."""
-    repo = PostgresMemoryRepository(
-        db_adapter=db_adapter,
-        embedding_adapter=embedding_adapter,
-        rerank_adapter=None,
-    )
-    try:
-        yield repo
-    finally:
-        # Restore the configured dimensions even if a migration test fails before resetting storage.
-        await repo.reset_embedding_storage()
+from tests.embedding_doubles import DelegatingEmbedder, NarrowedEmbedder
 
 
-async def _create_user(db_adapter, user_id):
-    """Create a user row in the database (required for FK constraints)."""
-    from datetime import datetime
-    now = datetime.now(UTC)
-    async with db_adapter.system_session() as session:
-        await session.execute(
-            text(
-                "INSERT INTO users (id, external_id, name, email, created_at, updated_at) "
-                "VALUES (:id, :external_id, :name, :email, :created_at, :updated_at)",
-            ),
-            {
-                "id": str(user_id),
-                "external_id": f"ext-{user_id}",
-                "name": "Test User",
-                "email": "test@example.com",
-                "created_at": now,
-                "updated_at": now,
-            },
-        )
+@pytest.fixture(scope="module")
+def embedding_adapter(tensorrt_embedder):
+    """The real TensorRT embedder of the test session (production settings, one engine for all tests)."""
+    return tensorrt_embedder
 
 
-async def _create_test_memories(repo, db_adapter, count=5):
-    """Helper to create test memories via the repository."""
+@pytest.fixture
+async def repo(isolated_stack, embedding_adapter):
+    return isolated_stack.memory_repository(embedding_adapter)
+
+
+async def _create_test_memories(repo, count=5):
+    """Helper to create test memories via the repository"""
     user_id = uuid4()
-    await _create_user(db_adapter, user_id)
-
     memories = []
     for i in range(count):
         memory = await repo.create_memory(
@@ -79,13 +46,14 @@ async def _create_test_memories(repo, db_adapter, count=5):
     return user_id, memories
 
 
-@pytest.mark.e2e
-async def test_re_embed_search_works_after(memory_repo, db_adapter, embedding_adapter):
-    """Create memories, re-embed, run semantic search, verify results returned."""
-    user_id, memories = await _create_test_memories(memory_repo, db_adapter, count=3)
+@pytest.mark.asyncio
+async def test_re_embed_search_works_after(repo, embedding_adapter):
+    """Create memories, re-embed, run semantic search, verify results returned"""
+    user_id, memories = await _create_test_memories(repo, count=3)
 
+    # Re-embed all memories
     service = ReEmbeddingService(
-        memory_repository=memory_repo,
+        memory_repository=repo,
         embedding_adapter=embedding_adapter,
         batch_size=10,
     )
@@ -94,7 +62,8 @@ async def test_re_embed_search_works_after(memory_repo, db_adapter, embedding_ad
     assert result.total_processed == 3
     assert result.validation.all_passed
 
-    search_results = await memory_repo.search(
+    # Verify search works after re-embedding
+    search_results = await repo.search(
         user_id=user_id,
         query="test memory content",
         query_context="verifying search after re-embed",
@@ -106,13 +75,13 @@ async def test_re_embed_search_works_after(memory_repo, db_adapter, embedding_ad
     assert len(search_results) > 0
 
 
-@pytest.mark.e2e
-async def test_re_embed_count_integrity(memory_repo, db_adapter, embedding_adapter):
-    """After re-embed, verify embedding count matches memory count."""
-    user_id, memories = await _create_test_memories(memory_repo, db_adapter, count=5)
+@pytest.mark.asyncio
+async def test_re_embed_count_integrity(repo, embedding_adapter):
+    """After re-embed, the new generation holds exactly the memories the old one did"""
+    user_id, memories = await _create_test_memories(repo, count=5)
 
     service = ReEmbeddingService(
-        memory_repository=memory_repo,
+        memory_repository=repo,
         embedding_adapter=embedding_adapter,
         batch_size=3,
     )
@@ -120,91 +89,100 @@ async def test_re_embed_count_integrity(memory_repo, db_adapter, embedding_adapt
 
     assert result.total_processed == 5
     assert result.validation.count_ok
+    assert await repo.count_all_memories() == 5
 
 
-@pytest.mark.e2e
-async def test_re_embed_preserves_memory_data(memory_repo, db_adapter, embedding_adapter):
-    """After re-embed, verify all memory fields unchanged."""
-    user_id, original_memories = await _create_test_memories(memory_repo, db_adapter, count=3)
+@pytest.mark.asyncio
+async def test_re_embed_switches_the_live_generation_and_keeps_the_previous_one(repo, embedding_adapter):
+    user_id, memories = await _create_test_memories(repo, count=2)
+    before = await repo.live_generation()
+
+    result = await ReEmbeddingService(repo, embedding_adapter, batch_size=10).re_embed_all()
+
+    after = await repo.live_generation()
+    assert after != before
+    assert (result.generation, result.previous_generation) == (after, before)
+    # The previous generation still holds the old vectors, ready for a switch back
+    assert await repo.store.count(SYSTEM, before) == 2
+
+
+@pytest.mark.asyncio
+async def test_re_embed_preserves_memory_data(repo, embedding_adapter):
+    """After re-embed, verify all memory fields (title, content, tags, links, states, ids) unchanged"""
+    user_id, original_memories = await _create_test_memories(repo, count=3)
+    await repo.create_links_batch(user_id, original_memories[0].id, [original_memories[1].id])
+    await repo.mark_obsolete(user_id, original_memories[2].id, "superseded", original_memories[0].id)
+    originals = [await repo.get_memory_by_id(user_id, memory.id) for memory in original_memories]
 
     service = ReEmbeddingService(
-        memory_repository=memory_repo,
+        memory_repository=repo,
         embedding_adapter=embedding_adapter,
         batch_size=10,
     )
     await service.re_embed_all()
 
-    for original in original_memories:
-        refreshed = await memory_repo.get_memory_by_id(user_id=user_id, memory_id=original.id)
-        assert refreshed.title == original.title
-        assert refreshed.content == original.content
-        assert refreshed.context == original.context
-        assert refreshed.keywords == original.keywords
-        assert refreshed.tags == original.tags
-        assert refreshed.importance == original.importance
+    # Re-read all memories and verify data unchanged
+    for original in originals:
+        assert await repo.get_memory_by_id(user_id=user_id, memory_id=original.id) == original
 
 
-@pytest.mark.e2e
+@pytest.mark.asyncio
 @pytest.mark.parametrize("obsolete_only", [False, True], ids=["mixed", "all-obsolete"])
-@pytest.mark.parametrize("previous_storage", ["missing_vector", "old_dimensions"])
-async def test_re_embed_recovers_obsolete_vectors(
-    memory_repo, db_adapter, embedding_adapter, obsolete_only, previous_storage,
+async def test_re_embed_recovers_from_vectors_of_another_width(
+    isolated_qdrant, embedding_adapter, monkeypatch, obsolete_only,
 ):
-    user_id, memories = await _create_test_memories(memory_repo, db_adapter, count=3)
-    old = memories[-1]
-    await memory_repo.mark_obsolete(user_id, old.id, "superseded", memories[0].id)
-    if obsolete_only:
-        for memory in memories[:-1]:
-            await memory_repo.mark_obsolete(user_id, memory.id, "outdated")
-    original = await memory_repo.get_memory_by_id(user_id, old.id)
+    """The stored vectors come from an older, narrower model: re-embedding replaces them with the model's."""
+    # Phase one: the deployment of the old model, whose vectors have 8 components
+    with monkeypatch.context() as old_model:
+        old_model.setattr(settings, "EMBEDDING_DIMENSIONS", 8)
+        old_stack = QdrantStack.from_settings()
+        await old_stack.schema.ensure()
+        old_repo = old_stack.memory_repository(NarrowedEmbedder(embedding_adapter))
+        user_id, memories = await _create_test_memories(old_repo, count=3)
+        old = memories[-1]
+        await old_repo.mark_obsolete(user_id, old.id, "superseded", memories[0].id)
+        if obsolete_only:
+            for memory in memories[:-1]:
+                await old_repo.mark_obsolete(user_id, memory.id, "outdated")
+        original = await old_repo.get_memory_by_id(user_id, old.id)
+        await old_stack.close()
 
-    async with db_adapter.system_session() as session:
-        await session.execute(text("ALTER TABLE memories ALTER COLUMN embedding DROP NOT NULL"))
-        if previous_storage == "missing_vector":
-            # Reproduce the obsolete vector loss caused by older full rebuilds.
-            await session.execute(
-                text("UPDATE memories SET embedding = NULL WHERE id = :id"), {"id": old.id},
-            )
-        else:
-            # Keep the ORM at the new dimensions, as in a fresh migration process.
-            await session.execute(text(
-                "ALTER TABLE memories ALTER COLUMN embedding TYPE vector(8) USING NULL",
-            ))
-            await session.execute(text(
-                "UPDATE memories SET embedding = '[1,0,0,0,0,0,0,0]'::vector",
-            ))
+    # Phase two: the new model (384 components) runs re-embed; the server would refuse to start first
+    stack = QdrantStack.from_settings()
+    try:
+        with pytest.raises(Exception, match="vectors are 8 wide but 384 are configured"):
+            await stack.schema.ensure()
+        await stack.schema.ensure(check_width=False)
+        repo = stack.memory_repository(embedding_adapter)
+        progress = []
+        result = await ReEmbeddingService(repo, embedding_adapter, batch_size=2).re_embed_all(
+            progress_callback=lambda done, total: progress.append((done, total)),
+        )
 
-    progress = []
-    result = await ReEmbeddingService(memory_repo, embedding_adapter, batch_size=2).re_embed_all(
-        progress_callback=lambda done, total: progress.append((done, total)),
-    )
-
-    assert result.total_memories == result.total_processed == 3
-    assert progress == [(2, 3), (3, 3)]
-    assert result.validation.all_passed
-    refreshed = await memory_repo.get_memory_by_id(user_id, old.id)
-    preserved_fields = {
-        "title", "content", "context", "keywords", "tags", "importance", "created_at",
-        "is_obsolete", "obsolete_reason", "superseded_by", "obsoleted_at",
-    }
-    assert refreshed.model_dump(include=preserved_fields) == original.model_dump(
-        include=preserved_fields,
-    )
-    recreated = await memory_repo.create_memory(
-        user_id, MemoryCreate.model_validate(old.model_dump()),
-    )
-    matches = await memory_repo.find_obsolete_matches(
-        user_id, recreated.id, limit=3, min_similarity=0.99,
-    )
-    assert old.id in {memory.id for memory, _ in matches}
+        assert result.total_memories == result.total_processed == 3
+        assert progress == [(2, 3), (3, 3)]
+        assert result.validation.all_passed
+        await stack.schema.ensure()  # the width matches again
+        refreshed = await repo.get_memory_by_id(user_id, old.id)
+        preserved_fields = {
+            "title", "content", "context", "keywords", "tags", "importance", "created_at",
+            "is_obsolete", "obsolete_reason", "superseded_by", "obsoleted_at",
+        }
+        assert refreshed.model_dump(include=preserved_fields) == original.model_dump(
+            include=preserved_fields,
+        )
+        recreated = await repo.create_memory(user_id, MemoryCreate.model_validate(old.model_dump()))
+        matches = await repo.find_obsolete_matches(user_id, recreated.id, limit=3, min_similarity=0.99)
+        assert old.id in {memory.id for memory, _ in matches}
+    finally:
+        await stack.close()
 
 
-@pytest.mark.e2e
-async def test_re_embed_empty_database(memory_repo, db_adapter, embedding_adapter):
-    """Re-embedding an empty database should succeed with no work done."""
-
+@pytest.mark.asyncio
+async def test_re_embed_empty_database(repo, embedding_adapter):
+    """Re-embedding an empty database should succeed with no work done"""
     service = ReEmbeddingService(
-        memory_repository=memory_repo,
+        memory_repository=repo,
         embedding_adapter=embedding_adapter,
         batch_size=10,
     )
@@ -215,13 +193,13 @@ async def test_re_embed_empty_database(memory_repo, db_adapter, embedding_adapte
     assert result.validation.all_passed
 
 
-@pytest.mark.e2e
-async def test_re_embed_validation_checks(memory_repo, db_adapter, embedding_adapter):
-    """Verify all validation checks pass after successful re-embed."""
-    user_id, memories = await _create_test_memories(memory_repo, db_adapter, count=4)
+@pytest.mark.asyncio
+async def test_re_embed_validation_checks(repo, embedding_adapter):
+    """Verify all validation checks pass after successful re-embed"""
+    await _create_test_memories(repo, count=4)
 
     service = ReEmbeddingService(
-        memory_repository=memory_repo,
+        memory_repository=repo,
         embedding_adapter=embedding_adapter,
         batch_size=2,
     )
@@ -233,22 +211,101 @@ async def test_re_embed_validation_checks(memory_repo, db_adapter, embedding_ada
     assert result.validation.all_passed
 
 
-@pytest.mark.e2e
-@pytest.mark.parametrize("problem", ["missing_embeddings", "wrong_dimensions"])
-async def test_validation_checks_obsolete_only_database(
-    memory_repo, db_adapter, embedding_adapter, monkeypatch, problem,
-):
-    user_id, memories = await _create_test_memories(memory_repo, db_adapter, count=1)
-    await memory_repo.mark_obsolete(user_id, memories[0].id, "outdated")
-    if problem == "missing_embeddings":
-        await memory_repo.reset_embedding_storage()
-    else:
-        monkeypatch.setattr(settings, "EMBEDDING_DIMENSIONS", settings.EMBEDDING_DIMENSIONS + 1)
+@pytest.mark.asyncio
+async def test_validation_flags_a_generation_that_lacks_the_memories(repo):
+    user_id, memories = await _create_test_memories(repo, count=1)
+    await repo.mark_obsolete(user_id, memories[0].id, "outdated")
+    empty = await repo.create_generation()
 
-    validation = await ReEmbeddingService(memory_repo, embedding_adapter).validate()
+    validation = await repo.validate_generation(empty)
 
-    if problem == "missing_embeddings":
-        assert not validation.count_ok
-        assert not validation.search_ok
-    else:
-        assert not validation.dimensions_ok
+    assert not validation.count_ok
+    assert validation.dimensions_ok
+    assert not validation.all_passed
+
+
+@pytest.mark.asyncio
+async def test_validation_flags_a_generation_of_the_wrong_width(repo, isolated_stack):
+    await _create_test_memories(repo, count=1)
+    isolated_stack.schema.dimensions = 8
+    narrow = await repo.create_generation()
+
+    validation = await repo.validate_generation(narrow)
+
+    assert not validation.dimensions_ok
+    assert not validation.all_passed
+
+
+class _EditsWhileEmbedding(DelegatingEmbedder):
+    """The real embedder, which lets another writer edit a memory in the middle of the copy."""
+
+    def __init__(self, real, edit):
+        super().__init__(real)
+        self.calls = 0
+        self._edit = edit
+
+    async def generate_embedding(self, text: str) -> list[float]:
+        self.calls += 1
+        if self.calls == 2:
+            await self._edit()
+        return await super().generate_embedding(text)
+
+
+@pytest.mark.asyncio
+async def test_edit_made_while_the_copy_runs_is_not_lost(repo, embedding_adapter):
+    """A memory edited after it was copied is copied again before the new generation goes live."""
+    user_id, memories = await _create_test_memories(repo, count=4)
+    edited = memories[0]
+
+    async def edit():
+        await repo.update_memory(user_id, edited.id, MemoryUpdate(content="edited during the copy"))
+
+    embedder = _EditsWhileEmbedding(embedding_adapter, edit)
+    result = await ReEmbeddingService(repo, embedder, batch_size=1).re_embed_all()
+
+    assert result.validation.all_passed
+    assert (await repo.get_memory_by_id(user_id, edited.id)).content == "edited during the copy"
+
+
+# ---------------------------------------------------------------------------
+# rebuild_targeted (issue #39) — user-scoped, non-destructive rebuild
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_rebuild_targeted_is_user_scoped(repo, embedding_adapter):
+    """A user can never trigger a rebuild on another user's memories."""
+    user_a, memories_a = await _create_test_memories(repo, count=2)
+    user_b, memories_b = await _create_test_memories(repo, count=2)
+
+    service = ReEmbeddingService(
+        memory_repository=repo,
+        embedding_adapter=embedding_adapter,
+        batch_size=10,
+    )
+    # User B passes A's id explicitly: candidate count must be zero.
+    result_b = await service.rebuild_targeted(
+        user_id=user_b,
+        memory_ids=[memories_a[0].id],
+    )
+
+    assert result_b.rebuilt_ids == []
+
+    # User A can rebuild their own memories.
+    result_a = await service.rebuild_targeted(
+        user_id=user_a,
+    )
+    assert sorted(result_a.rebuilt_ids) == sorted(memory.id for memory in memories_a)
+
+
+@pytest.mark.asyncio
+async def test_rebuild_targeted_never_creates_or_switches_a_generation(repo, embedding_adapter):
+    """Targeted rebuild rewrites vectors in place; the live collection stays the same."""
+    user_id, memories = await _create_test_memories(repo, count=2)
+    live_before = await repo.live_generation()
+
+    result = await ReEmbeddingService(repo, embedding_adapter, batch_size=5).rebuild_targeted(user_id=user_id)
+
+    assert sorted(result.rebuilt_ids) == sorted(memory.id for memory in memories)
+    assert await repo.live_generation() == live_before
+    assert await repo.count_all_memories() == 2

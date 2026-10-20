@@ -100,7 +100,7 @@
             buildInputs = [ forgetfulEnv ];
             installPhase = ''
               mkdir -p $out/bin $out/lib
-              cp -r app main.py alembic.ini alembic $out/lib/
+              cp -r app main.py $out/lib/
               makeWrapper ${forgetfulEnv}/bin/forgetful $out/bin/forgetful-ai \
                 --prefix PYTHONPATH : "$out/lib"
               ln -s $out/bin/forgetful-ai $out/bin/forgetful

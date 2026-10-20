@@ -18,8 +18,33 @@ class ValidationResult:
         return self.count_ok and self.dimensions_ok and self.search_ok
 
 
+@dataclass
+class EmbeddingWrites:
+    """Outcome of writing a batch of embeddings: which memories took theirs and which could not be written."""
+    written: list[UUID]
+    failed: list[UUID]
+
+
+@dataclass(frozen=True)
+class StoredMemory:
+    """A memory as stored: the memory, its tenant, and the version its record had when it was read.
+
+    The version is what makes a later write conditional: a write that carries it is applied only while
+    the record still has that version, so an embedding computed from this read can never replace the
+    result of a newer edit.
+    """
+
+    memory: Memory
+    tenant_id: UUID
+    version: int
+
+
 class MemoryRepository(Protocol):
-    """Contract for the Memory Repository"""
+    """Contract for the Memory Repository
+
+    Every method that takes ``user_id`` (the tenant) reads and writes that tenant's memories only.
+    The methods that do not are operator operations over every tenant (re-embedding).
+    """
 
     async def search(
             self,
@@ -29,7 +54,7 @@ class MemoryRepository(Protocol):
             k: int,
             importance_threshold: int | None,
             project: str | None,
-            exclude_ids: list[int] | None,
+            exclude_ids: list[UUID] | None,
     ) -> list[Memory]:
         ...
 
@@ -41,7 +66,7 @@ class MemoryRepository(Protocol):
             k: int,
             importance_threshold: int | None,
             project: str | None,
-            exclude_ids: list[int] | None,
+            exclude_ids: list[UUID] | None,
     ) -> list[tuple[Memory, MemoryScore]]:
         ...
 
@@ -54,52 +79,60 @@ class MemoryRepository(Protocol):
     async def create_links_batch(
             self,
             user_id: UUID,
-            source_id: int,
-            target_ids: list[int],
-    ) -> list[int]:
+            source_id: UUID,
+            target_ids: list[UUID],
+    ) -> list[UUID]:
+        """Link the source to each target that exists and is not linked yet; return the targets newly linked."""
         ...
     async def get_memory_by_id(
             self,
             user_id: UUID,
-            memory_id: int,
+            memory_id: UUID,
     ) -> Memory:
         ...
     async def update_memory(
             self,
             user_id: UUID,
-            memory_id: int,
+            memory_id: UUID,
             updated_memory: MemoryUpdate,
-            existing_memory: Memory,
-            search_fields_changed: bool,
-    ) -> Memory | None:
+    ) -> Memory:
+        """Apply the changes to the memory as one conditional write.
+
+        A write that loses to a concurrent change is repeated against the new state, up to a bounded
+        number of times.
+
+        Raises:
+            NotFoundError: If the memory does not exist for this tenant
+            ConflictError: If concurrent changes kept the write from being applied
+        """
         ...
     async def mark_obsolete(
             self,
             user_id: UUID,
-            memory_id: int,
+            memory_id: UUID,
             reason: str,
-            superseded_by: int | None = None,
+            superseded_by: UUID | None = None,
     ) -> bool:
         ...
     async def restore_obsolete(
             self,
             user_id: UUID,
-            memory_id: int,
+            memory_id: UUID,
     ) -> bool:
         ...
     async def get_linked_memories(
             self,
             user_id: UUID,
-            memory_id: int,
+            memory_id: UUID,
             project: str | None,
             max_links: int = 5,
-            exclude_ids: list[int] | None = None,
+            exclude_ids: list[UUID] | None = None,
     ) -> list[Memory]:
         ...
     async def find_similar_memories(
             self,
             user_id: UUID,
-            memory_id: int,
+            memory_id: UUID,
             max_links: int,
     ) -> list[Memory]:
         ...
@@ -107,7 +140,7 @@ class MemoryRepository(Protocol):
     async def find_similar_memories_scored(
             self,
             user_id: UUID,
-            memory_id: int,
+            memory_id: UUID,
             max_links: int,
     ) -> list[tuple[Memory, float]]:
         ...
@@ -115,7 +148,7 @@ class MemoryRepository(Protocol):
     async def find_obsolete_matches(
             self,
             user_id: UUID,
-            memory_id: int,
+            memory_id: UUID,
             limit: int = 3,
             min_similarity: float = 0.89,
     ) -> list[tuple[Memory, float]]:
@@ -160,10 +193,10 @@ class MemoryRepository(Protocol):
     async def unlink_memories(
             self,
             user_id: UUID,
-            source_id: int,
-            target_id: int,
+            source_id: UUID,
+            target_id: UUID,
     ) -> bool:
-        """Remove bidirectional link between two memories.
+        """Remove the link between two memories.
 
         Args:
             user_id: User ID for isolation
@@ -175,31 +208,21 @@ class MemoryRepository(Protocol):
         """
         ...
 
-    # Re-embedding support methods
-
-    async def count_all_memories(self) -> int:
-        """Count all memories, including obsolete ones, across all users."""
-        ...
-
-    async def get_memories_for_reembedding(self, limit: int, offset: int) -> list[Memory]:
-        """Fetch all memories, including obsolete ones, in batches ordered by id."""
-        ...
+    # Targeted, tenant-scoped rebuild of embeddings
 
     async def count_memories_for_targeted_rebuild(
             self,
             user_id: UUID,
-            memory_ids: list[int] | None = None,
+            memory_ids: list[UUID] | None = None,
             project: str | None = None,
     ) -> int:
-        """Count memories eligible for a *user-scoped, targeted* embedding rebuild.
+        """Count memories eligible for a *tenant-scoped, targeted* embedding rebuild.
 
-        Used by `rebuild_embeddings` to avoid the destructive global
-        `re_embed_all` path. Filters are user-scoped; user_id is mandatory and
-        scopes ownership. Matching memories are rebuilt unconditionally.
+        Used by `rebuild_embeddings`; the tenant scopes ownership and is never optional.
 
         Args:
-            user_id: Authenticated user id; ownership filter, never optional.
-            memory_ids: Restrict to explicit ids (already user-scoped server-side).
+            user_id: Authenticated tenant; ownership filter, never optional.
+            memory_ids: Restrict to explicit ids (already tenant-scoped server-side).
             project: Restrict to one project scope of `user_id`.
 
         Returns:
@@ -212,10 +235,10 @@ class MemoryRepository(Protocol):
             self,
             user_id: UUID,
             limit: int,
-            after_id: int | None = None,
-            memory_ids: list[int] | None = None,
+            after_id: UUID | None = None,
+            memory_ids: list[UUID] | None = None,
             project: str | None = None,
-    ) -> list[Memory]:
+    ) -> list[StoredMemory]:
         """Page through memories selected by `count_memories_for_targeted_rebuild`.
 
         Same semantics and same filters as the count variant. Uses keyset
@@ -226,29 +249,16 @@ class MemoryRepository(Protocol):
     async def upsert_targeted_embeddings(
             self,
             user_id: UUID,
-            updates: list[tuple[int, list[float]]],
-            expected_updated_at: dict[int, datetime] | None = None,
-    ) -> list[int]:
+            updates: list[tuple[UUID, list[float]]],
+            expected_versions: dict[UUID, int],
+    ) -> EmbeddingWrites:
         """Idempotently write a batch of new embeddings for `user_id`.
 
-        Unlike `bulk_update_embeddings`, this method:
-        - is user-scoped (rejects ids not owned by `user_id`),
-        - never resets vector storage,
-        - is idempotent for repeated calls on the same memory id,
-        - MUST NOT mutate `updated_at` (an embedding refresh is not an edit).
-
-        Args:
-            user_id: Authenticated user id; ownership filter, never optional.
-            updates: list of (memory_id, embedding) tuples.
-            expected_updated_at: Optional memory id -> `updated_at` observed when the
-                embedding input was read. A memory whose `updated_at` no longer matches
-                was edited (and re-embedded) meanwhile: its stored vector is left alone
-                and its id is not returned. Ids without an entry are written unconditionally.
-                Implementations MUST make the check part of the write itself, so an edit
-                that commits after the check cannot be overwritten.
-
-        Returns:
-            list of memory ids whose embedding was actually written.
+        Each write is conditional on the version the embedding input was read at
+        (`StoredMemory.version`): a memory edited (and re-embedded) meanwhile keeps
+        its vector and is in neither list of the result. The condition is part of the
+        write itself, so an edit that commits after the check cannot be overwritten.
+        A memory whose write fails is listed as failed and does not stop the others.
         """
         ...
 
@@ -256,32 +266,49 @@ class MemoryRepository(Protocol):
         """Return True only if `user_id` has used the project scope `project` before."""
         ...
 
-    async def reset_embedding_storage(self) -> None:
-        """Prepare vector storage for new dimensions.
-        SQLite: DROP + CREATE vec_memories with new dimensions
-        Postgres: ALTER embedding column type
+    # Re-embedding of every memory into a new generation of the memory collection (operator, all tenants)
+
+    async def count_all_memories(self) -> int:
+        """Count all memories, including obsolete ones, across all tenants."""
+        ...
+
+    async def live_generation(self) -> str:
+        """Name of the generation (collection) that serves reads and writes now."""
+        ...
+
+    async def create_generation(self) -> str:
+        """Create an empty generation with the configured embedding dimensions; return its name."""
+        ...
+
+    async def outdated_in(
+            self,
+            source: str,
+            target: str,
+            limit: int,
+            start: UUID | None,
+    ) -> tuple[list[StoredMemory], UUID | None]:
+        """Scan up to `limit` memories of `source` from the id `start`; return those `target` lacks or holds an older version of.
+
+        The second value is the id to continue from, or None when the scan reached the end of `source`.
         """
         ...
 
-    async def finalize_embedding_storage(self) -> None:
-        """Undo what `reset_embedding_storage` relaxed, once every memory has a new embedding.
-        SQLite: nothing to restore
-        Postgres: restore NOT NULL on the embedding column
+    async def copy_into(self, target: str, items: list[tuple[StoredMemory, list[float]]]) -> int:
+        """Write the memories with their new embeddings into `target`; return how many were written.
+
+        A memory `target` does not have is created, one it has at an older version is replaced, and one it
+        has at the same or a newer version is left alone, so a copy can never overwrite a newer edit.
         """
         ...
 
-    async def bulk_update_embeddings(self, updates: list[tuple[int, list[float]]]) -> None:
-        """Write new embeddings for a batch of memory IDs. MUST NOT mutate `updated_at`."""
+    async def activate_generation(self, generation: str) -> None:
+        """Make `generation` the live one, atomically."""
         ...
 
-    async def validate_embedding_count(self) -> bool:
-        """Check embedding count matches all memories, including obsolete ones."""
+    async def discard_generation(self, generation: str) -> None:
+        """Delete a generation that was never activated."""
         ...
 
-    async def validate_embedding_dimensions(self) -> bool:
-        """Sample embeddings and verify correct dimensions"""
-        ...
-
-    async def validate_search_works(self) -> bool:
-        """Smoke-test vector storage, including obsolete memories."""
+    async def validate_generation(self, generation: str) -> ValidationResult:
+        """Check the memory count, the vector width and a similarity search of a generation."""
         ...

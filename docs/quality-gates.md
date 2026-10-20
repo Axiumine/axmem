@@ -52,21 +52,28 @@ Gates in the same group run in parallel; groups run left to right and the first 
 stops the stage (cheapest checks first). A gate that cannot run (missing tool, no Docker, nothing
 relevant staged) reports `SKIP` with the reason and does not fail the stage.
 
-**GPU requirement.** Every gate that runs `tests/integration`, `tests/e2e_sqlite` or `tests/e2e` (`snapshots`,
-`tests-fast`, `tests`, `e2e-postgres`, `memray`, `mutation`) needs an NVIDIA GPU with driver R580 or newer
+**GPU requirement.** Every gate that runs `tests/integration`, `tests/e2e` or `tests/cluster` (`snapshots`,
+`tests-fast`, `tests`, `e2e-qdrant`, `memray`, `mutation`) needs an NVIDIA GPU with driver R580 or newer
 and about 4.1 GiB of free GPU memory per pytest process (embedder and reranker, plus the same again for the
 standalone test's server process). The embedder and reranker tests run the real TensorRT engines;
 there is no CPU path, no stub and no skip. Each of these suites starts with a preflight that ends the pytest
 run with exit code 2 and the cause when no GPU is visible, TensorRT cannot be imported, or `-n` (pytest-xdist, if
-installed) asks for more pytest workers than the GPU memory holds. These gates do not report `SKIP` without a GPU: they fail. See
+installed) asks for more pytest workers than the GPU memory holds.
+
+**Qdrant requirement.** The integration and end-to-end suites run on a real Qdrant node and the cluster suite on three
+nodes, all started through Docker from `qdrant/qdrant:v1.19.2` (pull the image first; `tests/qdrant_support.py` does the
+starting and removes the containers). A run that cannot start Qdrant ends with exit code 2 and the cause, it never skips.
+Setting `AXMEM_TEST_QDRANT_URL` (and `AXMEM_TEST_QDRANT_API_KEY`) points the integration and end-to-end suites at a server that
+already runs, for example a service container of a CI job; the tests then keep to collections of their own under a
+unique prefix and delete them afterwards. The cluster suite always starts its own three nodes. These gates do not report `SKIP` without a GPU: they fail. See
 [GPU models](gpu-models.md) for the host requirements. The static gates (ruff, imports, bandit, semgrep,
 vulture, radon, mypy, pylint) and `tests/architecture` need no GPU.
 
 | Stage | Pipeline |
 |---|---|
 | `pre-commit` (staged files) | ruff, imports, bandit, semgrep, vulture, radon-cc, radon-mi → mypy, pylint → snapshots, tests-fast → gitnexus |
-| `pre-push` (whole project) | static group → mypy, pylint → tests → e2e-postgres → coverage → memray → trivy → qodana → mutation (opt-in) → gitnexus |
-| `ci` | static group → mypy, pylint → tests → e2e-postgres → coverage → memray → trivy |
+| `pre-push` (whole project) | static group → mypy, pylint → tests → e2e-qdrant → coverage → memray → trivy → qodana → mutation (opt-in) → gitnexus |
+| `ci` | static group → mypy, pylint → tests → e2e-qdrant → coverage → memray → trivy |
 
 `pre-commit` scopes ruff, bandit, semgrep, radon and pylint to the staged files. mypy, vulture,
 import-linter and the tests always run over the whole project (a changed signature breaks unchanged
@@ -80,20 +87,20 @@ across jobs:
 |---|---|---|
 | `quality.yml` job `static` (hosted runner) | ruff, imports, bandit, semgrep (with `p/python p/security-audit` added), vulture, radon-cc, radon-mi, mypy, pylint; installs without `tensorrt-cu13-libs` | 3.14 |
 | `quality.yml` job `snapshots` (GPU runner) | snapshots | 3.14 |
-| `quality.yml` job `coverage` (GPU runner) | `tests`, `e2e-postgres` (uses the runner's Docker), `coverage` | 3.14 |
+| `quality.yml` job `coverage` (GPU runner) | `tests`, `e2e-qdrant` (uses the runner's Docker), `coverage` | 3.14 |
 | `quality.yml` job `memory` (GPU runner) | `memray` | 3.14 |
 | `quality.yml` job `trivy` (hosted runner) | `trivy` | 3.14 |
 | `quality.yml` job `qodana` (hosted runner) | Qodana action with the `QODANA_TOKEN` repository secret; not run for pull requests from forks | n/a |
 | `quality.yml` job `mutation` (GPU runner) | `mutation` with `MUTATION=1`, weekly (Mondays 03:17 UTC) and on manual dispatch | 3.14 |
 | `ci.yml` job `lint` (hosted runner) | `ruff` and `tests/architecture` | 3.14 |
-| `ci.yml` job `test` (GPU runner) | architecture, integration and SQLite e2e suites | 3.14 |
+| `ci.yml` job `test` (GPU runner) | integration and end-to-end suites on a Qdrant node started through Docker | 3.14 |
 | `ci.yml` job `smoke-test` (hosted runner) | wheel build smoke test | 3.14 |
-| `e2e.yml` (GPU runner) | `tests/e2e` against PostgreSQL | 3.14 |
+| `e2e.yml` (GPU runner) | `tests/e2e` on a Qdrant node started through Docker | 3.14 |
 
 The GPU runner is a self-hosted GitHub Actions runner carrying the labels `self-hosted`, `linux` and `gpu`
 (`runs-on: [self-hosted, linux, gpu]`). Its host needs an NVIDIA GPU with driver R580 or newer and enough
-free GPU memory for one pytest process (about 4.1 GiB, and the same again while the standalone test's server process runs), Docker for the PostgreSQL jobs, `postgresql-client`
-and `uv`. The repository does not install or configure the runner; the driver is the only part of the
+free GPU memory for one pytest process (about 4.1 GiB, and the same again while the standalone test's server process runs), Docker for the Qdrant
+nodes, and `uv`. The repository does not install or configure the runner; the driver is the only part of the
 TensorRT stack that belongs to the host, the rest is installed by `uv sync`. Hosted runners cannot run
 these jobs because they have no GPU, and the Windows test matrix was removed because the TensorRT embedder and reranker are
 Linux-only (its engine cache locks with `fcntl`).
@@ -104,19 +111,19 @@ Linux-only (its engine cache locks with `fcntl`).
 |---|---|---|
 | `ruff` | lint (existing rule set) | `ruff.toml` |
 | `imports` | layer contracts routes → services → protocols → repositories | `[tool.importlinter]` |
-| `bandit` | security lint on app/main/alembic/harness/scripts | `[tool.bandit]` |
-| `semgrep` | repo-specific rules (no `print` on the MCP stdout path, deprecated asyncio, SQL built from strings, …); `SEMGREP_PACKS="p/python p/security-audit"` adds registry packs. Uses `semgrep` on `PATH`, else `uvx`, else the pinned Docker image | `.semgrep/forgetful.yml`, `.semgrepignore` |
+| `bandit` | security lint on app/main/harness/scripts | `[tool.bandit]` |
+| `semgrep` | repo-specific rules (no `print` on the MCP stdout path, deprecated asyncio, Qdrant writes outside `store.py` or without `wait`, …); `SEMGREP_PACKS="p/python p/security-audit"` adds registry packs. Uses `semgrep` on `PATH`, else `uvx`, else the pinned Docker image | `.semgrep/forgetful.yml`, `.semgrepignore` |
 | `vulture` | dead code, min confidence 60 | `[tool.vulture]`, `vulture_whitelist.py` |
 | `radon-cc` | no function/method rated C or worse (minimum rating B), tests included | `radon.cfg` |
 | `radon-mi` | every file maintainability grade A (score above 19), tests included | `radon.cfg` |
 | `mypy` | type check of `app`, `main.py`, `scripts` | `[tool.mypy]` |
 | `pylint` | score at least 8/10 | `[tool.pylint]` |
-| `snapshots` | syrupy snapshot tests (`-m snapshot`): CLI argument tree, settings defaults, SQLite and PostgreSQL schema, migration chain, MCP meta-tool signatures and tool catalogue, HTTP route table | `tests/integration/test_snapshots.py`, `tests/e2e_sqlite/test_snapshots_sqlite.py` |
+| `snapshots` | syrupy snapshot tests (`-m snapshot`): CLI argument tree, settings defaults, Qdrant collection layout and payload types, MCP meta-tool signatures and tool catalogue, HTTP route table | `tests/integration/test_snapshots.py`, `tests/e2e/test_snapshots_e2e.py` |
 | `tests-fast` | `tests/architecture` and `tests/integration`, stopping at the first failure | `pytest.ini` |
-| `tests` | architecture + integration + SQLite e2e with branch coverage (erases previous coverage data first) | `[tool.coverage.*]` |
-| `e2e-postgres` | `tests/e2e` (`-m e2e`) against a real PostgreSQL container, appending to the coverage data (needs Docker) | `tests/e2e/conftest.py` |
-| `coverage` | combined **100 %** line and branch coverage of `app` and `main.py`, from the SQLite and PostgreSQL runs together | `[tool.coverage.report]` |
-| `memray` | memory budgets (`@pytest.mark.limit_memory`) via pytest-memray, run as `pytest tests/e2e_sqlite -m memory --memray` (Linux/macOS only) | `tests/e2e_sqlite/test_memory_budget_sqlite.py` |
+| `tests` | architecture + integration + end-to-end on one Qdrant node with branch coverage (erases previous coverage data first) | `[tool.coverage.*]` |
+| `e2e-qdrant` | `tests/cluster` (`-m cluster`) against a real three-node Qdrant cluster (replication factor 3, write consistency 2, strong ordering, API key and internal authentication), appending to the coverage data (needs Docker) | `tests/cluster/conftest.py`, `tests/qdrant_support.py` |
+| `coverage` | combined **100 %** line and branch coverage of `app` and `main.py`, from the single-node and cluster runs together | `[tool.coverage.report]` |
+| `memray` | memory budgets (`@pytest.mark.limit_memory`) via pytest-memray, run as `pytest tests/e2e -m memory --memray` (Linux/macOS only) | `tests/e2e/test_memory_budget_e2e.py` |
 | `trivy` | HIGH/CRITICAL vulnerabilities (fixed ones), secrets and misconfigurations (`fs` scan) | `trivy.yaml`, `.trivyignore` |
 | `qodana` | Qodana Ultimate Plus (`jetbrains/qodana-python`), token from `QODANA_TOKEN`; analyses a `git archive` export of `HEAD` (uncommitted changes are not seen) with `--image`; skipped when the `qodana` CLI is missing, failed when the token is missing | `qodana.yaml` |
 | `mutation` | mutmut on changed `app/` modules; survivors above `MUTATION_MAX_SURVIVORS` fail. Opt-in (`MUTATION=1`), see below | `[tool.mutmut]` |
@@ -127,12 +134,12 @@ gates check (`radon.cfg` excludes virtualenvs and generated paths).
 
 ### Coverage
 
-`tests` collects branch coverage from `tests/architecture`, `tests/integration` and `tests/e2e_sqlite`;
-`e2e-postgres` appends the PostgreSQL run; `coverage` then fails below 100 % for the two together.
-The PostgreSQL repositories are only reachable from `tests/e2e`, so a machine without Docker cannot
-satisfy the gate: `e2e-postgres` reports `SKIP` and `coverage` fails, because untested PostgreSQL code
-cannot be called covered. Branch coverage runs with `parallel = true` and `concurrency =
-["greenlet", "thread"]` (SQLAlchemy's async layer and aiosqlite) and also follows subprocesses.
+`tests` collects branch coverage from `tests/architecture`, `tests/integration` and `tests/e2e`;
+`e2e-qdrant` appends the cluster run; `coverage` then fails below 100 % for the two together.
+Every Qdrant path the cluster suite alone reaches (failover between nodes, the per-node check) is meant to be covered
+by single-node tests with injected faults too, so a machine without Docker for three nodes loses little; but whatever only
+the cluster run covers makes `e2e-qdrant` `SKIP` and `coverage` fail, because untested code cannot be called covered.
+Branch coverage runs with `parallel = true` and `concurrency = ["thread"]` and also follows subprocesses.
 
 In parallel mode every measured process writes its own `.coverage.<host>.pid<N>.<random>` fragment, and
 `coverage combine` merges the fragments into one data file. `[tool.coverage.run] data_file` puts that data file
@@ -148,20 +155,20 @@ contract change: review the diff in Git, then refresh deliberately.
 
 | Surface | Test | Snapshot directory |
 |---|---|---|
-| CLI argument tree, settings defaults (built from code defaults, ignoring the environment and dotenv files; secrets and the build-derived `SERVICE_VERSION` are masked), SQLite and PostgreSQL DDL, Alembic revision chain | `tests/integration/test_snapshots.py` | `tests/integration/__snapshots__/test_snapshots/` |
-| MCP meta-tool signatures, discovered tool catalogue, HTTP route table | `tests/e2e_sqlite/test_snapshots_sqlite.py` | `tests/e2e_sqlite/__snapshots__/test_snapshots_sqlite/` |
+| CLI argument tree, settings defaults (built from code defaults, ignoring the environment and dotenv files; secrets and the build-derived `SERVICE_VERSION` are masked), the layout of the Qdrant collections (vectors, shards, replicas, payload indexes) and the types of the stored payload | `tests/integration/test_snapshots.py` | `tests/integration/__snapshots__/test_snapshots/` |
+| MCP meta-tool signatures, discovered tool catalogue, HTTP route table | `tests/e2e/test_snapshots_e2e.py` | `tests/e2e/__snapshots__/test_snapshots_e2e/` |
 
 ```bash
 uv run pytest -m snapshot                     # what the gate runs
 uv run pytest -m snapshot --snapshot-update   # rewrite the snapshots, then review `git diff`
 ```
 
-Adding a setting, CLI flag, route, tool, table or migration changes a snapshot, which is expected;
+Adding a setting, CLI flag, route, tool, collection or payload field changes a snapshot, which is expected;
 commit the refreshed files with the change that caused them.
 
 ### Memory budgets
 
-`tests/e2e_sqlite/test_memory_budget_sqlite.py` (marker `memory`) seeds memories through the MCP tools and
+`tests/e2e/test_memory_budget_e2e.py` (marker `memory`) seeds memories through the MCP tools and
 holds `@pytest.mark.limit_memory` budgets (bulk create, query with reranking). The TensorRT embedder and
 reranker engines are loaded before the measured section, and the budgets are generous multiples of the measured peak so they fail on a
 leak or an accidental full-table load, not on noise. Without `--memray` the tests run as ordinary smoke
@@ -179,10 +186,9 @@ new measurement in a comment next to it.
   `MUTATION_TARGETS='app.utils.*'`, which wins over both.
 
 With no scope it reports `SKIP`. The gate allows one `mutmut run` two hours; surviving mutants in the
-targets above `MUTATION_MAX_SURVIVORS` (default 0) fail it. `[tool.mutmut]` selects the SQLite-capable
-suites (`tests/architecture`, `tests/integration`, `tests/e2e_sqlite`) as the tests that must kill a mutant
-and leaves `app/repositories/postgres/*` and `app/_version.py` unmutated, since the PostgreSQL code is only
-tested by the Docker-based suite. The scheduled `quality.yml` job sets `MUTATION=1` only, so on a checkout
+targets above `MUTATION_MAX_SURVIVORS` (default 0) fail it. `[tool.mutmut]` selects `tests/architecture` and `tests/integration` (which need Docker for their Qdrant node, like the
+other suites) as the tests that must kill a mutant
+and leaves `app/_version.py` unmutated. The scheduled `quality.yml` job sets `MUTATION=1` only, so on a checkout
 of `main` (no diff against `origin/main`) it reports `SKIP` unless `MUTATION_TARGETS` is provided.
 
 ## Secrets
@@ -209,8 +215,8 @@ network), `TRIVY_BIN` (explicit trivy binary; otherwise `PATH`, then the Docker 
 `MUTATION_MAX_SURVIVORS`.
 
 A skipped gate is a decision to record in the PR description, not a default. A gate whose tool is
-missing (for example no Docker for `e2e-postgres`) reports `SKIP` with the reason and the
-`coverage` gate then fails, because untested Postgres code cannot be called covered.
+missing (for example no Docker for `e2e-qdrant`) reports `SKIP` with the reason and the
+`coverage` gate then fails if code only that gate reaches is left untested.
 
 ## Maintaining the thresholds
 
@@ -222,12 +228,12 @@ missing (for example no Docker for `e2e-postgres`) reports `SKIP` with the reaso
   (framework hook, pydantic field, route registration). Run `uv run python -m scripts.quality gate vulture`
   (or `uv run vulture`) to list them as `file:line: unused name (NN% confidence)`, delete genuinely dead
   code instead of listing it, and put names that apply to a whole class of code (validators, route
-  decorators, alembic or SQLAlchemy hooks) into `[tool.vulture]` `ignore_decorators` / `ignore_names`
+  decorators, framework hooks) into `[tool.vulture]` `ignore_decorators` / `ignore_names`
   rather than the whitelist. The whitelist is only parsed by vulture, never imported or executed, and
   vulture does not scan `tests/`.
 * New semgrep rules live in `.semgrep/forgetful.yml` (rule ids are prefixed `forgetful-`).
-* Fix a bandit or semgrep finding when the code can be made safe (SQL fragments that cannot be
-  bound parameters go through `app/repositories/vector_ddl.py`). Suppress only code that is safe
+* Fix a bandit or semgrep finding when the code can be made safe (Qdrant writes go through
+  `QdrantStore` only). Suppress only code that is safe
   by construction, inline and with the reason on the same line: `# nosec B603 - argv list from
   constants, no shell` or `# nosemgrep: <rule-id> - reason`. Keep the matching `ruff.toml`
   per-file `S` ignore in step, and never add file-level skips to `[tool.bandit]`.

@@ -10,7 +10,6 @@ import logging
 import signal
 import sys
 from contextlib import asynccontextmanager
-from pathlib import Path
 from typing import Any, cast
 
 from starlette.requests import Request
@@ -24,7 +23,7 @@ from app.bootstrap import (
 )
 from app.config.auth import build_auth_provider
 from app.config.settings import settings
-from app.exceptions import TensorRTError
+from app.exceptions import QdrantStartupError, TensorRTError
 from app.routes.api import (
     auth,
     health,
@@ -49,7 +48,6 @@ async def lifespan(app):
     _queue_listener = configure_logging(
         log_level=settings.LOG_LEVEL,
         log_format=settings.LOG_FORMAT,
-        db_logging=settings.DB_LOGGING,
     )
     atexit.register(shutdown_logging)
 
@@ -58,7 +56,6 @@ async def lifespan(app):
     runtime = await build_runtime()
     services = runtime.services
 
-    mcp.tenant_service = services.tenant
     mcp.memory_service = services.memory
     mcp.re_embedding_service = services.re_embedding
 
@@ -85,7 +82,7 @@ async def lifespan(app):
 
     logger.info("Shutting down session", extra={"service": settings.SERVICE_NAME})
     await dispose_runtime(runtime)
-    logger.info("Database connections closed")
+    logger.info("Qdrant connections closed")
     logger.info("Session shutdown complete")
 
 
@@ -115,27 +112,6 @@ meta_tools.register(mcp)
 
 def _print_counts(total):
     print(f"  Memories to process: {total}")
-
-
-async def _count_without_migrating(embeddings_adapter):
-    """Count memories as stored, for a dry run that must leave the database alone.
-
-    Unlike init_db(), which runs Alembic migrations and creates the database file and the
-    vector tables, this only reads. A database that does not exist yet holds nothing.
-    """
-    from app.bootstrap import create_db_adapter, create_repositories
-
-    if settings.DATABASE == "SQLite" and (
-        settings.SQLITE_MEMORY or not Path(settings.SQLITE_PATH).exists()
-    ):
-        return 0
-
-    db_adapter = create_db_adapter()
-    try:
-        repos = create_repositories(db_adapter, embeddings_adapter, None)
-        return await repos["memory"].count_all_memories()
-    finally:
-        await db_adapter.dispose()
 
 
 def _tolerate_unencodable_output():
@@ -180,106 +156,40 @@ def _install_stop_handlers(loop, on_stop, signals=(signal.SIGINT, signal.SIGTERM
     return restore
 
 
-async def _restore_backup(db_adapter, backup_service, backup_path):
-    """Put the database back as it was before a failed or interrupted re-embed."""
-    # Release SQLite file handles before replacing database/WAL files.
-    await db_adapter.dispose()
-    if backup_path:
-        print("\n  Restoring from backup...")
-        await backup_service.restore_backup(backup_path)
-        print(f"  Restored: {backup_path}")
-        print("  Database returned to pre-migration state.")
-
-
 def _print_reembed_configuration(batch_size):
     """Step 1: show the configuration the re-embed will run with."""
-    print("\n[1/5] Validating configuration...")
+    print("\n[1/4] Validating configuration...")
     model_display = {
         "Azure": settings.AZURE_DEPLOYMENT,
         "gateway": settings.GATEWAY_MODEL,
     }.get(settings.EMBEDDING_PROVIDER, settings.EMBEDDING_MODEL)
     print(f"  Provider: {settings.EMBEDDING_PROVIDER} ({model_display})")
     print(f"  Dimensions: {settings.EMBEDDING_DIMENSIONS}")
-    if settings.DATABASE == "SQLite":
-        print(f"  Database: SQLite ({settings.SQLITE_PATH})")
-    else:
-        print(f"  Database: PostgreSQL ({settings.POSTGRES_HOST}:{settings.PGPORT}/{settings.POSTGRES_DB})")
+    print(f"  Qdrant: {', '.join(settings.qdrant_urls)} (collections {settings.QDRANT_COLLECTION_PREFIX}_*)")
     print(f"  Batch size: {batch_size}")
 
 
-async def _dry_run_reembed(embeddings_adapter):
-    """Report what a re-embed would process, without touching the database."""
-    total = await _count_without_migrating(embeddings_adapter)
+async def _dry_run_reembed(stack, repository):
+    """Report what a re-embed would process, without creating or changing anything in Qdrant."""
+    total = await repository.count_all_memories() if await stack.schema.live_exists() else 0
     _print_counts(total)
     print(f"\n[DRY RUN] Would re-embed {total} memories with the above configuration.")
     print("  No changes were made.")
 
 
-async def _open_database():
-    """Create the database adapter and bring the database up to date."""
-    from app.bootstrap import create_db_adapter
-
-    db_adapter = create_db_adapter()
-
-    if settings.DATABASE == "SQLite" and not settings.SQLITE_MEMORY:
-        data_dir = Path(settings.SQLITE_PATH).parent
-        data_dir.mkdir(parents=True, exist_ok=True)
-
-    await db_adapter.init_db()
-    return db_adapter
-
-
-async def _build_reembed_service(db_adapter, embeddings_adapter, batch_size):
-    """Wire the re-embedding service and print what it will process.
-
-    Returns:
-        (service, memory count)
-    """
-    from app.bootstrap import create_repositories
-    from app.services.re_embedding_service import ReEmbeddingService
-
-    # Create repositories (reranker not needed for re-embedding)
-    repos = create_repositories(db_adapter, embeddings_adapter, None)
-    memory_repository = repos["memory"]
-
-    total = await memory_repository.count_all_memories()
-    _print_counts(total)
-
-    service = ReEmbeddingService(
-        memory_repository=memory_repository,
-        embedding_adapter=embeddings_adapter,
-        batch_size=batch_size,
-    )
-    return service, total
-
-
-async def _create_reembed_backup(backup_service):
-    """Step 2: back the database up first; returns the backup path (None for in-memory SQLite)."""
-    if settings.DATABASE == "SQLite" and settings.SQLITE_MEMORY:
-        print("\n[2/5] Skipping backup (in-memory database)...")
-        return None
-
-    print("\n[2/5] Creating backup...")
-    backup_path = await backup_service.create_backup()
-    print(f"  Backup saved: {backup_path}")
-    return backup_path
-
-
 class _ReembedRun:
-    """State shared between the re-embed steps and the stop signal handler."""
+    """State shared between the re-embed run and the stop signal handler."""
 
     def __init__(self):
-        # A signal cancels this task and the restore runs from the coroutine below: a signal
-        # handler cannot run the restore on the event loop that is currently running.
-        # Created inside the running re-embed coroutine, so there is always a current task.
+        # A signal cancels this task; the re-embedding service discards the unfinished collection on the
+        # way out. Created inside the running re-embed coroutine, so there is always a current task.
         self.task = cast(asyncio.Task[Any], asyncio.current_task())
         self.interrupted = False
-        self.restoring = False  # once a restore has begun, later signals must not cut it short
 
     def request_stop(self):
-        """Signal handler: cancel the run, unless a restore has already begun."""
-        if not self.restoring:
-            self.interrupted = self.restoring = True
+        """Signal handler: cancel the run once."""
+        if not self.interrupted:
+            self.interrupted = True
             self.task.cancel()
 
 
@@ -291,7 +201,7 @@ def _print_progress(processed, total_count):
 
 
 def _print_validation(result):
-    """Step 5: show the outcome of each validation check."""
+    """Step 4: show the outcome of each validation check."""
     print(f"  Count check: {result.total_memories} memories, "
           f"{result.total_processed} embeddings "
           f"{'OK' if result.validation.count_ok else 'FAILED'}")
@@ -299,119 +209,92 @@ def _print_validation(result):
     print(f"  Search check: {'OK' if result.validation.search_ok else 'FAILED'}")
 
 
-def _print_reembed_success(result, backup_path):
+def _print_reembed_success(result):
     print(f"\n  Successfully re-embedded {result.total_processed} memories")
-    if backup_path:
-        print(f"  Backup retained at: {backup_path}")
-        print("  (Delete manually when satisfied with results)")
+    print(f"  The live collection is now {result.generation}")
+    print(f"  The previous collection {result.previous_generation} still holds the old vectors;")
+    print("  delete it with the Qdrant API when satisfied with the results.")
 
 
 async def _rebuild_vectors(service):
-    """Steps 3 and 4: reset the vector storage, then re-embed every memory."""
-    print("\n[3/5] Updating vector schema...")
-    await service.reset_vector_storage()
-    if settings.DATABASE == "SQLite":
-        print(f"  Recreated vec_memories table with {settings.EMBEDDING_DIMENSIONS} dimensions")
-    else:
-        print(f"  Altered embedding columns to vector({settings.EMBEDDING_DIMENSIONS})")
+    """Step 3: copy every memory, embedded again, into a new collection and make it the live one.
 
-    print("\n[4/5] Re-embedding memories...")
-    result = await service.re_embed_all(progress_callback=_print_progress, reset_storage=False)
-    print()  # newline after progress bar
-    return result
-
-
-async def _restore_after_cancel(run, db_adapter, backup_service, backup_path):
-    """Stopped by a signal (or cancelled from outside) with the vector storage half rebuilt."""
-    run.restoring = True
-    if run.interrupted:
-        run.task.uncancel()  # handled here: restore, then exit instead of propagating
-        print("\n\nInterrupted!")
-    await _restore_backup(db_adapter, backup_service, backup_path)
-    if run.interrupted:
-        sys.exit(1)
-
-
-async def _restore_after_error(error, run, db_adapter, backup_service, backup_path):
-    run.restoring = True
-    try:
-        print(f"\n  ERROR: {error}")
-    finally:
-        # Report first, but a report that fails (closed pipe, console) must not skip the restore.
-        await _restore_backup(db_adapter, backup_service, backup_path)
-
-
-async def _reembed_with_restore(service, db_adapter, backup_service, backup_path):
-    """Steps 3 to 5: rebuild the vectors, putting the backup back on failure or interruption."""
+    A signal stops the copy; the service discards the unfinished collection and the live one stays as it was.
+    """
+    print("\n[3/4] Re-embedding memories into a new collection...")
     run = _ReembedRun()
     restore_signal_handlers = _install_stop_handlers(asyncio.get_running_loop(), run.request_stop)
-
     try:
-        result = await _rebuild_vectors(service)
-
-        # Validate
-        print("\n[5/5] Validating...")
-        if result.validation:
-            _print_validation(result)
-
-            if not result.validation.all_passed:
-                print("\n  Validation FAILED!")
-                run.restoring = True
-                await _restore_backup(db_adapter, backup_service, backup_path)
-                sys.exit(1)
-
-        _print_reembed_success(result, backup_path)
-
+        result = await service.re_embed_all(progress_callback=_print_progress)
+        print()  # newline after progress bar
+        return result
+    except Exception as exc:
+        print(f"\n  ERROR: {exc}")
+        print("  The new collection was discarded; the live collection was not changed.")
+        raise
     except asyncio.CancelledError:
-        await _restore_after_cancel(run, db_adapter, backup_service, backup_path)
-        raise
-    except Exception as e:
-        await _restore_after_error(e, run, db_adapter, backup_service, backup_path)
-        raise
+        if not run.interrupted:
+            raise
+        run.task.uncancel()  # handled here: report, then exit instead of propagating
+        print("\n\nInterrupted! The new collection was discarded; the live collection was not changed.")
+        sys.exit(1)
     finally:
         restore_signal_handlers()
+
+
+async def _reembed(stack, embeddings_adapter, args):
+    from app.services.re_embedding_service import ReEmbeddingService
+
+    repository = stack.memory_repository(embeddings_adapter)
+    if args.dry_run:
+        await _dry_run_reembed(stack, repository)
+        return
+
+    print("\n[2/4] Opening Qdrant...")
+    # The live collection may hold vectors of the old width: replacing it is what this command is for
+    await stack.schema.ensure(check_width=False)
+    _print_counts(await repository.count_all_memories())
+
+    service = ReEmbeddingService(
+        memory_repository=repository,
+        embedding_adapter=embeddings_adapter,
+        batch_size=args.batch_size,
+    )
+    result = await _rebuild_vectors(service)
+
+    print("\n[4/4] Validating...")
+    _print_validation(result)
+    if not result.validation.all_passed:
+        print("\n  Validation FAILED! The new collection was discarded; the live collection was not changed.")
+        sys.exit(1)
+    _print_reembed_success(result)
 
 
 async def _run_reembed(args):
     """Run the re-embedding workflow"""
     _tolerate_unencodable_output()
     from app.config.logging_config import configure_logging, shutdown_logging
-    configure_logging(log_level="INFO", log_format="console", db_logging=settings.DB_LOGGING)
+    configure_logging(log_level="INFO", log_format="console")
     atexit.register(shutdown_logging)
 
-    from app.bootstrap import create_backup_service, get_embedding_adapter
+    from app.bootstrap import create_qdrant_stack, get_embedding_adapter
 
     try:
         embeddings_adapter = get_embedding_adapter()
     except TensorRTError as exc:
         print(f"Error: the embedder cannot start: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc
-    backup_service = create_backup_service()
 
     _print_reembed_configuration(args.batch_size)
 
-    if args.dry_run:
-        await _dry_run_reembed(embeddings_adapter)
-        return
-
-    db_adapter = await _open_database()
-    service, total = await _build_reembed_service(
-        db_adapter, embeddings_adapter, args.batch_size,
-    )
-
-    if total == 0:
-        # Nothing to re-embed or lose, so no backup is needed. The vector storage must still
-        # match the configured dimensions though, and init_db() never resizes existing tables.
-        print("\n  No memories to re-embed. Updating vector schema only...")
-        await service.re_embed_all()
-        print(f"  Vector storage uses {settings.EMBEDDING_DIMENSIONS} dimensions. Done.")
-        await db_adapter.dispose()
-        return
-
-    backup_path = await _create_reembed_backup(backup_service)
-    await _reembed_with_restore(service, db_adapter, backup_service, backup_path)
-
-    await db_adapter.dispose()
+    stack = create_qdrant_stack()
+    try:
+        await _reembed(stack, embeddings_adapter, args)
+    except QdrantStartupError as exc:
+        print(f"\n  ERROR: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
+    finally:
+        await stack.close()
 
 
 def _serve(transport, host, port):
@@ -504,6 +387,11 @@ def _legacy_launcher(argv):
             "(login, status)\n"
             "  serve     Run the Forgetful MCP server\n"
             "  re-embed  Re-embed all memories with the configured provider\n"
+            "  backup    Snapshot the Qdrant collections of every node\n"
+            "  restore   Restore a snapshot set made by 'backup'\n"
+            "  export    Write every memory and link to a portable JSON lines file\n"
+            "  import    Read such a file back, embedding each memory again\n"
+            "  qdrant-check  Compare the Qdrant nodes of a cluster by reading each one\n"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )

@@ -1,0 +1,36 @@
+{
+  "link": {
+    "a": "str",
+    "b": "str",
+    "created_at": "str",
+    "op_token": "str",
+    "tenant_id": "str"
+  },
+  "memory": {
+    "agent_id": "NoneType",
+    "agent_model": "NoneType",
+    "agent_version": "NoneType",
+    "confidence": "NoneType",
+    "content": "str",
+    "context": "str",
+    "created_at": "str",
+    "encoding_agent": "NoneType",
+    "encoding_version": "NoneType",
+    "importance": "int",
+    "is_obsolete": "bool",
+    "keywords": "list",
+    "obsolete_reason": "NoneType",
+    "obsoleted_at": "NoneType",
+    "op_token": "str",
+    "project": "list",
+    "source_files": "NoneType",
+    "source_repo": "NoneType",
+    "source_url": "NoneType",
+    "superseded_by": "NoneType",
+    "tags": "list",
+    "tenant_id": "str",
+    "title": "str",
+    "updated_at": "str",
+    "version": "int"
+  }
+}

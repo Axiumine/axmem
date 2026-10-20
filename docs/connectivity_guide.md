@@ -49,12 +49,8 @@ claude mcp add --scope user forgetful uvx forgetful-ai
 ### STDIO with Environment Variables (Google)
 ```bash
 claude mcp add --scope user forgetful uvx forgetful-ai \
-  -e DATABASE=Postgres \
-  -e POSTGRES_HOST=localhost \
-  -e PGPORT=5432 \
-  -e POSTGRES_DB=forgetful \
-  -e POSTGRES_USER=user \
-  -e POSTGRES_PASSWORD=pass \
+  -e QDRANT_URL=http://localhost:6333 \
+  -e QDRANT_API_KEY=your-qdrant-api-key \
   -e EMBEDDING_PROVIDER=Google \
   -e EMBEDDING_MODEL=models/gemini-embedding-001 \
   -e GOOGLE_AI_API_KEY=your-api-key
@@ -130,12 +126,8 @@ See [VS Code MCP docs](https://code.visualstudio.com/docs/copilot/customization/
       "command": "uvx",
       "args": ["forgetful-ai"],
       "env": {
-        "DATABASE": "Postgres",
-        "POSTGRES_HOST": "localhost",
-        "PGPORT": "5432",
-        "POSTGRES_DB": "forgetful",
-        "POSTGRES_USER": "user",
-        "POSTGRES_PASSWORD": "pass",
+        "QDRANT_URL": "http://localhost:6333",
+        "QDRANT_API_KEY": "${input:qdrant-api-key}",
         "EMBEDDING_PROVIDER": "Google",
         "EMBEDDING_MODEL": "models/gemini-embedding-001",
         "GOOGLE_AI_API_KEY": "${input:google-api-key}"
@@ -143,6 +135,12 @@ See [VS Code MCP docs](https://code.visualstudio.com/docs/copilot/customization/
     }
   },
   "inputs": [
+    {
+      "type": "promptString",
+      "id": "qdrant-api-key",
+      "description": "Qdrant API Key",
+      "password": true
+    },
     {
       "type": "promptString",
       "id": "google-api-key",
@@ -396,7 +394,7 @@ forgetful memory search "wsl dns" -c "wsl networking"
 forgetful memory save "content" --title "Title" --importance 7
 ```
 
-Local mode uses the same database and settings as a locally launched server
+Local mode uses the same Qdrant and settings as a locally launched server
 (`~/.config/forgetful/.env` is shared by both).
 
 ### From a source checkout (before a PyPI release)
@@ -426,7 +424,7 @@ back-compat, so lead with a verb - `forgetful memory --help`, `forgetful tools
 
 ### Remote deployment with a bearer token
 
-Against a remote PostgreSQL-backed deployment that requires a credential (see
+Against a remote deployment that requires a credential (see
 [Configuration Guide](configuration.md#authentication-configuration)). There is no
 interactive sign-in: the CLI sends the bearer token in `FORGETFUL_TOKEN` (a JWT, an
 introspected token or a static token, as the server is configured). The token is read from the

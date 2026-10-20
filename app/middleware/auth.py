@@ -22,9 +22,8 @@ from fastmcp.server.dependencies import AccessToken, get_access_token
 from starlette.requests import Request
 
 from app.config.settings import TENANT_MAX_LENGTH, settings
-from app.models.user_models import User
+from app.models.tenant_models import Tenant
 from app.routes.server_state import ForgetfulMCP, server_of
-from app.services.tenant_service import TenantService
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +34,7 @@ TENANT_CLAIMS = ("tenant_id", "tenant", "sub")
 @dataclass
 class CacheEntry:
     """Cached token validation result."""
-    user: User
+    tenant: Tenant
     expires_at: float
 
 
@@ -44,7 +43,7 @@ class TokenCache:
 
     Security considerations:
     - Stores SHA-256 hash of tokens, never raw tokens
-    - Caches tenant records only, not sensitive token data
+    - Caches tenants only, not sensitive token data
     - TTL prevents stale sessions
     - Size limit prevents memory exhaustion
     """
@@ -61,7 +60,7 @@ class TokenCache:
         """Hash token for secure cache key."""
         return hashlib.sha256(token.encode()).hexdigest()
 
-    async def get(self, token: str) -> User | None:
+    async def get(self, token: str) -> Tenant | None:
         """Get cached tenant for token, or None if not cached/expired."""
         key = self._hash_token(token)
         async with self._lock:
@@ -79,14 +78,14 @@ class TokenCache:
             # Move to end (LRU)
             self._cache.move_to_end(key)
             self._hits += 1
-            return entry.user
+            return entry.tenant
 
-    async def set(self, token: str, user: User, token_expires_at: float | None = None) -> None:
+    async def set(self, token: str, tenant: Tenant, token_expires_at: float | None = None) -> None:
         """Cache the tenant for token.
 
         Args:
             token: Raw bearer token (only its hash is stored)
-            user: Provisioned tenant record to cache
+            tenant: Validated tenant to cache
             token_expires_at: Expiry (epoch seconds) reported by the token itself, if any.
                 The entry never outlives the token: its lifetime is the sooner of the
                 configured TTL and this value, and an already-expired token is not cached.
@@ -110,7 +109,7 @@ class TokenCache:
                 while len(self._cache) >= self._max_size:
                     self._cache.popitem(last=False)
 
-            self._cache[key] = CacheEntry(user=user, expires_at=expires_at)
+            self._cache[key] = CacheEntry(tenant=tenant, expires_at=expires_at)
             self._cache.move_to_end(key)
 
     async def clear(self) -> None:
@@ -176,7 +175,7 @@ def _local_tenant(trusted_local: bool = False) -> str:
     return settings.DEFAULT_TENANT
 
 
-async def get_tenant_from_auth(ctx: Context) -> User:
+async def get_tenant_from_auth(ctx: Context) -> Tenant:
     """Provides the tenant of an MCP or CLI tool call.
 
     Detects auth mode via ctx.fastmcp.auth (the auth provider passed to FastMCP):
@@ -188,18 +187,15 @@ async def get_tenant_from_auth(ctx: Context) -> User:
         ctx: FastMCP Context object (automatically injected by FastMCP)
 
     Returns:
-        User: the tenant record, whose ``id`` is the key every repository filters on
+        Tenant: whose ``id`` is the key every repository filters on
 
     Raises:
         ValueError: If authentication is required and the token is missing or names no tenant
     """
     server = server_of(ctx)
-    tenant_service: TenantService = server.tenant_service
-
     if not server.auth:
         logger.debug("No auth provider attached - using the local tenant")
-        tenant = _local_tenant(trusted_local=getattr(server, "trusted_local", False))
-        return await tenant_service.get_or_create_tenant(tenant)
+        return Tenant(_local_tenant(trusted_local=getattr(server, "trusted_local", False)))
 
     token: AccessToken | None = get_access_token()
     if token is None:
@@ -207,7 +203,7 @@ async def get_tenant_from_auth(ctx: Context) -> User:
 
     tenant = tenant_from_claims(token.claims)
     logger.debug("Authenticated tenant resolved", extra={"tenant": tenant})
-    return await tenant_service.get_or_create_tenant(tenant)
+    return Tenant(tenant)
 
 
 def _bearer_token(request: Request) -> str:
@@ -224,24 +220,24 @@ def _bearer_token(request: Request) -> str:
     return auth_header[7:]  # Strip "Bearer " prefix (length is same regardless of case)
 
 
-async def _cached_user(cache: TokenCache | None, token: str) -> User | None:
+async def _cached_tenant(cache: TokenCache | None, token: str) -> Tenant | None:
     """The tenant cached for a token, or None on a miss or when caching is off"""
     if not (cache and settings.TOKEN_CACHE_ENABLED):
         return None
 
-    cached_user = await cache.get(token)
-    if cached_user:
+    cached_tenant = await cache.get(token)
+    if cached_tenant:
         logger.debug("Token cache HIT - returning cached tenant")
-        return cached_user
+        return cached_tenant
     logger.debug("Token cache MISS - validating token")
     return None
 
 
-async def _cache_user(cache: TokenCache | None, token: str, user: User, access_token: AccessToken) -> None:
+async def _cache_tenant(cache: TokenCache | None, token: str, tenant: Tenant, access_token: AccessToken) -> None:
     """Cache a validated tenant, when caching is on"""
     if cache and settings.TOKEN_CACHE_ENABLED:
         # Cap the entry at the token's own expiry so a cache hit never outlives the token
-        await cache.set(token, user, token_expires_at=getattr(access_token, "expires_at", None))
+        await cache.set(token, tenant, token_expires_at=getattr(access_token, "expires_at", None))
         logger.debug(f"Token cached (TTL: {settings.TOKEN_CACHE_TTL_SECONDS}s)")
 
 
@@ -260,7 +256,7 @@ async def _verify_bearer_token(auth: AuthProvider, token: str) -> AccessToken:
     return access_token
 
 
-async def get_tenant_from_request(request: Request, mcp: ForgetfulMCP) -> User:
+async def get_tenant_from_request(request: Request, mcp: ForgetfulMCP) -> Tenant:
     """Get the tenant for HTTP routes (non-MCP endpoints).
 
     This is the HTTP equivalent of get_tenant_from_auth() for MCP tools.
@@ -277,36 +273,34 @@ async def get_tenant_from_request(request: Request, mcp: ForgetfulMCP) -> User:
         mcp: FastMCP instance with attached services
 
     Returns:
-        User: the tenant record, whose ``id`` is the key every repository filters on
+        Tenant: whose ``id`` is the key every repository filters on
 
     Raises:
         ValueError: If authentication is required but the token is missing, invalid, or names no tenant,
             or if no auth provider is attached and AUTH_MODE is not ``none``
     """
-    tenant_service: TenantService = mcp.tenant_service
-
     # Check if auth is configured via mcp.auth (more reliable than env var)
     if not mcp.auth:
         logger.debug("HTTP auth disabled (mcp.auth not configured) - using the local tenant")
-        return await tenant_service.get_or_create_tenant(_local_tenant())
+        return Tenant(_local_tenant())
 
     # Auth is configured - extract Bearer token from Authorization header
     token = _bearer_token(request)
 
     # Check cache first (if enabled and cache exists)
     cache: TokenCache | None = getattr(mcp, "token_cache", None)
-    cached_user = await _cached_user(cache, token)
-    if cached_user:
-        return cached_user
+    cached_tenant = await _cached_tenant(cache, token)
+    if cached_tenant:
+        return cached_tenant
 
     # Cache miss or disabled - validate token via provider
     access_token = await _verify_bearer_token(mcp.auth, token)
 
-    tenant = tenant_from_claims(access_token.claims)
-    logger.debug("Authenticated tenant resolved", extra={"tenant": tenant})
-    user = await tenant_service.get_or_create_tenant(tenant)
+    name = tenant_from_claims(access_token.claims)
+    logger.debug("Authenticated tenant resolved", extra={"tenant": name})
+    tenant = Tenant(name)
 
     # Cache the validated tenant
-    await _cache_user(cache, token, user, access_token)
+    await _cache_tenant(cache, token, tenant, access_token)
 
-    return user
+    return tenant

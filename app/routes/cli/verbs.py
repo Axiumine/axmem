@@ -60,7 +60,7 @@ async def _memory_save(executor: ToolExecutor, args) -> tuple[Any, str]:
 
 
 async def _memory_get(executor: ToolExecutor, args) -> tuple[Any, str]:
-    payload = to_jsonable(await executor.execute("get_memory", {"memory_id": args.memory_id}))
+    payload = to_jsonable(await executor.execute("get_memory", {"memory_id": str(args.memory_id)}))
     return payload, render_memory_detail(payload)
 
 

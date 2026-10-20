@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import cast
 
 from platformdirs import user_config_dir, user_data_dir
-from pydantic import Field, SecretStr, ValidationInfo, field_validator
+from pydantic import Field, SecretStr, ValidationInfo, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.version import get_version
@@ -35,8 +35,10 @@ _CHOICES = {
     "LOG_FORMAT": LOG_FORMATS,
 }
 
-# The longest tenant name the tenant record can hold (users.external_id is VARCHAR(255))
+# The longest tenant name accepted from a credential (a tenant is identified by its name)
 TENANT_MAX_LENGTH = 255
+# Collection names are <prefix>_memories_<generation>, which Qdrant limits to 255 characters
+_COLLECTION_PREFIX = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}")
 _SHA256_HEX = re.compile(r"[0-9a-f]{64}")
 
 # ENCODING_* / AGENT_* defaults are copied into the Create/Update models of every object type,
@@ -88,26 +90,26 @@ class Settings(BaseSettings):
     CORS_ENABLED: bool = False
     CORS_ORIGINS: list[str] = ["*"]
 
-    # Database Configuration
-    DATABASE: str = "SQLite"  # "Postgres" or "SQLite"
-
-    # Postgres Configuration
-    POSTGRES_HOST: str = "127.0.0.1"
-    PGPORT: int = 5099
-    POSTGRES_DB: str = "forgetful"
-    POSTGRES_USER: str = "forgetful"
-    POSTGRES_PASSWORD: str = "forgetful"
-
-    # SQLite Configuration
-    SQLITE_PATH: str = str(_default_data_dir / "forgetful.db")  # Platform-specific path
-    SQLITE_MEMORY: bool = False  # Use :memory: database (for testing)
-
-    # Backup Configuration (re-embed backups, SQLite and Postgres)
-    # Empty keeps backups in the directory of SQLITE_PATH. Point this at persistent storage
-    # when that directory is not (for example when only PostgreSQL is used on this host).
+    # Qdrant: the only datastore. Memories, their links and their vectors all live in it.
+    # One URL for a single node, or several comma separated URLs for the nodes of a cluster
+    # (requests are spread over them and move on to the next one when a node is unreachable).
+    QDRANT_URL: str = "http://127.0.0.1:6333"
+    # An API key is instance wide: it admits every tenant, tenant isolation is enforced by this service.
+    QDRANT_API_KEY: SecretStr = SecretStr("")
+    # Collections are named <prefix>_memories (an alias onto the live generation) and <prefix>_links.
+    QDRANT_COLLECTION_PREFIX: str = "axmem"
+    # Collection layout, fixed when the collection is created. The defaults suit one node; the verified
+    # cluster profile for three nodes is 3 shards, 3 replicas and a write consistency factor of 2
+    # (docs/configuration.md). The service refuses to start when an existing collection differs.
+    QDRANT_SHARD_NUMBER: int = Field(default=1, ge=1)
+    QDRANT_REPLICATION_FACTOR: int = Field(default=1, ge=1)
+    QDRANT_WRITE_CONSISTENCY_FACTOR: int = Field(default=1, ge=1)
+    # Per-request timeout in seconds; keep it above the 7-8 s a cluster needs to forward a write to its leader.
+    QDRANT_TIMEOUT_SECONDS: float = Field(default=30.0, gt=0, allow_inf_nan=False)
+    # Attempts for a write that failed with an ambiguous error (timeout, reset, 5xx); retries reuse the claim token.
+    QDRANT_WRITE_ATTEMPTS: int = Field(default=3, ge=1, le=10)
+    # Directory for snapshots and exports. Empty keeps them in the data directory of the platform.
     BACKUP_DIR: str = ""
-
-    DB_LOGGING: bool = False
 
     # Authentication. The server fails closed: with AUTH_MODE unset it refuses to start.
     #   none          one local tenant (DEFAULT_TENANT) for every request; accepted only on stdio
@@ -230,6 +232,43 @@ class Settings(BaseSettings):
     RERANKING_MODEL_DIR: str = str(_default_data_dir / "models" / "reranker")  # model.onnx and tokenizer.json, fetched once
     RERANKING_ENGINE_CACHE_DIR: str = str(_default_data_dir / "models" / "tensorrt")  # built engines, one directory per fingerprint
     DENSE_SEARCH_CANDIDATES: int = 20 # number of candidates to retrieve from the dense search
+
+    @field_validator("QDRANT_URL")
+    @classmethod
+    def _validate_qdrant_url(cls, value: str) -> str:
+        urls = [url.strip().rstrip("/") for url in value.split(",") if url.strip()]
+        if not urls:
+            raise ValueError("QDRANT_URL must name at least one Qdrant node, e.g. http://127.0.0.1:6333")
+        for url in urls:
+            if not url.startswith(("http://", "https://")):
+                raise ValueError("QDRANT_URL entries must start with http:// or https://")
+        return ",".join(dict.fromkeys(urls))
+
+    @field_validator("QDRANT_COLLECTION_PREFIX")
+    @classmethod
+    def _validate_collection_prefix(cls, value: str) -> str:
+        if not _COLLECTION_PREFIX.fullmatch(value):
+            raise ValueError(
+                "QDRANT_COLLECTION_PREFIX must be 1 to 64 letters, digits, underscores or hyphens, "
+                "starting with a letter or digit",
+            )
+        return value
+
+    @model_validator(mode="after")
+    def _validate_write_consistency(self) -> Settings:
+        if self.QDRANT_WRITE_CONSISTENCY_FACTOR > self.QDRANT_REPLICATION_FACTOR:
+            raise ValueError("QDRANT_WRITE_CONSISTENCY_FACTOR cannot exceed QDRANT_REPLICATION_FACTOR")
+        return self
+
+    @property
+    def backup_directory(self) -> Path:
+        """Where snapshots and exports are written."""
+        return Path(self.BACKUP_DIR) if self.BACKUP_DIR else _default_data_dir / "backups"
+
+    @property
+    def qdrant_urls(self) -> list[str]:
+        """The Qdrant node URLs, in the order configured."""
+        return self.QDRANT_URL.split(",")
 
     @field_validator("OBSOLETE_WARNING_THRESHOLD")
     @classmethod

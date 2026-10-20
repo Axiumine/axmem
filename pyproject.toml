@@ -15,9 +15,6 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
-    "aiosqlite==0.22.1",
-    "alembic==1.18.4",
-    "asyncpg==0.31.0",
     "dotenv==0.9.9",
     "fastapi==0.136.3",
     "fastmcp==3.2.2",
@@ -28,16 +25,12 @@ dependencies = [
     "numpy==2.4.2",
     "ollama==0.6.1",
     "openai==2.20.0",
-    "pgvector==0.4.2",
     "platformdirs==4.7.0",
-    "psycopg2-binary==2.9.11",
     "pydantic==2.12.5",
     "pydantic-settings==2.14.2",
     "pytest==9.0.3",
     "pytest-asyncio==1.3.0",
     "requests==2.33.0",
-    "sqlalchemy[asyncio]==2.0.46",
-    "sqlite-vec==0.1.6",
     "starlette==1.3.1",
     "tensorrt-cu13==11.4.0.106",
     "tensorrt-cu13-bindings==11.4.0.106",
@@ -45,6 +38,7 @@ dependencies = [
     "tiktoken==0.12.0",
     "tokenizers==0.22.2",
     "uvicorn==0.40.0",
+    "qdrant-client==1.19.1",
 ]
 
 [project.optional-dependencies]
@@ -105,12 +99,8 @@ version-file = "app/_version.py"
 [tool.hatch.build.targets.wheel]
 packages = ["app", "main.py"]
 
-[tool.hatch.build.targets.wheel.force-include]
-"alembic.ini" = "alembic.ini"
-"alembic" = "alembic"
-
 [tool.hatch.build.targets.sdist]
-include = ["app", "main.py", "alembic.ini", "alembic/", "README.md", "LICENSE"]
+include = ["app", "main.py", "README.md", "LICENSE"]
 
 [tool.importlinter]
 root_package = "app"
@@ -153,7 +143,7 @@ forbidden_modules = [
 
 [[tool.importlinter.contracts]]
 id = "external"
-name = "Core code stays independent of database, provider and backup integrations"
+name = "Core code stays independent of Qdrant, provider and backup integrations"
 type = "forbidden"
 source_modules = [
     "app.models", "app.protocols", "app.services", "app.utils",
@@ -161,9 +151,31 @@ source_modules = [
     "app.middleware.logging_middleware", "app.exceptions", "app.version",
 ]
 forbidden_modules = [
-    "sqlalchemy", "openai", "google", "httpx", "ollama",
+    "qdrant_client", "openai", "google", "httpx", "ollama",
     "tensorrt", "cuda", "tokenizers", "huggingface_hub",
     "subprocess", "shutil",
+]
+
+# Every Qdrant request is built in client.py, schema.py and store.py: store.py is the one place that adds the
+# tenant condition to a filter, so nothing else may hold a Qdrant client or build a request of its own.
+[[tool.importlinter.contracts]]
+id = "qdrant"
+name = "Only the Qdrant client, schema and store import qdrant_client"
+type = "forbidden"
+source_modules = [
+    "app.repositories.qdrant.archive", "app.repositories.qdrant.backup", "app.repositories.qdrant.inspector",
+    "app.repositories.qdrant.memory_base", "app.repositories.qdrant.memory_links",
+    "app.repositories.qdrant.memory_reads", "app.repositories.qdrant.memory_reembedding",
+    "app.repositories.qdrant.memory_repository", "app.repositories.qdrant.memory_search",
+    "app.repositories.qdrant.memory_writes", "app.repositories.qdrant.payloads",
+    "app.repositories.embeddings", "app.routes", "app.middleware", "app.config", "app.bootstrap",
+]
+forbidden_modules = ["qdrant_client"]
+# These three are the allowed importers; cutting their own imports leaves every other path to the library visible.
+ignore_imports = [
+    "app.repositories.qdrant.client -> qdrant_client",
+    "app.repositories.qdrant.schema -> qdrant_client",
+    "app.repositories.qdrant.store -> qdrant_client",
 ]
 
 [[tool.importlinter.contracts]]
@@ -184,7 +196,7 @@ source_modules = ["app.routes.cli"]
 forbidden_modules = ["app.repositories", "app.bootstrap"]
 ignore_imports = [
     "app.routes.cli.local_executor -> app.bootstrap",
-    "app.routes.cli.context -> app.bootstrap",
+    "app.routes.cli.operator_commands -> app.bootstrap",
 ]
 
 # ---------------------------------------------------------------------------
@@ -199,8 +211,7 @@ relative_files = true
 parallel = true
 # Keeps the data file and the per-process fragments that parallel mode writes out of the repository root.
 data_file = ".coverage-data/.coverage"
-# SQLAlchemy's async layer runs sync code in greenlets; aiosqlite uses threads.
-concurrency = ["greenlet", "thread"]
+concurrency = ["thread"]
 patch = ["subprocess"]
 omit = ["*/_version.py"]
 
@@ -239,7 +250,7 @@ init_typed = true
 warn_required_dynamic_aliases = true
 
 [[tool.mypy.overrides]]
-module = ["sqlite_vec.*", "pgvector.*", "tiktoken.*", "dotenv.*", "tensorrt.*", "tensorrt_bindings.*", "cuda.*", "tokenizers.*"]
+module = ["tiktoken.*", "dotenv.*", "tensorrt.*", "tensorrt_bindings.*", "cuda.*", "tokenizers.*"]
 ignore_missing_imports = true
 
 [tool.pylint.main]
@@ -247,7 +258,7 @@ jobs = 0
 py-version = "3.14"
 fail-under = 8.0
 load-plugins = ["pylint.extensions.mccabe"]
-ignore-paths = ["^app/_version\\.py$", "^alembic/"]  # migrations: generated style, and the directory shadows the alembic package
+ignore-paths = ["^app/_version\\.py$"]
 
 [tool.pylint.format]
 max-line-length = 100
@@ -267,7 +278,7 @@ disable = [
     "missing-module-docstring",    # docstring policy is not enforced in this repo (ruff D is off)
     "missing-class-docstring",
     "missing-function-docstring",
-    "duplicate-code",              # SQLite and PostgreSQL repositories are intentionally parallel
+    "duplicate-code",              # the repository mixins repeat small query shapes on purpose
     "too-few-public-methods",      # protocol/adapter/data classes
     "logging-fstring-interpolation",  # project-wide logging style
     "import-outside-toplevel",     # deliberate lazy imports (startup cost, optional providers)
@@ -277,32 +288,23 @@ disable = [
 exclude_dirs = ["tests", "test_harness/runs", ".venv", ".gitnexus", "node_modules"]
 
 [tool.vulture]
-paths = ["app", "main.py", "alembic", "test_harness", "scripts", "vulture_whitelist.py"]
+paths = ["app", "main.py", "test_harness", "scripts", "vulture_whitelist.py"]
 min_confidence = 60
-exclude = ["app/_version.py", "test_harness/runs/", "alembic/versions/"]
+exclude = ["app/_version.py", "test_harness/runs/"]
 # Decorators that register the decorated function with a framework: pydantic validators,
-# FastMCP routes/tools and SQLAlchemy event listeners are called by the framework only.
+# FastMCP routes/tools are called by the framework only.
 ignore_decorators = [
     "@field_validator",
     "@model_validator",
     "@mcp.custom_route",
     "@mcp.tool",
-    "@event.listens_for",
     "@_register",  # app.config.auth: registers the provider factory under its AUTH_MODE name
 ]
-# Names a framework or the migration loader reads by reflection.
+# Names a framework reads by reflection.
 ignore_names = [
     "model_config",  # pydantic / pydantic-settings class configuration
-    "upgrade_postgres",  # called by alembic/versions/0c7b964dd1e7 (excluded above)
-    "downgrade_postgres",
-    "upgrade_sqlite",
-    "downgrade_sqlite",
     "_missing_",  # enum.Enum hook, called by Enum lookup of unknown values
     "prepare",  # logging.handlers.QueueHandler hook, called by QueueHandler.emit
-    "cache_ok",  # SQLAlchemy TypeDecorator class attribute, read by the statement cache
-    "process_bind_param",  # SQLAlchemy TypeDecorator hooks, called when binding/reading
-    "process_result_value",
-    "dialect",  # required parameter of those TypeDecorator hooks (name must match the base class)
 ]
 
 [tool.mutmut]
@@ -310,9 +312,9 @@ ignore_names = [
 # The sandbox (mutants/) must contain everything the selected tests read from the repo root.
 source_paths = ["app/"]
 pytest_add_cli_args_test_selection = ["tests/architecture/", "tests/integration/"]
-do_not_mutate = ["app/_version.py", "app/repositories/postgres/*"]
+do_not_mutate = ["app/_version.py"]
 also_copy = [
-    "alembic/", "alembic.ini", "pytest.ini", "main.py", "pyproject.toml", "ruff.toml",
+    "pytest.ini", "main.py", "pyproject.toml", "ruff.toml",
     "test_harness/", "scripts/", "skills/", "docs/", "architecture.md", "README.md",
 ]
 # Modules that start Python child processes in other directories cannot run inside the mutmut

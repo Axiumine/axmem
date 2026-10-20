@@ -47,7 +47,7 @@ IMAGE = "forgetful-test-harness:latest"
 CONTAINER_HOME = "/home/node"
 SKILLS_MOUNT = "/skills"
 HARNESS_MOUNT = "/harness"
-DECOY_DB = "/tmp/local-decoy.db"  # nosec B108 - container-side path, dies with the container  # noqa: S108
+DECOY_QDRANT_URL = "http://127.0.0.1:9"  # nothing listens there inside the container: a --local detour reaches no data
 HOST_ALIAS = "host.docker.internal"
 
 # GET <argv[1]> from inside the container; stdlib only, so the probe needs nothing
@@ -68,9 +68,7 @@ def build_container_env(server_url: str) -> dict[str, str]:
     are no real credentials to scrub - just none to introduce."""
     return {
         "FORGETFUL_SERVER": server_url,
-        "DATABASE": "SQLite",
-        "SQLITE_MEMORY": "false",
-        "SQLITE_PATH": DECOY_DB,
+        "QDRANT_URL": DECOY_QDRANT_URL,
         "EMBEDDING_PROVIDER": "TensorRT",
         "EMBEDDING_MODEL": "BAAI/bge-small-en-v1.5",
         "EMBEDDING_DIMENSIONS": "384",

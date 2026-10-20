@@ -1,389 +1,446 @@
-"""Integration tests for ReEmbeddingService.
+"""Integration tests for ReEmbeddingService on a real Qdrant node.
 
-Uses a mocked repository (no real database) and the real TensorRT embedder behind call-recording
-spies (``embedding_spy``); the provider faults are injected through the spies' ``side_effect``.
+The repository is the production one; the embedder is the real TensorRT model behind call-recording
+spies (``embedding_spy``), through which the provider faults are injected. The full re-embedding changes
+the live generation, so it runs on collections of its own (``isolated_stack``); the tenant-scoped rebuild
+works on the shared ones.
 """
-from datetime import UTC, datetime
-from unittest.mock import AsyncMock
+from uuid import uuid4
 
 import pytest
 
 from app.config.settings import settings
-from app.models.memory_models import Memory
-from app.services.re_embedding_service import ReEmbeddingService
+from app.models.memory_models import MemoryCreate, MemoryUpdate
+from app.protocols.memory_protocol import ValidationResult
+from app.services.re_embedding_service import MAX_CATCH_UP_PASSES, ReEmbeddingService
 from tests.embedding_doubles import failing_on
 
 
-def _make_memory(memory_id: int, title: str = "Test", content: str = "Content") -> Memory:
-    """Helper to create a Memory object for testing"""
-    return Memory(
-        id=memory_id,
-        title=title,
-        content=content,
+def _memory(index: int, project: str | None = None) -> MemoryCreate:
+    return MemoryCreate(
+        title=f"Memory {index}",
+        content=f"Content number {index}",
         context="test context",
         keywords=["test"],
         tags=["test"],
         importance=7,
-        created_at=datetime.now(UTC),
-        updated_at=datetime.now(UTC),
+        project=project,
     )
 
 
-def _make_mock_repo(memories: list[Memory]):
-    """Create a mock MemoryRepository with re-embedding methods"""
-    repo = AsyncMock()
-    repo.count_all_memories.return_value = len(memories)
-
-    # get_memories_for_reembedding returns slices of the memory list
-    async def get_batch(limit: int, offset: int):
-        return memories[offset:offset + limit]
-
-    repo.get_memories_for_reembedding.side_effect = get_batch
-    repo.reset_embedding_storage.return_value = None
-    repo.bulk_update_embeddings.return_value = None
-    repo.validate_embedding_count.return_value = True
-    repo.validate_embedding_dimensions.return_value = True
-    repo.validate_search_works.return_value = True
-    return repo
+async def _seed(repo, count: int, user_id=None, project: str | None = None):
+    user_id = user_id or uuid4()
+    return user_id, [await repo.create_memory(user_id, _memory(i, project)) for i in range(count)]
 
 
-@pytest.mark.asyncio
-async def test_re_embed_processes_all_memories(embedding_spy):
-    """Verify every memory gets a new embedding"""
-    memories = [_make_memory(i, title=f"Memory {i}") for i in range(1, 6)]
-    repo = _make_mock_repo(memories)
-    adapter = embedding_spy
+@pytest.fixture
+async def isolated_repo(isolated_stack, tensorrt_embedder, monkeypatch):
+    monkeypatch.setattr(settings, "MEMORY_NUM_AUTO_LINK", 0)
+    return isolated_stack.memory_repository(tensorrt_embedder)
 
-    service = ReEmbeddingService(repo, adapter, batch_size=20)
-    result = await service.re_embed_all()
 
-    assert result.total_processed == 5
-    assert result.total_memories == 5
+@pytest.fixture
+async def shared_repo(memory_repository, monkeypatch):
+    monkeypatch.setattr(settings, "MEMORY_NUM_AUTO_LINK", 0)
+    return memory_repository
+
+
+async def _generations(isolated_stack) -> list[str]:
+    """Names of the memory collections that exist under this test's prefix."""
+    client = isolated_stack.pool.clients[0]
+    names = [collection.name for collection in (await client.get_collections()).collections]
+    return sorted(name for name in names if name.startswith(f"{settings.QDRANT_COLLECTION_PREFIX}_memories_"))
+
+
+# ---------------------------------------------------------------------------
+# re_embed_all: a new generation, filled and switched
+# ---------------------------------------------------------------------------
+
+
+async def test_re_embed_processes_all_memories_into_a_new_live_generation(isolated_repo, embedding_spy):
+    await _seed(isolated_repo, 5)
+    before = await isolated_repo.live_generation()
+
+    result = await ReEmbeddingService(isolated_repo, embedding_spy, batch_size=20).re_embed_all()
+
+    assert (result.total_processed, result.total_memories) == (5, 5)
     # One provider call carries the whole batch of five memories
-    adapter.generate_embeddings.assert_awaited_once()
-    assert len(adapter.generate_embeddings.call_args[0][0]) == 5
-    adapter.generate_embedding.assert_not_called()
-    repo.bulk_update_embeddings.assert_called_once()
-
-    # Verify all memory IDs were included in the update
-    call_args = repo.bulk_update_embeddings.call_args[0][0]
-    updated_ids = {mid for mid, _ in call_args}
-    assert updated_ids == {1, 2, 3, 4, 5}
+    embedding_spy.generate_embeddings.assert_awaited_once()
+    assert len(embedding_spy.generate_embeddings.call_args[0][0]) == 5
+    embedding_spy.generate_embedding.assert_not_called()
+    assert result.previous_generation == before
+    assert result.generation == await isolated_repo.live_generation() != before
+    assert result.validation.all_passed
+    assert await isolated_repo.count_all_memories() == 5
 
 
-@pytest.mark.asyncio
-async def test_re_embed_respects_batch_size(embedding_spy):
-    """Verify batching with various sizes"""
-    memories = [_make_memory(i) for i in range(1, 21)]
-    repo = _make_mock_repo(memories)
-    adapter = embedding_spy
+async def test_re_embed_respects_batch_size(isolated_repo, embedding_spy):
+    await _seed(isolated_repo, 20)
 
-    service = ReEmbeddingService(repo, adapter, batch_size=5)
-    result = await service.re_embed_all()
+    result = await ReEmbeddingService(isolated_repo, embedding_spy, batch_size=5).re_embed_all()
 
     assert result.total_processed == 20
-    # Should have 4 batches of 5
-    assert repo.bulk_update_embeddings.call_count == 4
-    assert adapter.generate_embeddings.call_count == 4
-    assert sum(len(call[0][0]) for call in adapter.generate_embeddings.call_args_list) == 20
+    assert embedding_spy.generate_embeddings.call_count == 4
+    assert sum(len(call[0][0]) for call in embedding_spy.generate_embeddings.call_args_list) == 20
 
 
-@pytest.mark.asyncio
-async def test_re_embed_partial_batch(embedding_spy):
-    """7 memories with batch_size=5 -> 2 batches"""
-    memories = [_make_memory(i) for i in range(1, 8)]
-    repo = _make_mock_repo(memories)
-    adapter = embedding_spy
+async def test_re_embed_partial_batch(isolated_repo, embedding_spy):
+    await _seed(isolated_repo, 7)
 
-    service = ReEmbeddingService(repo, adapter, batch_size=5)
-    result = await service.re_embed_all()
+    result = await ReEmbeddingService(isolated_repo, embedding_spy, batch_size=5).re_embed_all()
 
     assert result.total_processed == 7
-    assert repo.bulk_update_embeddings.call_count == 2
-
-    # First batch: 5 items, second batch: 2 items
-    first_batch = repo.bulk_update_embeddings.call_args_list[0][0][0]
-    second_batch = repo.bulk_update_embeddings.call_args_list[1][0][0]
-    assert len(first_batch) == 5
-    assert len(second_batch) == 2
+    assert [len(call[0][0]) for call in embedding_spy.generate_embeddings.call_args_list] == [5, 2]
 
 
-@pytest.mark.asyncio
-async def test_re_embed_empty_database(embedding_spy):
-    """0 memories -> success with no embedding work, but storage still matches the configuration"""
-    repo = _make_mock_repo([])
-    adapter = embedding_spy
+async def test_re_embed_empty_database_still_switches_to_a_fresh_generation(isolated_repo, embedding_spy):
+    before = await isolated_repo.live_generation()
 
-    service = ReEmbeddingService(repo, adapter, batch_size=20)
-    result = await service.re_embed_all()
+    result = await ReEmbeddingService(isolated_repo, embedding_spy, batch_size=20).re_embed_all()
 
-    assert result.total_processed == 0
-    assert result.total_memories == 0
+    assert (result.total_processed, result.total_memories) == (0, 0)
     assert result.validation.all_passed
-    # Vector storage is still resized (a dimension change needs it); nothing is written
-    repo.reset_embedding_storage.assert_awaited_once()
-    repo.bulk_update_embeddings.assert_not_called()
-    adapter.generate_embeddings.assert_not_called()
+    assert result.generation != before
+    embedding_spy.generate_embeddings.assert_not_called()
 
 
-@pytest.mark.asyncio
-async def test_re_embed_progress_callback(embedding_spy):
-    """Verify progress callback fires per batch"""
-    memories = [_make_memory(i) for i in range(1, 8)]
-    repo = _make_mock_repo(memories)
-    adapter = embedding_spy
+async def test_re_embed_progress_callback_fires_per_batch(isolated_repo, embedding_spy):
+    await _seed(isolated_repo, 7)
+    progress = []
 
-    progress_calls = []
-
-    def progress_cb(processed, total):
-        progress_calls.append((processed, total))
-
-    service = ReEmbeddingService(repo, adapter, batch_size=3)
-    result = await service.re_embed_all(progress_callback=progress_cb)
+    result = await ReEmbeddingService(isolated_repo, embedding_spy, batch_size=3).re_embed_all(
+        progress_callback=lambda processed, total: progress.append((processed, total)),
+    )
 
     assert result.total_processed == 7
-    # batch_size=3, 7 items -> batches of 3, 3, 1
-    assert len(progress_calls) == 3
-    assert progress_calls[0] == (3, 7)
-    assert progress_calls[1] == (6, 7)
-    assert progress_calls[2] == (7, 7)
+    assert progress == [(3, 7), (6, 7), (7, 7)]
 
 
-@pytest.mark.asyncio
-async def test_re_embed_adapter_error_propagates(embedding_spy):
-    """Embedding adapter throws -> error raised"""
-    memories = [_make_memory(1)]
-    repo = _make_mock_repo(memories)
-    adapter = embedding_spy
-    adapter.generate_embeddings.side_effect = RuntimeError("API rate limit exceeded")
+async def test_re_embed_counts_what_it_copied_when_memories_vanish_after_the_count(isolated_repo, embedding_spy, monkeypatch):
+    await _seed(isolated_repo, 2)
 
-    service = ReEmbeddingService(repo, adapter, batch_size=20)
+    async def stale_count():
+        return 5
+
+    monkeypatch.setattr(isolated_repo, "count_all_memories", stale_count)
+
+    result = await ReEmbeddingService(isolated_repo, embedding_spy, batch_size=2).re_embed_all()
+
+    assert (result.total_memories, result.total_processed) == (5, 2)
+
+
+async def test_re_embed_adapter_error_propagates_and_leaves_the_live_generation_alone(
+    isolated_repo, isolated_stack, embedding_spy,
+):
+    await _seed(isolated_repo, 1)
+    live = await isolated_repo.live_generation()
+    embedding_spy.generate_embeddings.side_effect = RuntimeError("API rate limit exceeded")
 
     with pytest.raises(RuntimeError, match="API rate limit exceeded"):
-        await service.re_embed_all()
+        await ReEmbeddingService(isolated_repo, embedding_spy, batch_size=20).re_embed_all()
+
+    assert await isolated_repo.live_generation() == live
+    assert await _generations(isolated_stack) == [live]
 
 
-@pytest.mark.asyncio
-async def test_re_embed_calls_reset_before_embedding(embedding_spy):
-    """Verify reset_embedding_storage is called before bulk_update_embeddings"""
-    memories = [_make_memory(1)]
-    repo = _make_mock_repo(memories)
-    adapter = embedding_spy
+async def test_re_embed_failure_in_a_later_batch_discards_the_partial_generation(
+    isolated_repo, isolated_stack, embedding_spy,
+):
+    await _seed(isolated_repo, 2)
+    live = await isolated_repo.live_generation()
+    embedding_spy.generate_embeddings.side_effect = failing_on(
+        embedding_spy.real.generate_embeddings, call=2, error=RuntimeError("provider down"),
+    )
 
-    call_order = []
+    with pytest.raises(RuntimeError, match="provider down"):
+        await ReEmbeddingService(isolated_repo, embedding_spy, batch_size=1).re_embed_all()
 
-    async def track_reset():
-        call_order.append("reset")
-    async def track_bulk(updates):
-        call_order.append("bulk")
-
-    repo.reset_embedding_storage.side_effect = track_reset
-    repo.bulk_update_embeddings.side_effect = track_bulk
-
-    service = ReEmbeddingService(repo, adapter, batch_size=20)
-    await service.re_embed_all()
-
-    assert call_order == ["reset", "bulk"]
+    assert await isolated_repo.live_generation() == live
+    assert await _generations(isolated_stack) == [live]
 
 
-@pytest.mark.asyncio
-async def test_re_embed_validation_failure(embedding_spy):
-    """Verify validation result reflects failures"""
-    memories = [_make_memory(1)]
-    repo = _make_mock_repo(memories)
-    repo.validate_embedding_count.return_value = False
-    adapter = embedding_spy
+async def test_generation_is_activated_only_after_validation_passes(isolated_repo, embedding_spy, monkeypatch):
+    await _seed(isolated_repo, 1)
+    calls: list[str] = []
+    validate, activate = isolated_repo.validate_generation, isolated_repo.activate_generation
 
-    service = ReEmbeddingService(repo, adapter, batch_size=20)
-    result = await service.re_embed_all()
+    async def tracked_validate(generation):
+        calls.append("validate")
+        return await validate(generation)
 
-    assert result.validation is not None
+    async def tracked_activate(generation):
+        calls.append("activate")
+        await activate(generation)
+
+    monkeypatch.setattr(isolated_repo, "validate_generation", tracked_validate)
+    monkeypatch.setattr(isolated_repo, "activate_generation", tracked_activate)
+
+    await ReEmbeddingService(isolated_repo, embedding_spy).re_embed_all()
+
+    assert calls == ["validate", "activate"]
+
+
+async def test_failed_validation_discards_the_new_generation(isolated_repo, isolated_stack, embedding_spy, monkeypatch):
+    await _seed(isolated_repo, 1)
+    live = await isolated_repo.live_generation()
+
+    async def failing_validation(generation):
+        return ValidationResult(count_ok=False, dimensions_ok=True, search_ok=True)
+
+    monkeypatch.setattr(isolated_repo, "validate_generation", failing_validation)
+
+    result = await ReEmbeddingService(isolated_repo, embedding_spy).re_embed_all()
+
+    assert not result.validation.all_passed
     assert not result.validation.count_ok
     assert result.validation.dimensions_ok
-    assert result.validation.search_ok
-    assert not result.validation.all_passed
+    assert result.generation is None
+    assert await isolated_repo.live_generation() == live
+    assert await _generations(isolated_stack) == [live]
+
+
+async def test_catching_up_with_edits_is_bounded_when_writers_never_stop(isolated_repo, embedding_spy, monkeypatch):
+    await _seed(isolated_repo, 2)
+    service = ReEmbeddingService(isolated_repo, embedding_spy)
+    scans: list[int] = []
+    original = service._copy_all
+
+    async def a_writer_is_always_ahead(source, target, progress_callback=None, total=0):
+        copied = await original(source, target, progress_callback, total)
+        scans.append(copied)
+        return copied or 1
+
+    monkeypatch.setattr(service, "_copy_all", a_writer_is_always_ahead)
+
+    result = await service.re_embed_all()
+
+    assert result.validation.all_passed
+    assert result.generation == await isolated_repo.live_generation()
+    # the copy itself, then the catch-up passes before the switch and those after it, each series bounded
+    assert len(scans) == 1 + 2 * MAX_CATCH_UP_PASSES
+
+
+def test_batch_size_must_be_positive(isolated_repo, embedding_spy):
+    with pytest.raises(ValueError, match="batch_size must be at least 1"):
+        ReEmbeddingService(isolated_repo, embedding_spy, batch_size=0)
 
 
 # ---------------------------------------------------------------------------
-# rebuild_targeted (issue #39) — user-scoped, non-destructive rebuild
+# rebuild_targeted: tenant-scoped, non-destructive
 # ---------------------------------------------------------------------------
 
 
-def _make_targeted_repo(memories: list[Memory], owned_by_user: bool = True):
-    """Mock repo wired for rebuild_targeted (no reset, user-scoped upsert)."""
-    repo = AsyncMock()
-    repo.count_memories_for_targeted_rebuild.return_value = len(memories)
+async def test_rebuild_targeted_rebuilds_every_memory_of_the_tenant(shared_repo, embedding_spy):
+    user_id, memories = await _seed(shared_repo, 3)
 
-    async def get_batch(user_id, limit, after_id=None, memory_ids=None,
-                        project=None):
-        eligible = memories
-        if after_id is not None:
-            eligible = [memory for memory in eligible if memory.id > after_id]
-        return eligible[:limit]
+    result = await ReEmbeddingService(shared_repo, embedding_spy, batch_size=20).rebuild_targeted(user_id=user_id)
 
-    async def upsert_targeted(user_id, updates, expected_updated_at=None):
-        return [mid for mid, _ in updates] if owned_by_user else []
-
-    repo.get_memories_for_targeted_rebuild.side_effect = get_batch
-    repo.upsert_targeted_embeddings.side_effect = upsert_targeted
-    repo.find_similar_memories.return_value = []
-    repo.create_links_batch.return_value = []
-    return repo
-
-
-@pytest.mark.asyncio
-async def test_rebuild_targeted_does_not_reset_storage(embedding_spy):
-    """rebuild_targeted must never call reset_embedding_storage()."""
-    from uuid import uuid4
-
-    memories = [_make_memory(i) for i in range(1, 4)]
-    repo = _make_targeted_repo(memories)
-    adapter = embedding_spy
-
-    service = ReEmbeddingService(repo, adapter, batch_size=20)
-    result = await service.rebuild_targeted(user_id=uuid4())
-
-    repo.reset_embedding_storage.assert_not_called()
-    assert sorted(result.rebuilt_ids) == [1, 2, 3]
+    assert sorted(result.rebuilt_ids) == sorted(memory.id for memory in memories)
     assert result.skipped_ids == []
     assert result.failed == []
 
 
-@pytest.mark.asyncio
-async def test_rebuild_targeted_no_candidates_short_circuits(embedding_spy):
-    """Empty candidate set -> no embedding work, empty result."""
-    from uuid import uuid4
+async def test_rebuild_targeted_no_candidates_short_circuits(shared_repo, embedding_spy, monkeypatch):
+    upserts = []
+    original = shared_repo.upsert_targeted_embeddings
 
-    repo = _make_targeted_repo([])
-    adapter = embedding_spy
+    async def tracked(*args, **kwargs):
+        upserts.append(kwargs)
+        return await original(*args, **kwargs)
 
-    service = ReEmbeddingService(repo, adapter, batch_size=20)
-    result = await service.rebuild_targeted(user_id=uuid4())
+    monkeypatch.setattr(shared_repo, "upsert_targeted_embeddings", tracked)
+
+    result = await ReEmbeddingService(shared_repo, embedding_spy, batch_size=20).rebuild_targeted(user_id=uuid4())
 
     assert result.rebuilt_ids == []
-    adapter.generate_embeddings.assert_not_called()
-    adapter.generate_embedding.assert_not_called()
-    repo.upsert_targeted_embeddings.assert_not_called()
+    embedding_spy.generate_embeddings.assert_not_called()
+    embedding_spy.generate_embedding.assert_not_called()
+    assert upserts == []
 
 
-@pytest.mark.asyncio
-async def test_rebuild_targeted_skips_unowned_ids(embedding_spy):
-    """Memories rejected by upsert (not owned) land in skipped_ids."""
-    from uuid import uuid4
+async def test_rebuild_targeted_skips_a_memory_edited_while_it_was_embedded(shared_repo, embedding_spy):
+    user_id, memories = await _seed(shared_repo, 3)
+    edited = memories[1]
+    real = embedding_spy.real.generate_embeddings
 
-    memories = [_make_memory(i) for i in range(1, 4)]
-    repo = _make_mock_repo([])  # not used directly
-    repo.count_memories_for_targeted_rebuild.return_value = len(memories)
+    async def edit_during_embedding(texts):
+        vectors = await real(texts)
+        await shared_repo.update_memory(user_id, edited.id, MemoryUpdate(importance=9))
+        return vectors
 
-    async def get_batch(user_id, limit, after_id=None, memory_ids=None,
-                        project=None):
-        eligible = memories
-        if after_id is not None:
-            eligible = [memory for memory in eligible if memory.id > after_id]
-        return eligible[:limit]
+    embedding_spy.generate_embeddings.side_effect = edit_during_embedding
 
-    async def partial_upsert(user_id, updates, expected_updated_at=None):
-        return [updates[0][0]]  # Only the first id is owned
+    result = await ReEmbeddingService(shared_repo, embedding_spy, batch_size=20).rebuild_targeted(user_id=user_id)
 
-    repo.get_memories_for_targeted_rebuild.side_effect = get_batch
-    repo.upsert_targeted_embeddings.side_effect = partial_upsert
-    repo.find_similar_memories.return_value = []
-    repo.create_links_batch.return_value = []
-    adapter = embedding_spy
-
-    service = ReEmbeddingService(repo, adapter, batch_size=20)
-    result = await service.rebuild_targeted(user_id=uuid4())
-
-    assert result.rebuilt_ids == [1]
-    assert sorted(result.skipped_ids) == [2, 3]
+    assert sorted(result.rebuilt_ids) == sorted([memories[0].id, memories[2].id])
+    assert result.skipped_ids == [edited.id]
     assert result.failed == []
 
 
-@pytest.mark.asyncio
-async def test_rebuild_targeted_records_embedding_failures(embedding_spy):
-    """Per-memory embedding error -> entry in result.failed, others succeed."""
-    from uuid import uuid4
-
-    memories = [_make_memory(i) for i in range(1, 4)]
-    repo = _make_targeted_repo(memories)
-    adapter = embedding_spy
-
-    adapter.generate_embeddings.side_effect = RuntimeError("batch rejected")
-    adapter.generate_embedding.side_effect = failing_on(
-        adapter.real.generate_embedding, call=2, error=RuntimeError("transient API failure"),
+async def test_rebuild_targeted_records_embedding_failures(shared_repo, embedding_spy):
+    user_id, memories = await _seed(shared_repo, 3)
+    embedding_spy.generate_embeddings.side_effect = RuntimeError("batch rejected")
+    embedding_spy.generate_embedding.side_effect = failing_on(
+        embedding_spy.real.generate_embedding, call=2, error=RuntimeError("transient API failure"),
     )
 
-    service = ReEmbeddingService(repo, adapter, batch_size=20)
-    result = await service.rebuild_targeted(user_id=uuid4())
+    result = await ReEmbeddingService(shared_repo, embedding_spy, batch_size=20).rebuild_targeted(user_id=user_id)
 
-    # The failed batch is retried memory by memory, which isolates memory 2
-    adapter.generate_embeddings.assert_awaited_once()
-    assert adapter.generate_embedding.await_count == 3
-    assert sorted(result.rebuilt_ids) == [1, 3]
-    assert len(result.failed) == 1
-    assert result.failed[0]["memory_id"] == 2
-    assert result.failed[0]["reason"] == "embedding_failed"
+    # The failed batch is retried memory by memory, which isolates the second one
+    embedding_spy.generate_embeddings.assert_awaited_once()
+    assert embedding_spy.generate_embedding.await_count == 3
+    failed_id = result.failed[0]["memory_id"]
+    assert [failure["reason"] for failure in result.failed] == ["embedding_failed"]
+    assert sorted(result.rebuilt_ids + [failed_id]) == sorted(memory.id for memory in memories)
 
 
-@pytest.mark.asyncio
-async def test_rebuild_targeted_embeds_a_batch_in_one_call(embedding_spy):
-    """A batch of memories reaches the provider as one generate_embeddings call."""
-    from uuid import uuid4
+async def test_rebuild_targeted_embeds_a_batch_in_one_call(shared_repo, embedding_spy):
+    user_id, memories = await _seed(shared_repo, 3)
 
-    memories = [_make_memory(i) for i in range(1, 4)]
-    repo = _make_targeted_repo(memories)
-    adapter = embedding_spy
+    result = await ReEmbeddingService(shared_repo, embedding_spy, batch_size=20).rebuild_targeted(user_id=user_id)
 
-    result = await ReEmbeddingService(repo, adapter, batch_size=20).rebuild_targeted(user_id=uuid4())
-
-    adapter.generate_embeddings.assert_awaited_once()
-    assert len(adapter.generate_embeddings.call_args[0][0]) == 3
-    adapter.generate_embedding.assert_not_called()
-    assert sorted(result.rebuilt_ids) == [1, 2, 3]
+    embedding_spy.generate_embeddings.assert_awaited_once()
+    assert len(embedding_spy.generate_embeddings.call_args[0][0]) == 3
+    embedding_spy.generate_embedding.assert_not_called()
+    assert len(result.rebuilt_ids) == 3
 
 
-@pytest.mark.asyncio
-async def test_rebuild_targeted_count_mismatch_falls_back_to_single_calls(embedding_spy):
-    """A provider that returns the wrong number of vectors does not corrupt the rebuild."""
-    from uuid import uuid4
-
-    memories = [_make_memory(i) for i in range(1, 3)]
-    repo = _make_targeted_repo(memories)
-    adapter = embedding_spy
+async def test_rebuild_targeted_count_mismatch_falls_back_to_single_calls(shared_repo, embedding_spy):
+    user_id, _memories = await _seed(shared_repo, 2)
 
     async def one_vector_too_few(texts):
-        return (await adapter.real.generate_embeddings(texts))[:1]
+        return (await embedding_spy.real.generate_embeddings(texts))[:1]
 
-    adapter.generate_embeddings.side_effect = one_vector_too_few
+    embedding_spy.generate_embeddings.side_effect = one_vector_too_few
 
-    result = await ReEmbeddingService(repo, adapter, batch_size=20).rebuild_targeted(user_id=uuid4())
+    result = await ReEmbeddingService(shared_repo, embedding_spy, batch_size=20).rebuild_targeted(user_id=user_id)
 
-    assert adapter.generate_embedding.await_count == 2
-    assert sorted(result.rebuilt_ids) == [1, 2]
+    assert embedding_spy.generate_embedding.await_count == 2
+    assert len(result.rebuilt_ids) == 2
     assert result.failed == []
 
 
-@pytest.mark.asyncio
-async def test_rebuild_targeted_recomputes_auto_links(monkeypatch, embedding_spy):
-    """After writing fresh vectors, targeted rebuild refreshes additive auto-links."""
-    from uuid import uuid4
+async def test_rebuild_targeted_reports_progress_after_every_batch(shared_repo, embedding_spy):
+    user_id, _memories = await _seed(shared_repo, 3)
+    progress: list[tuple[int, int]] = []
 
-    user_id = uuid4()
-    memories = [_make_memory(i) for i in range(1, 3)]
-    repo = _make_targeted_repo(memories)
-    repo.find_similar_memories.return_value = [memories[1]]
-    repo.create_links_batch.return_value = [memories[1].id]
-    adapter = embedding_spy
+    result = await ReEmbeddingService(shared_repo, embedding_spy, batch_size=2).rebuild_targeted(
+        user_id=user_id, progress_callback=lambda done, total: progress.append((done, total)),
+    )
+
+    assert progress == [(2, 3), (3, 3)]
+    assert len(result.rebuilt_ids) == 3
+
+
+async def test_rebuild_targeted_writes_nothing_when_no_memory_could_be_embedded(shared_repo, embedding_spy, monkeypatch):
+    user_id, memories = await _seed(shared_repo, 2)
+    embedding_spy.generate_embeddings.side_effect = RuntimeError("embedding provider down")
+    embedding_spy.generate_embedding.side_effect = RuntimeError("embedding provider down")
+    upserts = []
+    original = shared_repo.upsert_targeted_embeddings
+
+    async def tracked(*args, **kwargs):
+        upserts.append(kwargs)
+        return await original(*args, **kwargs)
+
+    monkeypatch.setattr(shared_repo, "upsert_targeted_embeddings", tracked)
+
+    result = await ReEmbeddingService(shared_repo, embedding_spy).rebuild_targeted(user_id=user_id)
+
+    assert result.rebuilt_ids == []
+    assert sorted(failure["memory_id"] for failure in result.failed) == sorted(memory.id for memory in memories)
+    assert {failure["reason"] for failure in result.failed} == {"embedding_failed"}
+    assert upserts == []
+
+
+async def test_rebuild_targeted_attributes_a_failed_write_to_that_memory(shared_repo, embedding_spy):
+    user_id, memories = await _seed(shared_repo, 2)
+
+    async def one_vector_of_the_wrong_width(texts):
+        vectors = await embedding_spy.real.generate_embeddings(texts)
+        vectors[0] = [*vectors[0], 0.0]
+        return vectors
+
+    embedding_spy.generate_embeddings.side_effect = one_vector_of_the_wrong_width
+
+    result = await ReEmbeddingService(shared_repo, embedding_spy, batch_size=20).rebuild_targeted(user_id=user_id)
+
+    assert [failure["reason"] for failure in result.failed] == ["persistence_failed"]
+    assert result.failed[0]["memory_id"] not in result.rebuilt_ids
+    assert len(result.rebuilt_ids) == 1
+
+
+async def test_rebuild_targeted_records_an_auto_link_failure_without_losing_the_rebuild(shared_repo, embedding_spy, monkeypatch):
+    user_id, memories = await _seed(shared_repo, 1)
     monkeypatch.setattr(settings, "MEMORY_NUM_AUTO_LINK", 1)
 
-    service = ReEmbeddingService(repo, adapter, batch_size=20)
-    result = await service.rebuild_targeted(user_id=user_id)
+    async def broken(*args, **kwargs):
+        raise RuntimeError("similarity lookup failed")
 
-    assert sorted(result.rebuilt_ids) == [1, 2]
-    assert repo.find_similar_memories.call_count == 2
-    assert repo.create_links_batch.call_count == 2
-    repo.find_similar_memories.assert_any_call(
-        user_id=user_id,
-        memory_id=1,
-        max_links=1,
-    )
+    monkeypatch.setattr(shared_repo, "find_similar_memories", broken)
+
+    result = await ReEmbeddingService(shared_repo, embedding_spy).rebuild_targeted(user_id=user_id)
+
+    assert result.rebuilt_ids == [memories[0].id]
+    assert result.failed == [{"memory_id": memories[0].id, "phase": "auto_link", "reason": "auto_link_failed"}]
+
+
+async def test_rebuild_targeted_skips_auto_link_when_the_memory_has_no_similar_one(shared_repo, embedding_spy, monkeypatch):
+    user_id, memories = await _seed(shared_repo, 1)
+    monkeypatch.setattr(settings, "MEMORY_NUM_AUTO_LINK", 1)
+    links = []
+
+    async def none_similar(*args, **kwargs):
+        return []
+
+    async def tracked_links(*args, **kwargs):
+        links.append(kwargs)
+
+    monkeypatch.setattr(shared_repo, "find_similar_memories", none_similar)
+    monkeypatch.setattr(shared_repo, "create_links_batch", tracked_links)
+
+    result = await ReEmbeddingService(shared_repo, embedding_spy).rebuild_targeted(user_id=user_id)
+
+    assert result.rebuilt_ids == [memories[0].id]
+    assert links == []
+
+
+# ---------------------------------------------------------------------------
+# validate_targeted_scope
+# ---------------------------------------------------------------------------
+
+
+async def test_targeted_scope_accepts_memories_that_all_belong_to_the_project(shared_repo, embedding_spy):
+    user_id, memories = await _seed(shared_repo, 2, project="atlas")
+
+    assert await ReEmbeddingService(shared_repo, embedding_spy).validate_targeted_scope(
+        user_id, [memory.id for memory in memories], project="atlas",
+    ) is None
+
+
+async def test_targeted_scope_rejects_a_memory_outside_the_project(shared_repo, embedding_spy):
+    user_id, inside = await _seed(shared_repo, 2, project="atlas")
+    outside = await shared_repo.create_memory(user_id, _memory(9, project="other"))
+    ids = [memory.id for memory in inside] + [outside.id]
+
+    with pytest.raises(ValueError, match=r"memory_ids do not all belong to project='atlas'.*matched_in_project=2"):
+        await ReEmbeddingService(shared_repo, embedding_spy).validate_targeted_scope(user_id, ids, project="atlas")
+
+
+async def test_targeted_scope_rejects_empty_memory_ids(shared_repo, embedding_spy):
+    with pytest.raises(ValueError, match="memory_ids must be non-empty"):
+        await ReEmbeddingService(shared_repo, embedding_spy).validate_targeted_scope(uuid4(), [], project=None)
+
+
+async def test_targeted_scope_checks_that_a_project_without_ids_exists(shared_repo, embedding_spy):
+    user_id, _memories = await _seed(shared_repo, 1, project="atlas")
+    service = ReEmbeddingService(shared_repo, embedding_spy)
+
+    assert await service.validate_targeted_scope(user_id, None, project="atlas") is None
+    with pytest.raises(ValueError, match="project='missing' not found"):
+        await service.validate_targeted_scope(user_id, None, project="missing")
+
+
+async def test_targeted_scope_with_ids_and_no_project_needs_no_check(shared_repo, embedding_spy):
+    assert await ReEmbeddingService(shared_repo, embedding_spy).validate_targeted_scope(uuid4(), [uuid4()], project=None) is None
+    assert await ReEmbeddingService(shared_repo, embedding_spy).validate_targeted_scope(uuid4(), None, project=None) is None

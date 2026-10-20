@@ -1,4 +1,4 @@
-"""End-to-end tests for MCP memory tools: get_recent_memories clamping (PostgreSQL backend)
+"""End-to-end tests for MCP memory tools: get_recent_memories clamping
 
 Covers pagination clamping on the adapter path: negative offsets, zero and
 oversized limits and the hard 100-row cap.
@@ -11,10 +11,8 @@ from tests.e2e.memory_tools_helpers_e2e import (
     recent_memories,
 )
 
-pytestmark = pytest.mark.asyncio(loop_scope="session")
 
-
-@pytest.mark.e2e
+@pytest.mark.asyncio
 async def test_get_recent_memories_clamps_negative_offset_e2e(mcp_client):
     """Test that negative offset is clamped to 0 on the adapter path"""
     tag = "e2e-clamp-offset"
@@ -32,7 +30,7 @@ async def test_get_recent_memories_clamps_negative_offset_e2e(mcp_client):
     assert len(memories) == 3
 
 
-@pytest.mark.e2e
+@pytest.mark.asyncio
 async def test_get_recent_memories_clamps_over_limit_e2e(mcp_client):
     """Smoke-tests that an absurdly large limit does not error or hang the adapter path.
 
@@ -57,7 +55,7 @@ async def test_get_recent_memories_clamps_over_limit_e2e(mcp_client):
     assert envelope["total_count"] >= len(memories)
 
 
-@pytest.mark.e2e
+@pytest.mark.asyncio
 async def test_get_recent_memories_clamps_zero_limit_e2e(mcp_client):
     """Test that limit=0 is clamped to 1 on the adapter path"""
     tag = "e2e-clamp-zero"
@@ -75,7 +73,7 @@ async def test_get_recent_memories_clamps_zero_limit_e2e(mcp_client):
     assert len(memories) == 1
 
 
-@pytest.mark.e2e
+@pytest.mark.asyncio
 async def test_get_recent_memories_clamps_hundred_cap_e2e(mcp_client):
     """Test that an over-limit request returns at most 100 rows when more exist"""
     tag = "e2e-clamp-cap"

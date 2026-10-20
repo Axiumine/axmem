@@ -1,7 +1,8 @@
 """Throwaway Forgetful server: a real `forgetful serve` subprocess the agent can reach.
 
-File-backed SQLite (in-memory dies at the process boundary), no
-auth, the TensorRT embedder with the default (warm) model and engine directories. Env is injected at launch because
+The Qdrant node the harness itself is configured for, in collections under a prefix made for the run
+and deleted at teardown, no auth, the TensorRT embedder with the default (warm) model and engine
+directories. Env is injected at launch because
 settings freeze at import time in the child. The instance must not depend on whoever
 runs the harness: cwd is the run directory so no repo-local dotenv file leaks in, but
 the absolute user-config dotenv file (and the shell) still reach the child, so every
@@ -16,19 +17,24 @@ RemoteExecutor with a plain no-auth client, which dogfoods the meta-tool path an
 object-root wire handling.
 """
 import json
+import logging
 import os
 import shutil
 import socket
 import subprocess  # nosec B404 - starts the throwaway server with a fixed argv list, never a shell
 import sys
 import time
+import uuid
 from pathlib import Path
 from typing import Any
 
 import httpx
 from pydantic import SecretStr
 
+from app.config.settings import settings
 from app.routes.cli.remote_executor import RemoteExecutor
+
+logger = logging.getLogger(__name__)
 
 
 class HarnessInfraError(RuntimeError):
@@ -127,6 +133,8 @@ class ThrowawayForgetful:
         self.port: int | None = None
         self.process: subprocess.Popen | None = None
         self._log_file = None
+        # Collections of this run only: no other run or real data shares a prefix
+        self.collection_prefix = f"harness{uuid.uuid4().hex[:10]}"
 
     @property
     def url(self) -> str:
@@ -139,9 +147,9 @@ class ThrowawayForgetful:
     def _child_env(self) -> dict[str, str]:
         env = _host_env_with_default_settings()
         env.update({
-            "DATABASE": "SQLite",
-            "SQLITE_MEMORY": "false",
-            "SQLITE_PATH": str(self.run_dir / "forgetful.db"),
+            "QDRANT_URL": settings.QDRANT_URL,
+            "QDRANT_API_KEY": settings.QDRANT_API_KEY.get_secret_value(),
+            "QDRANT_COLLECTION_PREFIX": self.collection_prefix,
             "EMBEDDING_PROVIDER": "TensorRT",
             "EMBEDDING_MODEL": "BAAI/bge-small-en-v1.5",
             "EMBEDDING_DIMENSIONS": "384",
@@ -155,6 +163,11 @@ class ThrowawayForgetful:
             "LOG_LEVEL": "INFO",
         })
         env.pop("FORGETFUL_TOKEN", None)
+        # Loopback never goes through a proxy: not the harness's calls to the server, and not the
+        # server's calls to a Qdrant node on this host. A remote node still follows the host's proxy.
+        loopback = "127.0.0.1,localhost,::1"
+        for name in ("NO_PROXY", "no_proxy"):
+            env[name] = ",".join(filter(None, [env.get(name), loopback]))
         return env
 
     def start(self) -> None:
@@ -203,6 +216,23 @@ class ThrowawayForgetful:
         if self._log_file is not None:
             self._log_file.close()
             self._log_file = None
+        self._drop_collections()
+
+    def _drop_collections(self) -> None:
+        """Delete the collections this run created. Best effort: a leftover must not hide the run's result."""
+        headers = {"api-key": settings.QDRANT_API_KEY.get_secret_value()}
+        try:
+            with httpx.Client(
+                base_url=settings.qdrant_urls[0], headers=headers, timeout=30, trust_env=False,
+            ) as http:
+                listing = http.get("/collections").json()["result"]["collections"]
+                for collection in listing:
+                    if collection["name"].startswith(f"{self.collection_prefix}_"):
+                        http.delete(f"/collections/{collection['name']}")
+        except (httpx.HTTPError, KeyError, ValueError):
+            logger.warning(
+                "could not delete the throwaway collections", extra={"collection_prefix": self.collection_prefix},
+            )
 
     async def execute(self, tool_name: str, arguments: dict[str, Any]) -> Any:
         """Trusted harness-side call through the server's own meta-tool path."""

@@ -1,9 +1,9 @@
-"""The re-embed run's recovery and reporting helpers in ``main.py``.
+"""The re-embed run's reporting and stop handling in ``main.py``.
 
-A re-embed rebuilds vector storage in place, so every way the run can end (validation failure,
-cancellation from outside, a stop signal arriving while the restore is already under way)
-must leave the database restored and say so on the console. The fakes below stand in for the
-database adapter, the backup tool and the re-embedding service; ``main`` is the real code.
+A re-embed copies every memory into a new collection and only then makes it the live one, so every way
+the run can end (validation failure, an error, a stop signal) must leave the live collection as it was and
+say so on the console. The fakes below stand in for the re-embedding service and the store; ``main`` is
+the real code. The complete runs against Qdrant are in ``tests/e2e/test_reembed_run_flow_e2e.py``.
 """
 
 import asyncio
@@ -15,51 +15,32 @@ from types import SimpleNamespace
 import pytest
 
 import main
-from app.config.settings import settings
 from app.protocols.memory_protocol import ValidationResult
 from app.services.re_embedding_service import ReEmbedResult
 
 
-class _Database:
-    def __init__(self):
-        self.disposed = False
-
-    async def dispose(self):
-        self.disposed = True
-
-
-class _Backups:
-    def __init__(self):
-        self.restored: list[str] = []
-        self.created = 0
-
-    async def restore_backup(self, path):
-        self.restored.append(path)
-
-    async def create_backup(self):
-        self.created += 1
-        return "/backups/forgetful.bak"
-
-
 class _Service:
-    """Resets storage (optionally blocking until cancelled) and returns a canned result."""
+    """Blocks until cancelled, raises, or returns a canned result."""
 
-    def __init__(self, result=None, block=False):
+    def __init__(self, result=None, block=False, error=None):
         self.result = result
         self.block = block
+        self.error = error
         self.started = asyncio.Event()
 
-    async def reset_vector_storage(self):
+    async def re_embed_all(self, progress_callback):
         self.started.set()
+        if self.error:
+            raise self.error
         if self.block:
             await asyncio.Event().wait()
-
-    async def re_embed_all(self, progress_callback, reset_storage):
         return self.result
 
 
 def _result(validation=None):
-    return ReEmbedResult(total_processed=1, total_memories=1, validation=validation)
+    return ReEmbedResult(
+        total_processed=1, total_memories=1, validation=validation, generation="live_new", previous_generation="live_old",
+    )
 
 
 def test_unencodable_output_is_escaped_on_streams_that_can_be_reconfigured(monkeypatch):
@@ -88,101 +69,184 @@ async def test_stop_handlers_restore_the_default_for_a_signal_python_had_no_hand
     assert original_getsignal(signal.SIGUSR1) == signal.SIG_DFL
 
 
-async def test_restore_without_a_backup_only_releases_the_database(capsys):
-    database, backups = _Database(), _Backups()
-
-    await main._restore_backup(database, backups, None)
-
-    assert database.disposed is True
-    assert backups.restored == []
-    assert capsys.readouterr().out == ""
-
-
-async def test_restore_with_a_backup_puts_it_back_and_says_so(capsys):
-    database, backups = _Database(), _Backups()
-
-    await main._restore_backup(database, backups, "/backups/forgetful.bak")
-
-    assert database.disposed is True
-    assert backups.restored == ["/backups/forgetful.bak"]
-    assert "Restored: /backups/forgetful.bak" in capsys.readouterr().out
-
-
-async def test_in_memory_database_skips_the_backup_step(monkeypatch, capsys):
-    monkeypatch.setattr(settings, "DATABASE", "SQLite")
-    monkeypatch.setattr(settings, "SQLITE_MEMORY", True)
-    backups = _Backups()
-
-    assert await main._create_reembed_backup(backups) is None
-
-    assert "Skipping backup (in-memory database)" in capsys.readouterr().out
-    assert backups.created == 0
-
-
-async def test_stop_request_while_a_restore_is_running_is_ignored():
+async def test_stop_request_cancels_the_run_once():
     run = main._ReembedRun()
-    run.restoring = True
 
     run.request_stop()
+    run.request_stop()
 
-    assert run.interrupted is False
-    assert run.task.cancelling() == 0
+    assert run.interrupted is True
+    assert run.task.cancelling() == 1
+    run.task.uncancel()
 
 
-@pytest.mark.parametrize(
-    ("backup_path", "mentions_backup"),
-    [(None, False), ("/backups/forgetful.bak", True)],
-    ids=["no-backup", "with-backup"],
-)
-def test_success_report_mentions_the_backup_only_when_one_was_made(backup_path, mentions_backup, capsys):
-    result = SimpleNamespace(total_processed=3)
+def test_success_report_names_the_new_and_the_previous_collection(capsys):
+    result = SimpleNamespace(total_processed=3, generation="live_new", previous_generation="live_old")
 
-    main._print_reembed_success(result, backup_path)
+    main._print_reembed_success(result)
 
     out = capsys.readouterr().out
     assert "Successfully re-embedded 3 memories" in out
-    assert ("Backup retained at: /backups/forgetful.bak" in out) is mentions_backup
+    assert "The live collection is now live_new" in out
+    assert "live_old still holds the old vectors" in out
 
 
-async def test_cancellation_from_outside_restores_the_backup_and_stays_a_cancellation():
-    database, backups = _Database(), _Backups()
+def test_progress_bar_reports_the_share_done(capsys):
+    main._print_progress(1, 4)
+    main._print_progress(0, 0)
+
+    out = capsys.readouterr().out
+    assert "1/4 memories (25%)" in out
+    assert "0/0 memories (100%)" in out
+
+
+async def test_rebuild_returns_the_service_result(capsys):
+    service = _Service(result=_result())
+
+    assert await main._rebuild_vectors(service) is service.result
+
+    assert "[3/4] Re-embedding memories into a new collection" in capsys.readouterr().out
+
+
+async def test_cancellation_from_outside_stays_a_cancellation():
     service = _Service(block=True)
-    run = asyncio.create_task(
-        main._reembed_with_restore(service, database, backups, "/backups/forgetful.bak"),
-    )
+    run = asyncio.create_task(main._rebuild_vectors(service))
     await service.started.wait()
 
     run.cancel()
 
     with pytest.raises(asyncio.CancelledError):
         await run
-    assert backups.restored == ["/backups/forgetful.bak"]
-    assert database.disposed is True
 
 
-async def test_failed_validation_restores_the_backup_and_exits_with_status_1(capsys):
-    failing = ValidationResult(count_ok=False, dimensions_ok=True, search_ok=True)
-    database, backups = _Database(), _Backups()
+async def test_a_stop_signal_reports_that_the_live_collection_was_not_changed(capsys):
+    class SignalledService:
+        async def re_embed_all(self, progress_callback):
+            signal.raise_signal(signal.SIGINT)  # the loop's handler cancels the run
+            await asyncio.Event().wait()
 
     with pytest.raises(SystemExit) as exit_info:
-        await main._reembed_with_restore(
-            _Service(result=_result(failing)), database, backups, "/backups/forgetful.bak",
-        )
+        await main._rebuild_vectors(SignalledService())
+
+    assert exit_info.value.code == 1
+    assert "Interrupted! The new collection was discarded; the live collection was not changed." in capsys.readouterr().out
+    assert asyncio.current_task().cancelling() == 0
+
+
+async def test_an_error_is_reported_and_raised_again(capsys):
+    service = _Service(error=RuntimeError("provider down"))
+
+    with pytest.raises(RuntimeError, match="provider down"):
+        await main._rebuild_vectors(service)
+
+    out = capsys.readouterr().out
+    assert "ERROR: provider down" in out
+    assert "The new collection was discarded; the live collection was not changed." in out
+
+
+def test_validation_report_shows_each_check(capsys):
+    failing = ValidationResult(count_ok=False, dimensions_ok=True, search_ok=False)
+
+    main._print_validation(_result(failing))
+
+    out = capsys.readouterr().out
+    assert "Count check: 1 memories, 1 embeddings FAILED" in out
+    assert "Dimension check: OK" in out
+    assert "Search check: FAILED" in out
+
+
+class _Schema:
+    def __init__(self, live):
+        self.live = live
+        self.checked_width = None
+
+    async def live_exists(self):
+        return self.live
+
+    async def ensure(self, check_width):
+        self.checked_width = check_width
+
+
+class _Repository:
+    def __init__(self, count):
+        self.count = count
+
+    async def count_all_memories(self):
+        return self.count
+
+
+@pytest.mark.parametrize(("live", "expected"), [(True, 7), (False, 0)], ids=["live-collection", "nothing-yet"])
+async def test_dry_run_counts_without_touching_qdrant(live, expected, capsys):
+    await main._dry_run_reembed(SimpleNamespace(schema=_Schema(live)), _Repository(7))
+
+    out = capsys.readouterr().out
+    assert f"Memories to process: {expected}" in out
+    assert f"Would re-embed {expected} memories" in out
+    assert "No changes were made." in out
+
+
+async def test_failed_validation_exits_with_status_1_and_keeps_the_live_collection(monkeypatch, capsys):
+    failing = ValidationResult(count_ok=False, dimensions_ok=True, search_ok=True)
+    schema = _Schema(True)
+    stack = SimpleNamespace(schema=schema, memory_repository=lambda adapter: _Repository(1))
+
+    async def fail_validation(service):
+        return _result(failing)
+
+    monkeypatch.setattr(main, "_rebuild_vectors", fail_validation)
+
+    with pytest.raises(SystemExit) as exit_info:
+        await main._reembed(stack, object(), SimpleNamespace(dry_run=False, batch_size=5))
 
     out = capsys.readouterr().out
     assert exit_info.value.code == 1
-    assert "Count check: 1 memories, 1 embeddings FAILED" in out
-    assert "Validation FAILED!" in out
-    assert backups.restored == ["/backups/forgetful.bak"]
+    assert "Validation FAILED! The new collection was discarded; the live collection was not changed." in out
+    assert "The live collection is now" not in out
+    assert schema.checked_width is False  # the old collection may hold vectors of another width
 
 
-async def test_result_without_validation_details_is_reported_as_a_success(capsys):
-    database, backups = _Database(), _Backups()
+async def test_result_that_passes_validation_is_reported_as_a_success(monkeypatch, capsys):
+    passing = ValidationResult(count_ok=True, dimensions_ok=True, search_ok=True)
+    stack = SimpleNamespace(schema=_Schema(True), memory_repository=lambda adapter: _Repository(1))
 
-    await main._reembed_with_restore(_Service(result=_result(None)), database, backups, None)
+    async def pass_validation(service):
+        return _result(passing)
+
+    monkeypatch.setattr(main, "_rebuild_vectors", pass_validation)
+
+    await main._reembed(stack, object(), SimpleNamespace(dry_run=False, batch_size=5))
 
     out = capsys.readouterr().out
-    assert "[5/5] Validating..." in out
+    assert "[4/4] Validating..." in out
     assert "Successfully re-embedded 1 memories" in out
-    assert "Count check" not in out
-    assert backups.restored == []
+    assert "The live collection is now live_new" in out
+
+
+async def test_a_qdrant_start_up_refusal_ends_the_run_with_status_1_and_closes_the_stack(monkeypatch, capsys):
+    import app.bootstrap
+    import app.config.logging_config
+    from app.exceptions import QdrantStartupError
+
+    class Stack:
+        closed = False
+
+        async def close(self):
+            self.closed = True
+
+    stack = Stack()
+
+    async def refuse(_stack, _adapter, _args):
+        raise QdrantStartupError("Qdrant collection axmem_memories does not match the settings")
+
+    monkeypatch.setattr(app.config.logging_config, "configure_logging", lambda **_: None)
+    monkeypatch.setattr(main.atexit, "register", lambda *_: None)
+    monkeypatch.setattr(app.bootstrap, "get_embedding_adapter", lambda: object())
+    monkeypatch.setattr(app.bootstrap, "create_qdrant_stack", lambda: stack)
+    monkeypatch.setattr(main, "_reembed", refuse)
+
+    with pytest.raises(SystemExit) as exit_info:
+        await main._run_reembed(SimpleNamespace(batch_size=5, dry_run=False))
+
+    assert exit_info.value.code == 1
+    assert "ERROR: Qdrant collection axmem_memories does not match the settings" in capsys.readouterr().err
+    assert stack.closed

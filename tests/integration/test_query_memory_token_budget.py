@@ -74,10 +74,10 @@ class TestSpecialTokenText:
 
     @pytest.mark.asyncio
     async def test_query_memory_returns_memory_containing_special_token(
-        self, test_memory_service, mock_memory_repository,
+        self, test_memory_service, memory_repository,
     ):
         user_id = uuid4()
-        stored = await mock_memory_repository.create_memory(
+        stored = await memory_repository.create_memory(
             user_id,
             _memory("Tokenizer notes", content="GPT models use the <|endoftext|> token to separate documents"),
         )
@@ -124,11 +124,11 @@ class TestOfflineTokenizer:
 
     @pytest.mark.asyncio
     async def test_query_memory_survives_missing_tiktoken_cache_when_offline(
-        self, test_memory_service, mock_memory_repository, monkeypatch, tmp_path,
+        self, test_memory_service, memory_repository, monkeypatch, tmp_path,
     ):
         user_id = uuid4()
         for i in range(3):
-            await mock_memory_repository.create_memory(user_id, _memory(f"Memory {i}", importance=5 + i))
+            await memory_repository.create_memory(user_id, _memory(f"Memory {i}", importance=5 + i))
         calls = _fresh_container_no_network(monkeypatch, tmp_path)
 
         result = await test_memory_service.query_memory(user_id, _query(k=3))
@@ -139,10 +139,10 @@ class TestOfflineTokenizer:
 
     @pytest.mark.asyncio
     async def test_first_query_does_not_block_event_loop_on_tiktoken_download(
-        self, test_memory_service, mock_memory_repository, monkeypatch, tmp_path,
+        self, test_memory_service, memory_repository, monkeypatch, tmp_path,
     ):
         user_id = uuid4()
-        await mock_memory_repository.create_memory(user_id, _memory("Memory"))
+        await memory_repository.create_memory(user_id, _memory("Memory"))
         _fresh_container_no_network(monkeypatch, tmp_path, delay=1.0)  # slow, failing download
 
         gaps = []
@@ -170,11 +170,11 @@ class TestOfflineTokenizer:
 class TestTokenContextThreshold:
     @pytest.mark.asyncio
     async def test_request_threshold_lowers_the_budget(
-        self, test_memory_service, mock_memory_repository, monkeypatch,
+        self, test_memory_service, memory_repository, monkeypatch,
     ):
         monkeypatch.setattr(settings, "MEMORY_TOKEN_BUDGET", 8000)
         user_id = uuid4()
-        await _seed_large(mock_memory_repository, user_id)
+        await _seed_large(memory_repository, user_id)
 
         unrestricted = await test_memory_service.query_memory(user_id, _query())
         restricted = await test_memory_service.query_memory(user_id, _query(token_context_threshold=4000))
@@ -187,11 +187,11 @@ class TestTokenContextThreshold:
 
     @pytest.mark.asyncio
     async def test_omitted_threshold_uses_configured_budget(
-        self, test_memory_service, mock_memory_repository, monkeypatch,
+        self, test_memory_service, memory_repository, monkeypatch,
     ):
         monkeypatch.setattr(settings, "MEMORY_TOKEN_BUDGET", 3000)
         user_id = uuid4()
-        await _seed_large(mock_memory_repository, user_id)
+        await _seed_large(memory_repository, user_id)
 
         result = await test_memory_service.query_memory(user_id, _query())
 
@@ -200,11 +200,11 @@ class TestTokenContextThreshold:
 
     @pytest.mark.asyncio
     async def test_request_threshold_cannot_exceed_configured_budget(
-        self, test_memory_service, mock_memory_repository, monkeypatch,
+        self, test_memory_service, memory_repository, monkeypatch,
     ):
         monkeypatch.setattr(settings, "MEMORY_TOKEN_BUDGET", 3000)
         user_id = uuid4()
-        await _seed_large(mock_memory_repository, user_id)
+        await _seed_large(memory_repository, user_id)
 
         result = await test_memory_service.query_memory(user_id, _query(token_context_threshold=25000))
 
@@ -227,13 +227,13 @@ class TestTruncatedFlagForCountLimit:
     @pytest.mark.asyncio
     @pytest.mark.parametrize("k", [20, 15])
     async def test_linked_memories_dropped_by_memory_cap_set_truncated(
-        self, test_memory_service, mock_memory_repository, monkeypatch, k,
+        self, test_memory_service, memory_repository, monkeypatch, k,
     ):
         monkeypatch.setattr(settings, "MEMORY_MAX_MEMORIES", 20)
         user_id = uuid4()
-        await self._seed_linked_pairs(mock_memory_repository, user_id, 20)
+        await self._seed_linked_pairs(memory_repository, user_id, 20)
 
-        result = await test_memory_service.query_memory(user_id, _query(k=k, include_links=True))
+        result = await test_memory_service.query_memory(user_id, _query(query="primary", k=k, include_links=True))
 
         assert result.token_count < settings.MEMORY_TOKEN_BUDGET / 4  # the token budget is not the cause
         assert len(result.primary_memories) == k
@@ -243,12 +243,12 @@ class TestTruncatedFlagForCountLimit:
 
     @pytest.mark.asyncio
     async def test_primaries_dropped_by_memory_cap_set_truncated(
-        self, test_memory_service, mock_memory_repository, monkeypatch,
+        self, test_memory_service, memory_repository, monkeypatch,
     ):
         monkeypatch.setattr(settings, "MEMORY_MAX_MEMORIES", 2)
         user_id = uuid4()
         for i in range(3):
-            await mock_memory_repository.create_memory(user_id, _memory(f"Memory {i}"))
+            await memory_repository.create_memory(user_id, _memory(f"Memory {i}"))
 
         result = await test_memory_service.query_memory(user_id, _query(k=3))
 
@@ -257,13 +257,13 @@ class TestTruncatedFlagForCountLimit:
 
     @pytest.mark.asyncio
     async def test_nothing_dropped_is_not_truncated(
-        self, test_memory_service, mock_memory_repository, monkeypatch,
+        self, test_memory_service, memory_repository, monkeypatch,
     ):
         monkeypatch.setattr(settings, "MEMORY_MAX_MEMORIES", 20)
         user_id = uuid4()
-        await self._seed_linked_pairs(mock_memory_repository, user_id, 5)
+        await self._seed_linked_pairs(memory_repository, user_id, 5)
 
-        result = await test_memory_service.query_memory(user_id, _query(k=5, include_links=True))
+        result = await test_memory_service.query_memory(user_id, _query(query="primary", k=5, include_links=True))
 
         assert len(result.primary_memories) == 5
         assert len(result.linked_memories) == 5
@@ -273,24 +273,24 @@ class TestTruncatedFlagForCountLimit:
 class TestLinkQuotaNotSpentOnPrimaries:
     @pytest.mark.asyncio
     async def test_primaries_do_not_consume_max_links_per_primary(
-        self, test_memory_service, mock_memory_repository,
+        self, test_memory_service, memory_repository,
     ):
         user_id = uuid4()
         primaries = [
-            await mock_memory_repository.create_memory(user_id, _memory(f"primary {i}", importance=9))
+            await memory_repository.create_memory(user_id, _memory(f"primary {i}", importance=9))
             for i in range(4)
         ]
         others = [
-            await mock_memory_repository.create_memory(user_id, _memory(f"other {i}", importance=5))
+            await memory_repository.create_memory(user_id, _memory(f"other {i}", importance=5))
             for i in range(6)
         ]
         # The first primary is linked to the 3 other primaries and to 6 non-primary memories
-        await mock_memory_repository.create_links_batch(
+        await memory_repository.create_links_batch(
             user_id, primaries[0].id, [m.id for m in primaries[1:] + others],
         )
 
         result = await test_memory_service.query_memory(
-            user_id, _query(k=4, include_links=True, max_links_per_primary=3),
+            user_id, _query(query="primary", k=4, include_links=True, max_links_per_primary=3),
         )
 
         assert sorted(m.id for m in result.primary_memories) == sorted(m.id for m in primaries)
@@ -301,18 +301,18 @@ class TestLinkQuotaNotSpentOnPrimaries:
 
     @pytest.mark.asyncio
     async def test_linked_memory_claimed_by_earlier_primary_does_not_consume_next_quota(
-        self, test_memory_service, mock_memory_repository,
+        self, test_memory_service, memory_repository,
     ):
         user_id = uuid4()
-        first = await mock_memory_repository.create_memory(user_id, _memory("primary first", importance=9))
-        second = await mock_memory_repository.create_memory(user_id, _memory("primary second", importance=8))
-        shared = await mock_memory_repository.create_memory(user_id, _memory("shared", importance=5))
-        spare = await mock_memory_repository.create_memory(user_id, _memory("spare", importance=4))
-        await mock_memory_repository.create_links_batch(user_id, first.id, [shared.id])
-        await mock_memory_repository.create_links_batch(user_id, second.id, [shared.id, spare.id])
+        first = await memory_repository.create_memory(user_id, _memory("primary first", importance=9))
+        second = await memory_repository.create_memory(user_id, _memory("primary second", importance=8))
+        shared = await memory_repository.create_memory(user_id, _memory("shared", importance=5))
+        spare = await memory_repository.create_memory(user_id, _memory("spare", importance=4))
+        await memory_repository.create_links_batch(user_id, first.id, [shared.id])
+        await memory_repository.create_links_batch(user_id, second.id, [shared.id, spare.id])
 
         result = await test_memory_service.query_memory(
-            user_id, _query(k=2, include_links=True, max_links_per_primary=1),
+            user_id, _query(query="primary", k=2, include_links=True, max_links_per_primary=1),
         )
 
         linked = {lm.memory.id: lm.link_source_id for lm in result.linked_memories}

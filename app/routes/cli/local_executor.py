@@ -20,7 +20,7 @@ class LocalExecutor:
 
     def __init__(self, runtime: Runtime):
         self._runtime = runtime
-        self._ctx = CliContext(runtime)
+        self._ctx = CliContext()
 
     @classmethod
     async def create(cls) -> LocalExecutor:

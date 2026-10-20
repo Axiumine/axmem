@@ -1,8 +1,4 @@
-"""End-to-end tests for MCP memory tools: provenance tracking (PostgreSQL backend)
-
-Requires:
-- PostgreSQL with pgvector running in Docker
-- TensorRT embeddings adapter (the production embedder, on the GPU)
+"""End-to-end tests for MCP memory tools: provenance tracking
 
 Provenance Tracking Tests (Issue #9): create, backward compatibility, update,
 query results and confidence boundaries.
@@ -16,8 +12,6 @@ from tests.e2e.memory_tools_helpers_e2e import (
     query_memory,
     update_memory,
 )
-
-pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 
 def _assert_full_provenance(data):
@@ -40,15 +34,15 @@ def _assert_no_provenance(data):
     assert data.get("encoding_version") is None
 
 
-@pytest.mark.e2e
-async def test_create_memory_with_provenance_postgres_e2e(mcp_client):
-    """Test creating memory with full provenance tracking fields in PostgreSQL"""
+@pytest.mark.asyncio
+async def test_create_memory_with_provenance_e2e(mcp_client):
+    """Test creating memory with full provenance tracking fields"""
     result = await create_memory(
         mcp_client,
-        title="AI-Generated Memory Postgres E2E",
+        title="AI-Generated Memory E2E",
         content="Content extracted from codebase analysis by automated agent",
-        context="Testing provenance tracking in PostgreSQL E2E environment",
-        keywords=["ai-generated", "provenance", "postgres"],
+        context="Testing provenance tracking in E2E environment",
+        keywords=["ai-generated", "provenance", "test"],
         tags=["test", "provenance"],
         importance=8,
         source_repo="scottrbk/forgetful",
@@ -69,14 +63,14 @@ async def test_create_memory_with_provenance_postgres_e2e(mcp_client):
     _assert_full_provenance(get_result.data)
 
 
-@pytest.mark.e2e
-async def test_create_memory_without_provenance_backward_compat_postgres_e2e(mcp_client):
-    """Test that memories can still be created without provenance in PostgreSQL (backward compatibility)"""
+@pytest.mark.asyncio
+async def test_create_memory_without_provenance_backward_compat_e2e(mcp_client):
+    """Test that memories can still be created without provenance (backward compatibility)"""
     result = await create_memory(
         mcp_client,
-        title="Manual Memory No Provenance Postgres E2E",
+        title="Manual Memory No Provenance E2E",
         content="Content entered manually without provenance tracking",
-        context="Testing backward compatibility in PostgreSQL",
+        context="Testing backward compatibility",
         keywords=["manual", "no-provenance"],
         tags=["test"],
         importance=7,
@@ -92,16 +86,16 @@ async def test_create_memory_without_provenance_backward_compat_postgres_e2e(mcp
     _assert_no_provenance(get_result.data)
 
 
-@pytest.mark.e2e
-async def test_update_memory_add_provenance_postgres_e2e(mcp_client):
-    """Test adding provenance fields to an existing memory via update in PostgreSQL"""
+@pytest.mark.asyncio
+async def test_update_memory_add_provenance_e2e(mcp_client):
+    """Test adding provenance fields to an existing memory via update"""
     # Create memory without provenance
     create_result = await create_memory(
         mcp_client,
-        title="Memory to Add Provenance Postgres E2E",
+        title="Memory to Add Provenance E2E",
         content="Content without initial provenance",
-        context="Testing provenance addition in PostgreSQL",
-        keywords=["update", "provenance", "postgres"],
+        context="Testing provenance addition",
+        keywords=["update", "provenance"],
         tags=["test"],
         importance=7,
     )
@@ -129,21 +123,50 @@ async def test_update_memory_add_provenance_postgres_e2e(mcp_client):
     assert update_result.data.get("encoding_version") is None
 
 
-@pytest.mark.e2e
-async def test_provenance_in_query_results_postgres_e2e(mcp_client):
-    """Test that provenance fields are included in query results in PostgreSQL"""
+@pytest.mark.asyncio
+async def test_update_memory_modify_provenance_e2e(mcp_client):
+    """Test modifying existing provenance fields"""
+    # Create memory with initial provenance
+    create_result = await create_memory(
+        mcp_client,
+        title="Memory to Modify Provenance E2E",
+        content="Content with initial provenance",
+        context="Testing provenance modification",
+        keywords=["modify", "provenance"],
+        tags=["test"],
+        importance=7,
+        confidence=0.5,
+        encoding_agent="old-agent",
+    )
+
+    assert create_result.data is not None
+    memory_id = create_result.data["id"]
+
+    # Update provenance fields
+    update_result = await update_memory(
+        mcp_client, memory_id, confidence=0.95, encoding_agent="verified-by-human",
+    )
+
+    assert update_result.data is not None
+    assert update_result.data["confidence"] == 0.95
+    assert update_result.data["encoding_agent"] == "verified-by-human"
+
+
+@pytest.mark.asyncio
+async def test_provenance_in_query_results_e2e(mcp_client):
+    """Test that provenance fields are included in query results"""
     # Create memory with provenance
     create_result = await create_memory(
         mcp_client,
-        title="Provenance Query Test Postgres E2E Unique",
-        content="Testing provenance fields in query results in PostgreSQL",
-        context="PostgreSQL E2E query test for provenance",
-        keywords=["provenance", "query", "postgres-e2e-unique"],
+        title="Provenance Query Test E2E Unique",
+        content="Testing provenance fields in query results",
+        context="E2E query test for provenance",
+        keywords=["provenance", "query", "e2e-unique"],
         tags=["test"],
         importance=8,
-        source_repo="test/query-repo-postgres",
+        source_repo="test/query-repo",
         confidence=0.75,
-        encoding_agent="test-agent-postgres",
+        encoding_agent="test-agent",
     )
 
     assert create_result.data is not None
@@ -152,8 +175,8 @@ async def test_provenance_in_query_results_postgres_e2e(mcp_client):
     # Query for the memory
     query_result = await query_memory(
         mcp_client,
-        "provenance query postgres e2e unique",
-        "testing provenance in query results in PostgreSQL",
+        "provenance query e2e unique",
+        "testing provenance in query results",
         k=10,
         include_links=False,
     )
@@ -162,21 +185,21 @@ async def test_provenance_in_query_results_postgres_e2e(mcp_client):
     found_memory = find_by_id(query_result.data["primary_memories"], memory_id)
 
     assert found_memory is not None, f"Memory {memory_id} not found in query results"
-    assert found_memory["source_repo"] == "test/query-repo-postgres"
+    assert found_memory["source_repo"] == "test/query-repo"
     assert found_memory["confidence"] == 0.75
-    assert found_memory["encoding_agent"] == "test-agent-postgres"
+    assert found_memory["encoding_agent"] == "test-agent"
 
 
-@pytest.mark.e2e
-async def test_provenance_confidence_boundaries_postgres_e2e(mcp_client):
-    """Test that confidence score boundaries (0.0 and 1.0) work correctly in PostgreSQL"""
+@pytest.mark.asyncio
+async def test_provenance_confidence_boundaries_e2e(mcp_client):
+    """Test that confidence score boundaries (0.0 and 1.0) work correctly"""
     # Test minimum confidence (0.0)
     low_result = await create_memory(
         mcp_client,
-        title="Low Confidence Memory Postgres E2E",
-        content="Very uncertain content in PostgreSQL",
-        context="Testing low confidence boundary in PostgreSQL",
-        keywords=["low", "confidence", "postgres"],
+        title="Low Confidence Memory E2E",
+        content="Very uncertain content",
+        context="Testing low confidence boundary",
+        keywords=["low", "confidence"],
         tags=["test"],
         importance=5,
         confidence=0.0,
@@ -192,10 +215,10 @@ async def test_provenance_confidence_boundaries_postgres_e2e(mcp_client):
     # Test maximum confidence (1.0)
     high_result = await create_memory(
         mcp_client,
-        title="High Confidence Memory Postgres E2E",
-        content="Very certain content in PostgreSQL",
-        context="Testing high confidence boundary in PostgreSQL",
-        keywords=["high", "confidence", "postgres"],
+        title="High Confidence Memory E2E",
+        content="Very certain content",
+        context="Testing high confidence boundary",
+        keywords=["high", "confidence"],
         tags=["test"],
         importance=9,
         confidence=1.0,

@@ -24,8 +24,8 @@ Ask the user which setup they prefer:
 **Question**: "How would you like to configure Forgetful?"
 
 **Options**:
-1. **Standard (Recommended)** - Zero config, uses uvx to run Forgetful with SQLite storage. Perfect for most users.
-2. **Custom** - For advanced setups: remote HTTP server, PostgreSQL, custom embeddings, authentication, etc.
+1. **Standard (Recommended)** - Uses uvx to run Forgetful against a Qdrant on `http://127.0.0.1:6333`. Perfect for most users.
+2. **Custom** - For advanced setups: remote HTTP server, another Qdrant, custom embeddings, authentication, etc.
 
 ## Step 3a: Standard Setup
 
@@ -40,7 +40,7 @@ Confirm success:
 gemini mcp list | grep -i forgetful
 ```
 
-Report: "Forgetful is now configured! Your memories will persist in `~/.forgetful/` using SQLite."
+Report: "Forgetful is now configured! Your memories are stored in the Qdrant at `http://127.0.0.1:6333` (start one first if none runs)."
 
 ## Step 3b: Custom Setup
 
@@ -53,7 +53,7 @@ WebFetch: https://github.com/ScottRBK/forgetful/blob/main/docs/configuration.md
 
 2. Ask what they need:
    - **Remote HTTP server** - Connect to Forgetful running elsewhere
-   - **PostgreSQL backend** - Use Postgres instead of SQLite
+   - **Qdrant address** - Use a Qdrant on another host (`QDRANT_URL`, `QDRANT_API_KEY`)
    - **Custom embeddings** - Use different embedding model/provider
    - **Authentication** - API key or OAuth setup
 
@@ -70,12 +70,8 @@ gemini mcp add -t http forgetful http://HOST:PORT/mcp
 ```bash
 # Gemini CLI doesn't support inline env vars in mcp add
 # User needs to set environment variables before running gemini:
-export DATABASE=Postgres
-export POSTGRES_HOST=localhost
-export PGPORT=5432
-export POSTGRES_DB=forgetful
-export POSTGRES_USER=user
-export POSTGRES_PASSWORD=pass
+export QDRANT_URL=http://qdrant.internal:6333
+export QDRANT_API_KEY=your-qdrant-api-key
 export EMBEDDING_PROVIDER=Google
 gemini mcp add forgetful uvx forgetful-ai
 ```
@@ -94,6 +90,6 @@ If setup fails:
 
 ## Notes
 
-- SQLite database location: `~/.forgetful/forgetful.db`
+- Memories live in Qdrant, in the collections `axmem_memories` and `axmem_links` (`QDRANT_COLLECTION_PREFIX`)
 - For full configuration reference: https://github.com/ScottRBK/forgetful/blob/main/docs/configuration.md
 """

@@ -1,11 +1,11 @@
 from datetime import UTC, datetime
 from typing import Annotated, Any
+from uuid import UUID
 
 from pydantic import (
     AfterValidator,
     BaseModel,
     BeforeValidator,
-    ConfigDict,
     Field,
     StringConstraints,
     ValidationError,
@@ -109,8 +109,8 @@ _SourceFile = Annotated[
     BeforeValidator(_reject_unencodable),
 ]
 
-# The project scope is a free-form label chosen by the caller. It is trimmed and bounded by the
-# width of the projects.name column; an update may also pass an empty label to clear the scope.
+# The project scope is a free-form label chosen by the caller. It is trimmed and bounded in length;
+# an update may also pass an empty label to clear the scope.
 SCOPE_MAX_LENGTH = 500
 _Scope = Annotated[
     str,
@@ -376,7 +376,7 @@ class MemoryUpdate(BaseModel):
         return [item.strip() for item in v if item.strip()]
 
 class Memory(MemoryCreate):
-    id: int
+    id: UUID
     # Limits apply when a memory is written, not when it is read: the settings behind them
     # can be lowered after data was stored, and older versions accepted blank text. The
     # request fields that carry a write-time rule are therefore re-declared as plain types.
@@ -393,19 +393,18 @@ class Memory(MemoryCreate):
     updated_at: datetime = Field(default_factory=lambda: datetime.now(tz=UTC))
     # A plain str: stored scopes are read back as they are, whatever rule applied when written
     project: str | None = Field(default=None, description=MemoryCreate.model_fields["project"].description)
-    linked_memory_ids: list[int] = Field(default_factory=list)
+    linked_memory_ids: list[UUID] = Field(default_factory=list)
 
     # Lifecycle management fields
     is_obsolete: bool = Field(default=False, description="Whether this memory has been marked obsolete")
     obsolete_reason: str | None = Field(default=None, description="Reason why this memory was marked obsolete")
-    superseded_by: int | None = Field(default=None, description="ID of memory that supersedes this one")
+    superseded_by: UUID | None = Field(default=None, description="ID of memory that supersedes this one")
     obsoleted_at: datetime | None = Field(default=None, description="When this memory was marked obsolete")
 
-    model_config = ConfigDict(from_attributes=True)
 
 class MemorySummary(BaseModel):
     """Lightweight memory summary for list views"""
-    id: int
+    id: UUID
     title: str
     keywords: list[str]
     tags: list[str]
@@ -417,14 +416,12 @@ class MemorySummary(BaseModel):
         description="Cosine similarity to the new memory when returned by create_memory",
     )
 
-    model_config = ConfigDict(from_attributes=True)
-
 
 class MemoryScore(BaseModel):
     """Retrieval score for one primary memory, aligned by index with primary_memories"""
 
-    memory_id: int
-    similarity: float = Field(..., description="1 - cosine distance to the query embedding")
+    memory_id: UUID
+    similarity: float = Field(..., description="Cosine similarity to the query embedding")
     rerank_score: float | None = Field(
         default=None,
         description="Cross-encoder score when RERANKING_ENABLED, else null",
@@ -434,20 +431,20 @@ class MemoryScore(BaseModel):
 class ObsoleteMatch(BaseModel):
     """Obsolete memory whose embedding is at or above OBSOLETE_WARNING_THRESHOLD"""
 
-    id: int
+    id: UUID
     title: str
     similarity: float
     obsolete_reason: str | None = None
-    superseded_by: int | None = None
+    superseded_by: UUID | None = None
     obsoleted_at: datetime | None = None
     project: str | None = None
 
 
 class MemoryCreateResponse(BaseModel):
     """Lightweight response information to confirm memory creation"""
-    id: int
+    id: UUID
     title: str
-    linked_memory_ids: list[int] = Field(default_factory=list)
+    linked_memory_ids: list[UUID] = Field(default_factory=list)
     project: str | None = None
     similar_memories: list[MemorySummary] = Field(
         default_factory=list,
@@ -525,9 +522,7 @@ class MemoryQueryRequest(BaseModel):
 class LinkedMemory(BaseModel):
     """Memory with linked context"""
     memory: Memory
-    link_source_id: int = Field(..., description="ID of memory this is linked from")
-
-    model_config = ConfigDict(from_attributes=True)
+    link_source_id: UUID = Field(..., description="ID of memory this is linked from")
 
 class MemoryQueryResult(BaseModel):
     """Response Model for memory query"""
@@ -547,8 +542,8 @@ class MemoryQueryResult(BaseModel):
 
 class MemoryLinkRequest(BaseModel):
     """Request model for linking memories"""
-    memory_id: int = Field(..., description="Source memory ID")
-    related_ids: list[int] = Field(..., min_length=1, description="Target memory IDs to link")
+    memory_id: UUID = Field(..., description="Source memory ID")
+    related_ids: list[UUID] = Field(..., min_length=1, description="Target memory IDs to link")
 
     @field_validator("related_ids")
     @classmethod

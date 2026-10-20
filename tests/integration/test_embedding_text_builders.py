@@ -4,6 +4,8 @@ Covers which parts of a memory reach the embedding text and the rerank text when
 parts (context, keywords, tags) are empty, and when a memory stored by an older version
 has a blank title or content.
 """
+from uuid import uuid4
+
 import pytest
 
 from app.models.memory_models import Memory, MemoryCreate
@@ -16,7 +18,7 @@ from app.utils.embedding_helpers import (
 
 def _stored_memory(**overrides) -> Memory:
     data = {
-        "id": 1,
+        "id": uuid4(),
         "title": "Queue handler",
         "content": "Use QueueHandler to avoid blocking",
         "context": "",

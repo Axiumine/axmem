@@ -1,11 +1,12 @@
-"""End-to-end tests for MCP memory tools: obsolete handling (PostgreSQL backend)
+"""End-to-end tests for MCP memory tools: obsolete handling
 
-Covers mark_memory_obsolete and how obsolete memories behave
+Covers mark_memory_obsolete / unobsolete_memory and how obsolete memories behave
 in query_memory (hidden) and get_memory (still retrievable as an audit trail).
 """
 import pytest
 
 from tests.e2e.memory_tools_helpers_e2e import (
+    call_tool,
     create_memory,
     get_memory,
     mark_obsolete,
@@ -13,10 +14,8 @@ from tests.e2e.memory_tools_helpers_e2e import (
     query_memory,
 )
 
-pytestmark = pytest.mark.asyncio(loop_scope="session")
 
-
-@pytest.mark.e2e
+@pytest.mark.asyncio
 async def test_mark_memory_obsolete_basic_e2e(mcp_client):
     """Test basic memory obsolete functionality with mark_memory_obsolete tool"""
     create_result = await create_memory(
@@ -36,7 +35,48 @@ async def test_mark_memory_obsolete_basic_e2e(mcp_client):
     assert obsolete_result.data["success"] is True
 
 
-@pytest.mark.e2e
+@pytest.mark.asyncio
+async def test_unobsolete_memory_restores_query_visibility_e2e(mcp_client):
+    """Test unobsolete_memory restores a soft-deleted memory to query results"""
+    create_result = await create_memory(
+        mcp_client,
+        title="Unobsolete E2E Memory",
+        content="Content to obsolete then restore via unobsolete_memory",
+        context="e2e unobsolete restore path",
+        keywords=["unobsolete", "e2e", "restore"],
+        tags=["test"],
+        importance=7,
+    )
+    memory_id = create_result.data["id"]
+    await mark_obsolete(mcp_client, memory_id, "e2e obsolete step")
+    query_obsolete = await query_memory(
+        mcp_client,
+        "unobsolete e2e restore",
+        "verify filtered while obsolete",
+        k=10,
+        include_links=False,
+    )
+    assert memory_id not in primary_ids(query_obsolete)
+
+    restore_result = await call_tool(
+        mcp_client, "unobsolete_memory", memory_id=memory_id,
+    )
+    assert restore_result.data["success"] is True
+
+    get_result = await get_memory(mcp_client, memory_id)
+    assert get_result.data["is_obsolete"] is False
+
+    query_restored = await query_memory(
+        mcp_client,
+        "unobsolete e2e restore",
+        "verify visible after restore",
+        k=10,
+        include_links=False,
+    )
+    assert memory_id in primary_ids(query_restored)
+
+
+@pytest.mark.asyncio
 async def test_mark_memory_obsolete_filtered_from_query_e2e(mcp_client):
     """Test that obsolete memories are filtered from query_memory results"""
     result1 = await create_memory(
@@ -87,7 +127,7 @@ async def test_mark_memory_obsolete_filtered_from_query_e2e(mcp_client):
     assert memory3_id not in found_ids, "Obsolete memory should be filtered from query results"
 
 
-@pytest.mark.e2e
+@pytest.mark.asyncio
 async def test_mark_memory_obsolete_retrievable_by_id_e2e(mcp_client):
     """Test that obsolete memories can still be retrieved by ID using get_memory (audit trail)"""
     create_result = await create_memory(
@@ -122,7 +162,7 @@ async def test_mark_memory_obsolete_retrievable_by_id_e2e(mcp_client):
     assert get_result.data["content"] == "This memory will be obsolete but retrievable by ID"
 
 
-@pytest.mark.e2e
+@pytest.mark.asyncio
 async def test_mark_memory_obsolete_with_superseded_by_e2e(mcp_client):
     """Test marking memory obsolete with superseded_by parameter"""
     old_result = await create_memory(

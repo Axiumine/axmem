@@ -1,146 +1,142 @@
 """Integration tests for BackupService.
 
-Tests SQLite backup/restore with temporary files.
+The service only coordinates the storage adapters: the consistency gate of replicated deployments, the
+timestamped backup name and the hand-over to the snapshot, archive and inspector adapters. The adapters
+themselves run against a real Qdrant node in ``tests/e2e/test_backup_restore_e2e.py``.
 """
-import sqlite3
-from contextlib import closing
 from datetime import datetime
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
 from app.bootstrap import create_backup_service
+from app.config.settings import settings
+from app.exceptions import ClusterInconsistentError
+from app.protocols.maintenance_protocol import (
+    ArchiveSummary,
+    BackupResult,
+    ConsistencyReport,
+    NodeReport,
+)
+from app.services.backup_service import BackupService
 
 
-def write_content(db_path, content):
-    with closing(sqlite3.connect(db_path)) as conn:
-        conn.execute("create table if not exists notes (body text)")
-        conn.execute("delete from notes")
-        conn.execute("insert into notes values (?)", (content,))
-        conn.commit()
+class RecordingBackups:
+    def __init__(self):
+        self.created: list[str] = []
+        self.restored: list[Path] = []
+
+    async def create_backup(self, timestamp: str) -> BackupResult:
+        self.created.append(timestamp)
+        return BackupResult(directory=Path(f"axmem-backup-{timestamp}"))
+
+    async def restore_backup(self, backup_path: Path) -> None:
+        self.restored.append(backup_path)
 
 
-def read_content(db_path):
-    with closing(sqlite3.connect(db_path)) as conn:
-        return conn.execute("select body from notes").fetchone()[0]
+class RecordingArchive:
+    def __init__(self):
+        self.calls: list[tuple[str, Path]] = []
+
+    async def export_memories(self, path: Path) -> ArchiveSummary:
+        self.calls.append(("export", path))
+        return ArchiveSummary(memories=2, links=1, tenants=1)
+
+    async def import_memories(self, path: Path) -> ArchiveSummary:
+        self.calls.append(("import", path))
+        return ArchiveSummary(memories=2, links=1, tenants=1, skipped=1)
 
 
-@pytest.fixture
-def temp_db(tmp_path):
-    """Create a temporary SQLite database file for testing"""
-    db_path = tmp_path / "forgetful.db"
-    write_content(db_path, "original database content")
-    return db_path
+class FixedInspector:
+    def __init__(self, report: ConsistencyReport):
+        self.report = report
+        self.checks = 0
+
+    async def check(self) -> ConsistencyReport:
+        self.checks += 1
+        return self.report
 
 
-@pytest.mark.asyncio
-async def test_sqlite_backup_creates_copy(temp_db):
-    """Verify backup file is created at expected path"""
-    with patch("app.repositories.backup_adapter.settings") as mock_settings:
-        mock_settings.DATABASE = "SQLite"
-        mock_settings.SQLITE_PATH = str(temp_db)
-        mock_settings.SQLITE_MEMORY = False
-        mock_settings.BACKUP_DIR = ""
-
-        service = create_backup_service(database_type="SQLite")
-        backup_path = await service.create_backup()
-
-        assert backup_path.exists()
-        assert read_content(backup_path) == "original database content"
-        assert backup_path.parent == temp_db.parent
+AGREEING = ConsistencyReport(nodes=[NodeReport(url="http://a", points=3), NodeReport(url="http://b", points=3)])
+DIVERGENT = ConsistencyReport(
+    nodes=[NodeReport(url="http://a", points=3), NodeReport(url="http://b", points=2)], divergent=["p1"],
+)
+UNREADABLE = ConsistencyReport(nodes=[NodeReport(url="http://a", points=3), NodeReport(url="http://b", error="down")])
 
 
-@pytest.mark.asyncio
-async def test_sqlite_restore_overwrites_current(temp_db):
-    """Verify restore replaces current DB"""
-    with patch("app.repositories.backup_adapter.settings") as mock_settings:
-        mock_settings.DATABASE = "SQLite"
-        mock_settings.SQLITE_PATH = str(temp_db)
-        mock_settings.SQLITE_MEMORY = False
-        mock_settings.BACKUP_DIR = ""
-
-        service = create_backup_service(database_type="SQLite")
-
-        # Create backup
-        backup_path = await service.create_backup()
-
-        # Modify the original
-        write_content(temp_db, "modified database content")
-        assert read_content(temp_db) == "modified database content"
-
-        # Restore
-        await service.restore_backup(backup_path)
-
-        # Should be back to original
-        assert read_content(temp_db) == "original database content"
+def service(report: ConsistencyReport = AGREEING):
+    backups, archive, inspector = RecordingBackups(), RecordingArchive(), FixedInspector(report)
+    return BackupService(backups, archive, inspector), backups, archive, inspector
 
 
-@pytest.mark.asyncio
-async def test_backup_path_contains_timestamp(temp_db):
-    """Naming convention check"""
-    with patch("app.repositories.backup_adapter.settings") as mock_settings:
-        mock_settings.DATABASE = "SQLite"
-        mock_settings.SQLITE_PATH = str(temp_db)
-        mock_settings.SQLITE_MEMORY = False
-        mock_settings.BACKUP_DIR = ""
+async def test_backup_name_carries_a_sortable_timestamp():
+    backup_service, backups, _archive, _inspector = service()
 
-        service = create_backup_service(database_type="SQLite")
-        backup_path = await service.create_backup()
+    result = await backup_service.create_backup()
 
-        # Should contain .bak- and a timestamp-like pattern
-        assert ".bak-" in backup_path.name
-        # Name format: forgetful.db.bak-YYYYMMDD-HHMMSS
-        parts = backup_path.name.split(".bak-")
-        assert len(parts) == 2
-        timestamp_part = parts[1]
-        # Should be parseable as YYYYMMDD-HHMMSS
-        datetime.strptime(timestamp_part, "%Y%m%d-%H%M%S")
+    (stamp,) = backups.created
+    datetime.strptime(stamp, "%Y%m%d-%H%M%S")
+    assert result.directory.name == f"axmem-backup-{stamp}"
 
 
-@pytest.mark.asyncio
-async def test_sqlite_backup_includes_wal_data_without_extra_files(temp_db):
-    """A snapshot is one file that already holds what is still in the WAL"""
-    with closing(sqlite3.connect(temp_db)) as other_connection:
-        other_connection.execute("pragma journal_mode=wal")
-        other_connection.execute("pragma wal_autocheckpoint=0")
-        other_connection.execute("update notes set body = 'committed in the wal'")
-        other_connection.commit()
-        assert Path(str(temp_db) + "-wal").stat().st_size > 0
+async def test_single_replica_backup_does_not_compare_nodes(monkeypatch):
+    monkeypatch.setattr(settings, "QDRANT_REPLICATION_FACTOR", 1)
+    backup_service, backups, _archive, inspector = service(DIVERGENT)
 
-        with patch("app.repositories.backup_adapter.settings") as mock_settings:
-            mock_settings.DATABASE = "SQLite"
-            mock_settings.SQLITE_PATH = str(temp_db)
-            mock_settings.SQLITE_MEMORY = False
-            mock_settings.BACKUP_DIR = ""
+    await backup_service.create_backup()
 
-            service = create_backup_service(database_type="SQLite")
-            backup_path = await service.create_backup()
-
-    assert read_content(backup_path) == "committed in the wal"
-    assert not Path(str(backup_path) + "-wal").exists()
-    assert not Path(str(backup_path) + "-shm").exists()
+    assert inspector.checks == 0
+    assert len(backups.created) == 1
 
 
-@pytest.mark.asyncio
-async def test_restore_nonexistent_backup_raises():
-    """Restoring a nonexistent backup should raise FileNotFoundError"""
-    service = create_backup_service(database_type="SQLite")
+async def test_replicated_backup_proceeds_when_the_nodes_agree(monkeypatch):
+    monkeypatch.setattr(settings, "QDRANT_REPLICATION_FACTOR", 3)
+    backup_service, backups, _archive, inspector = service(AGREEING)
+
+    await backup_service.create_backup()
+
+    assert inspector.checks == 1
+    assert len(backups.created) == 1
+
+
+@pytest.mark.parametrize("report", [DIVERGENT, UNREADABLE], ids=["divergent", "unreadable"])
+async def test_replicated_backup_is_refused_when_the_nodes_disagree(monkeypatch, report):
+    monkeypatch.setattr(settings, "QDRANT_REPLICATION_FACTOR", 3)
+    backup_service, backups, _archive, _inspector = service(report)
+
+    with pytest.raises(ClusterInconsistentError, match="qdrant-check"):
+        await backup_service.create_backup()
+
+    assert backups.created == []
+
+
+async def test_force_backs_up_a_cluster_that_disagrees(monkeypatch):
+    monkeypatch.setattr(settings, "QDRANT_REPLICATION_FACTOR", 3)
+    backup_service, backups, _archive, inspector = service(DIVERGENT)
+
+    await backup_service.create_backup(force=True)
+
+    assert inspector.checks == 0
+    assert len(backups.created) == 1
+
+
+async def test_restore_export_import_and_check_are_handed_to_the_adapters():
+    backup_service, backups, archive, inspector = service()
+
+    await backup_service.restore_backup(Path("some-backup"))
+    exported = await backup_service.export_memories(Path("out.jsonl"))
+    imported = await backup_service.import_memories(Path("in.jsonl"))
+    report = await backup_service.check()
+
+    assert backups.restored == [Path("some-backup")]
+    assert archive.calls == [("export", Path("out.jsonl")), ("import", Path("in.jsonl"))]
+    assert (exported.memories, imported.skipped) == (2, 1)
+    assert report is AGREEING
+    assert inspector.checks == 1
+
+
+async def test_restore_of_a_missing_backup_raises(isolated_stack, tmp_path):
+    real = create_backup_service(isolated_stack)
 
     with pytest.raises(FileNotFoundError):
-        await service.restore_backup(Path("/nonexistent/backup.db"))
-
-
-@pytest.mark.asyncio
-async def test_backup_missing_db_raises(tmp_path):
-    """Backing up a nonexistent database should raise FileNotFoundError"""
-    with patch("app.repositories.backup_adapter.settings") as mock_settings:
-        mock_settings.DATABASE = "SQLite"
-        mock_settings.SQLITE_PATH = str(tmp_path / "nonexistent.db")
-        mock_settings.SQLITE_MEMORY = False
-        mock_settings.BACKUP_DIR = ""
-
-        service = create_backup_service(database_type="SQLite")
-
-        with pytest.raises(FileNotFoundError):
-            await service.create_backup()
+        await real.restore_backup(tmp_path / "nonexistent")

@@ -80,17 +80,28 @@ async def test_save_maps_flags_onto_create_memory_arguments():
     assert arguments["context"]  # a non-empty default context is supplied
 
 
+MEMORY_ID = "018f2c3e-0000-7000-8000-000000000012"
+
+
 async def test_get_and_recent_map_arguments():
     executor = RecordingExecutor({
-        "get_memory": {"id": 12, "title": "T", "importance": 5},
+        "get_memory": {"id": MEMORY_ID, "title": "T", "importance": 5},
         "get_recent_memories": {"memories": [], "total_count": 0},
     })
 
-    await verbs.run(executor, _args(["memory", "get", "12"]))
+    await verbs.run(executor, _args(["memory", "get", MEMORY_ID]))
     await verbs.run(executor, _args(["memory", "recent", "-n", "3"]))
 
-    assert executor.calls[0] == ("get_memory", {"memory_id": 12})
+    assert executor.calls[0] == ("get_memory", {"memory_id": MEMORY_ID})
     assert executor.calls[1] == ("get_recent_memories", {"limit": 3})
+
+
+def test_get_refuses_an_id_that_is_not_a_uuid(capsys):
+    with pytest.raises(SystemExit) as excinfo:
+        _args(["memory", "get", "12"])
+
+    assert excinfo.value.code == 2
+    assert "ids are UUIDs" in capsys.readouterr().err
 
 
 def test_project_command_no_longer_exists():

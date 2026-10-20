@@ -20,8 +20,8 @@ from app.routes.mcp.adapters.arguments import (
     clamp_optional_int,
     coerce_bool,
     coerce_int,
-    coerce_optional_int_id,
-    coerce_optional_int_ids,
+    coerce_optional_memory_id,
+    coerce_optional_memory_ids,
     coerce_str_list,
     reject_unknown_args,
 )
@@ -175,8 +175,8 @@ class MemoryToolAdapters:
     async def update_memory(
         self,
         ctx: Context,
-        memory_id: int | None = None,
-        id: int | None = None,
+        memory_id: str | None = None,
+        id: str | None = None,
         title: str | None = None,
         content: str | None = None,
         context: str | None = None,
@@ -235,23 +235,23 @@ class MemoryToolAdapters:
     async def link_memories(
         self,
         ctx: Context,
-        memory_id: int | None = None,
-        related_ids: list[int] | int | None = None,
-        source_id: int | None = None,
-        target_id: int | None = None,
-        target_ids: list[int] | int | None = None,
-        related_id: int | None = None,
-        memory_id_1: int | None = None,
-        memory_id_2: int | None = None,
-        from_id: int | None = None,
-        to_id: int | None = None,
-        from_memory_id: int | None = None,
-        to_memory_id: int | None = None,
-        memory_ids: list[int] | None = None,
-        ids: list[int] | None = None,
-        id: int | None = None,
-        linked_ids: list[int] | int | None = None,
-        related_memory_ids: list[int] | int | None = None,
+        memory_id: str | None = None,
+        related_ids: list[str] | str | None = None,
+        source_id: str | None = None,
+        target_id: str | None = None,
+        target_ids: list[str] | str | None = None,
+        related_id: str | None = None,
+        memory_id_1: str | None = None,
+        memory_id_2: str | None = None,
+        from_id: str | None = None,
+        to_id: str | None = None,
+        from_memory_id: str | None = None,
+        to_memory_id: str | None = None,
+        memory_ids: list[str] | None = None,
+        ids: list[str] | None = None,
+        id: str | None = None,
+        linked_ids: list[str] | str | None = None,
+        related_memory_ids: list[str] | str | None = None,
         **kwargs: Any,
     ) -> dict:
         """Adapter for link_memories tool with alias resilience"""
@@ -302,23 +302,23 @@ class MemoryToolAdapters:
     async def unlink_memories(
         self,
         ctx: Context,
-        source_id: int | None = None,
-        target_id: int | None = None,
-        memory_id: int | None = None,
-        related_id: int | None = None,
-        related_ids: list[int] | int | None = None,
-        target_ids: list[int] | int | None = None,
-        memory_ids: list[int] | None = None,
-        ids: list[int] | None = None,
-        memory_id_1: int | None = None,
-        memory_id_2: int | None = None,
-        from_id: int | None = None,
-        to_id: int | None = None,
-        from_memory_id: int | None = None,
-        to_memory_id: int | None = None,
-        id: int | None = None,
-        linked_ids: list[int] | int | None = None,
-        related_memory_ids: list[int] | int | None = None,
+        source_id: str | None = None,
+        target_id: str | None = None,
+        memory_id: str | None = None,
+        related_id: str | None = None,
+        related_ids: list[str] | str | None = None,
+        target_ids: list[str] | str | None = None,
+        memory_ids: list[str] | None = None,
+        ids: list[str] | None = None,
+        memory_id_1: str | None = None,
+        memory_id_2: str | None = None,
+        from_id: str | None = None,
+        to_id: str | None = None,
+        from_memory_id: str | None = None,
+        to_memory_id: str | None = None,
+        id: str | None = None,
+        linked_ids: list[str] | str | None = None,
+        related_memory_ids: list[str] | str | None = None,
         **kwargs: Any,
     ) -> dict:
         """Adapter for unlink_memories tool with alias resilience"""
@@ -373,8 +373,8 @@ class MemoryToolAdapters:
     async def get_memory(
         self,
         ctx: Context,
-        memory_id: int | None = None,
-        id: int | None = None,
+        memory_id: str | None = None,
+        id: str | None = None,
         **kwargs: Any,
     ) -> Memory:
         """Adapter for get_memory tool"""
@@ -399,17 +399,17 @@ class MemoryToolAdapters:
     async def mark_memory_obsolete(
         self,
         ctx: Context,
-        memory_id: int | None = None,
-        id: int | None = None,
+        memory_id: str | None = None,
+        id: str | None = None,
         *,
         reason: str,
-        superseded_by: int | None = None,
+        superseded_by: str | None = None,
         **kwargs: Any,
     ) -> dict:
         """Adapter for mark_memory_obsolete tool"""
         reject_unknown_args("mark_memory_obsolete", kwargs)
         mid = resolve_memory_id("mark_memory_obsolete", memory_id, id)
-        superseded_by = coerce_optional_int_id(superseded_by, "superseded_by")
+        replacement = coerce_optional_memory_id(superseded_by, "superseded_by")
         logger.info("MCP Tool -> mark_memory_obsolete", extra={"memory_id": mid})
 
         tenant = await get_tenant_from_auth(ctx)
@@ -418,7 +418,7 @@ class MemoryToolAdapters:
             user_id=tenant.id,
             memory_id=mid,
             reason=reason,
-            superseded_by=superseded_by,
+            superseded_by=replacement,
         )
 
         return {"success": success}
@@ -426,8 +426,8 @@ class MemoryToolAdapters:
     async def unobsolete_memory(
         self,
         ctx: Context,
-        memory_id: int | None = None,
-        id: int | None = None,
+        memory_id: str | None = None,
+        id: str | None = None,
         **kwargs: Any,
     ) -> dict:
         """Adapter for unobsolete_memory tool"""
@@ -506,7 +506,7 @@ class MemoryToolAdapters:
     async def rebuild_embeddings(
         self,
         ctx: Context,
-        memory_ids: list[int] | None = None,
+        memory_ids: list[str] | None = None,
         project: str | None = None,
     ) -> dict[str, Any]:
         """Adapter for `rebuild_embeddings` MCP tool (issue #39).
@@ -520,12 +520,12 @@ class MemoryToolAdapters:
         Returns a structured result so callers can act on partial success:
         `rebuilt_ids`, `skipped_ids`, `failed`.
         """
-        memory_ids = coerce_optional_int_ids(memory_ids, "memory_ids")
+        wanted_ids = coerce_optional_memory_ids(memory_ids, "memory_ids")
 
         logger.info(
             "MCP Tool -> rebuild_embeddings",
             extra={
-                "memory_ids": memory_ids,
+                "memory_ids": wanted_ids,
                 "project": project,
             },
         )
@@ -533,13 +533,13 @@ class MemoryToolAdapters:
         tenant = await get_tenant_from_auth(ctx)
         service = self.re_embedding_service
         try:
-            await service.validate_targeted_scope(tenant.id, memory_ids, project)
+            await service.validate_targeted_scope(tenant.id, wanted_ids, project)
         except ValueError as exc:
             raise ToolError(f"VALIDATION_ERROR: {exc}") from exc
 
         result = await service.rebuild_targeted(
             user_id=tenant.id,
-            memory_ids=memory_ids,
+            memory_ids=wanted_ids,
             project=project,
         )
         return {

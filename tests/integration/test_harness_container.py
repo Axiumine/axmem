@@ -14,7 +14,7 @@ import pytest
 
 from test_harness.config import HarnessConfig
 from test_harness.container import (
-    DECOY_DB,
+    DECOY_QDRANT_URL,
     HARNESS_MOUNT,
     SKILLS_MOUNT,
     build_container_env,
@@ -39,15 +39,13 @@ def staged():
 
 def test_container_env_fences_both_routes():
     # Arrange / Act: the container is born with ONLY this env - the remote route
-    # points at the throwaway server and any --local detour lands in a decoy that
-    # dies with the container (mem 1701: fence both routes)
+    # points at the throwaway server and any --local detour finds no Qdrant at all (mem 1701: fence both routes)
     env = build_container_env(THROWAWAY_URL)
 
     # Assert
     assert env["FORGETFUL_SERVER"] == THROWAWAY_URL
-    assert env["DATABASE"] == "SQLite"
-    assert env["SQLITE_MEMORY"] == "false"
-    assert env["SQLITE_PATH"] == DECOY_DB
+    assert env["QDRANT_URL"] == DECOY_QDRANT_URL
+    assert "QDRANT_API_KEY" not in env
     assert env["RERANKING_ENABLED"] == "false"
     assert env["EMBEDDING_PROVIDER"] == "TensorRT"
     # A fresh container inherits nothing, so there must be no token to scrub - and

@@ -1,0 +1,28 @@
+{
+  "link indexes": {
+    "a": "keyword",
+    "b": "keyword",
+    "tenant_id": "keyword (tenant index)"
+  },
+  "link vectors": {
+    "distance": "Dot",
+    "hnsw m": 0,
+    "size": 1
+  },
+  "links collection": "axmem_links",
+  "live alias": "axmem_memories",
+  "memory indexes": {
+    "created_at": "datetime",
+    "importance": "integer",
+    "is_obsolete": "bool",
+    "project": "keyword",
+    "tags": "keyword",
+    "tenant_id": "keyword (tenant index)",
+    "updated_at": "datetime",
+    "version": "integer"
+  },
+  "memory vectors": {
+    "distance": "Cosine",
+    "size": "<EMBEDDING_DIMENSIONS>"
+  }
+}

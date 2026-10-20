@@ -9,7 +9,7 @@ class AssociationNotFoundError(NotFoundError):
     """Raised when a resource referenced by id in a request (not the target itself) is not found"""
 
 class ConflictError(Exception):
-    """Raised when there's a resource conflict (e.g., duplicate key)"""
+    """Raised when a concurrent change keeps the write from being applied (the caller may retry)"""
 
 
 class InvalidStateTransitionError(Exception):
@@ -30,3 +30,11 @@ class TensorRTStartupError(TensorRTError):
     def __init__(self, cause: str, message: str) -> None:
         super().__init__(message)
         self.cause = cause
+
+
+class QdrantStartupError(RuntimeError):
+    """Qdrant is unreachable, too old, or holds collections that differ from the settings, so the server cannot start."""
+
+
+class ClusterInconsistentError(RuntimeError):
+    """The Qdrant nodes do not hold the same data, so a backup taken now could mix states of different instants."""

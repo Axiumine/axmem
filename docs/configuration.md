@@ -81,81 +81,67 @@ uv run main.py --transport http
 
 ---
 
-## Database Configuration (SQLite/PostgreSQL)
+## Qdrant Configuration
 
-### `DATABASE`
-- **Default**: `SQLite`
-- **Description**: Database backend to use
-- **Values**:
-  - `SQLite` - Lightweight, zero-config (default, recommended for getting started)
-  - `Postgres` - Production-grade, scalable (recommended for high load)
-- **Example**: `DATABASE=SQLite`
+Qdrant is the only datastore. It holds the memories, their links and their vectors. Axmem needs Qdrant 1.19.0 or
+newer (the tests pin `qdrant/qdrant:v1.19.2`) and checks the version of every node at start. There is no SQL database
+and no migration: the collections are created at start, and a change of the stored layout is a re-embed or an
+export and import.
 
-### SQLite Settings
-
-#### `SQLITE_PATH`
-- **Default**: `forgetful.db` in the platform-specific user data directory (e.g., `~/.local/share/forgetful/forgetful.db`)
-- **Description**: File path for SQLite database
+### `QDRANT_URL`
+- **Default**: `http://127.0.0.1:6333`
+- **Description**: The REST address of the Qdrant node, or of every node of a cluster separated by commas
 - **Notes**:
-  - Relative paths are relative to the directory the server is started from
-  - Forgetful creates the directory (when it does not exist yet) as `0700` and keeps the database, its `-wal`/`-shm` files and backups at `0600`, so only the owning account can read your data. Group and other access is also removed from an existing database file on startup; an existing directory is never changed. Windows is left alone.
-- **Example**: `SQLITE_PATH=data/forgetful.db`
+  - Each entry starts with `http://` or `https://`. Requests are spread over the nodes and move on to the next one when a node cannot be reached
+  - Several URLs must be the nodes of one cluster; listing separate Qdrant instances would split the data
+- **Example**: `QDRANT_URL=http://q1.internal:6333,http://q2.internal:6333,http://q3.internal:6333`
 
-#### `SQLITE_MEMORY`
-- **Default**: `false`
-- **Description**: Use in-memory database (ephemeral, for testing only)
-- **Values**: `true`, `false`
-- **Example**: `SQLITE_MEMORY=false`
-
-### PostgreSQL Settings
-
-**Note**: These settings only apply when `DATABASE=Postgres`
-
-#### `POSTGRES_HOST`
-- **Default**: `127.0.0.1`
-- **Description**: PostgreSQL server hostname
-- **Values**: a host name or address of the PostgreSQL server (it needs the pgvector extension)
-- **Example**: `POSTGRES_HOST=db.internal.example.com`
-
-### `PGPORT`
-- **Default**: `5099`
-- **Description**: PostgreSQL server port
-- **Note**: Uses non-standard port to avoid conflicts with existing PostgreSQL installations
-- **Example**: `PGPORT=5099`
-
-### `POSTGRES_DB`
-- **Default**: `forgetful`
-- **Description**: Database name to connect to
-- **Example**: `POSTGRES_DB=forgetful`
-
-### `POSTGRES_USER`
-- **Default**: `forgetful`
-- **Description**: PostgreSQL username for authentication
-- **� Security**: Change this in production deployments
-- **Example**: `POSTGRES_USER=my_secure_user`
-
-### `POSTGRES_PASSWORD`
-- **Default**: `forgetful`
-- **Description**: PostgreSQL password for authentication
-- **� Security**: **Always change this in production deployments**
-- **Example**: `POSTGRES_PASSWORD=my_secure_password_123`
-
-### Common Database Settings
-
-#### `BACKUP_DIR`
-- **Default**: empty (next to the SQLite database, in the directory of `SQLITE_PATH`)
-- **Description**: Directory for the backups that `--re-embed` takes before changing anything (SQLite snapshot or PostgreSQL `pg_dump`)
+### `QDRANT_API_KEY`
+- **Default**: empty (no key)
+- **Description**: The API key every node requires (`QDRANT__SERVICE__API_KEY` on the node)
 - **Notes**:
-  - Created as `0700` if missing; the backup files themselves are `0600`
-  - Must be persistent storage; with PostgreSQL the default location is still the directory of `SQLITE_PATH`, so point it elsewhere if that is not where you want the dumps
-- **Example**: `BACKUP_DIR=/var/backups/forgetful`
+  - A secret: it is held as a secret value and never logged, printed or returned
+  - The key is instance wide. It admits every tenant, so tenant isolation is enforced by Axmem and by nothing in Qdrant: run one Qdrant per trust domain
+  - On a cluster also set `QDRANT__SERVICE__ENFORCE_INTERNAL_AUTH=true` on the nodes so they authenticate to each other
+- **Example**: `QDRANT_API_KEY=<long random value>`
 
-#### `DB_LOGGING`
-- **Default**: `false`
-- **Description**: Enable SQL query logging for debugging (applies to both SQLite and PostgreSQL)
-- **Values**: `true`, `false`
-- **Note**: Very verbose - use only for troubleshooting. Statements are logged at INFO through the normal logging pipeline (stderr, honouring `LOG_FORMAT`), so the STDIO transport's stdout stays clean. Bound parameter values are never logged.
-- **Example**: `DB_LOGGING=true`
+### `QDRANT_COLLECTION_PREFIX`
+- **Default**: `axmem`
+- **Description**: Prefix of the collection names. `<prefix>_memories` is an alias onto the live generation of the memories (`<prefix>_memories_<generation>`), `<prefix>_links` holds the links
+- **Values**: 1 to 64 letters, digits, underscores or hyphens
+- **Note**: Two deployments that share a Qdrant need different prefixes
+
+### `QDRANT_SHARD_NUMBER`, `QDRANT_REPLICATION_FACTOR`, `QDRANT_WRITE_CONSISTENCY_FACTOR`
+- **Default**: `1`, `1`, `1` (one node)
+- **Description**: The layout of a collection, fixed when the collection is created
+- **Cluster profile** (verified by the cluster tests on three nodes): `3`, `3`, `2`. Writes are acknowledged by two of the three replicas, with strong write ordering, and a read-back uses quorum consistency
+- **Notes**:
+  - The write consistency factor cannot exceed the replication factor
+  - An existing collection whose layout differs from these settings stops the server with `Qdrant collection <name> does not match the settings: ...`. The server never changes a collection silently: change the settings back, or create a new collection (a re-embed creates a new generation with the current settings)
+
+### `QDRANT_TIMEOUT_SECONDS`
+- **Default**: `30`
+- **Description**: Timeout of one request to Qdrant. Keep it above the 7 to 8 seconds a cluster can need to forward a write to the leader of a shard
+
+### `QDRANT_WRITE_ATTEMPTS`
+- **Default**: `3` (1 to 10)
+- **Description**: How many times one write is tried after an ambiguous failure (timeout, connection reset, 5xx). Every retry reuses the same claim token, so a write that did land is recognised and not applied twice
+
+### `BACKUP_DIR`
+- **Default**: empty (the `backups` directory in the platform data directory)
+- **Description**: Where `forgetful backup` and `forgetful export` write
+- **Notes**:
+  - Created as `0700` if missing; the files themselves are `0600`
+  - Must be persistent storage
+- **Example**: `BACKUP_DIR=/var/backups/axmem`
+
+### Operating a cluster
+
+- **Consistency**: every write waits for Qdrant (`wait=true`) and uses strong ordering. A write that must not overwrite another writer (an update, an obsolete mark, a restore) is conditional on the version it read, and a lost race is retried a bounded number of times and then answered with 409 (`ConflictError`). Reads that check a write use quorum consistency (two of three replicas), so they still answer while one node is down.
+- **`forgetful qdrant-check`** reads every node on its own (local reads) and lists the points on which the nodes differ. It only reports and exits with 1 on divergence. Repair is the operator's decision.
+- **Backups** are taken per node and per shard. Quiesce the writers, run `forgetful qdrant-check` until the nodes agree, then `forgetful backup` snapshots every node into one set. Restore (`forgetful restore <dir> --yes`, server stopped) on one node with the snapshot as the source of truth, wait until every replica is `Active`, look for leftover `Partial` replicas, and run `forgetful qdrant-check` before the writers start. Aliases are not stored in snapshots; `forgetful restore` points the live alias at the restored generation.
+- **Second line of defence**: `forgetful export <file>` writes every memory and link as JSON lines without vectors; `forgetful import <file>` embeds each memory again with the configured provider. Keep exports as well as snapshots.
+- **Embedding changes**: `EMBEDDING_DIMENSIONS`, the model or the provider changed means `forgetful re-embed` builds a new generation next to the live one and switches the alias when it is complete. A failed run leaves the live generation untouched. The previous generation is kept after success; delete it by hand once you no longer need it (see [Embedding Migration](embedding_migration.md)).
 
 ---
 
@@ -194,7 +180,8 @@ The tenant of a request is read from the verified token claims in this order, fi
 3. `sub`
 
 A token with none of the three is refused. A claim that is not a string or integer, or is longer than
-255 characters, is refused rather than skipped. The tenant is created in the database on its first request.
+255 characters, is refused rather than skipped. A tenant needs no record: its identity is derived from its name,
+so it exists from its first request.
 Names are compared exactly, so `Acme` and `acme` are two tenants.
 
 ---
@@ -283,9 +270,8 @@ A token the endpoint reports as inactive, or whose `exp` has passed, gets `401`.
 `FASTMCP_SERVER_AUTH`, `FASTMCP_SERVER_AUTH_GITHUB_*`, `FASTMCP_SERVER_AUTH_GOOGLE_*`, `OAUTH_STORAGE_PATH`
 and `DEFAULT_USER_ID`, `DEFAULT_USER_NAME`, `DEFAULT_USER_EMAIL` no longer exist. Replace
 `FASTMCP_SERVER_AUTH=...JWTVerifier` with `AUTH_MODE=jwt` (and `...IntrospectionTokenVerifier` with
-`AUTH_MODE=introspection`), and `DEFAULT_USER_ID` with `DEFAULT_TENANT`. Existing users in the database are
-not migrated: a tenant is matched to its stored record by name, so rename `DEFAULT_TENANT` to the old
-`DEFAULT_USER_ID` value to keep serving the memories stored under it.
+`AUTH_MODE=introspection`), and `DEFAULT_USER_ID` with `DEFAULT_TENANT`. The SQL databases are gone and nothing
+is migrated in place: carry memories over with an export of the old deployment's data and `forgetful import`.
 
 ---
 
@@ -397,7 +383,7 @@ each request 300 seconds.
 1. Per-invocation flags: `--server URL` / `--local`
 2. Shell environment: `FORGETFUL_SERVER`, `FORGETFUL_TOKEN`
 3. User config file: `~/.config/forgetful/.env` (`forgetful auth login --server URL` saves `FORGETFUL_SERVER` there)
-4. Defaults: local mode, SQLite at the platform data path, TensorRT embeddings and TensorRT reranking (both need an NVIDIA GPU)
+4. Defaults: local mode, Qdrant at `http://127.0.0.1:6333`, TensorRT embeddings and TensorRT reranking (both need an NVIDIA GPU)
 
 ### `forgetful auth`
 
@@ -600,7 +586,7 @@ ENFORCE_ENV_OVERWRITE=true
 ### `EMBEDDING_DIMENSIONS`
 - **Default**: `384`
 - **Description**: Vector dimensions for embeddings
-- **Note**: Must match the model's output dimensions. With `TensorRT` the server embeds one text at startup and refuses to start with an error that names both widths when they differ; with `gateway` every reply is checked. Changing it for an existing database needs `--re-embed`
+- **Note**: Must match the model's output dimensions. With `TensorRT` the server embeds one text at startup and refuses to start with an error that names both widths when they differ; with `gateway` every reply is checked. Changing it for existing memories needs `--re-embed`
 - **Example**: `EMBEDDING_DIMENSIONS=384`
 
 ### `EMBEDDING_TF32`
@@ -886,7 +872,7 @@ Settings are resolved in this order (highest priority first):
 AUTH_MODE=none
 SERVER_HOST=127.0.0.1
 SERVER_PORT=8020
-POSTGRES_HOST=127.0.0.1
+QDRANT_URL=http://127.0.0.1:6333
 LOG_LEVEL=DEBUG
 LOG_FORMAT=console
 ```
@@ -900,9 +886,11 @@ FASTMCP_SERVER_AUTH_JWT_ISSUER=https://auth.example.com
 FASTMCP_SERVER_AUTH_JWT_AUDIENCE=forgetful
 SERVER_PORT=8020
 SERVER_HOST=127.0.0.1
-POSTGRES_HOST=db.internal.example.com
-POSTGRES_USER=secure_user
-POSTGRES_PASSWORD=<strong-password>
+QDRANT_URL=http://q1.internal:6333,http://q2.internal:6333,http://q3.internal:6333
+QDRANT_API_KEY=<strong-random-value>
+QDRANT_SHARD_NUMBER=3
+QDRANT_REPLICATION_FACTOR=3
+QDRANT_WRITE_CONSISTENCY_FACTOR=2
 LOG_LEVEL=WARNING
 LOG_FORMAT=json
 ```
@@ -919,11 +907,11 @@ DENSE_SEARCH_CANDIDATES=100
 
 ## Security Best Practices
 
-1. **Always change database credentials in production**
+1. **Always set a Qdrant API key in production**
    ```bash
-   POSTGRES_USER=my_secure_user
-   POSTGRES_PASSWORD=<use-a-strong-password>
+   QDRANT_API_KEY=<use-a-long-random-value>
    ```
+   The key is instance wide; do not share one Qdrant between trust domains.
 
 2. **Use localhost binding for security**
    ```bash
@@ -945,12 +933,14 @@ DENSE_SEARCH_CANDIDATES=100
 
 ## Troubleshooting
 
-### Database Connection Issues
-- Verify `POSTGRES_HOST` and `PGPORT` match your PostgreSQL server (`127.0.0.1` and `5099` by default)
-- Check the port with: `netstat -an | grep 5099`
+### Qdrant Connection Issues
+- The server refuses to start with `Qdrant at <url> cannot be reached or did not report its version` when a node does not answer or the API key is wrong: check `QDRANT_URL` and `QDRANT_API_KEY`
+- `Qdrant <version> at <url> is too old: version 1.19.0 or later is required`: upgrade the node
+- `Qdrant collection <name> does not match the settings`: the shard, replica or vector layout of the existing collection differs from `QDRANT_*` or `EMBEDDING_DIMENSIONS`; see above
+- A `409` on an update means another writer changed the memory in the same moment; read it again and repeat the change
 
 ### Port Conflicts
-- Change `SERVER_PORT` and `PGPORT` if defaults conflict
+- Change `SERVER_PORT` if the default conflicts
 - Update MCP client configuration
 
 ### Embedder or Reranker Does Not Start
@@ -965,7 +955,6 @@ DENSE_SEARCH_CANDIDATES=100
 ### Debug Mode
 ```bash
 LOG_LEVEL=DEBUG
-DB_LOGGING=true
 ```
 � **Warning**: Very verbose output, use only for troubleshooting
 

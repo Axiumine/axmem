@@ -33,19 +33,32 @@ rules:
       - pattern: asyncio.get_event_loop()
       - pattern: asyncio.get_event_loop_policy()
 
-  - id: forgetful-sql-text-built-from-string
+  - id: forgetful-qdrant-write-outside-store
     languages: [python]
     severity: ERROR
     message: >-
-      SQL assembled with f-strings, %, .format() or concatenation passed to text()/execute().
-      Use bound parameters (:name) and only interpolate vetted internal identifiers.
+      Qdrant point writes go through QdrantStore (app/repositories/qdrant/store.py), the one place that
+      sets wait=True, strong write ordering and the conditional-write guards. Do not call the client's
+      write methods anywhere else.
     pattern-either:
-      - pattern: text(f"...")
-      - pattern: text("..." % ...)
-      - pattern: text("...".format(...))
-      - pattern: text("..." + ...)
-      - pattern: $CONN.execute(f"...")
-      - pattern: $CONN.exec_driver_sql(f"...")
+      - pattern: $C.upsert(...)
+      - pattern: $C.set_payload(...)
+      - pattern: $C.overwrite_payload(...)
+      - pattern: $C.delete_payload(...)
+      - pattern: $C.clear_payload(...)
+      - pattern: $C.update_vectors(...)
+      - pattern: $C.delete_vectors(...)
+      - pattern: $C.batch_update_points(...)
+    paths:
+      include: ["app/"]
+      exclude: ["app/repositories/qdrant/store.py"]
+
+  - id: forgetful-qdrant-write-without-wait
+    languages: [python]
+    severity: ERROR
+    message: A Qdrant write that does not wait for the result can be acknowledged before it is applied.
+    pattern-either:
+      - pattern: $F(..., wait=False, ...)
     paths:
       include: ["app/"]
 

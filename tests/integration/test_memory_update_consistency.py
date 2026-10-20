@@ -1,7 +1,7 @@
 """Integration tests for MemoryUpdate semantics ("Unchanged if null")
 
 Covers the request model and MemoryService.update_memory with stubbed I/O. The
-database level behaviour lives in tests/e2e_sqlite/test_memory_update_consistency_sqlite.py.
+storage level behaviour lives in tests/e2e/test_memory_update_consistency_e2e.py.
 """
 from uuid import uuid4
 

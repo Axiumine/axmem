@@ -25,8 +25,8 @@ Ask the user which setup they prefer:
 **Question**: "How would you like to configure Forgetful?"
 
 **Options**:
-1. **Standard (Recommended)** - Zero config, uses uvx to run Forgetful with SQLite storage. Perfect for most users.
-2. **Custom** - For advanced setups: remote HTTP server, PostgreSQL, custom embeddings, authentication, etc.
+1. **Standard (Recommended)** - Uses uvx to run Forgetful against a Qdrant on `http://127.0.0.1:6333`. Perfect for most users.
+2. **Custom** - For advanced setups: remote HTTP server, another Qdrant, custom embeddings, authentication, etc.
 
 ## Step 3a: Standard Setup
 
@@ -44,7 +44,7 @@ If user chose Standard, add this to their `opencode.json`:
 }
 ```
 
-Report: "Forgetful is now configured! Your memories will persist in `~/.forgetful/` using SQLite. Restart OpenCode to activate."
+Report: "Forgetful is now configured! Your memories are stored in the Qdrant at `http://127.0.0.1:6333` (start one first if none runs). Restart OpenCode to activate."
 
 ## Step 3b: Custom Setup
 
@@ -57,7 +57,7 @@ WebFetch: https://github.com/ScottRBK/forgetful/blob/main/docs/configuration.md
 
 2. Ask what they need:
    - **Remote HTTP server** - Connect to Forgetful running elsewhere
-   - **PostgreSQL backend** - Use Postgres instead of SQLite
+   - **Qdrant address** - Use a Qdrant on another host (`QDRANT_URL`, `QDRANT_API_KEY`)
    - **Custom embeddings** - Use different embedding model/provider
    - **Authentication** - API key or OAuth setup
 
@@ -77,7 +77,7 @@ WebFetch: https://github.com/ScottRBK/forgetful/blob/main/docs/configuration.md
 }
 ```
 
-**For PostgreSQL with custom embeddings:**
+**For another Qdrant with custom embeddings:**
 ```jsonc
 {
   "mcp": {
@@ -86,12 +86,8 @@ WebFetch: https://github.com/ScottRBK/forgetful/blob/main/docs/configuration.md
       "command": ["uvx", "forgetful-ai"],
       "enabled": true,
       "environment": {
-        "DATABASE": "Postgres",
-        "POSTGRES_HOST": "localhost",
-        "PGPORT": "5432",
-        "POSTGRES_DB": "forgetful",
-        "POSTGRES_USER": "user",
-        "POSTGRES_PASSWORD": "pass",
+        "QDRANT_URL": "http://qdrant.internal:6333",
+        "QDRANT_API_KEY": "your-qdrant-api-key",
         "EMBEDDING_PROVIDER": "Google",
         "EMBEDDING_MODEL": "models/text-embedding-004"
       }
@@ -111,5 +107,5 @@ If setup fails:
 
 ## Notes
 
-- SQLite database location: `~/.forgetful/forgetful.db`
+- Memories live in Qdrant, in the collections `axmem_memories` and `axmem_links` (`QDRANT_COLLECTION_PREFIX`)
 - For full configuration reference: https://github.com/ScottRBK/forgetful/blob/main/docs/configuration.md

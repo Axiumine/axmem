@@ -1,18 +1,20 @@
-"""End-to-end tests for authentication flow with PostgreSQL
+"""End-to-end tests for the tenant of a tool call, on a real Qdrant node
 
-Tests complete auth flow: FastMCP -> Auth Middleware -> Tenant Provisioning -> PostgreSQL
+Tests the complete flow: FastMCP -> auth middleware -> tenant -> Qdrant. A tenant has no record: it is
+the name taken from the credential, and the memories it stores carry the tenant id derived from that name.
 
-Integration tests (test_auth.py) mock dependencies for fast unit testing.
-These E2E tests validate the full stack with in-process FastMCP and real PostgreSQL.
+Integration tests (test_auth.py) cover the claim rules with the context stubbed. These tests check what
+ends up stored.
 """
 from unittest.mock import MagicMock, patch
 
 import pytest
-from sqlalchemy import text
+from fastmcp.exceptions import ToolError
+from qdrant_client import models as qm
 
 from app.config.settings import settings
-
-pytestmark = pytest.mark.asyncio(loop_scope="session")
+from app.models.tenant_models import Tenant
+from tests.e2e.memory_tools_helpers_e2e import create_memory
 
 
 async def _recent(client):
@@ -22,29 +24,36 @@ async def _recent(client):
     )
 
 
-async def _tenants(db_adapter):
-    """external_id of every tenant record in the database."""
-    async with db_adapter.system_session() as session:
-        rows = await session.execute(text("SELECT external_id FROM users ORDER BY external_id"))
-        return [row[0] for row in rows]
+async def _store(client):
+    return await create_memory(client, "Stored", "Content of the stored memory", "ctx", ["k"], ["t"], 5)
 
 
-@pytest.mark.e2e
-async def test_local_tenant_provisioning_e2e(mcp_client, db_adapter, monkeypatch):
-    """With AUTH_MODE=none every call is the one DEFAULT_TENANT tenant, created on first use.
+async def _stored_for(raw_qdrant, *names: str) -> dict[str, int]:
+    """How many memories each named tenant has stored (tenant ids are unique to this test)."""
+    counts = {}
+    for name in names:
+        condition = qm.FieldCondition(key="tenant_id", match=qm.MatchValue(value=str(Tenant(name).id)))
+        counts[name] = (
+            await raw_qdrant.count(f"{settings.QDRANT_COLLECTION_PREFIX}_memories", count_filter=qm.Filter(must=[condition]))
+        ).count
+    return counts
+
+
+@pytest.mark.asyncio
+async def test_local_tenant_owns_what_it_stores(qdrant_app, mcp_client, raw_qdrant, monkeypatch):
+    """With AUTH_MODE=none every call is the one DEFAULT_TENANT tenant.
 
     This validates:
     - get_tenant_from_auth() detects no auth provider
-    - the local tenant is auto-provisioned on the first tool call
-    - the same tenant is used on subsequent calls (idempotency)
+    - the same tenant is used on every call
+    - the stored memory carries the tenant id derived from DEFAULT_TENANT
     """
     monkeypatch.setattr(settings, "DEFAULT_TENANT", "workstation")
-    assert await _tenants(db_adapter) == []
 
-    await _recent(mcp_client)
+    await _store(mcp_client)
     await _recent(mcp_client)
 
-    assert await _tenants(db_adapter) == ["workstation"]
+    assert await _stored_for(raw_qdrant, "workstation", "default") == {"workstation": 1, "default": 0}
 
 
 class MockAccessToken:
@@ -53,24 +62,54 @@ class MockAccessToken:
         self.claims = claims
 
 
-@pytest.mark.e2e
+@pytest.mark.asyncio
 @patch("app.middleware.auth.get_access_token")
-async def test_auth_enabled_tenant_from_token_e2e(mock_get_token, postgres_app, mcp_client, db_adapter):
-    """The tenant is provisioned from the bearer token claims when auth is enabled
+async def test_auth_enabled_tenant_from_token(mock_get_token, qdrant_app, mcp_client, raw_qdrant):
+    """The tenant is named by the validated token claims when auth is enabled.
 
-    The tenant is named by the claims (tenant_id, else tenant, else sub), created in
-    PostgreSQL on first use, and reused by later calls with the same token.
+    This validates the complete auth flow with a real database:
+    1. get_tenant_from_auth() detects auth is configured
+    2. The tenant is named by the claims (tenant_id, else tenant, else sub)
+    3. What the call stores carries that tenant's id
+    4. Profile claims are ignored
     """
-    postgres_app.auth = MagicMock()
+    # Set auth on the app instance to simulate auth being configured
+    qdrant_app.auth = MagicMock()
     mock_get_token.return_value = MockAccessToken(claims={
         "tenant_id": "globex",
         "tenant": "ignored",
-        "sub": "azure|postgres-e2e-test",
+        "sub": "github|e2e-test",
         "name": "Ignored Profile Name",
-        "email": "ignored@postgres.test",
+        "email": "ignored@example.test",
     })
 
-    await _recent(mcp_client)
-    await _recent(mcp_client)
+    await _store(mcp_client)
 
-    assert await _tenants(db_adapter) == ["globex"]
+    assert await _stored_for(raw_qdrant, "globex", "ignored", "github|e2e-test") == {
+        "globex": 1, "ignored": 0, "github|e2e-test": 0,
+    }
+
+
+@pytest.mark.asyncio
+@patch("app.middleware.auth.get_access_token")
+async def test_tenants_do_not_see_each_others_memories(mock_get_token, qdrant_app, mcp_client):
+    qdrant_app.auth = MagicMock()
+    mock_get_token.return_value = MockAccessToken(claims={"tenant_id": "globex"})
+    await _store(mcp_client)
+    assert "Stored" in (await _recent(mcp_client)).content[0].text
+
+    mock_get_token.return_value = MockAccessToken(claims={"tenant_id": "initech"})
+
+    assert "Stored" not in (await _recent(mcp_client)).content[0].text
+
+
+@pytest.mark.asyncio
+@patch("app.middleware.auth.get_access_token")
+async def test_auth_enabled_without_a_token_is_refused(mock_get_token, qdrant_app, mcp_client, raw_qdrant):
+    qdrant_app.auth = MagicMock()
+    mock_get_token.return_value = None
+
+    with pytest.raises(ToolError, match="Authentication required but no bearer token provided"):
+        await _store(mcp_client)
+
+    assert await _stored_for(raw_qdrant, settings.DEFAULT_TENANT) == {settings.DEFAULT_TENANT: 0}

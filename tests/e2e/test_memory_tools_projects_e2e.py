@@ -1,4 +1,4 @@
-"""End-to-end tests for MCP memory tools: the project scope (PostgreSQL backend)
+"""End-to-end tests for MCP memory tools: the project scope
 
 A project is an optional free-form scope string on a memory. It is created on first use,
 can be changed or cleared by update_memory, and narrows query_memory and
@@ -17,8 +17,6 @@ from tests.e2e.memory_tools_helpers_e2e import (
     update_memory,
 )
 
-pytestmark = pytest.mark.asyncio(loop_scope="session")
-
 
 async def _scoped(client, title, project=None, **extra):
     if project is not None:
@@ -35,7 +33,7 @@ async def _scoped(client, title, project=None, **extra):
     )
 
 
-@pytest.mark.e2e
+@pytest.mark.asyncio
 async def test_memory_without_a_project_has_no_scope_e2e(mcp_client):
     created = await _scoped(mcp_client, "Unscoped memory")
 
@@ -43,7 +41,7 @@ async def test_memory_without_a_project_has_no_scope_e2e(mcp_client):
     assert (await get_memory(mcp_client, created.data["id"])).data["project"] is None
 
 
-@pytest.mark.e2e
+@pytest.mark.asyncio
 async def test_create_memory_with_a_project_e2e(mcp_client):
     created = await _scoped(mcp_client, "Scoped memory", project="atlas")
 
@@ -51,7 +49,7 @@ async def test_create_memory_with_a_project_e2e(mcp_client):
     assert (await get_memory(mcp_client, created.data["id"])).data["project"] == "atlas"
 
 
-@pytest.mark.e2e
+@pytest.mark.asyncio
 async def test_project_is_created_on_first_use_and_reused_e2e(mcp_client):
     first = await _scoped(mcp_client, "First", project="atlas")
     second = await _scoped(mcp_client, "Second", project="atlas")
@@ -61,7 +59,7 @@ async def test_project_is_created_on_first_use_and_reused_e2e(mcp_client):
     assert sorted(m["id"] for m in recent["memories"]) == sorted([first.data["id"], second.data["id"]])
 
 
-@pytest.mark.e2e
+@pytest.mark.asyncio
 async def test_update_memory_sets_changes_and_clears_the_project_e2e(mcp_client):
     created = await _scoped(mcp_client, "Movable memory")
     memory_id = created.data["id"]
@@ -78,7 +76,7 @@ async def test_update_memory_sets_changes_and_clears_the_project_e2e(mcp_client)
     assert (await get_memory(mcp_client, memory_id)).data["project"] is None
 
 
-@pytest.mark.e2e
+@pytest.mark.asyncio
 async def test_query_memory_is_narrowed_by_project_e2e(mcp_client):
     in_atlas = await _scoped(mcp_client, "Atlas deployment notes", project="atlas")
     await _scoped(mcp_client, "Borealis deployment notes", project="borealis")
@@ -94,7 +92,7 @@ async def test_query_memory_is_narrowed_by_project_e2e(mcp_client):
     assert unscoped.data["id"] not in primary_ids(strict)
 
 
-@pytest.mark.e2e
+@pytest.mark.asyncio
 async def test_get_recent_memories_is_narrowed_by_project_e2e(mcp_client):
     in_atlas = await _scoped(mcp_client, "Atlas memory", project="atlas")
     await _scoped(mcp_client, "Borealis memory", project="borealis")
@@ -105,7 +103,7 @@ async def test_get_recent_memories_is_narrowed_by_project_e2e(mcp_client):
     assert [m["id"] for m in recent["memories"]] == [in_atlas.data["id"]]
 
 
-@pytest.mark.e2e
+@pytest.mark.asyncio
 async def test_project_scope_is_matched_exactly_e2e(mcp_client):
     await _scoped(mcp_client, "Scoped memory", project="Atlas")
 
@@ -116,14 +114,14 @@ async def test_project_scope_is_matched_exactly_e2e(mcp_client):
         assert len(recent["memories"]) == expected, other
 
 
-@pytest.mark.e2e
+@pytest.mark.asyncio
 @pytest.mark.parametrize("bad_project", ["   ", "x" * 501])
 async def test_invalid_project_is_rejected_e2e(mcp_client, bad_project):
     with pytest.raises(ToolError):
         await _scoped(mcp_client, "Bad scope", project=bad_project)
 
 
-@pytest.mark.e2e
+@pytest.mark.asyncio
 async def test_project_tools_no_longer_exist_e2e(mcp_client):
     discovered = await mcp_client.call_tool("discover_forgetful_tools", {})
     names = {t["name"] for tools in discovered.data["tools_by_category"].values() for t in tools}

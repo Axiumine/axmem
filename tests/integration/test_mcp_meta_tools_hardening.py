@@ -1,9 +1,9 @@
 """Hardening of MCP tool error text and category discovery.
 
-Covers, with stubbed services and no database:
-- ``client_error_detail`` keeps authored messages and hides driver details.
-- ``execute_forgetful_tool`` never puts SQL, bound parameters or driver text from a memory
-  operation in a ToolError.
+Covers, with stubbed services and no Qdrant node:
+- ``client_error_detail`` keeps authored messages and hides client and server details.
+- ``execute_forgetful_tool`` never puts the request, the collection names or the client's text from a
+  memory operation in a ToolError.
 - ``discover_forgetful_tools`` honours the advertised ``linking`` category.
 - ``execute_forgetful_tool`` rejects argument names that cannot be keyword arguments.
 - an unknown tool or category name is quoted with ``repr`` inside the error text, so ESC, CR and
@@ -11,12 +11,12 @@ Covers, with stubbed services and no database:
 """
 
 from types import SimpleNamespace
-from uuid import uuid4
 
 import pytest
 from fastmcp import Client, FastMCP
 from fastmcp.exceptions import ToolError
-from sqlalchemy.exc import IntegrityError
+from httpx import Headers
+from qdrant_client.http.exceptions import UnexpectedResponse
 
 from app.exceptions import (
     ConflictError,
@@ -32,32 +32,32 @@ from app.routes.mcp.meta_tools import (
     reject_invalid_argument_names,
 )
 from app.routes.mcp.tool_adapters import create_memory_adapters
-from app.routes.mcp.tool_errors import (
-    CONSTRAINT_FAILURE,
-    GENERIC_FAILURE,
-    client_error_detail,
-)
+from app.routes.mcp.tool_errors import GENERIC_FAILURE, client_error_detail
 from app.routes.mcp.tool_metadata_registry import register_memory_tools_metadata
 from app.routes.mcp.tool_registry import ToolRegistry
 
 SECRET_USER_ID = "7f1c2b9e-0000-4000-8000-00000000abcd"
-SQL_TEXT = "INSERT INTO memories (user_id, title) VALUES (?, ?)"
 LEAK_MARKERS = (
-    "INSERT INTO",
-    "[SQL:",
-    "[parameters:",
-    "sqlalche.me",
-    "UNIQUE constraint failed",
-    "sqlite3.",
+    "Unexpected Response",
+    "/collections/",
+    "Bad Request",
+    "Raw response content",
+    "must_not",
     SECRET_USER_ID,
 )
+MEMORY_ID = "01a157bf-5d0f-77ae-9308-9af4ac2edb17"
 
 
-def _integrity_error() -> IntegrityError:
-    return IntegrityError(
-        SQL_TEXT,
-        (SECRET_USER_ID, 1),
-        Exception("UNIQUE constraint failed: memories.user_id, memories.title"),
+def _store_error() -> UnexpectedResponse:
+    """What the Qdrant client raises: it carries the request's path, the status and the body."""
+    return UnexpectedResponse(
+        400,
+        "Bad Request",
+        (
+            f'{{"status":{{"error":"Wrong input: PUT /collections/axmem_memories/points: '
+            f'must_not tenant_id={SECRET_USER_ID}"}}}}'
+        ).encode(),
+        Headers(),
     )
 
 
@@ -67,10 +67,10 @@ class TestClientErrorDetail:
     @pytest.mark.parametrize(
         "error",
         [
-            NotFoundError("Memory 7 not found"),
+            NotFoundError(f"Memory {MEMORY_ID} not found"),
             ConflictError("A memory with this title already exists."),
             InvalidStateTransitionError("memory is already obsolete"),
-            ValueError("memory_id must be an integer"),
+            ValueError("memory_id must be a UUID, got int"),
             TypeError("create_memory() got an unexpected keyword argument 'name'"),
             ToolError("Memory 4 not found"),
         ],
@@ -78,30 +78,25 @@ class TestClientErrorDetail:
     def test_authored_messages_are_kept(self, error):
         assert client_error_detail(error) == str(error)
 
-    def test_integrity_error_becomes_constraint_message(self):
-        error = _integrity_error()
+    def test_store_error_is_reduced_to_the_generic_message(self):
+        error = _store_error()
 
         detail = client_error_detail(error)
 
-        assert detail == CONSTRAINT_FAILURE
+        assert detail == GENERIC_FAILURE
         assert not [marker for marker in LEAK_MARKERS if marker in detail]
-        assert "INSERT INTO" in str(error), "precondition: the raw text is what leaks"
+        assert "/collections/" in str(error), "precondition: the raw text is what leaks"
 
     @pytest.mark.parametrize(
         "error",
         [
             RuntimeError(f"connection to {SECRET_USER_ID} dropped"),
-            OverflowError("Python int too large to convert to SQLite INTEGER"),
+            OverflowError("Python int too large to convert"),
             KeyError("password"),
         ],
     )
     def test_unexpected_errors_are_generic(self, error):
         assert client_error_detail(error) == GENERIC_FAILURE
-
-
-class _StubTenantService:
-    async def get_or_create_tenant(self, tenant_id):
-        return SimpleNamespace(id=uuid4(), external_id=tenant_id)
 
 
 class _FailingMemoryService:
@@ -119,13 +114,11 @@ class _FailingMemoryService:
 
 def _memory_tools_server(error: Exception) -> FastMCP:
     """The mounted surface (the three meta-tools) over memory adapters whose service fails."""
-    tenant_service = _StubTenantService()
     registry = ToolRegistry()
     register_memory_tools_metadata(
         registry, create_memory_adapters(_FailingMemoryService(error), SimpleNamespace()),
     )
     server = FastMCP("memory-tools-error-test")
-    server.tenant_service = tenant_service
     server.registry = registry
     meta_tools.register(server)
     return server
@@ -149,29 +142,29 @@ MEMORY_TOOL_CALLS = [
             "importance": 5,
         },
     ),
-    ("get_memory", {"memory_id": 1}),
+    ("get_memory", {"memory_id": MEMORY_ID}),
     ("query_memory", {"query": "atlas", "query_context": "d"}),
-    ("update_memory", {"memory_id": 1, "title": "S"}),
-    ("mark_memory_obsolete", {"memory_id": 1, "reason": "r"}),
+    ("update_memory", {"memory_id": MEMORY_ID, "title": "S"}),
+    ("mark_memory_obsolete", {"memory_id": MEMORY_ID, "reason": "r"}),
 ]
 
 
 class TestMemoryToolErrors:
-    """Memory operations return a short message for database errors and keep authored ones."""
+    """Memory operations return a short message for store errors and keep authored ones."""
 
     @pytest.mark.parametrize(
         ("tool_name", "arguments"),
         MEMORY_TOOL_CALLS,
         ids=[call[0] for call in MEMORY_TOOL_CALLS],
     )
-    async def test_database_error_text_is_not_returned(self, tool_name, arguments):
-        async with Client(_memory_tools_server(_integrity_error())) as client:
+    async def test_store_error_text_is_not_returned(self, tool_name, arguments):
+        async with Client(_memory_tools_server(_store_error())) as client:
             with pytest.raises(ToolError) as caught:
                 await _execute(client, tool_name, arguments)
 
         message = str(caught.value)
         assert f"Failed to execute {tool_name!r}" in message
-        assert CONSTRAINT_FAILURE in message
+        assert GENERIC_FAILURE in message
         assert not [marker for marker in LEAK_MARKERS if marker in message], message
 
     async def test_unexpected_error_text_is_not_returned(self):
@@ -179,24 +172,24 @@ class TestMemoryToolErrors:
 
         async with Client(server) as client:
             with pytest.raises(ToolError) as caught:
-                await _execute(client, "get_memory", {"memory_id": 1})
+                await _execute(client, "get_memory", {"memory_id": MEMORY_ID})
 
         assert SECRET_USER_ID not in str(caught.value)
         assert GENERIC_FAILURE in str(caught.value)
 
     async def test_domain_message_is_kept(self):
-        server = _memory_tools_server(NotFoundError("Memory 1 not found"))
+        server = _memory_tools_server(NotFoundError("Memory not found"))
 
         async with Client(server) as client:
-            with pytest.raises(ToolError, match="Memory 1 not found"):
-                await _execute(client, "get_memory", {"memory_id": 1})
+            with pytest.raises(ToolError, match="Memory not found"):
+                await _execute(client, "get_memory", {"memory_id": MEMORY_ID})
 
     async def test_conflict_message_is_kept(self):
         server = _memory_tools_server(ConflictError("A memory with this title already exists."))
 
         async with Client(server) as client:
             with pytest.raises(ToolError, match="A memory with this title already exists."):
-                await _execute(client, "mark_memory_obsolete", {"memory_id": 1, "reason": "r"})
+                await _execute(client, "mark_memory_obsolete", {"memory_id": MEMORY_ID, "reason": "r"})
 
 
 async def _noop(**_kwargs):

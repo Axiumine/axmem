@@ -8,14 +8,13 @@ import logging
 import uuid
 from datetime import UTC, datetime, timedelta
 from email.utils import format_datetime
-from unittest.mock import AsyncMock
 
 import httpx
 import pytest
 from pydantic import SecretStr, ValidationError
 
 from app.config.settings import Settings, settings
-from app.models.memory_models import Memory
+from app.models.memory_models import MemoryCreate
 from app.protocols.embedding_protocol import EMBEDDING_BATCH_LIMIT
 from app.repositories.embeddings.gateway_adapter import (
     GatewayEmbeddingError,
@@ -654,35 +653,27 @@ def test_the_bootstrap_builds_the_gateway_adapter(monkeypatch):
 # --------------------------------------------------------------------------
 # The re-embedding service sends one request per batch
 # --------------------------------------------------------------------------
-async def test_a_full_re_embed_sends_each_batch_of_memories_in_one_request():
-    now = datetime.now(UTC)
-    memories = [
-        Memory(
-            id=index, title=f"Memory {index}", content="content", context="ctx", keywords=["k"], tags=["t"],
-            importance=7, created_at=now, updated_at=now,
-        )
-        for index in range(1, 26)
-    ]
-    repo = AsyncMock()
-    repo.count_all_memories.return_value = len(memories)
-
-    async def page(limit, offset):
-        return memories[offset:offset + limit]
-
-    repo.get_memories_for_reembedding.side_effect = page
-    repo.validate_embedding_count.return_value = True
-    repo.validate_embedding_dimensions.return_value = True
-    repo.validate_search_works.return_value = True
+async def test_a_full_re_embed_sends_each_batch_of_memories_in_one_request(isolated_stack, monkeypatch):
+    monkeypatch.setattr(settings, "MEMORY_NUM_AUTO_LINK", 0)
     gateway = FakeGateway()
     adapter, _ = build(gateway)
+    repo = isolated_stack.memory_repository(adapter)
+    user_id = uuid.uuid4()
+    for index in range(25):
+        await repo.create_memory(
+            user_id,
+            MemoryCreate(
+                title=f"Memory {index}", content="content", context="ctx", keywords=["k"], tags=["t"], importance=7,
+            ),
+        )
+    created_requests = len(gateway.bodies)
 
     result = await ReEmbeddingService(repo, adapter, batch_size=10).re_embed_all()
 
     assert result.total_processed == 25
-    assert [len(body["input"]) for body in gateway.bodies] == [10, 10, 5]
-    updates = [update for call in repo.bulk_update_embeddings.await_args_list for update in call.args[0]]
-    assert [memory_id for memory_id, _ in updates] == list(range(1, 26))
-    assert all(len(vector) == WIDTH for _, vector in updates)
+    assert result.validation.all_passed
+    assert [len(body["input"]) for body in gateway.bodies[created_requests:created_requests + 3]] == [10, 10, 5]
+    assert await repo.count_all_memories() == 25
 
 
 @pytest.mark.parametrize(("provider", "shown"), [

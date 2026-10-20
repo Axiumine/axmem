@@ -1,6 +1,6 @@
 """``main.py`` wiring: what the lifespan attaches and how CORS is served.
 
-The lifespan runs in this process against in-memory SQLite (the attached attributes of the
+The lifespan runs in this process against a real Qdrant node (the attached attributes of the
 process-wide server are restored afterwards). The HTTP serve function is observed through the
 ASGI app it hands to uvicorn.
 """
@@ -34,7 +34,7 @@ def pristine_server():
 
 
 async def test_lifespan_leaves_the_token_cache_unset_when_it_is_disabled(
-    sqlite_runtime_settings, quiet_logging, pristine_server, monkeypatch,
+    runtime_settings, quiet_logging, pristine_server, monkeypatch,
 ):
     monkeypatch.setattr(settings, "TOKEN_CACHE_ENABLED", False)
 
@@ -43,7 +43,7 @@ async def test_lifespan_leaves_the_token_cache_unset_when_it_is_disabled(
 
 
 async def test_lifespan_creates_a_token_cache_when_it_is_enabled(
-    sqlite_runtime_settings, quiet_logging, pristine_server, monkeypatch,
+    runtime_settings, quiet_logging, pristine_server, monkeypatch,
 ):
     monkeypatch.setattr(settings, "TOKEN_CACHE_ENABLED", True)
 

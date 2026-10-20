@@ -54,6 +54,8 @@ Before creating, verify the memory passes the atomicity test:
 - **6-7**: Project milestones, specific solutions
 - **5-6**: Minor context (use sparingly)
 
+Memory ids are UUIDs. Show the first 8 characters to the user and pass the full id to the tools.
+
 ## Process
 
 1. **Query** existing memories on the topic
@@ -62,7 +64,7 @@ Before creating, verify the memory passes the atomicity test:
 4. **Present** the draft with curation plan:
    ```
    Existing memories found:
-   - Memory #42: "Previous auth decision" - will be marked obsolete (superseded)
+   - Memory 9b8a7c6d: "Previous auth decision" - will be marked obsolete (superseded)
 
    Ready to save this memory:
 
@@ -75,8 +77,8 @@ Before creating, verify the memory passes the atomicity test:
    Project: [if applicable]
 
    Curation actions:
-   - Mark #42 obsolete (superseded by new memory)
-   - Link to #38 (related pattern)
+   - Mark 9b8a7c6d obsolete (superseded by new memory)
+   - Link to d4c3b2a1 (related pattern)
 
    Confirm? (y/n/edit)
    ```
@@ -96,8 +98,8 @@ User: `/memory-save`
 You query existing memories, find related content, and propose:
 ```
 Found 2 related memories:
-- #89: "Plugin strategy: single plugin" (Importance: 7) - OUTDATED by this decision
-- #45: "MCP scope hierarchy" (Importance: 8) - Related context
+- e8f7a6b5: "Plugin strategy: single plugin" (Importance: 7) - OUTDATED by this decision
+- 3f2b8c1e: "MCP scope hierarchy" (Importance: 8) - Related context
 
 Ready to save this memory:
 
@@ -112,8 +114,8 @@ Importance: 8 (major architectural decision)
 Project: <scope label, for example the repository name; optional>
 
 Curation actions:
-- Mark #89 obsolete (superseded by new memory)
-- Link to #45 (MCP scope hierarchy context)
+- Mark e8f7a6b5 obsolete (superseded by new memory)
+- Link to 3f2b8c1e (MCP scope hierarchy context)
 
 Confirm? (y/n/edit)
 ```

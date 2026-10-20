@@ -1,21 +1,27 @@
-"""Re-embedding service for batch migration of memory embeddings.
+"""Re-embedding service: new embeddings for every memory, or for a tenant's subset.
 
-Orchestrates the workflow of re-embedding all memories with the currently
-configured embedding provider. Knows nothing about SQLite/PostgreSQL specifics.
+Orchestrates the workflow of embedding all memories again with the currently configured
+provider, and the tenant-scoped rebuild. Knows nothing about Qdrant specifics.
 """
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime
 from uuid import UUID
 
 from app.config.settings import settings
-from app.models.memory_models import Memory, clean_scope
+from app.models.memory_models import clean_scope
 from app.protocols.embedding_protocol import EmbeddingsAdapter
-from app.protocols.memory_protocol import MemoryRepository, ValidationResult
+from app.protocols.memory_protocol import (
+    MemoryRepository,
+    StoredMemory,
+    ValidationResult,
+)
 from app.utils.embedding_helpers import build_embedding_text
 
 logger = logging.getLogger(__name__)
+
+# Scans of the old generation made to pick up edits that landed while the copy ran, before giving up
+MAX_CATCH_UP_PASSES = 5
 
 
 @dataclass
@@ -24,11 +30,15 @@ class ReEmbedResult:
     total_processed: int
     total_memories: int
     validation: ValidationResult | None = None
+    # The generation that serves now (None when validation failed and nothing was switched)
+    generation: str | None = None
+    # The generation that served before; it keeps the old vectors until it is deleted
+    previous_generation: str | None = None
 
 
 @dataclass
 class TargetedRebuildResult:
-    """Outcome of a user-scoped, targeted `rebuild_embeddings` call.
+    """Outcome of a tenant-scoped, targeted `rebuild_embeddings` call.
 
     Distinguishes successful rebuilds from skipped (not owned / no-op) and
     failed (embedding generation or write error) memories so callers can
@@ -38,8 +48,8 @@ class TargetedRebuildResult:
     `persistence_failed`, `auto_link_failed`, `not_found_or_not_owned`); exception
     details go to the server log only, never to the caller.
     """
-    rebuilt_ids: list[int] = field(default_factory=list)
-    skipped_ids: list[int] = field(default_factory=list)
+    rebuilt_ids: list[UUID] = field(default_factory=list)
+    skipped_ids: list[UUID] = field(default_factory=list)
     failed: list[dict] = field(default_factory=list)
 
 
@@ -58,82 +68,88 @@ class ReEmbeddingService:
         self.embedding_adapter = embedding_adapter
         self.batch_size = batch_size
 
-    async def reset_vector_storage(self) -> None:
-        """Resize the vector storage of memories to the configured dimensions."""
-        await self.memory_repository.reset_embedding_storage()
-
     async def re_embed_all(
         self,
         progress_callback: Callable[[int, int], None] | None = None,
-        reset_storage: bool = True,
     ) -> ReEmbedResult:
-        """Orchestrate: count -> reset schema -> batch re-embed -> validate
+        """Copy every memory, embedded again, into a new generation and make that generation live.
+
+        The live generation keeps serving, and nothing in it is changed, until the new one is complete
+        and valid: a failure or an interruption discards the new generation and leaves the old one as
+        it was. Edits made while the copy runs are picked up by further scans of the old generation, and
+        once more after the switch, for writes that were still in flight when it happened. Every write
+        into the new generation is conditional on the version, so none can overwrite a newer edit.
 
         Args:
-            progress_callback: Optional callback(processed, total) called after each memory batch
-            reset_storage: False when the caller already reset the vector storage itself
+            progress_callback: Optional callback(processed, total) called after each batch
 
         Returns:
-            ReEmbedResult with counts and validation status
+            ReEmbedResult with counts, the validation outcome and the names of the generations
         """
         total = await self.memory_repository.count_all_memories()
-        logger.info("Starting re-embedding", extra={"total_memories": total})
+        source = await self.memory_repository.live_generation()
+        target = await self.memory_repository.create_generation()
+        logger.info("Starting re-embedding", extra={"total_memories": total, "source": source, "target": target})
 
-        # Reset vector storage for new dimensions. This also applies when there is nothing to
-        # re-embed: existing storage is never resized at startup, so skipping the reset would
-        # keep the old dimensions and fail the next insert.
-        if reset_storage:
-            await self.reset_vector_storage()
-
-        processed = 0
-        for offset in range(0, total, self.batch_size):
-            memories = await self.memory_repository.get_memories_for_reembedding(
-                limit=self.batch_size, offset=offset,
-            )
-
-            if not memories:
-                break
-
-            # Generate embeddings for this batch: one provider call for all of its memories
-            embeddings = await self.embedding_adapter.generate_embeddings(
-                [build_embedding_text(memory) for memory in memories],
-            )
-            updates = [
-                (memory.id, embedding)
-                for memory, embedding in zip(memories, embeddings, strict=True)
-            ]
-
-            # Write batch
-            await self.memory_repository.bulk_update_embeddings(updates)
-
-            processed += len(memories)
-            if progress_callback:
-                progress_callback(processed, total)
-
-            logger.info("Batch complete", extra={
-                "processed": processed,
-                "total": total,
-                "batch_size": len(memories),
+        try:
+            processed = await self._copy_all(source, target, progress_callback, total)
+            for _ in range(MAX_CATCH_UP_PASSES):
+                if await self._copy_all(source, target) == 0:
+                    break
+            validation = await self.memory_repository.validate_generation(target)
+        except BaseException:
+            await self.memory_repository.discard_generation(target)
+            raise
+        if not validation.all_passed:
+            logger.error("Validation failed", extra={
+                "count_ok": validation.count_ok,
+                "dimensions_ok": validation.dimensions_ok,
+                "search_ok": validation.search_ok,
             })
+            await self.memory_repository.discard_generation(target)
+            return ReEmbedResult(total_processed=processed, total_memories=total, validation=validation)
 
-        # Validate
-        validation = await self.validate()
-
-        # Reset relaxed the storage so vectors could be rebuilt; only a complete, valid
-        # rebuild can put the constraints back (Postgres rejects NOT NULL while a row is NULL).
-        if validation.all_passed:
-            await self.memory_repository.finalize_embedding_storage()
-
+        await self.memory_repository.activate_generation(target)
+        for _ in range(MAX_CATCH_UP_PASSES):
+            if await self._copy_all(source, target) == 0:
+                break
+        logger.info("Validation passed and generation activated", extra={"generation": target})
         return ReEmbedResult(
             total_processed=processed,
             total_memories=total,
             validation=validation,
+            generation=target,
+            previous_generation=source,
         )
+
+    async def _copy_all(
+        self,
+        source: str,
+        target: str,
+        progress_callback: Callable[[int, int], None] | None = None,
+        total: int = 0,
+    ) -> int:
+        """Scan the whole of ``source`` and copy what ``target`` lacks or holds an older version of; return how many."""
+        copied = 0
+        start: UUID | None = None
+        while True:
+            outdated, start = await self.memory_repository.outdated_in(source, target, self.batch_size, start)
+            if outdated:
+                embeddings = await self.embedding_adapter.generate_embeddings(
+                    [build_embedding_text(stored.memory) for stored in outdated],
+                )
+                copied += await self.memory_repository.copy_into(
+                    target, list(zip(outdated, embeddings, strict=True)),
+                )
+                if progress_callback:
+                    progress_callback(copied, total)
+            if start is None:
+                return copied
 
     async def validate_targeted_scope(
         self,
         user_id: UUID,
-        memory_ids: list[int] | None,
+        memory_ids: list[UUID] | None,
         project: str | None,
     ) -> None:
         """Validate rebuild scope before running embedding work."""
@@ -178,22 +194,22 @@ class ReEmbeddingService:
     async def rebuild_targeted(
         self,
         user_id: UUID,
-        memory_ids: list[int] | None = None,
+        memory_ids: list[UUID] | None = None,
         project: str | None = None,
         progress_callback: Callable[[int, int], None] | None = None,
     ) -> TargetedRebuildResult:
-        """User-scoped, *non-destructive* embedding rebuild for a memory subset.
+        """Tenant-scoped, *non-destructive* embedding rebuild for a memory subset.
 
         Unlike `re_embed_all`, this method:
-        - never calls `reset_embedding_storage()`,
+        - never creates or switches a generation,
         - operates only on memories owned by `user_id`,
         - reuses the existing embedding pipeline (`build_embedding_text` +
           `EmbeddingsAdapter.generate_embeddings`) so embeddings stay
           dimensionally consistent with the rest of the corpus.
 
         Args:
-            user_id: Authenticated user id; ownership filter, never optional.
-            memory_ids: Restrict to explicit memory ids (already user-scoped).
+            user_id: Authenticated tenant; ownership filter, never optional.
+            memory_ids: Restrict to explicit memory ids (already tenant-scoped).
             project: Restrict to one project scope of `user_id`.
             progress_callback: Optional `(processed, total)` callback per batch.
 
@@ -217,31 +233,31 @@ class ReEmbeddingService:
                 "rebuild_embeddings: no candidates",
                 extra={
                     "user_id": str(user_id),
-                    "memory_ids": memory_ids,
+                    "memory_ids": [str(memory_id) for memory_id in memory_ids or []],
                     "project": project,
                 },
             )
             return result
 
         processed = 0
-        last_seen_id: int | None = None
+        last_seen_id: UUID | None = None
         while True:
-            memories = await self.memory_repository.get_memories_for_targeted_rebuild(
+            batch = await self.memory_repository.get_memories_for_targeted_rebuild(
                 user_id=user_id,
                 limit=self.batch_size,
                 after_id=last_seen_id,
                 memory_ids=memory_ids,
                 project=project,
             )
-            if not memories:
+            if not batch:
                 break
 
-            await self._rebuild_batch(user_id=user_id, memories=memories, result=result)
+            await self._rebuild_batch(user_id=user_id, batch=batch, result=result)
 
-            processed += len(memories)
+            processed += len(batch)
             if progress_callback:
                 progress_callback(processed, total)
-            last_seen_id = memories[-1].id
+            last_seen_id = batch[-1].memory.id
 
         self._record_unresolved_memory_ids(
             memory_ids=memory_ids,
@@ -263,149 +279,70 @@ class ReEmbeddingService:
     async def _rebuild_batch(
         self,
         user_id: UUID,
-        memories: list[Memory],
+        batch: list[StoredMemory],
         result: TargetedRebuildResult,
     ) -> None:
         """Embed one batch, persist it and refresh auto-links, recording outcomes in `result`."""
-        updates, expected_updated_at = await self._embed_batch(
-            user_id=user_id,
-            memories=memories,
-            result=result,
-        )
-        if not updates:
+        embedded = await self._embed_batch(user_id=user_id, batch=batch, result=result)
+        if not embedded:
             return
 
-        written_ids, failed_ids = await self._persist_batch(
+        writes = await self.memory_repository.upsert_targeted_embeddings(
             user_id=user_id,
-            updates=updates,
-            expected_updated_at=expected_updated_at,
-            result=result,
+            updates=[(stored.memory.id, embedding) for stored, embedding in embedded],
+            expected_versions={stored.memory.id: stored.version for stored, _ in embedded},
         )
-        written_set = set(written_ids)
-        result.rebuilt_ids.extend(written_ids)
-        for memory_id, _ in updates:
-            if memory_id not in written_set and memory_id not in failed_ids:
+        failed = set(writes.failed)
+        result.rebuilt_ids.extend(writes.written)
+        for stored, _ in embedded:
+            memory_id = stored.memory.id
+            if memory_id in failed:
+                result.failed.append({"memory_id": memory_id, "reason": "persistence_failed"})
+            elif memory_id not in writes.written:
                 result.skipped_ids.append(memory_id)
-        await self._recompute_auto_links(user_id=user_id, memory_ids=written_ids, result=result)
+        await self._recompute_auto_links(user_id=user_id, memory_ids=writes.written, result=result)
 
     async def _embed_batch(
         self,
         user_id: UUID,
-        memories: list[Memory],
+        batch: list[StoredMemory],
         result: TargetedRebuildResult,
-    ) -> tuple[list[tuple[int, list[float]]], dict[int, datetime]]:
+    ) -> list[tuple[StoredMemory, list[float]]]:
         """Generate embeddings for one batch; a memory that fails is recorded in `result.failed`.
 
         The batch goes to the provider in one call. When that call fails, each memory is
         retried on its own, so one memory the provider rejects does not fail the others.
-
-        Returns:
-            (updates to persist, `updated_at` each memory had when it was read)
         """
         try:
             embeddings = await self.embedding_adapter.generate_embeddings(
-                [build_embedding_text(memory) for memory in memories],
+                [build_embedding_text(stored.memory) for stored in batch],
             )
-            embedded = list(zip(memories, embeddings, strict=True))
+            return list(zip(batch, embeddings, strict=True))
         except Exception:  # noqa: BLE001 - intentional broad capture
             logger.exception("rebuild_embeddings: batch embedding failed, retrying one memory at a time", extra={
                 "user_id": str(user_id),
-                "batch_size": len(memories),
+                "batch_size": len(batch),
             })
-            embedded = await self._embed_one_by_one(user_id=user_id, memories=memories, result=result)
-        updates = [(memory.id, embedding) for memory, embedding in embedded]
-        expected_updated_at = {memory.id: memory.updated_at for memory, _ in embedded}
-        return updates, expected_updated_at
-
-    async def _embed_one_by_one(
-        self,
-        user_id: UUID,
-        memories: list[Memory],
-        result: TargetedRebuildResult,
-    ) -> list[tuple[Memory, list[float]]]:
-        """Embed each memory on its own; a memory that fails is recorded in `result.failed`."""
-        embedded: list[tuple[Memory, list[float]]] = []
-        for memory in memories:
+        embedded: list[tuple[StoredMemory, list[float]]] = []
+        for stored in batch:
             try:
-                embedding = await self.embedding_adapter.generate_embedding(build_embedding_text(memory))
-                embedded.append((memory, embedding))
+                embedding = await self.embedding_adapter.generate_embedding(build_embedding_text(stored.memory))
+                embedded.append((stored, embedding))
             except Exception:  # noqa: BLE001 - intentional broad capture
                 logger.exception("rebuild_embeddings: embedding failed", extra={
-                    "memory_id": memory.id,
+                    "memory_id": str(stored.memory.id),
                     "user_id": str(user_id),
                 })
-                result.failed.append({"memory_id": memory.id, "reason": "embedding_failed"})
+                result.failed.append({"memory_id": stored.memory.id, "reason": "embedding_failed"})
         return embedded
-
-    async def _persist_batch(
-        self,
-        user_id: UUID,
-        updates: list[tuple[int, list[float]]],
-        expected_updated_at: dict[int, datetime],
-        result: TargetedRebuildResult,
-    ) -> tuple[list[int], set[int]]:
-        """Write one batch; after a batch failure retry row by row.
-
-        The repository writes a batch in a single transaction, so one bad row fails
-        them all. Retrying each row on its own attributes the failure to the memory
-        that caused it. A memory edited since it was read is not written (the
-        repository omits it), which the caller reports as skipped.
-
-        The retry also runs when the failure is not row specific (a locked or
-        unreachable database). That is bounded by one extra attempt per row of the
-        batch (at most `batch_size`, each waiting out the driver's busy timeout), so
-        a persistent outage ends in `persistence_failed` for the batch rather than
-        in an unbounded loop.
-
-        Returns:
-            (ids written, ids recorded as `persistence_failed` in `result.failed`)
-        """
-        try:
-            written = await self.memory_repository.upsert_targeted_embeddings(
-                user_id=user_id,
-                updates=updates,
-                expected_updated_at=expected_updated_at,
-            )
-            return list(written), set()
-        except Exception:  # noqa: BLE001
-            logger.exception("rebuild_embeddings: persistence failed", extra={
-                "user_id": str(user_id),
-                "batch_size": len(updates),
-            })
-
-        if len(updates) == 1:
-            memory_id = updates[0][0]
-            result.failed.append({"memory_id": memory_id, "reason": "persistence_failed"})
-            return [], {memory_id}
-
-        written_ids: list[int] = []
-        failed_ids: set[int] = set()
-        for update in updates:
-            memory_id = update[0]
-            try:
-                written_ids.extend(
-                    await self.memory_repository.upsert_targeted_embeddings(
-                        user_id=user_id,
-                        updates=[update],
-                        expected_updated_at={memory_id: expected_updated_at[memory_id]},
-                    ),
-                )
-            except Exception:  # noqa: BLE001
-                logger.exception("rebuild_embeddings: persistence failed", extra={
-                    "memory_id": memory_id,
-                    "user_id": str(user_id),
-                })
-                failed_ids.add(memory_id)
-                result.failed.append({"memory_id": memory_id, "reason": "persistence_failed"})
-        return written_ids, failed_ids
 
     def _record_unresolved_memory_ids(
         self,
-        memory_ids: list[int] | None,
+        memory_ids: list[UUID] | None,
         project: str | None,
         result: TargetedRebuildResult,
     ) -> None:
-        """Surface explicit IDs hidden by user/obsolete filters as failures."""
+        """Surface explicit IDs hidden by tenant/obsolete filters as failures."""
         if memory_ids is None or project is not None:
             return
 
@@ -425,7 +362,7 @@ class ReEmbeddingService:
     async def _recompute_auto_links(
         self,
         user_id: UUID,
-        memory_ids: list[int],
+        memory_ids: list[UUID],
         result: TargetedRebuildResult,
     ) -> None:
         """Refresh additive auto-links after new vectors have been written."""
@@ -448,7 +385,7 @@ class ReEmbeddingService:
                 )
             except Exception:  # noqa: BLE001 - link failures are per-memory partial failures
                 logger.exception("rebuild_embeddings: auto-link failed", extra={
-                    "memory_id": memory_id,
+                    "memory_id": str(memory_id),
                     "user_id": str(user_id),
                 })
                 result.failed.append({
@@ -456,30 +393,3 @@ class ReEmbeddingService:
                     "phase": "auto_link",
                     "reason": "auto_link_failed",
                 })
-
-    async def validate(self) -> ValidationResult:
-        """Post-migration validation checks delegated to repository"""
-        count_ok = await self.memory_repository.validate_embedding_count()
-        dims_ok = await self.memory_repository.validate_embedding_dimensions()
-        search_ok = await self.memory_repository.validate_search_works()
-
-        result = ValidationResult(
-            count_ok=count_ok,
-            dimensions_ok=dims_ok,
-            search_ok=search_ok,
-        )
-
-        if result.all_passed:
-            logger.info("Validation passed", extra={
-                "count_ok": count_ok,
-                "dimensions_ok": dims_ok,
-                "search_ok": search_ok,
-            })
-        else:
-            logger.error("Validation failed", extra={
-                "count_ok": count_ok,
-                "dimensions_ok": dims_ok,
-                "search_ok": search_ok,
-            })
-
-        return result

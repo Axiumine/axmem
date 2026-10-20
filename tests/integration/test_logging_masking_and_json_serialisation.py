@@ -7,6 +7,7 @@ value types services put into ``extra={...}`` (UUID, datetime, date) and refuse 
 
 import json
 import logging
+import sys
 from datetime import UTC, date, datetime
 from types import MappingProxyType
 from uuid import UUID
@@ -80,3 +81,45 @@ def test_json_formatter_rejects_extra_values_it_cannot_serialise():
 
     with pytest.raises(TypeError, match="Object of type object is not JSON serialisable"):
         JSONFormatter().format(record)
+
+
+def _record_with_exception(message: str = "failed") -> logging.LogRecord:
+    try:
+        raise ValueError("boom")
+    except ValueError:
+        return logging.LogRecord(
+            "forgetful.test", logging.ERROR, __file__, 1, message, None, sys.exc_info(),
+        )
+
+
+def test_json_formatter_adds_the_traceback_of_a_logged_exception():
+    payload = json.loads(JSONFormatter().format(_record_with_exception()))
+
+    assert payload["message"] == "failed"
+    assert payload["exception"].startswith("Traceback")
+    assert payload["exception"].rstrip().endswith("ValueError: boom")
+
+
+def test_queue_handler_keeps_the_exception_and_adds_the_request_context_of_the_emitting_thread():
+    from queue import Queue
+
+    from app.config.logging_config import RecordPreservingQueueHandler
+    from app.middleware.logging_middleware import request_id_var, user_id_var
+
+    handler = RecordPreservingQueueHandler(Queue())
+    record = _record_with_exception("value %s")
+    record.args = ("one",)
+    request_token = request_id_var.set("req-1")
+    user_token = user_id_var.set("user-1")
+    try:
+        prepared = handler.prepare(record)
+    finally:
+        request_id_var.reset(request_token)
+        user_id_var.reset(user_token)
+
+    assert prepared is not record
+    assert (prepared.msg, prepared.args) == ("value one", None)
+    assert prepared.exc_info == record.exc_info
+    assert (prepared.request_id, prepared.user_id) == ("req-1", "user-1")
+    assert record.args == ("one",)  # the record the other handlers see is untouched
+    assert json.loads(JSONFormatter().format(prepared))["exception"].endswith("ValueError: boom")

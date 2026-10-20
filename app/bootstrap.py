@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import atexit
 from dataclasses import dataclass
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from app.config.logging_config import logging
@@ -22,19 +21,33 @@ from app.routes.mcp.tool_metadata_registry import register_all_tools_metadata
 from app.routes.mcp.tool_registry import ToolRegistry
 
 if TYPE_CHECKING:
+    from app.repositories.qdrant.memory_repository import QdrantStack
+    from app.services.backup_service import BackupService
     from app.services.memory_service import MemoryService
     from app.services.re_embedding_service import ReEmbeddingService
-    from app.services.tenant_service import TenantService
 
 logger = logging.getLogger(__name__)
 
 
-def create_backup_service(database_type: str | None = None):
-    """Wire the backup workflow to the configured database implementation."""
-    from app.repositories.backup_adapter import DatabaseBackupAdapter
+def create_qdrant_stack() -> QdrantStack:
+    """The connections to the configured Qdrant nodes (nothing is created on the server yet)."""
+    from app.repositories.qdrant.memory_repository import QdrantStack
+
+    return QdrantStack.from_settings()
+
+
+def create_backup_service(stack: QdrantStack) -> BackupService:
+    """Wire the snapshot, export/import and consistency-check workflows to the Qdrant stack."""
+    from app.repositories.qdrant.archive import QdrantArchiveAdapter
+    from app.repositories.qdrant.backup import QdrantBackupAdapter
+    from app.repositories.qdrant.inspector import QdrantClusterInspector
     from app.services.backup_service import BackupService
 
-    return BackupService(DatabaseBackupAdapter(database_type))
+    return BackupService(
+        QdrantBackupAdapter(stack.pool, stack.schema),
+        QdrantArchiveAdapter(stack.store, stack.schema, get_embedding_adapter),
+        QdrantClusterInspector(stack.pool, stack.schema),
+    )
 
 
 def get_embedding_adapter():
@@ -162,55 +175,10 @@ def log_tensorrt_models(*adapters) -> None:
     logger.info(f"GPU memory with the {roles} loaded: {gpu_memory().describe()}; {sharing}")
 
 
-def create_db_adapter():
-    """Create database adapter based on settings."""
-    if settings.DATABASE == "Postgres":
-        from app.repositories.postgres.postgres_adapter import PostgresDatabaseAdapter
-        return PostgresDatabaseAdapter()
-    if settings.DATABASE == "SQLite":
-        from app.repositories.sqlite.sqlite_adapter import SqliteDatabaseAdapter
-        return SqliteDatabaseAdapter()
-    raise ValueError(f"Unsupported DATABASE setting: {settings.DATABASE}. Must be 'Postgres' or 'SQLite'")
-
-
-def create_repositories(db_adapter, embeddings_adapter, reranker_adapter):
-    """Create all repositories based on database setting."""
-    if settings.DATABASE == "Postgres":
-        from app.repositories.postgres.memory_repository import PostgresMemoryRepository
-        from app.repositories.postgres.user_repository import PostgresUserRepository
-
-        repos = {
-            "user": PostgresUserRepository(db_adapter=db_adapter),
-            "memory": PostgresMemoryRepository(
-                db_adapter=db_adapter,
-                embedding_adapter=embeddings_adapter,
-                rerank_adapter=reranker_adapter,
-            ),
-        }
-
-        return repos
-    if settings.DATABASE == "SQLite":
-        from app.repositories.sqlite.memory_repository import SqliteMemoryRepository
-        from app.repositories.sqlite.user_repository import SqliteUserRepository
-
-        repos = {
-            "user": SqliteUserRepository(db_adapter=db_adapter),
-            "memory": SqliteMemoryRepository(
-                db_adapter=db_adapter,
-                embedding_adapter=embeddings_adapter,
-                rerank_adapter=reranker_adapter,
-            ),
-        }
-
-        return repos
-    raise ValueError(f"Unsupported DATABASE setting: {settings.DATABASE}. Must be 'Postgres' or 'SQLite'")
-
-
 @dataclass
 class Services:
     """Service layer instances."""
 
-    tenant: TenantService
     memory: MemoryService
     re_embedding: ReEmbeddingService
 
@@ -219,8 +187,7 @@ class Services:
 class Runtime:
     """Everything a front door needs to execute tools against the registry."""
 
-    db_adapter: Any
-    repos: dict[str, Any]
+    stack: QdrantStack
     services: Services
     registry: ToolRegistry
     permitted_tools: set[str]
@@ -228,31 +195,26 @@ class Runtime:
 
 
 async def build_runtime() -> Runtime:
-    """Build the full runtime stack: adapters -> repos -> services -> registry -> scopes."""
+    """Build the full runtime stack: adapters -> Qdrant -> repository -> services -> registry -> scopes."""
     embeddings_adapter = get_embedding_adapter()
     reranker_adapter = get_reranker_adapter()
     logger.info("Embedding adapters initialized")
     log_tensorrt_models(embeddings_adapter, reranker_adapter)
 
-    db_adapter = create_db_adapter()
-
-    if settings.DATABASE == "SQLite" and not settings.SQLITE_MEMORY:
-        data_dir = Path(settings.SQLITE_PATH).parent
-        data_dir.mkdir(parents=True, exist_ok=True)
-        logger.info(f"Data directory ensured: {data_dir}")
-
-    await db_adapter.init_db()
-    logger.info("Database initialized")
-
-    repos = create_repositories(db_adapter, embeddings_adapter, reranker_adapter)
+    stack = create_qdrant_stack()
+    try:
+        await stack.schema.ensure()
+    except BaseException:
+        await stack.close()
+        raise
+    logger.info("Qdrant collections ready")
 
     from app.services.memory_service import MemoryService
     from app.services.re_embedding_service import ReEmbeddingService
-    from app.services.tenant_service import TenantService
 
-    tenant_service = TenantService(repos["user"])
-    memory_service = MemoryService(repos["memory"])
-    re_embedding_service = ReEmbeddingService(repos["memory"], embeddings_adapter)
+    repository = stack.memory_repository(embeddings_adapter, reranker_adapter)
+    memory_service = MemoryService(repository)
+    re_embedding_service = ReEmbeddingService(repository, embeddings_adapter)
 
     registry = ToolRegistry()
     register_all_tools_metadata(
@@ -273,14 +235,12 @@ async def build_runtime() -> Runtime:
     logger.info(f"Scoped permissions: scopes={list(instance_scopes)}, permitted_tools={len(permitted_tools)}")
 
     services = Services(
-        tenant=tenant_service,
         memory=memory_service,
         re_embedding=re_embedding_service,
     )
 
     return Runtime(
-        db_adapter=db_adapter,
-        repos=repos,
+        stack=stack,
         services=services,
         registry=registry,
         permitted_tools=permitted_tools,
@@ -289,5 +249,5 @@ async def build_runtime() -> Runtime:
 
 
 async def dispose_runtime(runtime: Runtime) -> None:
-    """Close the database. Safe to call more than once."""
-    await runtime.db_adapter.dispose()
+    """Close the Qdrant connections. Safe to call more than once."""
+    await runtime.stack.close()

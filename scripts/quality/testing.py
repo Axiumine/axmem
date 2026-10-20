@@ -1,11 +1,11 @@
-"""Test-driven gates: fast tests, snapshots, coverage, Postgres e2e, memory, mutation."""
+"""Test-driven gates: fast tests, snapshots, coverage, Qdrant cluster e2e, memory, mutation."""
 
 from __future__ import annotations
 
 import os
 
 from .core import (
-    SUITES_SQLITE,
+    SUITES,
     Ctx,
     Skip,
     check,
@@ -15,7 +15,7 @@ from .core import (
     venv_tool,
 )
 
-CODE_PREFIXES = ("app/", "tests/", "main.py", "alembic/", "scripts/", "test_harness/")
+CODE_PREFIXES = ("app/", "tests/", "main.py", "scripts/", "test_harness/")
 PYTEST = ["-q", "-p", "no:cacheprovider"]
 
 
@@ -41,18 +41,19 @@ def gate_tests_fast(ctx: Ctx) -> tuple[bool, str]:
 
 
 def gate_tests(_ctx: Ctx) -> tuple[bool, str]:
-    """Architecture + integration + SQLite end-to-end, collecting branch coverage."""
+    """Architecture + integration + end-to-end on a single Qdrant node, collecting branch coverage."""
     run([*venv_tool("coverage"), "erase"])
     return check(
-        [*venv_tool("pytest"), *SUITES_SQLITE, *PYTEST, "--cov", "--cov-branch", "--cov-report=", "--cov-fail-under=0"],
+        [*venv_tool("pytest"), *SUITES, *PYTEST, "--cov", "--cov-branch", "--cov-report=", "--cov-fail-under=0"],
     )
 
 
-def gate_e2e_postgres(_ctx: Ctx) -> tuple[bool, str]:
+def gate_e2e_qdrant(_ctx: Ctx) -> tuple[bool, str]:
+    """The three-node Qdrant cluster tests (docker): replication, failover, race and fault detectors."""
     if not docker_ready():
-        raise Skip("docker daemon unavailable (PostgreSQL e2e needs it)")
+        raise Skip("docker daemon unavailable (the cluster e2e starts three Qdrant nodes)")
     return check_tests(
-        [*venv_tool("pytest"), "tests/e2e", "-m", "e2e", *PYTEST,
+        [*venv_tool("pytest"), "tests/cluster", "-m", "cluster", *PYTEST,
          "--cov", "--cov-branch", "--cov-append", "--cov-report=", "--cov-fail-under=0"],
     )
 
@@ -64,7 +65,7 @@ def gate_coverage(_ctx: Ctx) -> tuple[bool, str]:
 def gate_memray(_ctx: Ctx) -> tuple[bool, str]:
     if os.name == "nt":
         raise Skip("memray is not available on Windows")
-    return check_tests([*venv_tool("pytest"), "tests/e2e_sqlite", "-m", "memory", "--memray", *PYTEST])
+    return check_tests([*venv_tool("pytest"), "tests/e2e", "-m", "memory", "--memray", *PYTEST])
 
 
 def mutation_targets(ctx: Ctx) -> list[str]:

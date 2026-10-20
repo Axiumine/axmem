@@ -1,12 +1,14 @@
-"""Integration tests for MemoryService with stubbed database
+"""Integration tests for MemoryService on a real Qdrant node with the real embedder
 
-Tests critical memory workflows without real PostgreSQL/embeddings dependency
+Tests critical memory workflows end to end below the REST and MCP layers.
 """
 from uuid import uuid4
 
 import pytest
 
 from app.models.memory_models import MemoryCreate, MemoryQueryRequest, MemoryUpdate
+from tests.auto_link_cases import ANCHOR, RELATED, UNRELATED
+from tests.auto_link_cases import memory as memory_of
 
 
 @pytest.mark.asyncio
@@ -38,35 +40,17 @@ async def test_create_memory_basic(test_memory_service):
 
 @pytest.mark.asyncio
 async def test_create_memory_with_auto_linking(test_memory_service):
-    """Test that create_memory auto-links to similar memories"""
+    """Test that create_memory auto-links to a similar memory and not to an unrelated one"""
     user_id = uuid4()
 
-    # Create first memory
-    memory1_data = MemoryCreate(
-        title="Python Testing Best Practices",
-        content="Use pytest for async testing with proper fixtures",
-        context="Documenting testing approach for Python projects",
-        keywords=["python", "pytest", "testing"],
-        tags=["testing", "python"],
-        importance=9,
-    )
-    memory1, _ = await test_memory_service.create_memory(user_id, memory1_data)
+    memory1, _ = await test_memory_service.create_memory(user_id, memory_of(ANCHOR))
+    await test_memory_service.create_memory(user_id, memory_of(UNRELATED))
 
-    # Create second similar memory - should auto-link
-    memory2_data = MemoryCreate(
-        title="Python Integration Testing",
-        content="Integration tests verify multiple layers work together",
-        context="Extending testing documentation with integration patterns",
-        keywords=["python", "integration", "testing"],
-        tags=["testing", "python"],
-        importance=8,
-    )
-    memory2, similar_memories = await test_memory_service.create_memory(user_id, memory2_data)
+    # The related memory is above the similarity cutoff of the anchor, the unrelated one is below it
+    memory2, similar_memories = await test_memory_service.create_memory(user_id, memory_of(RELATED))
 
-    # Verify auto-linking occurred
-    assert len(similar_memories) > 0
+    assert [m.id for m in similar_memories] == [memory1.id]
     assert memory1.id in memory2.linked_memory_ids
-    assert similar_memories[0].id == memory1.id
 
 
 @pytest.mark.asyncio
@@ -494,6 +478,39 @@ async def test_list_memories_created_since_accepts_offset_and_counts_matches(tes
 
     assert total == 1
     assert [memory.id for memory in memories] == [created[1].id]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("sort_order", "offset", "expected"),
+    [
+        ("desc", 0, [9, 9, 5]),
+        ("desc", 3, [5, 1]),  # the offset passes whole importance levels without reading them
+        ("desc", 2, [5, 5, 1]),
+        ("asc", 1, [5, 5, 9]),
+    ],
+)
+async def test_list_memories_by_importance_pages_across_importance_levels(test_memory_service, sort_order, offset, expected):
+    user_id = uuid4()
+    for index, importance in enumerate((9, 5, 1, 9, 5)):
+        await test_memory_service.create_memory(
+            user_id,
+            MemoryCreate(
+                title=f"Importance page {index}",
+                content=f"Memory number {index} for importance paging",
+                context="Testing list_memories",
+                keywords=["importance-page"],
+                tags=["importance-page"],
+                importance=importance,
+            ),
+        )
+
+    page, total = await test_memory_service.list_memories(
+        user_id, limit=3 if offset != 3 else 2, offset=offset, sort_by="importance", sort_order=sort_order,
+    )
+
+    assert total == 5
+    assert [memory.importance for memory in page] == expected
 
 
 @pytest.mark.asyncio

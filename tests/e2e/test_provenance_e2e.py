@@ -1,20 +1,15 @@
-"""PostgreSQL E2E tests for provenance tracking on memories
+"""E2E tests for provenance tracking on memories
 
-Tests the full stack with real PostgreSQL: create with provenance fields,
+Tests the full stack on Qdrant: create with provenance fields,
 retrieve, verify all fields persisted and round-trip correctly.
-Validates ARRAY(String) handling for source_files on Postgres.
 """
 
 from unittest.mock import patch
 
 import pytest
 
-pytestmark = pytest.mark.asyncio(loop_scope="session")
-
-SETTINGS_OVERRIDE = {"MEMORY_NUM_AUTO_LINK": 0}
-
 # ============================================================================
-# Helper: provenance fields
+# Helper: provenance fields common to all object types
 # ============================================================================
 
 PROVENANCE_FIELDS_9 = {
@@ -31,6 +26,7 @@ PROVENANCE_FIELDS_9 = {
 
 
 def assert_provenance_fields(data: dict, expected: dict):
+    """Assert all provenance fields match expected values."""
     for key, value in expected.items():
         actual = data.get(key)
         assert actual == value, f"Provenance field '{key}': expected {value!r}, got {actual!r}"
@@ -41,8 +37,8 @@ def assert_provenance_fields(data: dict, expected: dict):
 # ============================================================================
 
 
-@pytest.mark.e2e
-async def test_memory_provenance_roundtrip_pg(mcp_client):
+@pytest.mark.asyncio
+async def test_memory_provenance_roundtrip(mcp_client):
     """Create memory with all provenance fields, retrieve, verify persistence."""
     result = await mcp_client.call_tool(
         "execute_forgetful_tool",
@@ -108,8 +104,8 @@ async def _update_memory(mcp_client, memory_id, **fields):
     )
 
 
-@pytest.mark.e2e
-async def test_no_provenance_fields_remain_null_pg(mcp_client):
+@pytest.mark.asyncio
+async def test_no_provenance_fields_remain_null(mcp_client):
     """When no provenance provided and no env vars set, fields should be null."""
     result = await _create_plain_memory(mcp_client, "no-provenance")
     data = await _stored(mcp_client, result.data["id"])
@@ -129,8 +125,8 @@ async def test_no_provenance_fields_remain_null_pg(mcp_client):
 # ============================================================================
 
 
-@pytest.mark.e2e
-async def test_update_provenance_fields_pg(mcp_client):
+@pytest.mark.asyncio
+async def test_update_provenance_fields(mcp_client):
     """Update provenance fields on an existing memory."""
     result = await _create_plain_memory(mcp_client, "update-provenance")
     memory_id = result.data["id"]
@@ -153,40 +149,12 @@ async def test_update_provenance_fields_pg(mcp_client):
 
 
 # ============================================================================
-# HTTP API round-trip
-# ============================================================================
-
-
-@pytest.mark.e2e
-async def test_memory_provenance_via_http_api(http_client):
-    """Create a memory with provenance via the REST API, verify the stored fields."""
-    response = await http_client.post(
-        "/api/v1/memories",
-        json={
-            "title": "http-provenance-pg",
-            "content": "HTTP API provenance test",
-            "context": "REST provenance round-trip",
-            "keywords": ["provenance"],
-            "tags": ["e2e"],
-            "importance": 6,
-            **PROVENANCE_FIELDS_9,
-        },
-    )
-    assert response.status_code == 201
-    memory_id = response.json()["id"]
-
-    get_response = await http_client.get(f"/api/v1/memories/{memory_id}")
-    assert get_response.status_code == 200
-    assert_provenance_fields(get_response.json(), PROVENANCE_FIELDS_9)
-
-
-# ============================================================================
 # ENFORCE_ENV_OVERWRITE on update paths
 # ============================================================================
 
 
-@pytest.mark.e2e
-async def test_enforce_env_overwrite_blocks_update_pg(mcp_client):
+@pytest.mark.asyncio
+async def test_enforce_env_overwrite_blocks_update_provenance(mcp_client):
     """With ENFORCE_ENV_OVERWRITE=True, agent cannot change provenance via update."""
     with patch("app.utils.provenance.settings") as mock_settings:
         mock_settings.ENCODING_AGENT = "ServerAgent"
@@ -223,8 +191,8 @@ async def test_enforce_env_overwrite_blocks_update_pg(mcp_client):
     assert updated.data["agent_id"] == "server-agent-id"
 
 
-@pytest.mark.e2e
-async def test_no_enforce_allows_update_pg(mcp_client):
+@pytest.mark.asyncio
+async def test_no_enforce_allows_update_provenance(mcp_client):
     """With ENFORCE_ENV_OVERWRITE=False, agent can freely update provenance."""
     result = await _create_plain_memory(mcp_client, "no-enforce-update")
     memory_id = result.data["id"]

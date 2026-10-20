@@ -12,9 +12,9 @@ from app.routes.mcp.adapters.memory import MemoryToolAdapters, create_memory_ada
 # The argument helpers keep their historical private names for existing importers.
 _coerce_bool = arguments.coerce_bool
 _coerce_int = arguments.coerce_int
-_coerce_int_ids = arguments.coerce_int_ids
-_coerce_optional_int_id = arguments.coerce_optional_int_id
-_coerce_optional_int_ids = arguments.coerce_optional_int_ids
+_coerce_memory_ids = arguments.coerce_memory_ids
+_coerce_optional_memory_id = arguments.coerce_optional_memory_id
+_coerce_optional_memory_ids = arguments.coerce_optional_memory_ids
 _coerce_str_list = arguments.coerce_str_list
 _reject_unknown_args = arguments.reject_unknown_args
 
@@ -22,9 +22,9 @@ __all__ = [
     "MemoryToolAdapters",
     "_coerce_bool",
     "_coerce_int",
-    "_coerce_int_ids",
-    "_coerce_optional_int_id",
-    "_coerce_optional_int_ids",
+    "_coerce_memory_ids",
+    "_coerce_optional_memory_id",
+    "_coerce_optional_memory_ids",
     "_coerce_str_list",
     "_reject_unknown_args",
     "create_memory_adapters",

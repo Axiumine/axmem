@@ -1,9 +1,10 @@
-"""End-to-end tests for MCP memory tools: update_memory and get_memory (PostgreSQL backend)
+"""End-to-end tests for MCP memory tools: update_memory and get_memory
 
 Covers PATCH semantics, embedding refresh, list-field replacement, error handling
 for unknown IDs and basic retrieval by ID.
 """
 import pytest
+from rest_helpers import MISSING_ID
 
 from tests.e2e.memory_tools_helpers_e2e import (
     call_tool,
@@ -13,8 +14,6 @@ from tests.e2e.memory_tools_helpers_e2e import (
     query_memory,
     update_memory,
 )
-
-pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 
 def _assert_get_memory_fields(data, memory_id):
@@ -34,7 +33,7 @@ def _assert_get_memory_link_lists(data):
     assert data["project"] is None
 
 
-@pytest.mark.e2e
+@pytest.mark.asyncio
 async def test_update_memory_single_field_e2e(mcp_client):
     """Test updating a single field preserves other fields (PATCH semantics)"""
     create_result = await create_memory(
@@ -59,7 +58,7 @@ async def test_update_memory_single_field_e2e(mcp_client):
     assert update_result.data["importance"] == 7
 
 
-@pytest.mark.e2e
+@pytest.mark.asyncio
 async def test_update_memory_multiple_fields_e2e(mcp_client):
     """Test updating multiple fields simultaneously (PATCH semantics)"""
     create_result = await create_memory(
@@ -89,7 +88,7 @@ async def test_update_memory_multiple_fields_e2e(mcp_client):
     assert update_result.data["tags"] == ["test"]
 
 
-@pytest.mark.e2e
+@pytest.mark.asyncio
 async def test_update_memory_content_triggers_embedding_refresh_e2e(mcp_client):
     """Test that updating content regenerates embeddings for semantic search"""
     create_result = await create_memory(
@@ -121,7 +120,7 @@ async def test_update_memory_content_triggers_embedding_refresh_e2e(mcp_client):
     assert memory_id in found_ids, "Updated memory should be found by semantic search for new content"
 
 
-@pytest.mark.e2e
+@pytest.mark.asyncio
 async def test_update_memory_persistence_e2e(mcp_client):
     """Test that memory updates persist to database"""
     create_result = await create_memory(
@@ -152,7 +151,7 @@ async def test_update_memory_persistence_e2e(mcp_client):
     assert found_memory["importance"] == 9
 
 
-@pytest.mark.e2e
+@pytest.mark.asyncio
 async def test_update_memory_keywords_tags_replacement_e2e(mcp_client):
     """Test that updating keywords/tags replaces (not appends) existing values"""
     create_result = await create_memory(
@@ -180,12 +179,12 @@ async def test_update_memory_keywords_tags_replacement_e2e(mcp_client):
     assert "automation" not in update_result.data["tags"]
 
 
-@pytest.mark.e2e
+@pytest.mark.asyncio
 async def test_update_memory_invalid_id_e2e(mcp_client):
     """Test error handling when updating non-existent memory"""
     try:
         await call_tool(
-            mcp_client, "update_memory", memory_id=999999, title="This Should Fail",
+            mcp_client, "update_memory", memory_id=MISSING_ID, title="This Should Fail",
         )
         assert False, "Expected ToolError for invalid memory_id"
     except Exception as e:
@@ -196,7 +195,7 @@ async def test_update_memory_invalid_id_e2e(mcp_client):
         )
 
 
-@pytest.mark.e2e
+@pytest.mark.asyncio
 async def test_get_memory_basic_retrieval_e2e(mcp_client):
     """Test basic memory retrieval by ID with get_memory tool"""
     create_result = await create_memory(
@@ -216,11 +215,11 @@ async def test_get_memory_basic_retrieval_e2e(mcp_client):
     _assert_get_memory_link_lists(get_result.data)
 
 
-@pytest.mark.e2e
+@pytest.mark.asyncio
 async def test_get_memory_invalid_id_e2e(mcp_client):
     """Test error handling when retrieving non-existent memory"""
     try:
-        await get_memory(mcp_client, 999999)
+        await get_memory(mcp_client, MISSING_ID)
         assert False, "Expected ToolError for invalid memory_id"
     except Exception as e:
         error_message = str(e)

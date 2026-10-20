@@ -1,4 +1,4 @@
-"""Call helpers shared by the PostgreSQL memory tool end-to-end tests.
+"""Call helpers shared by the memory tool end-to-end tests.
 
 Every helper wraps one ``execute_forgetful_tool`` round trip so that the test
 modules read as scenarios instead of nested payload dictionaries.

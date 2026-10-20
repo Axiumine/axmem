@@ -46,8 +46,8 @@ Hooks table in [docs/quality-gates.md](quality-gates.md#hooks).
 
 `pre-commit` checks staged files (lint, import boundaries, security, dead code, complexity, types,
 snapshots, fast tests, GitNexus impact); `pre-push` runs the full pipeline: the same static gates over
-the whole project, the architecture, integration and SQLite e2e suites with coverage, PostgreSQL e2e
-(needs Docker), **100 % combined coverage**, memory budgets (memray),
+the whole project, the architecture, integration and end-to-end suites with coverage (they start a real Qdrant
+node in Docker), the three-node Qdrant cluster e2e (Docker), **100 % combined coverage**, memory budgets (memray),
 trivy, Qodana and, only when asked for, mutation testing. CI runs the same gates on Python 3.14.
 The Qodana token (`QODANA_TOKEN`) lives in your git-ignored dotenv file (see `.env.example` for the key
 name), never in a tracked file. Python 3.14 is the only supported version (`.python-version`).
@@ -63,13 +63,13 @@ QUALITY_FULL=1 git commit                                    # pre-commit over t
 MUTATION=1 git push                                          # add mutation testing (changed app/ modules)
 ```
 
-When a change alters a public surface (CLI flags, settings defaults, routes, MCP tools, tables, migrations)
+When a change alters a public surface (CLI flags, settings defaults, routes, MCP tools, collections, payload fields)
 the syrupy snapshots fail on purpose: review the diff, then refresh them with
 `uv run pytest -m snapshot --snapshot-update` and commit the snapshot files with the change. A new
 vulture false positive goes into `vulture_whitelist.py` with a comment naming its consumer. Suppress a
 bandit or semgrep finding inline with the reason on the same line (`# nosec B603 - argv list, no shell`,
 `# nosemgrep: <rule-id> - reason`) and only for code that is safe by construction. The memory budgets
-live in `tests/e2e_sqlite/test_memory_budget_sqlite.py` and are enforced under `--memray` (Linux/macOS).
+live in `tests/e2e/test_memory_budget_e2e.py` and are enforced under `--memray` (Linux/macOS).
 All of this, including the gate list, scoping rules and the cost of the mutation gate, is in
 [quality-gates.md](quality-gates.md).
 
@@ -81,7 +81,7 @@ Clone the repository and install the locked dependencies (Python 3.14 and [uv](h
 git clone https://github.com/ScottRBK/forgetful.git
 cd forgetful
 uv sync --locked --all-extras --dev
-AUTH_MODE=none uv run main.py   # the server refuses to start without AUTH_MODE
+AUTH_MODE=none uv run main.py   # the server refuses to start without AUTH_MODE, and needs a Qdrant node (QDRANT_URL)
 ```
 
 **Optional**: Customize configuration by copying the example environment file:
@@ -99,12 +99,12 @@ We focus on **integration and E2E tests** over unit tests. Tests should cover cr
 
 ### Tests need an NVIDIA GPU
 
-The integration, SQLite e2e and PostgreSQL e2e suites run the real TensorRT embedder and reranker on the
+The integration, end-to-end and cluster suites run the real TensorRT embedder and reranker on the
 GPU. There is no CPU path, no test-only embedder or reranker, no fake `tensorrt` module and no `gpu` marker
 to deselect: a machine without a usable GPU cannot run these suites. Requirements are in [GPU models](gpu-models.md) (driver R580 or
 newer, Linux); `uv sync` installs CUDA 13 and TensorRT 11.
 
-Each of the three suites begins with a hard preflight (`tests/gpu_preflight.py`, called from the suite's
+Each suite begins with a hard preflight (`tests/gpu_preflight.py`, called from the suite's
 `conftest.py` in `pytest_collection_modifyitems`). It ends the pytest run with exit code 2 and the cause, and
 runs no test, when no NVIDIA GPU is visible, TensorRT or the CUDA bindings cannot be imported, or
 `pytest -n N` asks for more workers than the GPU memory holds (pytest-xdist is not a project dependency; the
@@ -134,8 +134,12 @@ What stays a test double, and why:
 - `NarrowedEmbedder`: the model has one width (384), so tests that change `EMBEDDING_DIMENSIONS` cut the real
   vector to the width under test and scale it back to length 1.
 - One malformed batch, a provider that returns one vector too few (the service must fall back to single calls).
-- In-memory repositories and the SQLite and PostgreSQL stores that stand in for storage in integration
-  tests. Their keyword-overlap similarity is a stand-in for the database, not for the embedder.
+- Nothing stands in for storage: the repository under test is the production Qdrant one, on a real node (see
+  "Qdrant for the tests" below), because an in-memory stand-in would repeat Qdrant's filter, ordering and
+  conditional-write semantics and could pass where the real thing fails.
+- Fault injection around the real Qdrant client, in `tests/integration/test_qdrant_cas.py` and `test_qdrant_pool.py`: a client that
+  raises what the library raises on a reset connection or a 5xx answer, before or after the write was applied. A real
+  node does not fail on cue.
 - Recorders and spies that delegate to the real reranker (to observe the candidates a search sends it);
   a barrier around `TensorRTEngine.infer` (to force two inferences to overlap); a module finder that hides
   `tensorrt` or `cuda` in a subprocess (to prove the server refuses to start rather than falling back); and
@@ -164,93 +168,99 @@ there first.
 The embedder tests (`tests/integration/test_tensorrt_embedder.py`) compare vectors with goldens computed
 once from the CPU fp32 model, check unit length, batching and chunking at 63, 64, 65 and 133 texts,
 truncation at 512 tokens, concurrency and cancellation, and that the embedder and the reranker report the same
-CUDA context. `tests/e2e_sqlite/test_standalone_sqlite.py` starts the real server in a subprocess with a
+CUDA context. `tests/e2e/test_standalone_e2e.py` starts the real server in a subprocess with a
 static token, no `GATEWAY_*` variable, `HF_HUB_OFFLINE=1` and a guard that refuses and records every
-connection that is not loopback, then runs create, auto-link, a reranked query, link and mark-obsolete; it
+connection that is not loopback (the test's own Qdrant node is on loopback), then runs create, auto-link, a reranked query, link and mark-obsolete; it
 fails if the guard recorded anything.
+
+### Qdrant for the tests
+
+Memories live in Qdrant, so the suites need a real server (version 1.19.0 or newer; the tests pin `qdrant/qdrant:v1.19.2`).
+`tests/qdrant_support.py` starts it through Docker on a random loopback port with an API key, once per pytest process, and
+removes the container at the end. Pull the image first (`docker pull qdrant/qdrant:v1.19.2`); a run that cannot start it ends
+with exit code 2 and the cause, it never skips. `AXMEM_TEST_QDRANT_URL` (with `AXMEM_TEST_QDRANT_API_KEY`) points the suites at
+a server that already runs instead; the tests then work in collections under a prefix of their own and delete them afterwards.
+
+Tests share the node's collections and stay apart by tenant: the `qdrant_env` fixture gives every test a tenant namespace of
+its own, so the same tenant name ("alice", `DEFAULT_TENANT`) is a different tenant in every test. A test that needs collections
+of its own (re-embedding, snapshots, the layout, anything that counts all memories or switches the live generation) uses
+`isolated_qdrant` or `isolated_stack`. Creating the collections costs about 5 seconds (eight payload indexes), which is why the
+shared ones exist; keep the isolated tests few.
 
 ### Integration Tests
 
 **Location**: `tests/integration/`
 
-**Purpose**: Test business logic with stubbed I/O (no real database required; the embedder and the reranker are real)
+**Purpose**: Test business logic and the Qdrant repository on a real node (the embedder and the reranker are real; only HTTP I/O
+is stubbed)
 
 **Run locally**:
 ```bash
 uv run pytest tests/integration/
 ```
 
-These tests use in-memory stubs for storage and run the real embedder and reranker, and run fast (~seconds). They form the bulk of our test suite and catch 90% of issues.
+These tests run the production repository on real Qdrant and the real embedder and reranker, and form the bulk of our test
+suite. Four modules protect the storage design and are worth reading first:
+
+- `test_tenant_chokepoint.py`: every `MemoryRepository` method is run behind a recording Qdrant client, and every read must carry
+  the acting tenant's condition, every query must be by vector, and every write must stamp the tenant or select by it. A new
+  protocol method fails the test until it has a scenario. The detector is tested against a repository that forgets the tenant.
+- `test_qdrant_cas.py`: overlapping writers never lose one another's change, a toggle several writers race for has one winner, and a
+  write whose answer is lost takes effect once. The detector is tested against a check-then-write updater that must be reported
+  as losing changes.
+- `test_qdrant_store.py`: the scopes, create-if-absent, the guarded writes and the read-back of claim tokens.
+- `test_qdrant_schema.py` and `test_qdrant_pool.py`: the collection layout checks that stop a start, the generations and the live
+  alias, the failover between nodes and the retry of ambiguous failures.
 
 ### End-to-End Tests
 
-#### SQLite E2E Tests
-
-**Location**: `tests/e2e_sqlite/`
-
-**Purpose**: Test complete stack with in-memory SQLite
-
-**Requirements**: an NVIDIA GPU (see above); no Docker required
-
-**Run locally**:
-```bash
-uv run pytest tests/e2e_sqlite/
-```
-
-**CI Status**: ✅ Runs automatically in CI workflow on every push/PR, on the GPU runner
-
-These tests use an in-memory SQLite database for test isolation, with automatic cleanup. The suite is large (several thousand tests across the integration and SQLite e2e directories), so run a single file or `-k` selection while iterating and the whole directory before pushing. They provide full-stack coverage without Docker dependencies.
-
-#### PostgreSQL E2E Tests
+#### Single-node E2E Tests
 
 **Location**: `tests/e2e/`
 
-**Purpose**: Test complete stack with real PostgreSQL
+**Purpose**: Test the complete stack (REST, MCP, CLI, authentication, the real server in a subprocess) on a real Qdrant node
 
-**Requirements**: PostgreSQL running in Docker
+**Requirements**: an NVIDIA GPU (see above) and Docker for the Qdrant node
 
 **Run locally**:
 ```bash
-# The fixtures start (or reuse) the forgetful-db Docker container (pgvector image, see tests/e2e/README.md)
-uv run pytest -m e2e
+uv run pytest tests/e2e/
 ```
 
-**CI Status**: Runs on every branch push, pull request, and manual workflow dispatch.
+**CI Status**: Runs automatically in the CI and E2E workflows on every push/PR, on the GPU runner
 
-These tests are marked with `@pytest.mark.e2e` and validate the full application stack with
-PostgreSQL; the default `pytest` options exclude them (`-m "not e2e"`). Use a disposable database: the
-E2E fixtures clear its application tables. They also provide the PostgreSQL half of the 100 % coverage
-gate, so the `coverage` gate cannot pass on a machine without Docker.
+The suite is large (several thousand tests across the integration and e2e directories), so run a single file or `-k` selection
+while iterating and the whole directory before pushing.
 
-#### User creation tests
+#### Cluster E2E Tests
 
-`test_user_creation_sqlite.py` and `test_user_creation_e2e.py` share cases that check real duplicate
-inserts, preservation of the existing user, recovery when another request creates the user first,
-and propagation of unrelated database errors; only the timing of the competing lookup is arranged.
+**Location**: `tests/cluster/` (marker `cluster`; the default `pytest` options exclude them with `-m "not cluster"`)
+
+**Purpose**: Test the concurrency design on a real three-node Qdrant cluster: replication factor 3, write consistency factor 2,
+strong write ordering, an API key, internal authentication between the nodes
+
+**Run locally**:
+```bash
+uv run pytest tests/cluster -m cluster
+```
+
+The fixtures start the three containers and a network, wait for the cluster to form, and remove everything at the end. The
+`e2e-qdrant` gate runs this suite and appends its coverage, so the `coverage` gate cannot pass on a machine without Docker if
+code only the cluster run reaches is left untested.
 
 #### Backup and recovery tests
 
-These tests use a temporary SQLite file or the PostgreSQL E2E database. They check that a
-backup restores memories, metadata, links, obsolete state, and searchable vectors. They also
-run the real CLI, fail the embedding provider after a saved batch or during the final search
-check, and verify that automatic recovery restores the original data.
+These tests use the real Qdrant node. They check that a snapshot backup restores memories, metadata, links, obsolete state and
+searchable vectors, that an export imports into an empty instance and can be imported twice, and that `forgetful re-embed` leaves the
+live generation untouched when the embedding provider fails after a saved batch or during the final search check.
 
 The embedding provider is the real TensorRT embedder; a wrapper around it makes the provider fail on cue in the child process.
-PostgreSQL requires `pg_dump` and `psql` compatible with the PostgreSQL 16 test server. CI installs
-the client tools explicitly and fails if either is missing; local runs skip with an explanation.
 
 ```bash
-uv run pytest tests/e2e_sqlite/test_backup_restore_sqlite.py -q --durations=5
-uv run pytest tests/e2e/test_backup_recovery_e2e.py \
-  tests/e2e/test_zz_backup_restore_e2e.py -m e2e -q --durations=5
+uv run pytest tests/e2e/test_backup_restore_e2e.py -q --durations=5
 ```
 
-To target a disposable database already running on port 55099, prefix the PostgreSQL command
-with `PGPORT=55099 POSTGRES_DB=forgetful_backup_tests`. Set `POSTGRES_USER` and
-`POSTGRES_PASSWORD` to that test database's credentials as needed.
-
-Both suites run in the existing CI jobs. A push to a branch with an open PR starts both a push
-run and a PR run; newer runs cancel older runs for the same workflow and ref.
+A push to a branch with an open PR starts both a push run and a PR run; newer runs cancel older runs for the same workflow and ref.
 
 ---
 ## Linting
@@ -272,10 +282,9 @@ uv tool run ruff check .
 **Jobs**:
 1. `lint` (hosted Ubuntu runner, no GPU): check architecture boundaries and rule proofs, then run linting. The
    TensorRT libraries are left out of its environment (`--no-install-package tensorrt-cu13-libs`).
-2. `test` (self-hosted GPU runner, `runs-on: [self-hosted, linux, gpu]`): run integration tests (stubbed
-   storage, real embedder and reranker) and SQLite E2E tests (real SQLite, full stack).
-3. `smoke-test` (hosted runner): build the wheel, check the Alembic files are included and
-   `forgetful --help` works.
+2. `test` (self-hosted GPU runner, `runs-on: [self-hosted, linux, gpu]`): run integration tests (real Qdrant,
+   real embedder and reranker) and E2E tests (full stack on real Qdrant).
+3. `smoke-test` (hosted runner): build the wheel and check that `forgetful --help` works.
 
 The GPU runner is a machine you provide and register with those labels; see
 [quality-gates.md](quality-gates.md#pipeline) for what it needs. The Windows leg was removed because the
@@ -284,25 +293,24 @@ TensorRT reranker is Linux-only.
 **Merge requirements**: Configure branch rules to require this workflow's `test` check.
 The workflow alone does not make it mandatory for merging.
 
-**Test Coverage**: Integration tests validate business logic with stubbed storage and the real embedder and reranker. SQLite E2E tests validate the complete application stack including real database interactions, all without Docker dependencies.
+**Test Coverage**: Integration tests validate business logic and the Qdrant repository with the real embedder and reranker. E2E tests validate the complete application stack. Both need Docker for their Qdrant node.
 
-### `e2e.yml` - PostgreSQL E2E Validation
+### `e2e.yml` - End-to-End Validation
 
 **Triggers**: Every branch push, pull request, and manual workflow dispatch
 
-**Purpose**: Validate with real PostgreSQL database
+**Purpose**: Validate the full stack with a real Qdrant node
 
 **Matrix**: Python 3.14, on the self-hosted GPU runner (`runs-on: [self-hosted, linux, gpu]`).
 
 **Steps**:
-1. Install PostgreSQL backup client tools.
-2. Run PostgreSQL E2E tests (`tests/e2e/` with `-m e2e` marker), including backup recovery.
+1. Check the Docker daemon (the suites start the Qdrant node).
+2. Run the E2E tests (`tests/e2e/`), including backup recovery.
 
 **Merge requirements**: Configure the repository's branch rules to require the `e2e` check.
 The workflow alone does not make a check mandatory for merging.
 
-**Test Coverage**: Validates the full application stack with PostgreSQL, including real
-`pg_dump`/`psql` backup and restore.
+**Test Coverage**: Validates the full application stack on Qdrant, including snapshot backup and restore.
 
 ### `quality.yml` - Quality Gates
 
@@ -311,7 +319,7 @@ The workflow alone does not make a check mandatory for merging.
 **Purpose**: Run the same gates as the local Git hooks (`scripts/quality`) so a bypassed hook is caught
 
 **Jobs**: `static` (lint, import boundaries, security, dead code, complexity, types and pylint on a hosted
-runner, on Python 3.14), then on the self-hosted GPU runner `snapshots`, `coverage` (SQLite and PostgreSQL
+runner, on Python 3.14), then on the self-hosted GPU runner `snapshots`, `coverage` (single-node and cluster
 suites combined, 100 % required), `memory` (memray budgets) and `mutation` (weekly and manual only); `trivy` and `qodana` (uses the
 `QODANA_TOKEN` repository secret; skipped for pull requests from forks) run on hosted runners. See
 [quality-gates.md](quality-gates.md).

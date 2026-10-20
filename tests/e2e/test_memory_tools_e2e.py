@@ -1,12 +1,8 @@
-"""End-to-end tests for MCP memory tools: create and query (PostgreSQL backend)
-
-Requires:
-- PostgreSQL with pgvector running in Docker
-- TensorRT embeddings adapter (the production embedder, on the GPU)
+"""End-to-end tests for MCP memory tools: create and query
 
 Tests the complete stack: FastMCP Client -> MCP Protocol -> Service -> Repository
--> PostgreSQL + embeddings. Sibling modules cover update/get, obsolete handling,
-project scopes, get_recent_memories and provenance.
+-> Qdrant + embeddings. Sibling modules cover update/get, obsolete
+handling, project links, get_recent_memories and provenance.
 """
 import pytest
 
@@ -15,8 +11,6 @@ from tests.e2e.memory_tools_helpers_e2e import (
     find_by_id,
     query_memory,
 )
-
-pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 
 def _assert_query_envelope(data):
@@ -29,7 +23,16 @@ def _assert_query_envelope(data):
     assert isinstance(data["truncated"], bool)
 
 
-@pytest.mark.e2e
+def _assert_scores_align_with_primaries(data):
+    """Every score row must refer to the primary memory at the same position."""
+    scores = data["scores"]
+    primaries = data["primary_memories"]
+    assert len(scores) == len(primaries)
+    for idx, score in enumerate(scores):
+        assert score["memory_id"] == primaries[idx]["id"]
+
+
+@pytest.mark.asyncio
 async def test_create_memory_basic_e2e(mcp_client):
     """Test basic memory creation with real embeddings and database"""
     result = await create_memory(
@@ -49,7 +52,7 @@ async def test_create_memory_basic_e2e(mcp_client):
     assert result.data["project"] is None
 
 
-@pytest.mark.e2e
+@pytest.mark.asyncio
 async def test_create_memory_auto_linking_e2e(mcp_client):
     """Test that create_memory auto-links to similar memories via embeddings"""
     result1 = await create_memory(
@@ -78,9 +81,9 @@ async def test_create_memory_auto_linking_e2e(mcp_client):
     assert memory1_id in similar_ids
 
 
-@pytest.mark.e2e
+@pytest.mark.asyncio
 async def test_query_memory_e2e(mcp_client):
-    """Test semantic memory search with real pgvector"""
+    """Test semantic memory search against a real Qdrant"""
     create_result = await create_memory(
         mcp_client,
         title="Python Testing Best Practices",
@@ -100,11 +103,12 @@ async def test_query_memory_e2e(mcp_client):
     )
     assert query_result.data is not None
     _assert_query_envelope(query_result.data)
+    _assert_scores_align_with_primaries(query_result.data)
     found_titles = [m["title"] for m in query_result.data["primary_memories"]]
     assert "Python Testing Best Practices" in found_titles
 
 
-@pytest.mark.e2e
+@pytest.mark.asyncio
 async def test_create_and_query_persistence_e2e(mcp_client):
     """Test that memories persist in database and can be queried"""
     unique_title = "FastAPI Development Patterns E2E"
@@ -133,7 +137,7 @@ async def test_create_and_query_persistence_e2e(mcp_client):
     assert found_memory["importance"] == 7
 
 
-@pytest.mark.e2e
+@pytest.mark.asyncio
 async def test_query_memory_with_linked_memories_e2e(mcp_client):
     """Test query with include_links to retrieve 1-hop neighbor memories"""
     result1 = await create_memory(

@@ -1,6 +1,6 @@
 """Shared request parsing for REST handlers.
 
-Malformed client input (non-numeric or out-of-range ids, invalid or non-object
+Malformed client input (ids that are not UUIDs, invalid or non-object
 JSON bodies) must produce a 4xx JSON error rather
 than an unhandled exception, which Starlette reports as a 500.
 
@@ -10,19 +10,12 @@ Handlers raise ``RequestError`` through these helpers and are wrapped with
 import functools
 import json
 import math
-import re
 from collections.abc import Awaitable, Callable
 from typing import Any
+from uuid import UUID
 
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
-
-# Primary keys are 32-bit on PostgreSQL (SQLite integers are wider), so no stored
-# row can have a larger id; values beyond this overflow the database driver.
-MAX_ID = 2**31 - 1
-
-_ID_PATTERN = re.compile(r"[0-9]+")
-_MAX_ID_DIGITS = len(str(MAX_ID))
 
 
 def _finite_float(token: str) -> float:
@@ -62,13 +55,13 @@ def handle_request_errors(
     return wrapper
 
 
-def path_id(request: Request, name: str) -> int:
-    """Return a path parameter as an id, or raise a 404 if it can never name a resource."""
+def path_id(request: Request, name: str) -> UUID:
+    """Return a path parameter as a memory id, or raise a 404 if it can never name a resource."""
     raw = request.path_params[name]
-    # The length check keeps int() away from absurdly long digit strings.
-    if not _ID_PATTERN.fullmatch(raw) or len(raw) > _MAX_ID_DIGITS or int(raw) > MAX_ID:
-        raise RequestError(f"Invalid {name}: {raw[:50]}. Must be an integer id.", status_code=404)
-    return int(raw)
+    try:
+        return UUID(raw)
+    except ValueError:
+        raise RequestError(f"Invalid {name}: {raw[:50]}. Must be a UUID.", status_code=404) from None
 
 
 async def read_json_object(request: Request) -> dict[str, Any]:

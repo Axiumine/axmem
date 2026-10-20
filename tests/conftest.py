@@ -1,9 +1,19 @@
 """Fixtures shared by every test suite."""
 
+import uuid
+
 import pytest
+from pydantic import SecretStr
 
 from app.config.settings import settings
 from tests.embedding_doubles import spy_on
+from tests.qdrant_support import (
+    QdrantServer,
+    drop_prefix,
+    start_single_node,
+    stop,
+    unique_prefix,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -67,3 +77,91 @@ def embedding_spy(tensorrt_embedder):
     the service called it, and a test injects a provider fault by assigning ``side_effect``.
     """
     return spy_on(tensorrt_embedder)
+
+
+# ---- Qdrant ----------------------------------------------------------------------------------------
+#
+# One real Qdrant node per test process (a Docker container, see tests/qdrant_support.py). Tests share its
+# collections and stay apart by tenant: ``qdrant_env`` gives every test a tenant namespace of its own, so
+# the same tenant name ("alice", DEFAULT_TENANT) is a different tenant in every test. A test that needs
+# collections of its own (re-embedding, snapshots, the schema) uses ``isolated_qdrant``.
+
+
+@pytest.fixture(scope="session")
+def qdrant_server():
+    """The Qdrant node of this test process, started once and removed at the end."""
+    server = start_single_node()
+    prefix = unique_prefix()
+    yield server, prefix
+    if server.container:
+        stop(server.container)
+    else:
+        drop_prefix(server.url, server.api_key, prefix)
+
+
+def _point_settings_at(monkeypatch, server: QdrantServer, prefix: str) -> None:
+    from app.models import tenant_models
+
+    monkeypatch.setattr(settings, "QDRANT_URL", server.url)
+    monkeypatch.setattr(settings, "QDRANT_API_KEY", SecretStr(server.api_key))
+    monkeypatch.setattr(settings, "QDRANT_COLLECTION_PREFIX", prefix)
+    monkeypatch.setattr(settings, "QDRANT_SHARD_NUMBER", 1)
+    monkeypatch.setattr(settings, "QDRANT_REPLICATION_FACTOR", 1)
+    monkeypatch.setattr(settings, "QDRANT_WRITE_CONSISTENCY_FACTOR", 1)
+    monkeypatch.setattr(tenant_models, "TENANT_NAMESPACE", uuid.uuid4())
+
+
+@pytest.fixture
+def qdrant_env(qdrant_server, monkeypatch):
+    """Point the settings at the shared test node, with a tenant namespace no other test shares."""
+    server, prefix = qdrant_server
+    _point_settings_at(monkeypatch, server, prefix)
+    return settings
+
+
+@pytest.fixture
+def isolated_qdrant(qdrant_server, monkeypatch):
+    """Point the settings at collections that only this test uses, and delete them afterwards."""
+    server, _ = qdrant_server
+    prefix = unique_prefix()
+    _point_settings_at(monkeypatch, server, prefix)
+    yield settings
+    drop_prefix(server.url, server.api_key, prefix)
+
+
+@pytest.fixture
+async def qdrant_stack(qdrant_env, tensorrt_embedder):
+    """The Qdrant stack on the shared collections, created if they do not exist yet."""
+    from app.repositories.qdrant.memory_repository import QdrantStack
+
+    stack = QdrantStack.from_settings()
+    await stack.schema.ensure()
+    yield stack
+    await stack.close()
+
+
+@pytest.fixture
+async def isolated_stack(isolated_qdrant, tensorrt_embedder):
+    """A Qdrant stack on collections of its own."""
+    from app.repositories.qdrant.memory_repository import QdrantStack
+
+    stack = QdrantStack.from_settings()
+    await stack.schema.ensure()
+    yield stack
+    await stack.close()
+
+
+@pytest.fixture
+async def raw_qdrant(qdrant_env):
+    """A plain Qdrant client on the test node, for tests that plant or inspect stored data directly."""
+    import warnings
+
+    from qdrant_client import AsyncQdrantClient
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)  # a key on plain http to the loopback test node
+        client = AsyncQdrantClient(
+            url=qdrant_env.QDRANT_URL, api_key=qdrant_env.QDRANT_API_KEY.get_secret_value(), check_compatibility=False,
+        )
+    yield client
+    await client.close()

@@ -19,7 +19,7 @@ flowchart LR
 **How it works:**
 
 1. **Encode** - Title, content, context, keywords, and tags are combined into a vector embedding
-2. **Store** - The embedding is stored in the Forgetful database alongside the memory
+2. **Store** - The embedding is stored in Qdrant as the vector of the memory's point, next to its payload
 3. **Similarity Search** - Existing memories are searched for semantic similarity
 4. **Threshold** - Only matches with cosine similarity of at least 0.7 are kept by default
 5. **Auto-Link** - Up to `MEMORY_NUM_AUTO_LINK` qualifying memories are linked (bidirectional)

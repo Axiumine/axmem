@@ -16,6 +16,9 @@ CASES = [
     ("services", "app.services.re_embedding_service", "app.repositories.provider"),
     ("repositories", "app.repositories.provider", "app.services.memory_service"),
     ("external", "app.services.re_embedding_service", "subprocess"),
+    ("external", "app.services.memory_service", "qdrant_client"),
+    ("qdrant", "app.repositories.qdrant.memory_reads", "qdrant_client"),
+    ("qdrant", "app.routes.api.memories", "qdrant_client"),
     ("routes", "app.routes.mcp.handler", "app.repositories.provider"),
     ("cli", "app.routes.cli.handler", "app.repositories.provider"),
     ("cli", "app.routes.cli.handler", "app.bootstrap"),
@@ -50,8 +53,10 @@ def write_startup(root):
     """Keep the permitted startup imports present, including both CLI exceptions."""
     write_module(root, "app.bootstrap", "import app.repositories\nimport app.services\n")
     write_module(root, "app.routes.cli.local_executor", "import app.bootstrap\n")
-    write_module(root, "app.routes.cli.context", "import app.bootstrap\n")
+    write_module(root, "app.routes.cli.operator_commands", "import app.bootstrap\n")
     write_module(root, "app.routes.cli.command", "import app.routes.cli.local_executor\n")
+    for allowed in ("client", "schema", "store"):
+        write_module(root, f"app.repositories.qdrant.{allowed}", "import qdrant_client\n")
 
 
 def check(root):
@@ -138,7 +143,7 @@ def test_contract_rejects_forbidden_dependency(tmp_path, contract_id, source, ta
     assert status == 0, output
 
 
-@pytest.mark.parametrize("startup_module", ["local_executor", "context"])
+@pytest.mark.parametrize("startup_module", ["local_executor", "operator_commands"])
 def test_http_cannot_reach_bootstrap_through_cli(tmp_path, startup_module):
     options = configuration()
     write_app_tree(tmp_path, options)

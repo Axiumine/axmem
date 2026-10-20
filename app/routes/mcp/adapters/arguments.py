@@ -6,55 +6,50 @@ string lists are validated and converted here before they touch a service.
 
 import math
 from typing import Any
+from uuid import UUID
 
 _TRUE_STRINGS = frozenset({"true", "t", "yes", "y", "on", "1"})
 _FALSE_STRINGS = frozenset({"false", "f", "no", "n", "off", "0"})
 
 
-def coerce_int_id(val: Any, param_name: str = "id") -> int:
-    """Validate and convert an ID to integer without lossy truncation.
+def coerce_memory_id(val: Any, param_name: str = "id") -> UUID:
+    """Validate and convert a memory id to a UUID.
 
-    Rejects booleans, non-integer floats (e.g. 1.9, NaN, Inf), invalid strings,
-    and non-numeric types.
+    Accepts a UUID or its text form (surrounding whitespace ignored); everything else, numbers
+    included, is rejected with an error naming the parameter.
     """
     if val is None:
         raise ValueError(f"{param_name} cannot be None")
-    if isinstance(val, bool):
-        raise ValueError(f"{param_name} must be an integer, got bool ({val})")
-    if isinstance(val, int):
+    if isinstance(val, UUID):
         return val
-    if isinstance(val, float):
-        if not math.isfinite(val) or not val.is_integer():
-            raise ValueError(f"{param_name} must be an integer, got fractional float {val}")
-        return int(val)
     if isinstance(val, str):
         cleaned = val.strip()
         if not cleaned:
             raise ValueError(f"{param_name} cannot be empty string")
         try:
-            return int(cleaned)
-        except (ValueError, TypeError):
-            raise ValueError(f"{param_name} must be a valid integer, got {val!r}")
-    raise ValueError(f"{param_name} must be an integer, got {type(val).__name__}")
+            return UUID(cleaned)
+        except ValueError:
+            raise ValueError(f"{param_name} must be a valid UUID, got {val!r}") from None
+    raise ValueError(f"{param_name} must be a UUID, got {type(val).__name__}")
 
 
-def coerce_int_ids(vals: Any, param_name: str = "ids") -> list[int]:
-    """Validate and convert a collection or scalar of IDs into a list of ints."""
+def coerce_memory_ids(vals: Any, param_name: str = "ids") -> list[UUID]:
+    """Validate and convert a collection or scalar of memory ids into a list of UUIDs."""
     if vals is None:
         return []
     if isinstance(vals, (list, tuple, set)):
-        return [coerce_int_id(x, param_name) for x in vals]
-    return [coerce_int_id(vals, param_name)]
+        return [coerce_memory_id(x, param_name) for x in vals]
+    return [coerce_memory_id(vals, param_name)]
 
 
-def coerce_optional_int_id(val: Any, param_name: str = "id") -> int | None:
-    """Like coerce_int_id, but leaves an omitted (None) optional ID as None."""
-    return None if val is None else coerce_int_id(val, param_name)
+def coerce_optional_memory_id(val: Any, param_name: str = "id") -> UUID | None:
+    """Like coerce_memory_id, but leaves an omitted (None) optional id as None."""
+    return None if val is None else coerce_memory_id(val, param_name)
 
 
-def coerce_optional_int_ids(vals: Any, param_name: str = "ids") -> list[int] | None:
-    """Like coerce_int_ids, but leaves an omitted (None) optional filter as None."""
-    return None if vals is None else coerce_int_ids(vals, param_name)
+def coerce_optional_memory_ids(vals: Any, param_name: str = "ids") -> list[UUID] | None:
+    """Like coerce_memory_ids, but leaves an omitted (None) optional filter as None."""
+    return None if vals is None else coerce_memory_ids(vals, param_name)
 
 
 def coerce_str_list(vals: Any, param_name: str = "tags") -> list[str] | None:
@@ -78,11 +73,28 @@ def coerce_str_list(vals: Any, param_name: str = "tags") -> list[str] | None:
 def coerce_int(val: Any, param_name: str) -> int:
     """Validate and convert a numeric tool argument (limit, offset, k, importance...) to int.
 
-    Follows the same rules as ``coerce_int_id``: ints, integral floats and numeric
-    strings are accepted; None, booleans, fractional floats and other types raise
-    ValueError with a message naming the parameter.
+    Ints, integral floats and numeric strings are accepted. None, booleans, fractional or non-finite
+    floats, other strings and other types raise ValueError with a message naming the parameter.
     """
-    return coerce_int_id(val, param_name)
+    if val is None:
+        raise ValueError(f"{param_name} cannot be None")
+    if isinstance(val, bool):
+        raise ValueError(f"{param_name} must be an integer, got bool ({val})")
+    if isinstance(val, int):
+        return val
+    if isinstance(val, float):
+        if not math.isfinite(val) or not val.is_integer():
+            raise ValueError(f"{param_name} must be an integer, got fractional float {val}")
+        return int(val)
+    if isinstance(val, str):
+        cleaned = val.strip()
+        if not cleaned:
+            raise ValueError(f"{param_name} cannot be empty string")
+        try:
+            return int(cleaned)
+        except (ValueError, TypeError):
+            raise ValueError(f"{param_name} must be a valid integer, got {val!r}") from None
+    raise ValueError(f"{param_name} must be an integer, got {type(val).__name__}")
 
 
 def clamp_int(val: Any, param_name: str, low: int, high: int) -> int:

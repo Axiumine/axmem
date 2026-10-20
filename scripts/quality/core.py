@@ -14,11 +14,11 @@ ROOT = Path(__file__).resolve().parents[2]
 HOOKS_DIR = ".githooks"
 
 # Static-analysis scopes. Tests are measured by radon (complexity/maintainability) only.
-SOURCE_PATHS = ["app", "main.py", "alembic", "test_harness", "scripts"]
+SOURCE_PATHS = ["app", "main.py", "test_harness", "scripts"]
 RADON_PATHS = [*SOURCE_PATHS, "tests"]
 TYPED_PATHS = ["app", "main.py", "scripts"]
 PYLINT_PATHS = ["app", "main.py", "test_harness", "scripts"]
-SUITES_SQLITE = ["tests/architecture", "tests/integration", "tests/e2e_sqlite"]
+SUITES = ["tests/architecture", "tests/integration", "tests/e2e"]
 
 
 @dataclass

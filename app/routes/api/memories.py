@@ -4,6 +4,7 @@ Phase 1 of the Web UI foundation (Issue #3).
 Provides CRUD operations for memories with pagination, filtering, and semantic search.
 """
 import logging
+from uuid import UUID
 
 from pydantic import ValidationError
 from starlette.requests import Request
@@ -11,6 +12,7 @@ from starlette.responses import JSONResponse
 
 from app.exceptions import (
     AssociationNotFoundError,
+    ConflictError,
     InvalidStateTransitionError,
     NotFoundError,
 )
@@ -231,6 +233,8 @@ def register(mcp: ForgetfulMCP):
             )
         except NotFoundError:
             return JSONResponse({"error": "Memory not found"}, status_code=404)
+        except ConflictError as e:
+            return JSONResponse({"error": str(e)}, status_code=409)
 
         if not memory:
             return JSONResponse({"error": "Memory not found"}, status_code=404)
@@ -256,8 +260,13 @@ def register(mcp: ForgetfulMCP):
             reason = "Marked obsolete via API"
             superseded_by = None
 
-        if superseded_by is not None and (isinstance(superseded_by, bool) or not isinstance(superseded_by, int)):
-            return JSONResponse({"error": "superseded_by must be an integer memory id"}, status_code=400)
+        if superseded_by is not None:
+            try:
+                superseded_by = UUID(superseded_by) if isinstance(superseded_by, str) else None
+            except ValueError:
+                superseded_by = None
+            if superseded_by is None:
+                return JSONResponse({"error": "superseded_by must be a UUID memory id"}, status_code=400)
 
         try:
             success = await mcp.memory_service.mark_memory_obsolete(
@@ -272,6 +281,8 @@ def register(mcp: ForgetfulMCP):
             return JSONResponse({"error": "Memory not found"}, status_code=404)
         except InvalidStateTransitionError as e:
             return JSONResponse({"error": str(e)}, status_code=422)
+        except ConflictError as e:
+            return JSONResponse({"error": str(e)}, status_code=409)
 
         if not success:
             return JSONResponse({"error": "Memory not found"}, status_code=404)
@@ -339,7 +350,7 @@ def register(mcp: ForgetfulMCP):
         except NotFoundError:
             return JSONResponse({"error": "Memory not found"}, status_code=404)
 
-        return JSONResponse({"linked_ids": linked_ids})
+        return JSONResponse({"linked_ids": [str(linked_id) for linked_id in linked_ids]})
 
     @mcp.custom_route("/api/v1/memories/{memory_id}/links", methods=["GET"])
     @handle_request_errors
@@ -400,7 +411,7 @@ def register(mcp: ForgetfulMCP):
                 linked_memories.append(linked_memory)
 
         return JSONResponse({
-            "memory_id": memory_id,
+            "memory_id": str(memory_id),
             "linked_memories": [m.model_dump(mode="json") for m in linked_memories],
         })
 

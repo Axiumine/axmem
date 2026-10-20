@@ -20,7 +20,7 @@ You need to run a re-embedding migration whenever you change any of these settin
 | `EMBEDDING_TF32` | `false` -> `true` (TensorRT only; TF32 changes the vectors slightly) |
 | `GATEWAY_BACKEND`, `GATEWAY_MODEL` | another backend or model behind the same gateway |
 
-If you only change non-embedding settings (database, auth, reranking, etc.), no re-embedding is needed.
+If you only change non-embedding settings (Qdrant, auth, reranking, etc.), no re-embedding is needed.
 
 ---
 
@@ -54,10 +54,11 @@ uv run main.py --re-embed
 ### `--re-embed`
 
 Runs the re-embedding migration instead of starting the server. Processes all memories across all
-users, including obsolete memories, with the currently configured embedding provider and dimensions.
+tenants, including obsolete memories, with the currently configured embedding provider and dimensions.
 Counts and progress include obsolete memories. Their status and supersession metadata are preserved.
-The vector storage is resized to the configured dimensions even when the database holds no
-memories yet.
+The memories are copied, embedded again, into a new Qdrant collection of the configured width; the
+collection that serves searches changes only when the copy is complete and valid. This works even when
+the live collection still holds vectors of another width, and when it holds no memories yet.
 
 ```bash
 forgetful --re-embed [--batch-size N] [--dry-run]
@@ -67,9 +68,9 @@ forgetful --re-embed [--batch-size N] [--dry-run]
 
 ### `--batch-size N`
 
-Number of memories to process per batch. Must be a whole number of at least `1`; anything else is rejected before any backup or schema change. Default: `20`.
+Number of memories to process per batch. Must be a whole number of at least `1`; anything else is rejected before anything is created in Qdrant. Default: `20`.
 
-Lower values use less memory and are safer for rate-limited APIs. Higher values are faster for local providers like TensorRT. Each batch is handed to the provider as one list of texts: TensorRT and FastEmbed embed it natively (TensorRT in chunks of 64 texts, one GPU call per chunk) and the `gateway` provider sends it as one request (split into requests of at most 256 texts when the batch is larger); the other remote providers still embed the texts of a batch one at a time.
+Lower values use less memory and are safer for rate-limited APIs. Higher values are faster for local providers like TensorRT. Each batch is handed to the provider as one list of texts: TensorRT embeds it natively (in chunks of 64 texts, one GPU call per chunk) and the `gateway` provider sends it as one request (split into requests of at most 256 texts when the batch is larger); the other remote providers still embed the texts of a batch one at a time.
 
 ```bash
 forgetful --re-embed --batch-size 50    # faster for local providers
@@ -79,8 +80,8 @@ forgetful --re-embed --batch-size 5     # conservative for rate-limited APIs
 ### `--dry-run`
 
 Shows configuration and memory count without making any changes. Use this to verify your setup before committing to a migration.
-The preview is read-only: it does not run database schema migrations, create the SQLite database
-file or touch the vector tables. A SQLite database that does not exist yet is reported as empty.
+The preview is read-only: it creates no collection and writes no point. A Qdrant instance that holds no
+Axmem collections yet is reported as empty.
 
 ```bash
 forgetful --re-embed --dry-run
@@ -89,10 +90,10 @@ forgetful --re-embed --dry-run
 Output:
 
 ```
-[1/5] Validating configuration...
+[1/4] Validating configuration...
   Provider: OpenAI (text-embedding-3-small)
   Dimensions: 1536
-  Database: SQLite (/home/user/.local/share/forgetful/forgetful.db)
+  Qdrant: http://localhost:6333 (collections axmem_*)
   Batch size: 20
   Memories to process: 127
 
@@ -104,58 +105,63 @@ Output:
 
 ## What Happens During Migration
 
-The tool follows a 5-step process:
+The tool follows a 4-step process. Nothing in the live collection is changed until the last moment, so the
+server can keep serving searches from the old vectors while it runs (stop it anyway if you can, see the tips).
 
 ### Step 1: Validate Configuration
 
-Displays the target provider, model, dimensions, database backend, and memory count. Confirms the settings are what you intend before proceeding.
+Displays the target provider, model, dimensions, Qdrant URLs with the collection prefix, and batch size. Confirms
+the settings are what you intend before proceeding.
 
-### Step 2: Create Backup
+### Step 2: Open Qdrant
 
-Creates a timestamped backup of your database:
+Connects to Qdrant, checks the collections (without insisting on the configured width, since the point is to replace
+vectors of another width) and counts the memories to process.
 
-- **SQLite**: Takes a consistent snapshot of the database with SQLite's online backup, including changes that are still in the WAL, and writes it as one file, `forgetful.db.bak-YYYYMMDD-HHMMSS`
-- **PostgreSQL**: Runs `pg_dump --clean --if-exists` to `forgetful-pg-YYYYMMDD-HHMMSS.sql`
+```
+[2/4] Opening Qdrant...
+  Memories to process: 127
+```
 
-The backup is kept alongside your database, in the directory of `SQLITE_PATH`, unless [`BACKUP_DIR`](./configuration.md#backup_dir) points elsewhere. Backups contain all of your data, so they are created readable by their owner only (`0600`, in a `0700` directory if Forgetful creates it). In-memory SQLite databases skip this step, and so do
-databases without any memories: there is nothing to lose, so only the vector storage is
-resized to the configured dimensions.
+### Step 3: Re-embed Memories Into a New Collection
 
-### Step 3: Update Vector Schema
-
-Resizes the vector storage to match the new `EMBEDDING_DIMENSIONS`:
-
-- **SQLite**: Drops and recreates the `vec_memories` virtual table
-- **PostgreSQL**: Alters the `embedding` column type of `memories` to `vector(N)`.
-  The `NOT NULL` constraint is lifted while the vectors are rebuilt and restored once validation passes.
-
-### Step 4: Re-embed Memories
-
-Processes all active and obsolete memories in batches:
-1. Reads a batch of memories from the database
+Creates a new collection of the configured `EMBEDDING_DIMENSIONS` and copies every active and obsolete memory into it
+in batches:
+1. Reads a batch of memories from the live collection
 2. Generates new embeddings using the configured provider
-3. Writes the new embeddings back
+3. Writes the memories with their new embeddings into the new collection
 4. Reports progress via a live progress bar
 
 ```
-[4/5] Re-embedding memories...
+[3/4] Re-embedding memories into a new collection...
   [####################-----] 102/127 memories (80%)
 ```
 
-### Step 5: Validate
+Every write into the new collection is conditional on the memory's version, so an edit that happens while the copy
+runs is never overwritten with an older text. Edits made meanwhile are picked up by further scans of the old
+collection and once more after the switch.
 
-Runs three automated checks:
+### Step 4: Validate and Switch
+
+Runs three automated checks on the new collection:
 
 1. **Count check** - Verifies every memory, including obsolete memories, has an embedding
 2. **Dimension check** - Samples embeddings and confirms correct dimension count
 3. **Search check** - Tests vector retrieval, including when all memories are obsolete
 
 ```
-[5/5] Validating...
+[4/4] Validating...
   Count check: 127 memories, 127 embeddings OK
   Dimension check: OK
   Search check: OK
+
+  Successfully re-embedded 127 memories
+  The live collection is now axmem_memories_20261020t101500ab12
+  The previous collection axmem_memories_20261001t093000cd34 still holds the old vectors;
+  delete it with the Qdrant API when satisfied with the results.
 ```
+
+Only when all three pass does the live name move to the new collection. The previous collection is kept untouched.
 
 ---
 
@@ -172,12 +178,11 @@ Obsolete memories remain excluded from normal queries and automatic links. The t
 recovery.
 
 Embedding refreshes (both the CLI rebuild and `rebuild_embeddings`) never change a memory's
-`updated_at`. The targeted tool also does not overwrite a newer vector: each row is written only if
-its `updated_at` is still the value seen when the batch was read, and the check is part of the write
-(the `UPDATE` condition on PostgreSQL, a guard `UPDATE` that takes SQLite's write lock for the
-batch). A memory edited while the rebuild is running is reported in `skipped_ids` and keeps the
-embedding generated for its new content. An edit that arrives during the short write itself waits
-for it. `failed` entries carry a short reason code (`embedding_failed`, `persistence_failed`,
+`updated_at`. The targeted tool also does not overwrite a newer vector: each memory is written only
+if its version is still the one seen when the batch was read, and the check is part of the write
+(a conditional write in Qdrant), so there is no window between check and write. A memory edited while the
+rebuild is running is reported in `skipped_ids` and keeps the embedding generated for its new content.
+`failed` entries carry a short reason code (`embedding_failed`, `persistence_failed`,
 `auto_link_failed`, `not_found_or_not_owned`); the underlying error is written to the server log.
 An unknown project scope, or one that holds none of your memories, is rejected with a validation error.
 
@@ -185,52 +190,43 @@ An unknown project scope, or one that holds none of your memories, is rejected w
 
 ## Failure Handling
 
-The tool is designed to be safe. If anything goes wrong, your database is automatically restored.
+The tool is designed to be safe. The live collection is never modified by a run that does not finish, so there is
+nothing to restore.
 
-### Automatic Restore
+### Automatic Discard
 
-The backup is restored automatically in these scenarios:
+The new collection is deleted, and the live one keeps serving exactly as before, in these scenarios:
 
 - **Embedding API error** (rate limit, network failure, invalid key)
 - **Validation failure** (count mismatch, dimension mismatch, broken search)
 - **Interrupt signal** (Ctrl+C / SIGTERM)
 
 ```
-[4/5] Re-embedding memories...
+[3/4] Re-embedding memories into a new collection...
   [████░░░░░░░░░░░░░░░░░░░░░] 8/127 memories (6%)
   ERROR: OpenAI API rate limit exceeded
-
-  Restoring from backup...
-  Restored: /home/user/.local/share/forgetful/forgetful.db.bak-20260220-143022
-  Database returned to pre-migration state.
+  The new collection was discarded; the live collection was not changed.
 ```
 
-A PostgreSQL restore runs in a single transaction and stops at the first error. If the restore itself fails, the error from `psql` is reported and the database is left exactly as it was, so a half-restored database is never reported as restored.
+Run the command again once the cause is fixed; it starts from the live collection each time. A run that was killed
+without a chance to clean up (power loss, `kill -9`) leaves an unused collection behind; it never serves searches
+and you can delete it with the Qdrant API.
 
-### Manual Restore
+### Going Back After a Successful Migration
 
-If you need to manually restore after a successful migration (e.g., you notice search quality issues):
+If you notice search quality issues after a successful migration, the previous collection still holds the old
+vectors. Point the live name back to it with the Qdrant API (alias `<prefix>_memories`, see
+[Qdrant Configuration](./configuration.md#qdrant-configuration)), or restore a snapshot made with
+`forgetful backup` before the migration. Set the embedding settings back to what that collection was built with
+before you start the server again, since startup refuses a collection whose width differs from
+`EMBEDDING_DIMENSIONS`.
 
-**SQLite:**
-```bash
-# The backup path is printed at the end of the migration. Stop Forgetful first.
-cp /path/to/forgetful.db.bak-YYYYMMDD-HHMMSS /path/to/forgetful.db
-rm -f /path/to/forgetful.db-wal /path/to/forgetful.db-shm   # leftovers of the replaced database
-```
+### Cleanup
 
-**PostgreSQL:**
-```bash
-psql -h localhost -p 5099 -U forgetful -d forgetful -v ON_ERROR_STOP=1 --single-transaction \
-  -f /path/to/forgetful-pg-YYYYMMDD-HHMMSS.sql
-```
-
-### Backup Cleanup
-
-Backups are retained after a successful migration. Delete them manually once you're satisfied:
+The previous collection is retained after a successful migration. Delete it with the Qdrant API once you're satisfied:
 
 ```bash
-rm /path/to/forgetful.db.bak-*          # SQLite
-rm /path/to/forgetful-pg-*.sql          # PostgreSQL
+curl -X DELETE -H "api-key: $QDRANT_API_KEY" "$QDRANT_URL/collections/<previous collection name>"
 ```
 
 ---
@@ -239,7 +235,7 @@ rm /path/to/forgetful-pg-*.sql          # PostgreSQL
 
 ### FastEmbed (removed) to TensorRT (local GPU)
 
-The `FastEmbed` provider (local CPU, ONNX Runtime) no longer exists. `EMBEDDING_PROVIDER=FastEmbed` stops startup with an error that names the setting, and the `FASTEMBED_CACHE_DIR`, `FASTEMBED_LOCAL_FILES_ONLY` and `EMBEDDING_ONNX_PROVIDERS` settings are ignored. `TensorRT` is the default provider, so a database that was filled by `FastEmbed` is moved over by removing the old line and re-embedding. The model name and the width stay the same, but the vectors come from another runtime and are not identical, so `--re-embed` rewrites all of them:
+The `FastEmbed` provider (local CPU, ONNX Runtime) no longer exists. `EMBEDDING_PROVIDER=FastEmbed` stops startup with an error that names the setting, and the `FASTEMBED_CACHE_DIR`, `FASTEMBED_LOCAL_FILES_ONLY` and `EMBEDDING_ONNX_PROVIDERS` settings are ignored. `TensorRT` is the default provider, so memories that were embedded by `FastEmbed` are moved over by removing the old line and re-embedding. The model name and the width stay the same, but the vectors come from another runtime and are not identical, so `--re-embed` rewrites all of them:
 
 ```bash
 # settings file (or remove the EMBEDDING_PROVIDER line: TensorRT is the default)
@@ -251,11 +247,11 @@ EMBEDDING_DIMENSIONS=384
 forgetful --re-embed --batch-size 50
 ```
 
-The first start downloads the model files once into `EMBEDDING_MODEL_DIR` and builds the engine (a few seconds); see [GPU models](./gpu-models.md) and [offline hosts](./gpu-models.md#model-files-and-offline-hosts). If the GPU, the TensorRT libraries or the model files are missing, `--re-embed` stops before any backup or schema change with `Error: the embedder cannot start: ...`.
+The first start downloads the model files once into `EMBEDDING_MODEL_DIR` and builds the engine (a few seconds); see [GPU models](./gpu-models.md) and [offline hosts](./gpu-models.md#model-files-and-offline-hosts). If the GPU, the TensorRT libraries or the model files are missing, `--re-embed` stops before anything is created in Qdrant with `Error: the embedder cannot start: ...`.
 
 ### Wrong width at start-up
 
-`EMBEDDING_DIMENSIONS` must equal the width the model produces. With the TensorRT provider the check runs at every start (and before `--re-embed` changes anything) and refuses with a `dimensions` cause that names both widths. Change `EMBEDDING_DIMENSIONS` to the width of the model, or choose a model of the width you configured; when the width of an existing database changes, `forgetful --re-embed` resizes the vector storage and rebuilds every vector.
+`EMBEDDING_DIMENSIONS` must equal the width the model produces. With the TensorRT provider the check runs at every start (and before `--re-embed` changes anything) and refuses with a `dimensions` cause that names both widths. Change `EMBEDDING_DIMENSIONS` to the width of the model, or choose a model of the width you configured; when the width of existing memories changes, `forgetful --re-embed` copies them into a collection of the new width with fresh vectors.
 
 ### TensorRT (local GPU) to OpenAI (cloud)
 
@@ -317,7 +313,7 @@ GATEWAY_TOKEN=...
 forgetful --re-embed --batch-size 100
 ```
 
-The gateway answers with vectors of its model's width. If that differs from `EMBEDDING_DIMENSIONS`, the run stops at the first batch with an error that names both widths, and the backup is restored. A budget or model refusal (HTTP 403) and a rejected request (422) stop the run at once; a rate limit or an unavailable backend is retried a few times first. See [the gateway settings](./configuration.md#gateway-embedding-provider-configuration).
+The gateway answers with vectors of its model's width. If that differs from `EMBEDDING_DIMENSIONS`, the run stops at the first batch with an error that names both widths, and the new collection is discarded. A budget or model refusal (HTTP 403) and a rejected request (422) stop the run at once; a rate limit or an unavailable backend is retried a few times first. See [the gateway settings](./configuration.md#gateway-embedding-provider-configuration).
 
 ### Upgrading Model Within Same Provider
 
@@ -360,19 +356,16 @@ llama-server -m model.gguf --embedding --batch-size 2048
 vllm serve model-name --max-model-len 2048
 ```
 
-A batch size of `2048` is recommended as a starting point. This is a server-side setting, not a Forgetful setting — Forgetful's `--batch-size` flag controls how many memories are processed per database write, not the token limit.
+A batch size of `2048` is recommended as a starting point. This is a server-side setting, not a Forgetful setting — Forgetful's `--batch-size` flag controls how many memories are processed per Qdrant write, not the token limit.
 
 ---
 
-## Backups
+## Snapshots Before a Migration
 
-### PostgreSQL Backup Requirements
-
-For PostgreSQL backups to work, the machine running the migration needs `pg_dump` and `psql` available on `PATH` (the PostgreSQL client tools, for example the `postgresql-client` package).
-
-### Where Backups Are Kept
-
-By default the backup is written in the directory of `SQLITE_PATH`, for SQLite and PostgreSQL alike. Set `BACKUP_DIR` to keep backups elsewhere, for example on separate storage; it is created as `0700` if missing and the backup files are `0600`.
+The migration needs no backup of its own. To keep a copy of the old vectors independent of the previous collection
+(for example on another machine), take a snapshot first with `forgetful backup` (see
+[Qdrant Configuration](./configuration.md#qdrant-configuration)); the snapshot files are written to `BACKUP_DIR` and
+are readable by their owner only.
 
 ---
 
@@ -381,8 +374,8 @@ By default the backup is written in the directory of `SQLITE_PATH`, for SQLite a
 - **Always dry-run first** to verify your configuration and memory count
 - **Use a conservative batch size** (10-20) for cloud providers to avoid rate limits
 - **Use a larger batch size** (50-100) for local providers (TensorRT, Ollama) for faster processing, and for the `gateway` provider, which sends a batch as a single request
-- **Don't delete backups immediately** - verify search quality first by querying a few memories
-- **Stop the server** before running re-embed to avoid concurrent access issues
+- **Don't delete the previous collection immediately** - verify search quality first by querying a few memories
+- **Stop the server** before running re-embed, so the switch of the live collection happens while nothing is writing
 - The migration processes all users' memories in a single run (it's a global operation)
 
 ---

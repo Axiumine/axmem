@@ -30,7 +30,7 @@ def test_required_tools_are_gated_before_push():
     pre_push = {name for group in registry.STAGES["pre-push"] for name in group}
     assert {
         "ruff", "mypy", "pylint", "bandit", "vulture", "semgrep", "radon-cc", "radon-mi",
-        "tests", "e2e-postgres", "coverage", "memray", "trivy", "qodana",
+        "tests", "e2e-qdrant", "coverage", "memray", "trivy", "qodana",
         "gitnexus", "mutation",
     } <= pre_push
 

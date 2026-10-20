@@ -14,7 +14,8 @@ Add Forgetful to your OpenCode configuration file (`opencode.json` or `opencode.
 
 ### Standard Setup (Recommended)
 
-Zero-config setup using SQLite storage:
+Setup against a Qdrant on its default address (`http://127.0.0.1:6333`; see the
+[Qdrant configuration](../configuration.md#qdrant-configuration)):
 
 ```jsonc
 {
@@ -29,11 +30,11 @@ Zero-config setup using SQLite storage:
 }
 ```
 
-Your memories will persist in `~/.forgetful/forgetful.db`.
+Your memories are stored in that Qdrant (collections `axmem_memories` and `axmem_links`).
 
 ### Custom Setup (Advanced)
 
-For PostgreSQL, custom embeddings, or remote servers:
+For another Qdrant, custom embeddings, or remote servers:
 
 ```jsonc
 {
@@ -44,12 +45,8 @@ For PostgreSQL, custom embeddings, or remote servers:
       "command": ["uvx", "forgetful-ai"],
       "enabled": true,
       "environment": {
-        "DATABASE": "Postgres",
-        "POSTGRES_HOST": "localhost",
-        "PGPORT": "5432",
-        "POSTGRES_DB": "forgetful",
-        "POSTGRES_USER": "user",
-        "POSTGRES_PASSWORD": "pass",
+        "QDRANT_URL": "http://qdrant.internal:6333",
+        "QDRANT_API_KEY": "your-qdrant-api-key",
         "EMBEDDING_PROVIDER": "Google",
         "EMBEDDING_MODEL": "models/text-embedding-001"
       }

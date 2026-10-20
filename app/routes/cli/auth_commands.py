@@ -145,7 +145,7 @@ async def status(*, server: str | None = None, client_factory=None) -> int:
     url = server or settings.FORGETFUL_SERVER
     if not url:
         print("Mode: local (no FORGETFUL_SERVER configured)")
-        print(f"Database: {settings.DATABASE}")
+        print(f"Qdrant: {', '.join(settings.qdrant_urls)}")
         return 0
 
     token = bearer_token_from_env()

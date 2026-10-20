@@ -71,19 +71,19 @@ Execute any registered tool dynamically.
 - Argument names must be identifiers (letters, digits and underscores, not starting with a digit); any other
   name is rejected before the tool runs.
 - Domain and validation errors (not found, conflict, invalid state, bad arguments) are returned with their message.
-- A database constraint violation is reported as "the request violates a data constraint", invalid YAML as
-  "invalid YAML in the supplied content", and any other unexpected error as "an internal error occurred; see the
-  server logs for details". SQL, bound parameters and driver text never reach the client; they stay in the server log.
+  A conflict means concurrent changes to the same memory kept a write from being applied after a few attempts; repeat the call.
+- Any other unexpected error is reported as "an internal error occurred; see the server logs for details". Qdrant
+  request details, filters and payloads never reach the client; they stay in the server log.
 
 **Example:**
 ```python
 execute_forgetful_tool(
     tool_name="create_memory",
     arguments={
-        "title": "Database choice: PostgreSQL",
-        "content": "Selected PostgreSQL for pgvector support",
+        "title": "Database choice: Qdrant",
+        "content": "Selected Qdrant for vector search",
         "context": "Choosing the database for vector search",
-        "keywords": ["postgresql", "pgvector"],
+        "keywords": ["qdrant", "vector-search"],
         "tags": ["database", "decision"],
         "importance": 9
     }
@@ -106,6 +106,13 @@ that belongs to another tenant behaves exactly like an id that does not exist: `
 `update_memory`, `mark_memory_obsolete`, `unobsolete_memory` and the link tools answer "not found",
 and search and listing never return it. See the
 [Configuration Guide](configuration.md#authentication-configuration).
+
+### Memory ids
+
+A memory id is a UUID string such as `3f2b8c1e-5d4a-4e7b-9c6a-1b2d3e4f5a6b` (the upper-case spelling, the form
+without hyphens and surrounding whitespace are accepted and mean the same id). A number, or text that is not a UUID,
+is rejected with an error such as `memory_id must be a valid UUID` before anything is read or written. Ids sort in
+creation order but are otherwise opaque.
 
 ---
 
@@ -159,7 +166,7 @@ memory = execute_forgetful_tool(
         "project": "api-gateway"
     }
 )
-# Returns: {"id": 156, "linked_memory_ids": [142, 148, 151], ...}
+# Returns: {"id": "3f2b8c1e-5d4a-4e7b-9c6a-1b2d3e4f5a6b", "linked_memory_ids": ["0e9d8c7b-6a5f-4e3d-9c2b-1a0f9e8d7c6b", "5c4b3a29-1807-4f6e-a5d4-c3b2a1908f7e", "e8f7a6b5-c4d3-4e2f-b1a0-9988776655aa"], ...}
 ```
 
 **Example with provenance:**
@@ -230,7 +237,7 @@ Retrieve complete memory details by ID.
 
 **Example:**
 ```python
-memory = execute_forgetful_tool("get_memory", {"memory_id": 156})
+memory = execute_forgetful_tool("get_memory", {"memory_id": "3f2b8c1e-5d4a-4e7b-9c6a-1b2d3e4f5a6b"})
 ```
 
 ### `update_memory`
@@ -263,7 +270,7 @@ Update existing memory fields (PATCH semantics - only updates provided fields).
 execute_forgetful_tool(
     "update_memory",
     {
-        "memory_id": 156,
+        "memory_id": "3f2b8c1e-5d4a-4e7b-9c6a-1b2d3e4f5a6b",
         "importance": 9,  # Increased importance after realizing how critical this is
         "tags": ["api", "security", "performance", "production"]
     }
@@ -276,7 +283,7 @@ execute_forgetful_tool(
 execute_forgetful_tool(
     "update_memory",
     {
-        "memory_id": 156,
+        "memory_id": "3f2b8c1e-5d4a-4e7b-9c6a-1b2d3e4f5a6b",
         "source_repo": "company/api-gateway",
         "confidence": 0.95,
         "encoding_agent": "manual-review"
@@ -289,9 +296,9 @@ execute_forgetful_tool(
 Manually create bidirectional links between memories.
 
 **Parameters:**
-- `memory_id` (required, int): Source memory ID (aliases: `source_id`, `from_id`, `id`)
-- `related_ids` (required, List[int] or int): Target memory IDs (aliases: `target_id`, `target_ids`, `related_id`, `linked_ids`)
-- `memory_ids` (optional, List[int]): Pair/list of memory IDs `[src, target1, target2, ...]`
+- `memory_id` (required, UUID string): Source memory ID (aliases: `source_id`, `from_id`, `id`)
+- `related_ids` (required, List[UUID string] or one UUID string): Target memory IDs (aliases: `target_id`, `target_ids`, `related_id`, `linked_ids`)
+- `memory_ids` (optional, List[UUID string]): Pair/list of memory IDs `[src, target1, target2, ...]`
 
 **Returns:**
 - Dict with `linked_memory_ids` (list of target IDs newly linked). Target IDs that do not exist, belong to another tenant, or are already linked are skipped.
@@ -302,8 +309,8 @@ Manually create bidirectional links between memories.
 execute_forgetful_tool(
     "link_memories",
     {
-        "memory_id": 156,  # Rate limiting decision
-        "related_ids": [201]  # Redis caching strategy
+        "memory_id": "3f2b8c1e-5d4a-4e7b-9c6a-1b2d3e4f5a6b",  # Rate limiting decision
+        "related_ids": ["7a9d0e12-3b4c-4d5e-8f60-718293a4b5c6"]  # Redis caching strategy
     }
 )
 
@@ -311,8 +318,8 @@ execute_forgetful_tool(
 execute_forgetful_tool(
     "link_memories",
     {
-        "source_id": 156,
-        "target_id": 201
+        "source_id": "3f2b8c1e-5d4a-4e7b-9c6a-1b2d3e4f5a6b",
+        "target_id": "7a9d0e12-3b4c-4d5e-8f60-718293a4b5c6"
     }
 )
 
@@ -320,7 +327,7 @@ execute_forgetful_tool(
 execute_forgetful_tool(
     "link_memories",
     {
-        "memory_ids": [156, 201]
+        "memory_ids": ["3f2b8c1e-5d4a-4e7b-9c6a-1b2d3e4f5a6b", "7a9d0e12-3b4c-4d5e-8f60-718293a4b5c6"]
     }
 )
 ```
@@ -330,9 +337,9 @@ execute_forgetful_tool(
 Remove bidirectional link(s) between memories.
 
 **Parameters:**
-- `source_id` (required, int): Source memory ID (aliases: `memory_id`, `from_id`, `id`)
-- `target_id` (required, int or List[int]): Target memory ID(s) to unlink (aliases: `target_ids`, `related_id`, `related_ids`, `linked_ids`)
-- `memory_ids` (optional, List[int]): List of memory IDs `[src, target1, target2, ...]`
+- `source_id` (required, UUID string): Source memory ID (aliases: `memory_id`, `from_id`, `id`)
+- `target_id` (required, UUID string or List[UUID string]): Target memory ID(s) to unlink (aliases: `target_ids`, `related_id`, `related_ids`, `linked_ids`)
+- `memory_ids` (optional, List[UUID string]): List of memory IDs `[src, target1, target2, ...]`
 
 **Returns:**
 - Dict with `success` boolean (True if all requested links were removed)
@@ -342,23 +349,23 @@ Remove bidirectional link(s) between memories.
 execute_forgetful_tool(
     "unlink_memories",
     {
-        "source_id": 156,
-        "target_id": 201
+        "source_id": "3f2b8c1e-5d4a-4e7b-9c6a-1b2d3e4f5a6b",
+        "target_id": "7a9d0e12-3b4c-4d5e-8f60-718293a4b5c6"
     }
 )
 
 execute_forgetful_tool(
     "unlink_memories",
     {
-        "memory_id": 156,
-        "related_ids": [201, 202]
+        "memory_id": "3f2b8c1e-5d4a-4e7b-9c6a-1b2d3e4f5a6b",
+        "related_ids": ["7a9d0e12-3b4c-4d5e-8f60-718293a4b5c6", "c1d2e3f4-a5b6-4c7d-8e9f-0a1b2c3d4e5f"]
     }
 )
 
 execute_forgetful_tool(
     "unlink_memories",
     {
-        "memory_ids": [156, 201, 202]
+        "memory_ids": ["3f2b8c1e-5d4a-4e7b-9c6a-1b2d3e4f5a6b", "7a9d0e12-3b4c-4d5e-8f60-718293a4b5c6", "c1d2e3f4-a5b6-4c7d-8e9f-0a1b2c3d4e5f"]
     }
 )
 ```
@@ -382,9 +389,9 @@ Soft delete a memory with audit trail and supersession tracking.
 execute_forgetful_tool(
     "mark_memory_obsolete",
     {
-        "memory_id": 78,  # Old "Docker Swarm deployment" memory
+        "memory_id": "9b8a7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d",  # Old "Docker Swarm deployment" memory
         "reason": "Migrated to Kubernetes",
-        "superseded_by": 312  # New K8s memory
+        "superseded_by": "d4c3b2a1-f0e9-4d8c-b7a6-5f4e3d2c1b0a"  # New K8s memory
     }
 )
 ```
@@ -403,7 +410,7 @@ Restore a memory previously marked obsolete (undo `mark_memory_obsolete`).
 ```python
 execute_forgetful_tool(
     "unobsolete_memory",
-    {"memory_id": 78},
+    {"memory_id": "9b8a7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d"},
 )
 ```
 
@@ -655,11 +662,11 @@ insight2 = execute_forgetful_tool(
 decision = execute_forgetful_tool(
     "create_memory",
     {
-        "title": "Decision: pgvector for Forgetful project",
-        "content": "Selected pgvector because Forgetful already uses PostgreSQL.",
+        "title": "Decision: Qdrant for the memory store",
+        "content": "Selected Qdrant because it holds vectors and payload together and needs no SQL database next to it.",
         "context": "Final decision from the vector database evaluation",
-        "keywords": ["pgvector", "postgresql", "database-decision"],
-        "tags": ["decision", "database", "pgvector", "forgetful"],
+        "keywords": ["qdrant", "vector-database", "database-decision"],
+        "tags": ["decision", "database", "qdrant", "axmem"],
         "importance": 10,
         "project": project
     }

@@ -7,21 +7,22 @@ argument resolution of the link_memories / unlink_memories tools.
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
+from uuid import UUID
 
 from fastmcp.exceptions import ToolError
 
-from app.routes.mcp.adapters.arguments import coerce_int_id, coerce_int_ids
+from app.routes.mcp.adapters.arguments import coerce_memory_id, coerce_memory_ids
 
 _CREATED_SINCE_ERROR = "created_since must be an ISO 8601 timestamp with a timezone"
 _IMPORTANCE_MIN_ERROR = "importance_min must be an integer between 1 and 10"
 
 
-def resolve_memory_id(tool_name: str, memory_id: Any, alias_id: Any) -> int:
-    """Pick ``memory_id`` (or its ``id`` alias) and coerce it to an integer."""
+def resolve_memory_id(tool_name: str, memory_id: Any, alias_id: Any) -> UUID:
+    """Pick ``memory_id`` (or its ``id`` alias) and coerce it to a UUID."""
     chosen = memory_id if memory_id is not None else alias_id
     if chosen is None:
         raise ValueError(f"{tool_name} requires memory_id (or id)")
-    return coerce_int_id(chosen, "memory_id")
+    return coerce_memory_id(chosen, "memory_id")
 
 
 def check_importance_min(importance_min: Any) -> None:
@@ -102,10 +103,10 @@ def _require_id_pair(tool: str, name: str, ids: Any) -> None:
         raise ValueError(f"{tool} {name} must contain at least 2 IDs [source, target, ...]")
 
 
-def _split_id_sequence(tool: str, name: str, ids: Any) -> tuple[int, list[int]]:
+def _split_id_sequence(tool: str, name: str, ids: Any) -> tuple[UUID, list[UUID]]:
     """Read ``[source, target, ...]`` from a ``memory_ids`` / ``ids`` argument."""
     _require_id_pair(tool, name, ids)
-    return coerce_int_id(ids[0], f"{name}[0]"), [coerce_int_id(x, name) for x in ids[1:]]
+    return coerce_memory_id(ids[0], f"{name}[0]"), [coerce_memory_id(x, name) for x in ids[1:]]
 
 
 def _first_provided(provided: dict[str, Any], names: tuple[str, ...]) -> Any:
@@ -113,19 +114,19 @@ def _first_provided(provided: dict[str, Any], names: tuple[str, ...]) -> Any:
     return next((provided[name] for name in names if provided[name] is not None), None)
 
 
-def _extract_ids(spec: LinkAliasSpec, provided: dict[str, Any]) -> tuple[int | None, list[int]]:
+def _extract_ids(spec: LinkAliasSpec, provided: dict[str, Any]) -> tuple[UUID | None, list[UUID]]:
     """Read the source id and the raw target ids from whichever aliases were used."""
     for name in ("memory_ids", "ids"):
         if provided[name] is not None:
             return _split_id_sequence(spec.tool, name, provided[name])
     raw_src = _first_provided(provided, spec.source_aliases)
-    src = None if raw_src is None else coerce_int_id(raw_src, spec.source_label)
+    src = None if raw_src is None else coerce_memory_id(raw_src, spec.source_label)
     raw_targets = _first_provided(provided, spec.target_aliases)
-    targets = [] if raw_targets is None else coerce_int_ids(raw_targets, spec.target_label)
+    targets = [] if raw_targets is None else coerce_memory_ids(raw_targets, spec.target_label)
     return src, targets
 
 
-def resolve_link_arguments(spec: LinkAliasSpec, provided: dict[str, Any]) -> tuple[int, list[int]]:
+def resolve_link_arguments(spec: LinkAliasSpec, provided: dict[str, Any]) -> tuple[UUID, list[UUID]]:
     """Resolve the aliased arguments into a source id and its de-duplicated target ids.
 
     ``provided`` maps every accepted argument name (including ``memory_ids`` and ``ids``)

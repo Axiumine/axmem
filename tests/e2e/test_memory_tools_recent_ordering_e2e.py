@@ -1,19 +1,15 @@
-"""End-to-end tests for MCP memory tools: get_recent_memories ordering (PostgreSQL backend)
-
-Requires:
-- PostgreSQL with pgvector running in Docker
-- TensorRT embeddings adapter (the production embedder, on the GPU)
+"""End-to-end tests for MCP memory tools: get_recent_memories ordering 
 
 Covers importance and creation-time filters applied before pagination,
-deterministic tie-breaking and obsolete/sort options.
+deterministic tie-breaking, rejection of invalid filters and obsolete/sort options.
 """
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
-from sqlalchemy import update
+from fastmcp.exceptions import ToolError
 
-from app.repositories.postgres.postgres_tables import MemoryTable
+from app.config.settings import settings
 from tests.e2e.memory_tools_helpers_e2e import (
     create_memory,
     get_memory,
@@ -22,28 +18,55 @@ from tests.e2e.memory_tools_helpers_e2e import (
     recent_memories,
 )
 
-pytestmark = pytest.mark.asyncio(loop_scope="session")
 
-
-@pytest.mark.e2e
-async def test_get_recent_memories_filters_before_pagination_e2e(mcp_client):
-    """PostgreSQL applies both filters before counting and paging."""
-    tag = f"e2e-recent-filter-{uuid.uuid4().hex[:8]}"
+async def _create_ranked_memories(client, tag, importances, title, content, keyword):
+    """Create one memory per importance value and return their IDs in order."""
     created = []
-    for importance in (9, 8, 3):
+    for importance in importances:
         result = await create_memory(
-            mcp_client,
-            title=f"Postgres recent filter {importance}",
-            content="Memory for recent filtering",
-            context="Testing PostgreSQL recent filters",
-            keywords=["recent-filter"],
+            client,
+            title=title.format(importance=importance),
+            content=content,
+            context="Testing recent memory filtering",
+            keywords=[keyword],
             tags=[tag],
             importance=importance,
         )
         created.append(result.data["id"])
+    return created
+
+
+@pytest.mark.asyncio
+async def test_get_recent_memories_importance_min_filters_before_pagination(mcp_client):
+    """The importance floor controls both the page and its total count."""
+    tag = f"e2e-recent-importance-{uuid.uuid4().hex[:8]}"
+    created = await _create_ranked_memories(
+        mcp_client, tag, (9, 3, 8), "Importance floor {importance}",
+        "Memory for importance filtering", "importance",
+    )
+
+    result = await recent_memories(
+        mcp_client, tags=[tag], importance_min=8, sort_by="importance", limit=1,
+    )
+
+    assert result.data["total_count"] == 2
+    assert [memory["id"] for memory in result.data["memories"]] == [created[0]]
+
+
+@pytest.mark.asyncio
+async def test_get_recent_memories_created_since_is_inclusive(mcp_client):
+    """An exact timestamp match stays in; older memories do not."""
+    tag = f"e2e-recent-since-{uuid.uuid4().hex[:8]}"
+    created = await _create_ranked_memories(
+        mcp_client, tag, (9, 8), "Time floor {importance}",
+        "Memory for time filtering", "time-floor",
+    )
 
     floor_memory = await get_memory(mcp_client, created[1])
-    created_since = datetime.fromisoformat(floor_memory.data["created_at"]).isoformat()
+    timestamp = datetime.fromisoformat(floor_memory.data["created_at"])
+    created_since = timestamp.replace(tzinfo=UTC).astimezone(
+        timezone(timedelta(hours=2)),
+    ).isoformat()
 
     result = await recent_memories(
         mcp_client,
@@ -58,28 +81,26 @@ async def test_get_recent_memories_filters_before_pagination_e2e(mcp_client):
     assert [memory["id"] for memory in result.data["memories"]] == [created[1]]
 
 
-async def _pin_created_at(db_adapter, memory_ids, timestamps):
+async def _pin_created_at(raw_qdrant, memory_ids, timestamps):
     """Overwrite created_at for each memory so tie-breaking is deterministic."""
-    async with db_adapter.system_session() as session:
-        for memory_id, created_at in zip(memory_ids, timestamps, strict=True):
-            await session.execute(
-                update(MemoryTable)
-                .where(MemoryTable.id == memory_id)
-                .values(created_at=created_at),
-            )
+    for memory_id, created_at in zip(memory_ids, timestamps, strict=True):
+        await raw_qdrant.set_payload(
+            f"{settings.QDRANT_COLLECTION_PREFIX}_memories",
+            payload={"created_at": created_at.isoformat()},
+            points=[memory_id],
+            wait=True,
+        )
 
 
-@pytest.mark.e2e
-async def test_get_recent_memories_importance_ties_use_creation_time_e2e(
-    mcp_client, db_adapter,
-):
-    """PostgreSQL uses creation time and ID to break importance ties."""
+@pytest.mark.asyncio
+async def test_get_recent_memories_importance_ties_use_creation_time(mcp_client, raw_qdrant):
+    """Importance ties use newest creation time, then ID for exact ties."""
     tag = f"e2e-recent-tie-{uuid.uuid4().hex[:8]}"
     created = []
     for index in range(3):
         result = await create_memory(
             mcp_client,
-            title=f"Postgres importance tie {index}",
+            title=f"Importance tie {index}",
             content="Memory for importance ordering",
             context="Testing deterministic recent memory ordering",
             keywords=["importance-tie"],
@@ -89,7 +110,7 @@ async def test_get_recent_memories_importance_ties_use_creation_time_e2e(
         created.append(result.data["id"])
 
     await _pin_created_at(
-        db_adapter,
+        raw_qdrant,
         created,
         (
             datetime(2026, 2, 1, tzinfo=UTC),
@@ -107,7 +128,21 @@ async def test_get_recent_memories_importance_ties_use_creation_time_e2e(
     ]
 
 
-@pytest.mark.e2e
+@pytest.mark.asyncio
+@pytest.mark.parametrize("arguments, message", [
+    ({"importance_min": 0}, "importance_min must be"),
+    ({"importance_min": 11}, "importance_min must be"),
+    ({"importance_min": True}, "importance_min must be"),
+    ({"created_since": "2026-08-01T00:00:00"}, "created_since must be"),
+    ({"created_since": "not-a-timestamp"}, "created_since must be"),
+])
+async def test_get_recent_memories_rejects_invalid_filters(mcp_client, arguments, message):
+    """Invalid filters fail clearly instead of returning an unfiltered brief."""
+    with pytest.raises(ToolError, match=message):
+        await recent_memories(mcp_client, **arguments)
+
+
+@pytest.mark.asyncio
 async def test_get_recent_memories_include_obsolete_and_sort_importance_e2e(mcp_client):
     """Test include_obsolete and importance sort on get_recent_memories"""
     low = await create_memory(

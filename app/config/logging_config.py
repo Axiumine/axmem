@@ -63,7 +63,8 @@ class SensitiveDataFilter(logging.Filter):
     Patterns masked:
     - Passwords (password=xxx, "password": "xxx")
     - Tokens (token=xxx, "token": "xxx", Bearer <credential>)
-    - PostgreSQL connection strings (hides user:password)
+    - API keys (api-key=xxx, "api_key": "xxx")
+    - URLs that carry credentials (hides user:password)
 
     A value is only masked when it follows a key/value separator (``=`` or ``:``), or a
     ``Bearer`` that is followed by something credential-shaped, so ordinary prose such as
@@ -88,7 +89,9 @@ class SensitiveDataFilter(logging.Filter):
             ),
             "bearer ***",
         ),
-        # Generic database connection string: scheme://user:password@host
+        # api-key=something, "api_key": "something" (the Qdrant API key travels in the api-key header)
+        (re.compile(r'api[-_]?key["\']?\s*[:=]\s*["\']?([^"\s,}]+)["\']?', re.IGNORECASE), "api-key=***"),
+        # URL with credentials: scheme://user:password@host
         (re.compile(r"://[^:/@]+:[^@]+@", re.IGNORECASE), "://***:***@"),
     ]
 
@@ -235,7 +238,6 @@ _queue_listener: logging.handlers.QueueListener | None = None
 def configure_logging(
     log_level: str = "INFO",
     log_format: str = "console",
-    db_logging: bool = False,
 ) -> logging.handlers.QueueListener:
     """Configure centralized logging with QueueHandler for asyncio.
 
@@ -250,9 +252,6 @@ def configure_logging(
         log_level: Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
         log_format: "json" for production, "console" for development (case-insensitive;
             any other value raises ValueError)
-        db_logging: Log SQL statements (DB_LOGGING). Goes through this pipeline (stderr, masked)
-            because SQLAlchemy's own ``echo`` would write to stdout, which carries the stdio
-            MCP stream. Parameter values stay hidden (``hide_parameters`` on the engines).
 
     Returns:
         QueueListener instance (must be stopped during shutdown)
@@ -307,8 +306,9 @@ def configure_logging(
     # Reduce noise from uvicorn access logs (keep only warnings+)
     logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
 
-    # SQL statements are INFO on sqlalchemy.engine: only show them when DB_LOGGING is on
-    logging.getLogger("sqlalchemy.engine").setLevel(logging.INFO if db_logging else logging.WARNING)
+    # httpx logs every request at INFO, and the Qdrant client makes several for each tool call
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
 
     # Keep FastAPI at INFO
     logging.getLogger("fastapi").setLevel(logging.INFO)

@@ -56,14 +56,43 @@ without the mark, with the commit that landed it, in the commit that lands it.
   CUDA context; the server logs the start-up line of each and the combined GPU memory of the process (about 4.1 GiB
   for the pair). Offline hosts copy `EMBEDDING_MODEL_DIR` and set `HF_HUB_OFFLINE=1` (`docs/gpu-models.md`).
   `docs/embedding_migration.md` gains the FastEmbed to TensorRT and wrong-width cases.
-- Standalone end-to-end test (`tests/e2e_sqlite/test_standalone_sqlite.py`): the real server in a subprocess with the
+- Standalone end-to-end test (`tests/e2e/test_standalone_e2e.py`): the real server in a subprocess with the
   GPU models, a static token, no `GATEWAY_*` variable and `HF_HUB_OFFLINE=1`, behind a guard that refuses and records
-  every connection that is not loopback, runs create, auto-link, a reranked query, link and mark-obsolete. It uses
-  file-backed SQLite until the Qdrant store lands.
+  every connection that is not loopback (its Qdrant node is on loopback), runs create, auto-link, a reranked query,
+  link and mark-obsolete.
 - Tenants and static bearer tokens (`3201a2c3`). `AUTH_MODE=static` maps a fixed bearer token to one tenant: `AUTH_STATIC_TOKEN_HASHES` holds only the SHA-256 hash per tenant (never the token), a presented token is hashed and compared with every hash in constant time, one token belongs to one tenant, and a token never reaches a log line. For `jwt` and `introspection` the tenant is the claim `tenant_id`, else `tenant`, else `sub`; a blank claim falls through, and a claim of another type or over 255 characters is refused. `DEFAULT_TENANT` names the tenant of `AUTH_MODE=none`. Tests cover each mode (valid, invalid, expired and missing token), the claim order, the hash comparison and tenant isolation over REST, MCP and the CLI.
 - `project` argument (a free-form string, trimmed, 1 to 500 characters, created on first use) on `create_memory`, `update_memory` (an empty string clears it), `query_memory`, `get_recent_memories` and `rebuild_embeddings`, the `project` field and query parameter of the REST memory routes, and `-p/--project` on the CLI memory verbs.
-- **(planned)** Qdrant as the only store, authenticated with a Qdrant API key.
-- **(planned)** Backups as Qdrant snapshots plus a JSONL export of the memories without vectors.
+- Qdrant as the only store, authenticated with a Qdrant API key. A memory is a point (vector and payload) in
+  `<prefix>_memories`, an alias onto the live generation `<prefix>_memories_<stamp>`; a link is a point in
+  `<prefix>_links` whose id is a deterministic UUIDv5 of tenant and pair. New settings: `QDRANT_URL` (one node, or the
+  nodes of one cluster separated by commas; default `http://127.0.0.1:6333`), `QDRANT_API_KEY` (a secret value),
+  `QDRANT_COLLECTION_PREFIX` (default `axmem`), `QDRANT_SHARD_NUMBER`, `QDRANT_REPLICATION_FACTOR`,
+  `QDRANT_WRITE_CONSISTENCY_FACTOR`, `QDRANT_TIMEOUT_SECONDS` and `QDRANT_WRITE_ATTEMPTS`; the cluster profile
+  (3, 3, 2) is documented in [docs/configuration.md](docs/configuration.md#qdrant-configuration). At start every node
+  must report Qdrant 1.19.0 or later, the collections are created, and an existing collection whose width, shard
+  count, replication or payload indexes differ from the settings stops the server with a message that names the
+  difference. Requests spread over the nodes and move on when one cannot be reached; a write that fails ambiguously
+  is repeated with the same claim token, so it takes effect once. Every read and write goes through `QdrantStore`,
+  which adds the tenant condition (proved for every repository method by `tests/integration/test_tenant_chokepoint.py`);
+  import-linter lets only `client.py`, `schema.py` and `store.py` import `qdrant_client`, and two semgrep rules
+  (`forgetful-qdrant-write-outside-store`, `forgetful-qdrant-write-without-wait`) replace the SQL rule. Edits and
+  obsolete toggles are writes conditional on the version the writer read, with the claim token read back to learn
+  whether the write won; a lost race is repeated against the new state up to 5 times and then fails with
+  `ConflictError` (REST 409, MCP tool error).
+- Backups as Qdrant snapshots plus a JSONL export of the memories without vectors, from the CLI and nowhere else:
+  `forgetful backup [--force]` (a snapshot of the live memory collection and the links from every node into
+  `BACKUP_DIR`, directory `0700` and files `0600`, with a manifest of SHA-256 sums; it refuses when the replicas of a
+  replicated deployment disagree unless `--force`), `forgetful restore <dir> --yes` (stop the server first; the
+  restored memory collection becomes the live one), `forgetful export <file>` and `forgetful import <file>` (the
+  import embeds every memory again with the configured provider, leaves an existing id untouched and can be repeated;
+  a line it cannot read is skipped and counted) and `forgetful qdrant-check` (reads each node on its own and reports
+  the points whose version, claim token or obsolete flag differ; exit code 1 on a difference). The check reports
+  only; repairing a replica is an operator decision.
+- Three-node cluster end-to-end suite (`tests/cluster`, marker `cluster`, excluded from a plain `pytest` run) and the
+  `e2e-qdrant` gate that runs it and appends its coverage: replication factor 3, write consistency factor 2, strong
+  ordering, an API key and internal authentication. It checks the layout, the replication of writes, writes and reads
+  while a node is down, races of writers spread over the nodes, and that the race detector reports a writer that
+  checks on the client.
 
 ### Changed
 
@@ -94,7 +123,33 @@ without the mark, with the commit that landed it, in the commit that lands it.
   `TensorRTStartupError` (they cover both models), `reranker_model.py` is `tensorrt_model.py` and
   `docs/gpu-reranking.md` is `docs/gpu-models.md`.
 - Users become tenants and projects become an optional scope string created on first use. The stored `users` row is the tenant record (matched by name in `external_id`) and `projects` is the table behind the scope, because the storage layer is replaced later and not migrated; no revision touches either table. A scope belongs to one tenant, so two tenants that use the same label have two scopes. Memory responses carry `project` (a string or null) instead of `project_ids`, and `ObsoleteMatch` does the same. The `AUTH_MODE` setting replaces `FASTMCP_SERVER_AUTH`, `DEFAULT_TENANT` replaces `DEFAULT_USER_ID`, `DEFAULT_USER_NAME` and `DEFAULT_USER_EMAIL`; an existing deployment keeps its memories by setting `DEFAULT_TENANT` to the old `DEFAULT_USER_ID` value. `GET /api/v1/auth/info` reports `authMode` as `disabled`, `jwt`, `introspection` or `static`. The tool scopes `users` and `projects` no longer exist (`read:memories` and `write:memories` remain). `.env.example` now sets `AUTH_MODE=none` and `SERVER_HOST=127.0.0.1`. The stdio and the HTTP examples in the README and the connectivity guide pass `AUTH_MODE=none` or a bearer token. The tool count goes from 17 to 10. The test harness server runs with `AUTH_MODE=none` on its loopback bind.
-- **(planned)** Memory ids become UUIDs.
+- Memory ids are UUIDs (UUIDv7, so they sort in creation order) in the REST routes, the MCP tools and the CLI, because
+  Qdrant has no autoincrement. A number is refused (`memory_id must be a valid UUID`, or `ids are UUIDs` on the CLI) and a
+  path id that is not a UUID is 404; the upper-case spelling, the form without hyphens and surrounding whitespace are
+  accepted. `linked_memory_ids`, `superseded_by`, `related_ids` and `memory_ids` carry UUID strings.
+  The CLI argument tree and settings defaults snapshots are refreshed.
+- Tenants are stateless: a tenant's id is the UUIDv5 of its name under a fixed namespace, so there is no tenant store,
+  no `TenantService` and no `users` table. Changing the namespace (`TENANT_NAMESPACE` in `app/models/tenant_models.py`)
+  would re-key every tenant.
+- Re-embedding (`forgetful --re-embed`, or `forgetful re-embed`) copies the memories, embedded again, into a new
+  collection and moves the live alias only after the count, dimension and search checks pass. A failure or an
+  interrupt discards the new collection and leaves the live one untouched, so there is no backup to take or restore
+  first; the previous collection is kept after a success and is deleted by hand. `--dry-run` is read-only and creates
+  nothing. Edits made while the copy runs are picked up by further scans, and writes into the new collection are
+  conditional on the version. The live collection may hold vectors of the old width while this runs; the server
+  refuses to start on a width mismatch. [docs/embedding_migration.md](docs/embedding_migration.md) is rewritten.
+- The integration and end-to-end suites run on a real Qdrant node that `tests/qdrant_support.py` starts through Docker
+  (`qdrant/qdrant:v1.19.2`) with an API key, once per pytest process, or on a server named by `AXMEM_TEST_QDRANT_URL`.
+  The in-memory repository stubs are deleted (they would repeat Qdrant's filter, ordering and conditional-write
+  semantics), `tests/e2e_sqlite` is merged into `tests/e2e`, the redundant `test_auth_cache_e2e.py` is deleted, and
+  tests stay apart by tenant namespace (collections are shared) or use their own collections where counts or
+  generations matter. New tests prove the tenant chokepoint, the conditional writes (barrier races, lost
+  acknowledgements, a detector that must report a check-then-write updater), the pool, the schema checks, the store
+  guards, the archive format, the cluster check and the operator commands. The snapshot gate pins the collection layout
+  and the payload types instead of the SQL DDL and the Alembic chain. The standalone end-to-end test runs on Qdrant.
+  The GPU preflight and the Docker preflight apply to every suite and never skip.
+- `BACKUP_DIR` now says where `forgetful backup` and `forgetful export` write; the database backup that `--re-embed`
+  made is gone with the database. `.env.example` shows the Qdrant settings instead of SQLite and PostgreSQL.
 - The integration and end-to-end suites run the real TensorRT embedder and reranker on the GPU through the session
   fixtures `tensorrt_embedder` and `tensorrt_reranker` (the production adapters; there is no test-only embedder), with
   no stub embedder or reranker, fake module, `gpu` marker or skip. The embedding stubs (`MockEmbeddingsAdapter`,
@@ -109,7 +164,6 @@ without the mark, with the commit that landed it, in the commit that lands it.
   the architecture tests, `trivy`, `qodana` and the wheel smoke test stay on hosted runners, and the static job
   installs without the TensorRT libraries. The runner is not provisioned by the repository. The Windows leg of
   `ci.yml` is gone.
-- **(planned)** Tests use a real Qdrant.
 - `RERANKING_PROVIDER` accepts `TensorRT` (default) and `HTTP`; `FastEmbed` is now rejected at startup with an error
   naming the setting. The reranker needs an NVIDIA GPU; `RERANKING_ENABLED=false` or `RERANKING_PROVIDER=HTTP` runs
   without one. The reranker is Linux-only (the engine cache locks with `fcntl`) and the package classifier reads
@@ -176,7 +230,16 @@ without the mark, with the commit that landed it, in the commit that lands it.
   files still pulled the upstream image and no Axmem image was ever published. Docker stays as a test dependency
   (the PostgreSQL e2e fixture, the quality gates that fall back to a tool image, the test harness image). No schema
   change.
-- **(planned)** SQLite, PostgreSQL, pgvector and Alembic.
+- SQLite, PostgreSQL, pgvector, SQLAlchemy and Alembic: `alembic/` and `alembic.ini` (every revision, no migration
+  is needed because Qdrant collections are created at start), the SQLite and PostgreSQL memory repositories and
+  their sessions and adapters, `vector_ddl`, the database `backup_adapter` and its `pg_dump`/`psql` handling, the user
+  and tenant services, repositories and models (the tenant record lives nowhere now), the settings `DATABASE`,
+  `POSTGRES_HOST`, `PGPORT`, `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `SQLITE_PATH`, `SQLITE_MEMORY` and
+  `DB_LOGGING` (older environment files that still set them keep working, because unknown settings are ignored), and
+  the dependencies `aiosqlite`, `alembic`, `asyncpg`, `pgvector`, `psycopg2-binary`, `sqlalchemy` and `sqlite-vec`
+  (`qdrant-client` is added). The `e2e-postgres` gate, the `forgetful-db` PostgreSQL test fixture and the SQLite
+  e2e suite are replaced by the Qdrant fixture and the cluster gate. Data in an existing SQLite or PostgreSQL
+  database is not migrated by this commit: export it with the version that holds it, or re-create the memories.
 - User and project tools, routes and CLI verbs: the MCP tools `get_current_user`, `update_user_notes`, `create_project`, `list_projects`, `get_project`, `update_project` and `delete_project`, the `user` and `project` tool categories, the REST routes `/api/v1/projects`, `ProjectService`, `UserService`, the project and patch models, the user notes and `idp_metadata` handling, the `PROJECT_DESCRIPTION_MAX_LENGTH` and `PROJECT_NOTES_MAX_LENGTH` settings, `project_ids` on the memory tools and routes, the `forgetful project list` command and the CLI project name resolver. The GitHub and Google OAuth providers, the `FASTMCP_SERVER_AUTH`, `FASTMCP_SERVER_AUTH_GITHUB_*`, `FASTMCP_SERVER_AUTH_GOOGLE_*`, `OAUTH_STORAGE_PATH` and `DEFAULT_USER_*` settings, the CLI browser login with its token cache, `forgetful auth logout`, and the `py-key-value-aio` dependency that stored the OAuth state. Agent commands, prompts, the connectivity guide and the files in the `skills/` catalogue that taught these tools are edited; the catalogue stays. No schema change and no migration: the `users` and `projects` tables stay.
 - FastEmbed cross-encoder reranker: `FastEmbedCrossEncoderAdapter`, its DirectML handling, the `RERANKING_THREADS` and
   `RERANKING_ONNX_PROVIDERS` settings and the tests of that adapter and of its worker pool. Older environment files

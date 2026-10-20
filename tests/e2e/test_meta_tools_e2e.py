@@ -1,7 +1,7 @@
 """End-to-end tests for MCP meta-tools via HTTP
 
 Requires:
-- PostgreSQL running in Docker
+- Qdrant running in Docker (started by tests/qdrant_support.py)
 - MCP server running on configured port
 - Registry initialized with tools
 
@@ -9,8 +9,6 @@ Tests the complete meta-tools pattern:
 HTTP → FastMCP Client → MCP Protocol → Meta-tools → Registry → Adapters → Services
 """
 import pytest
-
-pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 
 def _has_field(data, name):
@@ -50,7 +48,7 @@ def _assert_tool_doc_fields(data):
     assert "json_schema" in data
 
 
-@pytest.mark.e2e
+@pytest.mark.asyncio
 async def test_discover_forgetful_tools_all_e2e(mcp_client):
     """Test discovering all tools without category filter"""
     result = await mcp_client.call_tool("discover_forgetful_tools", {})
@@ -67,7 +65,7 @@ async def test_discover_forgetful_tools_all_e2e(mcp_client):
     assert result.data["total_count"] == total
 
 
-@pytest.mark.e2e
+@pytest.mark.asyncio
 async def test_discover_forgetful_tools_by_category_e2e(mcp_client):
     """Test discovering tools filtered by category"""
     result = await mcp_client.call_tool(
@@ -87,7 +85,7 @@ async def test_discover_forgetful_tools_by_category_e2e(mcp_client):
         _assert_tool_entry(tool, "memory")
 
 
-@pytest.mark.e2e
+@pytest.mark.asyncio
 @pytest.mark.parametrize("removed_category", ["user", "project"])
 async def test_removed_categories_are_not_discoverable_e2e(mcp_client, removed_category):
     with pytest.raises(Exception) as exc_info:
@@ -96,7 +94,7 @@ async def test_removed_categories_are_not_discoverable_e2e(mcp_client, removed_c
     assert removed_category in str(exc_info.value)
 
 
-@pytest.mark.e2e
+@pytest.mark.asyncio
 async def test_discover_recent_memories_filters_e2e(mcp_client):
     """Clients can discover the two new recent-memory filters."""
     result = await mcp_client.call_tool("discover_forgetful_tools", {"category": "memory"})
@@ -109,7 +107,7 @@ async def test_discover_recent_memories_filters_e2e(mcp_client):
     assert {"importance_min", "created_since"} <= parameters
 
 
-@pytest.mark.e2e
+@pytest.mark.asyncio
 async def test_discover_tools_invalid_category_e2e(mcp_client):
     """Test discovering tools with invalid category raises error"""
     with pytest.raises(Exception) as exc_info:
@@ -122,7 +120,7 @@ async def test_discover_tools_invalid_category_e2e(mcp_client):
     assert "Invalid category" in str(exc_info.value) or "invalid_category" in str(exc_info.value)
 
 
-@pytest.mark.e2e
+@pytest.mark.asyncio
 async def test_how_to_use_forgetful_tool_e2e(mcp_client):
     """Test getting detailed documentation for a specific tool"""
     result = await mcp_client.call_tool(
@@ -142,7 +140,7 @@ async def test_how_to_use_forgetful_tool_e2e(mcp_client):
     assert "properties" in schema
 
 
-@pytest.mark.e2e
+@pytest.mark.asyncio
 async def test_how_to_use_nonexistent_tool_e2e(mcp_client):
     """Test getting documentation for nonexistent tool raises error"""
     with pytest.raises(Exception) as exc_info:
@@ -155,7 +153,7 @@ async def test_how_to_use_nonexistent_tool_e2e(mcp_client):
     assert "not found" in str(exc_info.value).lower()
 
 
-@pytest.mark.e2e
+@pytest.mark.asyncio
 async def test_execute_forgetful_tool_read_e2e(mcp_client):
     """Test executing a read tool through meta-tools"""
     result = await mcp_client.call_tool(
@@ -171,7 +169,7 @@ async def test_execute_forgetful_tool_read_e2e(mcp_client):
     assert _has_field(result.data, "total_count")
 
 
-@pytest.mark.e2e
+@pytest.mark.asyncio
 async def test_execute_forgetful_tool_memory_create_e2e(mcp_client):
     """Test executing create_memory tool through meta-tools"""
     result = await mcp_client.call_tool(
@@ -198,7 +196,7 @@ async def test_execute_forgetful_tool_memory_create_e2e(mcp_client):
     assert memory_id is not None
 
 
-@pytest.mark.e2e
+@pytest.mark.asyncio
 async def test_execute_forgetful_tool_memory_query_e2e(mcp_client):
     """Test executing query_memory tool through meta-tools"""
     # First create a memory
@@ -236,7 +234,7 @@ async def test_execute_forgetful_tool_memory_query_e2e(mcp_client):
     assert _has_field(query_result.data, "total_count")
 
 
-@pytest.mark.e2e
+@pytest.mark.asyncio
 async def test_execute_nonexistent_tool_e2e(mcp_client):
     """Test executing a nonexistent tool raises error"""
     with pytest.raises(Exception) as exc_info:
@@ -252,7 +250,7 @@ async def test_execute_nonexistent_tool_e2e(mcp_client):
     assert "not found" in str(exc_info.value).lower()
 
 
-@pytest.mark.e2e
+@pytest.mark.asyncio
 async def test_execute_tool_preserves_tenant_context_e2e(mcp_client):
     """Test that the tenant is preserved through execute_forgetful_tool across multiple calls"""
     created = await mcp_client.call_tool(
@@ -279,7 +277,7 @@ async def test_execute_tool_preserves_tenant_context_e2e(mcp_client):
     assert fetched.data["title"] == "Tenant context memory"
 
 
-@pytest.mark.e2e
+@pytest.mark.asyncio
 async def test_meta_tools_workflow_e2e(mcp_client):
     """Test complete workflow: discover → how_to_use → execute"""
     # Step 1: Discover tools in memory category
@@ -327,7 +325,7 @@ async def test_meta_tools_workflow_e2e(mcp_client):
 # Project scope via Meta-Tools
 # ============================================================================
 
-@pytest.mark.e2e
+@pytest.mark.asyncio
 async def test_execute_create_memory_with_project_via_meta_tools_e2e(mcp_client):
     """Test scoping a memory to a project through meta-tools"""
     result = await mcp_client.call_tool(
@@ -356,7 +354,7 @@ async def test_execute_create_memory_with_project_via_meta_tools_e2e(mcp_client)
     assert [m["id"] for m in listed.data["memories"]] == [result.data["id"]]
 
 
-@pytest.mark.e2e
+@pytest.mark.asyncio
 async def test_discover_all_categories_e2e(mcp_client):
     """Test that all tool categories are discoverable"""
     result = await mcp_client.call_tool("discover_forgetful_tools", {})

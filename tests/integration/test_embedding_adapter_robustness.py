@@ -39,7 +39,7 @@ AZURE_CONFIG = {
 def adapter_logs(monkeypatch, caplog):
     """Capture the adapter module's log records at INFO.
 
-    Alembic's fileConfig() (run by any test that migrates a database) disables
+    Logging configuration applied while an app starts (the server tests do it) disables
     every logger that already exists, so re-enable the adapter logger explicitly.
     """
     monkeypatch.setattr(ea.logger, "disabled", False)

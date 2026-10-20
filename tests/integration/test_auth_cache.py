@@ -9,13 +9,12 @@ from starlette.requests import Request
 
 from app.config.settings import settings
 from app.middleware.auth import TokenCache, get_tenant_from_request
-from app.models.user_models import User
+from app.models.tenant_models import Tenant
 
 
 class MockFastMCP:
     """Mock FastMCP instance for testing"""
-    def __init__(self, tenant_service, auth_provider=None, token_cache=None):
-        self.tenant_service = tenant_service
+    def __init__(self, auth_provider=None, token_cache=None):
         self.auth = auth_provider
         self.token_cache = token_cache
 
@@ -47,20 +46,14 @@ async def test_token_cache_basic_set_get():
     """Test basic cache set and get operations"""
     cache = TokenCache(ttl_seconds=300, max_size=100)
 
-    # Create a mock user
-    user = User(
-        external_id="test-user-123",
-        name="Test User",
-        email="test@example.com",
-    )
+    tenant = Tenant("test-user-123")
 
-    # Set and get
-    await cache.set("test-token", user)
-    cached_user = await cache.get("test-token")
+    await cache.set("test-token", tenant)
+    cached = await cache.get("test-token")
 
-    assert cached_user is not None
-    assert cached_user.external_id == "test-user-123"
-    assert cached_user.name == "Test User"
+    assert cached is not None
+    assert cached.name == "test-user-123"
+    assert cached == tenant
 
 
 @pytest.mark.asyncio
@@ -79,11 +72,7 @@ async def test_token_cache_expiration():
     """Test that expired entries are not returned"""
     cache = TokenCache(ttl_seconds=1, max_size=100)
 
-    user = User(
-        external_id="test-user-expire",
-        name="Expiring User",
-        email="expire@example.com",
-    )
+    user = Tenant("test-user-expire")
 
     # Control the wall clock used by the cache rather than relying on a real sleep.
     with patch("app.middleware.auth.time") as clock:
@@ -104,14 +93,14 @@ async def test_token_cache_lru_eviction():
 
     # Add 3 users
     for i in range(3):
-        user = User(external_id=f"user-{i}", name=f"User {i}", email=f"u{i}@example.com")
+        user = Tenant(f"user-{i}")
         await cache.set(f"token-{i}", user)
 
     # Verify cache size is 3
     assert cache.stats["size"] == 3
 
     # Add a 4th user - should evict oldest (token-0)
-    user4 = User(external_id="user-3", name="User 3", email="u3@example.com")
+    user4 = Tenant("user-3")
     await cache.set("token-3", user4)
 
     # Cache size should still be 3
@@ -129,7 +118,7 @@ async def test_token_cache_hash_security():
     """Test that tokens are hashed for security"""
     cache = TokenCache(ttl_seconds=300, max_size=100)
 
-    user = User(external_id="secure-user", name="Secure", email="secure@example.com")
+    user = Tenant("secure-user")
     token = "secret-bearer-token-12345"
 
     await cache.set(token, user)
@@ -146,7 +135,7 @@ async def test_token_cache_stats():
     """Test cache statistics tracking"""
     cache = TokenCache(ttl_seconds=300, max_size=100)
 
-    user = User(external_id="stats-user", name="Stats", email="stats@example.com")
+    user = Tenant("stats-user")
     await cache.set("stats-token", user)
 
     # 1 hit
@@ -170,7 +159,7 @@ async def test_token_cache_clear():
 
     # Add multiple entries
     for i in range(5):
-        user = User(external_id=f"clear-{i}", name=f"Clear {i}", email=f"c{i}@example.com")
+        user = Tenant(f"clear-{i}")
         await cache.set(f"clear-token-{i}", user)
 
     assert cache.stats["size"] == 5
@@ -188,7 +177,7 @@ async def test_token_cache_clear():
 
 
 @pytest.mark.asyncio
-async def test_cache_hit_avoids_verify_token(test_tenant_service):
+async def test_cache_hit_avoids_verify_token():
     """Test that cache hit doesn't call verify_token"""
     # Track verify_token calls
     call_count = 0
@@ -206,7 +195,7 @@ async def test_cache_hit_avoids_verify_token(test_tenant_service):
     mock_auth.verify_token = verify_token_tracker
 
     cache = TokenCache(ttl_seconds=300, max_size=100)
-    mcp = MockFastMCP(test_tenant_service, auth_provider=mock_auth, token_cache=cache)
+    mcp = MockFastMCP(auth_provider=mock_auth, token_cache=cache)
 
     request = create_mock_request("test-cache-token")
 
@@ -220,11 +209,11 @@ async def test_cache_hit_avoids_verify_token(test_tenant_service):
         assert call_count == 1  # Still 1, cache hit!
 
         # Same user
-        assert user1.external_id == user2.external_id
+        assert user1.name == user2.name
 
 
 @pytest.mark.asyncio
-async def test_different_tokens_different_cache_entries(test_tenant_service):
+async def test_different_tokens_different_cache_entries():
     """Test that different tokens don't share cache entries"""
     call_count = 0
 
@@ -242,7 +231,7 @@ async def test_different_tokens_different_cache_entries(test_tenant_service):
     mock_auth.verify_token = verify_token_tracker
 
     cache = TokenCache(ttl_seconds=300, max_size=100)
-    mcp = MockFastMCP(test_tenant_service, auth_provider=mock_auth, token_cache=cache)
+    mcp = MockFastMCP(auth_provider=mock_auth, token_cache=cache)
 
     with patch.object(settings, "TOKEN_CACHE_ENABLED", True):
         # First token
@@ -256,11 +245,11 @@ async def test_different_tokens_different_cache_entries(test_tenant_service):
         assert call_count == 2
 
         # Different users
-        assert user1.external_id != user2.external_id
+        assert user1.name != user2.name
 
 
 @pytest.mark.asyncio
-async def test_cache_disabled_via_setting(test_tenant_service):
+async def test_cache_disabled_via_setting():
     """Test that cache is bypassed when TOKEN_CACHE_ENABLED=False"""
     call_count = 0
 
@@ -277,7 +266,7 @@ async def test_cache_disabled_via_setting(test_tenant_service):
     mock_auth.verify_token = verify_token_tracker
 
     cache = TokenCache(ttl_seconds=300, max_size=100)
-    mcp = MockFastMCP(test_tenant_service, auth_provider=mock_auth, token_cache=cache)
+    mcp = MockFastMCP(auth_provider=mock_auth, token_cache=cache)
 
     request = create_mock_request("disabled-test-token")
 
@@ -292,7 +281,7 @@ async def test_cache_disabled_via_setting(test_tenant_service):
 
 
 @pytest.mark.asyncio
-async def test_invalid_token_not_cached(test_tenant_service):
+async def test_invalid_token_not_cached():
     """Test that invalid tokens are not cached"""
     async def verify_token_reject(token):
         return None  # Invalid token
@@ -301,7 +290,7 @@ async def test_invalid_token_not_cached(test_tenant_service):
     mock_auth.verify_token = verify_token_reject
 
     cache = TokenCache(ttl_seconds=300, max_size=100)
-    mcp = MockFastMCP(test_tenant_service, auth_provider=mock_auth, token_cache=cache)
+    mcp = MockFastMCP(auth_provider=mock_auth, token_cache=cache)
 
     request = create_mock_request("invalid-token")
 
@@ -315,7 +304,7 @@ async def test_invalid_token_not_cached(test_tenant_service):
 
 
 @pytest.mark.asyncio
-async def test_no_cache_when_cache_not_attached(test_tenant_service):
+async def test_no_cache_when_cache_not_attached():
     """Test graceful handling when token_cache not attached to mcp"""
     call_count = 0
 
@@ -332,7 +321,7 @@ async def test_no_cache_when_cache_not_attached(test_tenant_service):
     mock_auth.verify_token = verify_token_tracker
 
     # No token_cache attached
-    mcp = MockFastMCP(test_tenant_service, auth_provider=mock_auth, token_cache=None)
+    mcp = MockFastMCP(auth_provider=mock_auth, token_cache=None)
 
     request = create_mock_request("no-cache-token")
 

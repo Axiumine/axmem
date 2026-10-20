@@ -2,7 +2,7 @@
 
 LocalExecutor drives the same ToolRegistry the MCP meta-tools execute, through the
 CliContext shim (default user, no auth) with the FORGETFUL_SCOPES ceiling applied.
-Uses the real composition root against in-memory SQLite.
+Uses the real composition root against a real Qdrant node.
 """
 import pytest
 from fastmcp.exceptions import ToolError
@@ -13,7 +13,7 @@ from app.routes.cli.local_executor import LocalExecutor
 
 
 @pytest.fixture
-async def local_executor(sqlite_runtime_settings):
+async def local_executor(runtime_settings):
     executor = LocalExecutor(await build_runtime())
     yield executor
     await executor.close()
@@ -48,7 +48,7 @@ async def test_execute_unknown_tool_raises_error_naming_available_tools(local_ex
     assert "Available tools (first 10):" in message
 
 
-async def test_scope_ceiling_denies_write_tool_with_required_scope(sqlite_runtime_settings):
+async def test_scope_ceiling_denies_write_tool_with_required_scope(runtime_settings):
     settings.FORGETFUL_SCOPES = "read"
     executor = LocalExecutor(await build_runtime())
 

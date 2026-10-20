@@ -1,18 +1,11 @@
 """Integration tests for unobsolete_memory restore path."""
 import asyncio
-from contextlib import asynccontextmanager
-from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import text
 
-from app.config.settings import settings
 from app.exceptions import InvalidStateTransitionError, NotFoundError
 from app.models.memory_models import MemoryCreate, MemoryQueryRequest
-from app.repositories.sqlite.memory_repository import SqliteMemoryRepository
-from app.repositories.sqlite.sqlite_adapter import SqliteDatabaseAdapter
-from app.services.memory_service import MemoryService
 
 
 @pytest.mark.asyncio
@@ -69,7 +62,7 @@ async def test_unobsolete_restores_query_visibility_and_clears_fields(test_memor
 async def test_unobsolete_unknown_id_raises_not_found(test_memory_service):
     user_id = uuid4()
     with pytest.raises(NotFoundError):
-        await test_memory_service.unobsolete_memory(user_id=user_id, memory_id=999_999)
+        await test_memory_service.unobsolete_memory(user_id=user_id, memory_id=uuid4())
 
 
 @pytest.mark.asyncio
@@ -133,78 +126,30 @@ async def test_unobsolete_concurrent_restore_one_success_one_invalid_state(test_
     assert len(invalid) == 1
 
 
-async def _sqlite_user(db_adapter, user_id):
-    now = datetime.now(UTC).isoformat()
-    async with db_adapter.system_session() as session:
-        await session.execute(
-            text(
-                "INSERT INTO users (id, external_id, name, email, created_at, updated_at) "
-                "VALUES (:id, :external_id, :name, :email, :created_at, :updated_at)",
-            ),
-            {
-                "id": str(user_id),
-                "external_id": f"ext-{user_id}",
-                "name": "Test User",
-                "email": "test@example.com",
-                "created_at": now,
-                "updated_at": now,
-            },
-        )
-
-
-@asynccontextmanager
-async def _sqlite_memory_stack(embedding_adapter):
-    """Yield (db_adapter, repo, service) on in-memory SQLite, restoring settings on exit."""
-    original_sqlite_memory = settings.SQLITE_MEMORY
-    original_database = settings.DATABASE
-    original_dims = settings.EMBEDDING_DIMENSIONS
-
-    settings.DATABASE = "SQLite"
-    settings.SQLITE_MEMORY = True
-    settings.EMBEDDING_DIMENSIONS = 384
-
-    db_adapter = SqliteDatabaseAdapter()
-    await db_adapter.init_db()
-    repo = SqliteMemoryRepository(
-        db_adapter=db_adapter,
-        embedding_adapter=embedding_adapter,
-        rerank_adapter=None,
-    )
-    service = MemoryService(repo)
-
-    try:
-        yield db_adapter, repo, service
-    finally:
-        try:
-            await db_adapter.dispose()
-        except Exception:  # noqa: BLE001
-            pass
-        settings.DATABASE = original_database
-        settings.SQLITE_MEMORY = original_sqlite_memory
-        settings.EMBEDDING_DIMENSIONS = original_dims
-
-
 @pytest.mark.asyncio
-async def test_unobsolete_concurrent_restore_sqlite_atomic(tensorrt_embedder):
-    """SQLite conditional UPDATE: concurrent restores yield one winner."""
-    async with _sqlite_memory_stack(tensorrt_embedder) as (db_adapter, repo, service):
-        user_id = uuid4()
-        await _sqlite_user(db_adapter, user_id)
-        mem = await repo.create_memory(
-            user_id=user_id,
-            memory=MemoryCreate(
-                title="SQLite concurrent restore",
-                content="Obsolete then concurrent unobsolete",
-                context="sqlite concurrency",
-                keywords=["sqlite", "restore"],
-                tags=["stub"],
-                importance=5,
-            ),
-        )
-        await repo.mark_obsolete(user_id, mem.id, "test", None)
+async def test_unobsolete_many_overlapping_restores_have_one_winner(test_memory_service):
+    """The restore is one conditional write: of eight overlapping calls exactly one wins."""
+    user_id = uuid4()
+    mem, _ = await test_memory_service.create_memory(
+        user_id=user_id,
+        memory_data=MemoryCreate(
+            title="Eight-way restore race",
+            content="Obsolete memory restored by eight overlapping calls",
+            context="unobsolete concurrency test",
+            keywords=["concurrent", "restore"],
+            tags=["stub"],
+            importance=5,
+        ),
+    )
+    await test_memory_service.mark_memory_obsolete(
+        user_id=user_id, memory_id=mem.id, reason="concurrency obsolete", superseded_by=None,
+    )
 
-        results = await _restore_twice_concurrently(service, user_id, mem.id)
+    results = await asyncio.gather(
+        *(test_memory_service.unobsolete_memory(user_id=user_id, memory_id=mem.id) for _ in range(8)),
+        return_exceptions=True,
+    )
 
-        successes, invalid = _split_restore_outcomes(results)
-        assert len(successes) == 1
-        assert len(invalid) == 1
+    successes, invalid = _split_restore_outcomes(results)
+    assert len(successes) == 1
+    assert len(invalid) == 7

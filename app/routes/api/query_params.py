@@ -7,9 +7,8 @@ falling back to a default or dropping a filter.
 
 from typing import Any, overload
 
-# Range of a signed 64-bit integer: the widest value SQLite and PostgreSQL
-# (BIGINT) can bind, used for pagination bounds. Python ints are unbounded, so anything outside this range
-# would otherwise surface as an OverflowError / DataError (HTTP 500).
+# Range of a signed 64-bit integer: the widest value a pagination bound may take. Python ints are
+# unbounded, so anything outside this range would otherwise reach the store as an out-of-range number (HTTP 500).
 INT64_MIN = -(2**63)
 INT64_MAX = 2**63 - 1
 

@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Status** | Implemented — all 5 phases on `feat/cli` (2026-07-07) |
-| **Superseded in part** | This is the original plan, kept as history. The browser OAuth flow, the token cache, `auth logout`, `project list`, project name resolution (`-p` now takes the scope string as is), `get_current_user` and `DEFAULT_USER_ID` were removed; a remote server is reached with the `FORGETFUL_TOKEN` bearer token, and local mode is the `DEFAULT_TENANT` tenant. The FastEmbed embedder named in the defaults and the risk table below was removed; local mode embeds with the in-process TensorRT embedder. See [configuration](../configuration.md#cli-configuration) |
+| **Superseded in part** | This is the original plan, kept as history. The browser OAuth flow, the token cache, `auth logout`, `project list`, project name resolution (`-p` now takes the scope string as is), `get_current_user` and `DEFAULT_USER_ID` were removed; a remote server is reached with the `FORGETFUL_TOKEN` bearer token, and local mode is the `DEFAULT_TENANT` tenant. The FastEmbed embedder named in the defaults and the risk table below was removed; local mode embeds with the in-process TensorRT embedder. The local database and the Postgres remote named below are historical: Qdrant is the only store now, and the CLI reaches it directly (local mode) or through a server (remote mode). See [configuration](../configuration.md#cli-configuration) |
 | **Date** | 2026-07-07 |
 | **Decision record** | Forgetful memory 1676 |
 | **Reasoning artifact** | https://claude.ai/code/artifact/e5b37787-819b-4b20-b37e-0091e3028f1f |

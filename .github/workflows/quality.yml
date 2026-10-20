@@ -19,8 +19,8 @@ concurrency:
   cancel-in-progress: true
 
 # GPU runner: a self-hosted runner labelled [self-hosted, linux, gpu] with an NVIDIA GPU (driver R580 or newer).
-# Every job that runs tests/integration, tests/e2e_sqlite or tests/e2e needs it, because the suites run the real
-# TensorRT embedder and reranker. See docs/quality-gates.md for the runner requirements.
+# Every job that runs tests/integration, tests/e2e or tests/cluster needs it, because the suites run the real
+# TensorRT embedder and reranker, and a Docker daemon, because they start the real Qdrant nodes. See docs/quality-gates.md for the runner requirements.
 
 jobs:
   static:
@@ -82,7 +82,7 @@ jobs:
       - run: uv run --frozen python -m scripts.quality gate snapshots
 
   coverage:
-    name: 100% coverage (SQLite + PostgreSQL e2e)
+    name: 100% coverage (Qdrant node + cluster e2e)
     runs-on: [self-hosted, linux, gpu]
     timeout-minutes: 45
     steps:
@@ -96,12 +96,8 @@ jobs:
         with:
           python-version: "3.14"
       - run: uv sync --locked --all-extras --dev
-      - name: Install PostgreSQL backup tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes postgresql-client
       - run: uv run --frozen python -m scripts.quality gate tests
-      - run: uv run --frozen python -m scripts.quality gate e2e-postgres
+      - run: uv run --frozen python -m scripts.quality gate e2e-qdrant
       - run: uv run --frozen python -m scripts.quality gate coverage
 
   memory:

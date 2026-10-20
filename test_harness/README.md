@@ -73,14 +73,16 @@ not covered: there the container uid no longer owns the bind mounts.
 ## What a run does
 
 1. Build/verify the sandbox image, boot `forgetful serve` as a host subprocess:
-   file-backed SQLite in the run dir, `AUTH_MODE=none` on the loopback bind, TensorRT
-   embeddings (warm default model directory), `/health` polled to 200. Every other Forgetful
+   against the operator's Qdrant (`QDRANT_URL` and `QDRANT_API_KEY` of the harness environment, so a
+   Qdrant node must already run) in collections of a prefix of their own, `AUTH_MODE=none` on the
+   loopback bind, TensorRT embeddings (warm default model directory), `/health` polled to 200. The
+   run's collections are deleted at teardown. Every other Forgetful
    setting is pinned to its default, so shell variables and
    `~/.config/forgetful` cannot leak into the instance under review; the server is the
    `forgetful` next to the interpreter running the harness, and the harness reaches it
    directly (no `HTTP(S)_PROXY`).
 2. Start one container for the run — fenced env baked in (`FORGETFUL_SERVER` →
-   `host.docker.internal:<port>`, decoy `SQLITE_PATH` for any `--local` detour), staged
+   `host.docker.internal:<port>`, decoy `QDRANT_URL` for any `--local` detour), staged
    opencode credentials, `runs/<ts>/skills/` mounted rw, the wheel + runner mounted ro —
    then two in-container preflights, cheapest first: a stdlib GET of the throwaway
    server's `/health` (unreachable server = infra error, so no session ever burns model
@@ -103,7 +105,6 @@ not covered: there the container uid no longer owns the bind mounts.
 test_harness/runs/<timestamp>-<agent>/
 ├── run.json               # per-skill summary: status, verdict, issues, breaches, cost
 ├── server.log             # throwaway server output (host-side, not visible in-container)
-├── forgetful.db           # the state the walkthrough produced (inspectable)
 ├── harness/               # the ro /harness mount: working-tree wheel + runner.py
 └── skills/<skill>/        # the rw /skills mount, one dir per walked skill
     ├── prompt.txt         # exactly what the agent was asked
@@ -139,8 +140,8 @@ Three independent fences, outermost first:
   (only `runs/<ts>/skills/`, the ro harness dir, and staged credential *copies*), so
   no tool the agent wields can touch the real repo, home directory, or knowledge base.
 - **Env fencing** still rides inside it (mem 1701: fence both routes) — the container
-  is born with `FORGETFUL_SERVER` pointing at the throwaway and `SQLITE_PATH` at a
-  container-local decoy, and with no real credentials to leak at all.
+  is born with `FORGETFUL_SERVER` pointing at the throwaway and `QDRANT_URL` at a
+  decoy that nothing listens on, and with no real credentials to leak at all.
 - **Tool scoping + breach scan** remain defence-in-depth: agent-shell's tool lists do
   not enforce under auto-approve, so the post-run scan flags any forgetful MCP tool
   use in the transcript.

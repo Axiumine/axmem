@@ -55,7 +55,7 @@ async def test_find_obsolete_matches_enabled_returns_stub_matches(test_memory_se
 
 
 @pytest.mark.asyncio
-async def test_find_obsolete_matches_enabled_uses_threshold(test_memory_service, mock_memory_repository):
+async def test_find_obsolete_matches_enabled_uses_threshold(test_memory_service, memory_repository):
     user_id = uuid4()
     mem, _ = await test_memory_service.create_memory(
         user_id,
@@ -70,7 +70,7 @@ async def test_find_obsolete_matches_enabled_uses_threshold(test_memory_service,
     )
 
     spy = AsyncMock(return_value=[])
-    mock_memory_repository.find_obsolete_matches = spy
+    memory_repository.find_obsolete_matches = spy
 
     await test_memory_service.find_obsolete_matches(user_id, mem.id)
 
@@ -79,7 +79,7 @@ async def test_find_obsolete_matches_enabled_uses_threshold(test_memory_service,
 
 
 @pytest.mark.asyncio
-async def test_find_obsolete_matches_disabled_skips_repo(test_memory_service, mock_memory_repository):
+async def test_find_obsolete_matches_disabled_skips_repo(test_memory_service, memory_repository):
     user_id = uuid4()
     mem, _ = await test_memory_service.create_memory(
         user_id,
@@ -94,7 +94,7 @@ async def test_find_obsolete_matches_disabled_skips_repo(test_memory_service, mo
     )
 
     spy = AsyncMock(return_value=[])
-    mock_memory_repository.find_obsolete_matches = spy
+    memory_repository.find_obsolete_matches = spy
 
     prev = settings.OBSOLETE_WARNING_ENABLED
     settings.OBSOLETE_WARNING_ENABLED = False
@@ -107,7 +107,7 @@ async def test_find_obsolete_matches_disabled_skips_repo(test_memory_service, mo
 
 
 @pytest.mark.asyncio
-async def test_find_obsolete_matches_repo_error_returns_empty(test_memory_service, mock_memory_repository):
+async def test_find_obsolete_matches_repo_error_returns_empty(test_memory_service, memory_repository):
     user_id = uuid4()
     mem, _ = await test_memory_service.create_memory(
         user_id,
@@ -121,7 +121,7 @@ async def test_find_obsolete_matches_repo_error_returns_empty(test_memory_servic
         ),
     )
 
-    mock_memory_repository.find_obsolete_matches = AsyncMock(side_effect=RuntimeError("boom"))
+    memory_repository.find_obsolete_matches = AsyncMock(side_effect=RuntimeError("boom"))
 
     matches = await test_memory_service.find_obsolete_matches(user_id, mem.id)
     assert matches == []

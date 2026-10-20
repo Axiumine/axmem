@@ -6,9 +6,11 @@ They prevent the imports agreed in the architecture review:
 - Models and shared code must not import services, repositories, or entry points.
 - Services must not import repositories or entry points.
 - Repositories must not import services or entry points.
-- Shared code and services must not import the listed database/provider/backup libraries.
+- Shared code and services must not import the Qdrant client or the listed provider/backup libraries; of the
+  repositories only the Qdrant client, schema and store modules import `qdrant_client`.
 - API/MCP handlers must not import repositories or bootstrap.
-- CLI code must use services, with two explicit bootstrap imports allowed for startup.
+- CLI code must use services, with two explicit bootstrap imports allowed for startup (the local executor and the
+  operator commands).
 
 ## Run locally
 
@@ -19,7 +21,7 @@ uv run --frozen pytest tests/architecture/ -v
 ```
 
 The pytest command includes the real repository check, source-file coverage, and rule proofs.
-It needs no database, model downloads, or service credentials after dependencies are installed.
+It needs no Qdrant, model downloads, or service credentials after dependencies are installed.
 CI runs it as a required successful step in the existing `test` job on every push and PR.
 Branch protection must separately require that job to block merges.
 
@@ -40,18 +42,21 @@ direct violation. Every command uses `--no-cache`, and unexpected checker errors
 
 The coverage test compares every `app/**/*.py` file with Grimp's discovered modules.
 Removing a package marker or adding an undiscovered file must fail it.
-The CLI rule allows only `local_executor -> bootstrap` and `context -> bootstrap` as startup
+The CLI rule allows only `local_executor -> bootstrap` and `operator_commands -> bootstrap` as startup
 imports. Fixtures include both imports so the ignore list matches; a stale exception fails the
 real repository check.
 A separate proof confirms HTTP/MCP cannot reach bootstrap through either CLI startup path;
 these exceptions do not apply to the HTTP/MCP rule.
 The coverage check also rejects misspelled internal forbidden module names, which Import Linter
 would otherwise silently skip.
-`main.py` remains manually reviewed; migrations, tests, and the evaluation harness are outside
+`main.py` remains manually reviewed; tests and the evaluation harness are outside
 these production contracts. Dynamic imports and object attribute access require code review and
 behaviour tests.
 
 ## Implementation evidence — 2026-10-17
+
+This section is a record of the change as it was made, when the stores were SQLite and PostgreSQL; both are gone
+(Qdrant is the only store, see [architecture.md](../../architecture.md)) and the figures below are not current.
 
 Before refactoring, six new real-database cases passed: duplicate creation and both service
 recovery paths, on SQLite and PostgreSQL. After changing the duplicate-error expectation to

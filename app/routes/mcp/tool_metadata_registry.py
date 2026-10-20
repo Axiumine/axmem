@@ -307,10 +307,10 @@ def register_memory_tools_metadata(
             "parameters": [
                 {
                     "name": "memory_id",
-                    "type": "int",
+                    "type": "str",
                     "description": "ID of the memory to update",
                     "required": True,
-                    "example": 42,
+                    "example": "018f2c3e-0000-7000-8000-000000000042",
                 },
                 {
                     "name": "ctx",
@@ -449,8 +449,8 @@ def register_memory_tools_metadata(
             ],
             "returns": "Full Memory object after update",
             "examples": [
-                'execute_forgetful_tool("update_memory", {"memory_id": 42, "importance": 9})',
-                'execute_forgetful_tool("update_memory", {"memory_id": 42, "content": "Updated content", "tags": ["revised", "important"]})',
+                'execute_forgetful_tool("update_memory", {"memory_id": "018f2c3e-0000-7000-8000-000000000042", "importance": 9})',
+                'execute_forgetful_tool("update_memory", {"memory_id": "018f2c3e-0000-7000-8000-000000000042", "content": "Updated content", "tags": ["revised", "important"]})',
             ],
             "tags": ["memory", "update", "patch"],
         },
@@ -461,17 +461,17 @@ def register_memory_tools_metadata(
             "parameters": [
                 {
                     "name": "memory_id",
-                    "type": "int",
+                    "type": "str",
                     "description": "Source memory ID (aliases: source_id, from_id, id)",
                     "required": True,
-                    "example": 42,
+                    "example": "018f2c3e-0000-7000-8000-000000000042",
                 },
                 {
                     "name": "related_ids",
-                    "type": "List[int]",
-                    "description": "List of target memory IDs to link (or single int; aliases: target_id, target_ids, related_id)",
+                    "type": "List[str]",
+                    "description": "List of target memory IDs to link (or a single id; aliases: target_id, target_ids, related_id)",
                     "required": True,
-                    "example": [10, 15, 20],
+                    "example": ["018f2c3e-0000-7000-8000-000000000010", "018f2c3e-0000-7000-8000-000000000015", "018f2c3e-0000-7000-8000-000000000020"],
                 },
                 {
                     "name": "ctx",
@@ -482,9 +482,9 @@ def register_memory_tools_metadata(
             ],
             "returns": "List of memory IDs that were successfully linked",
             "examples": [
-                'execute_forgetful_tool("link_memories", {"memory_id": 42, "related_ids": [10, 15, 20]})',
-                'execute_forgetful_tool("link_memories", {"source_id": 42, "target_id": 57})',
-                'execute_forgetful_tool("link_memories", {"memory_ids": [42, 57]})',
+                'execute_forgetful_tool("link_memories", {"memory_id": "018f2c3e-0000-7000-8000-000000000042", "related_ids": ["018f2c3e-0000-7000-8000-000000000010", "018f2c3e-0000-7000-8000-000000000015"]})',
+                'execute_forgetful_tool("link_memories", {"source_id": "018f2c3e-0000-7000-8000-000000000042", "target_id": "018f2c3e-0000-7000-8000-000000000057"})',
+                'execute_forgetful_tool("link_memories", {"memory_ids": ["018f2c3e-0000-7000-8000-000000000042", "018f2c3e-0000-7000-8000-000000000057"]})',
             ],
             "tags": ["memory", "linking", "relationships"],
         },
@@ -495,14 +495,14 @@ def register_memory_tools_metadata(
             "parameters": [
                 {
                     "name": "source_id",
-                    "type": "int",
+                    "type": "str",
                     "description": "Source memory ID (aliases: memory_id, from_id, id)",
                     "required": True,
-                    "example": 42,
+                    "example": "018f2c3e-0000-7000-8000-000000000042",
                 },
                 {
                     "name": "target_id",
-                    "type": "int",
+                    "type": "str",
                     "description": "Target memory ID(s) to unlink (aliases: target_ids, related_id, related_ids, to_id)",
                     "required": True,
                     "example": 57,
@@ -516,10 +516,10 @@ def register_memory_tools_metadata(
             ],
             "returns": "Dict with 'success' boolean (True if all requested links were removed, False if any link didn't exist)",
             "examples": [
-                'execute_forgetful_tool("unlink_memories", {"source_id": 42, "target_id": 57})',
-                'execute_forgetful_tool("unlink_memories", {"memory_id": 42, "related_id": 57})',
-                'execute_forgetful_tool("unlink_memories", {"memory_id": 42, "related_ids": [57, 58]})',
-                'execute_forgetful_tool("unlink_memories", {"memory_ids": [42, 57, 58]})',
+                'execute_forgetful_tool("unlink_memories", {"source_id": "018f2c3e-0000-7000-8000-000000000042", "target_id": "018f2c3e-0000-7000-8000-000000000057"})',
+                'execute_forgetful_tool("unlink_memories", {"memory_id": "018f2c3e-0000-7000-8000-000000000042", "related_id": "018f2c3e-0000-7000-8000-000000000057"})',
+                'execute_forgetful_tool("unlink_memories", {"memory_id": "018f2c3e-0000-7000-8000-000000000042", "related_ids": ["018f2c3e-0000-7000-8000-000000000057", "018f2c3e-0000-7000-8000-000000000058"]})',
+                'execute_forgetful_tool("unlink_memories", {"memory_ids": ["018f2c3e-0000-7000-8000-000000000042", "018f2c3e-0000-7000-8000-000000000057", "018f2c3e-0000-7000-8000-000000000058"]})',
             ],
             "tags": ["memory", "unlink", "graph", "linking"],
         },
@@ -529,10 +529,10 @@ def register_memory_tools_metadata(
             "parameters": [
                 {
                     "name": "memory_id",
-                    "type": "int",
+                    "type": "str",
                     "description": "ID of the memory to retrieve",
                     "required": True,
-                    "example": 42,
+                    "example": "018f2c3e-0000-7000-8000-000000000042",
                 },
                 {
                     "name": "ctx",
@@ -543,7 +543,7 @@ def register_memory_tools_metadata(
             ],
             "returns": "Complete Memory object with all fields",
             "examples": [
-                'execute_forgetful_tool("get_memory", {"memory_id": 42})',
+                'execute_forgetful_tool("get_memory", {"memory_id": "018f2c3e-0000-7000-8000-000000000042"})',
             ],
             "tags": ["memory", "retrieve", "read"],
         },
@@ -557,17 +557,17 @@ def register_memory_tools_metadata(
             "parameters": [
                 {
                     "name": "memory_id",
-                    "type": "int",
+                    "type": "str",
                     "description": "ID of the memory to mark as obsolete",
                     "required": True,
-                    "example": 42,
+                    "example": "018f2c3e-0000-7000-8000-000000000042",
                 },
                 {
                     "name": "reason",
                     "type": "str",
                     "description": "Explanation for why this memory is obsolete",
                     "required": True,
-                    "example": "Superseded by newer decision in memory #100",
+                    "example": "Superseded by a newer decision",
                 },
                 {
                     "name": "ctx",
@@ -577,16 +577,16 @@ def register_memory_tools_metadata(
                 },
                 {
                     "name": "superseded_by",
-                    "type": "Optional[int]",
+                    "type": "Optional[str]",
                     "description": "Optional ID of the replacement memory",
                     "required": False,
                     "default": None,
-                    "example": 100,
+                    "example": "018f2c3e-0000-7000-8000-000000000100",
                 },
             ],
             "returns": "Boolean indicating success",
             "examples": [
-                'execute_forgetful_tool("mark_memory_obsolete", {"memory_id": 42, "reason": "Outdated approach", "superseded_by": 100})',
+                'execute_forgetful_tool("mark_memory_obsolete", {"memory_id": "018f2c3e-0000-7000-8000-000000000042", "reason": "Outdated approach", "superseded_by": "018f2c3e-0000-7000-8000-000000000100"})',
             ],
             "tags": ["memory", "delete", "obsolete", "lifecycle"],
         },
@@ -597,10 +597,10 @@ def register_memory_tools_metadata(
             "parameters": [
                 {
                     "name": "memory_id",
-                    "type": "int",
+                    "type": "str",
                     "description": "ID of the obsolete memory to restore",
                     "required": True,
-                    "example": 42,
+                    "example": "018f2c3e-0000-7000-8000-000000000042",
                 },
                 {
                     "name": "ctx",
@@ -611,7 +611,7 @@ def register_memory_tools_metadata(
             ],
             "returns": "Boolean indicating success",
             "examples": [
-                'execute_forgetful_tool("unobsolete_memory", {"memory_id": 42})',
+                'execute_forgetful_tool("unobsolete_memory", {"memory_id": "018f2c3e-0000-7000-8000-000000000042"})',
             ],
             "tags": ["memory", "obsolete", "lifecycle"],
         },
@@ -728,11 +728,11 @@ def register_memory_tools_metadata(
                 },
                 {
                     "name": "memory_ids",
-                    "type": "Optional[List[int]]",
+                    "type": "Optional[List[str]]",
                     "description": "Explicit memory ids owned by the caller; leave null to use project or the whole tenant",
                     "required": False,
                     "default": None,
-                    "example": [123, 124],
+                    "example": ["018f2c3e-0000-7000-8000-000000000123", "018f2c3e-0000-7000-8000-000000000124"],
                 },
                 {
                     "name": "project",
@@ -744,14 +744,14 @@ def register_memory_tools_metadata(
                 },
             ],
             "returns": (
-                "Dict with rebuilt_ids (List[int]), skipped_ids (List[int]; not owned, or edited "
+                "Dict with rebuilt_ids (List[str]), skipped_ids (List[str]; not owned, or edited "
                 "while the rebuild ran so a newer embedding was kept), "
                 "failed (List[Dict[memory_id, reason]]; reason is a code such as embedding_failed, "
                 "persistence_failed or not_found_or_not_owned). "
                 "An unknown project scope is rejected with VALIDATION_ERROR"
             ),
             "examples": [
-                'execute_forgetful_tool("rebuild_embeddings", {"memory_ids": [123, 124]})',
+                'execute_forgetful_tool("rebuild_embeddings", {"memory_ids": ["018f2c3e-0000-7000-8000-000000000123", "018f2c3e-0000-7000-8000-000000000124"]})',
                 'execute_forgetful_tool("rebuild_embeddings", {"project": "forgetful"})',
                 'execute_forgetful_tool("rebuild_embeddings", {})',
             ],

@@ -1,410 +1,289 @@
-"""E2E test fixtures with in-process FastMCP server + session-scoped PostgreSQL
+"""E2E test fixtures: the whole application in-process on a real Qdrant node and the real GPU models
 
-Architecture:
-- Session: One PostgreSQL container, connection pool, migrations, and loaded models
-- Function: Empty application tables, fresh app/services, restored settings and clients
+Spins up the FastMCP service with the production composition (Qdrant repository, services, tool
+registry, scopes) against the Qdrant node of the test process (a Docker container, see
+``tests/qdrant_support.py``), and reaches it through the FastMCP client and an ASGI transport, with no
+HTTP server to start.
 
-Each test creates all the data it needs. Background event handlers finish before
-the next test clears the tables. Tests sharing this database must run sequentially.
-
-Only postgres runs in Docker (one container for the whole session); the FastMCP server
-runs in-process.
-
-IMPORTANT: All async fixtures use loop_scope="session" because the asyncpg
-connection pool is session-scoped and its connections are bound to the event loop
-they were created on. All tests must also run on the session loop.
+- Every test works in a tenant namespace of its own (``qdrant_env``), so tests share the node's
+  collections and still see only their own data
+- The embedder and the reranker are the real TensorRT engines; there are no stand-ins
+- Runs by default
 """
-import asyncio
-import os
-import shutil
-import subprocess
-import time
-import typing
 from contextlib import asynccontextmanager
 
 import pytest
-import pytest_asyncio
-from fastmcp import Client, FastMCP
-from httpx import ASGITransport, AsyncByteStream, AsyncClient, Request, Response
+from fastmcp import FastMCP
 
-from app.bootstrap import create_repositories
-from app.config.settings import settings
-from app.repositories.postgres.postgres_adapter import PostgresDatabaseAdapter
-from app.repositories.postgres.postgres_tables import Base
+from app.repositories.qdrant.memory_repository import QdrantStack
 from app.routes.api import (
     auth,
     health,
     memories,
 )
 from app.routes.mcp import meta_tools
+from app.routes.mcp.scope_resolver import parse_scopes, resolve_permitted_tools
 from app.routes.mcp.tool_metadata_registry import register_all_tools_metadata
 from app.routes.mcp.tool_registry import ToolRegistry
 from app.services.memory_service import MemoryService
 from app.services.re_embedding_service import ReEmbeddingService
-from app.services.tenant_service import TenantService
 from tests.gpu_preflight import require_gpu
+from tests.qdrant_support import require_docker
 
 
 def pytest_collection_modifyitems(config, items):
-    """The embedder and the reranker run on the NVIDIA GPU with no CPU path: without one this run ends, it never skips."""
+    """The models run on the NVIDIA GPU and the data lives in Qdrant: without either this run ends, it never skips."""
     require_gpu()
-
-# Force all async tests in this directory onto the session event loop.
-# Required because asyncpg connections are bound to their creation loop.
-pytestmark = pytest.mark.asyncio(loop_scope="session")
+    require_docker()
 
 
-# ---------------------------------------------------------------------------
-# Streaming ASGI Transport
-# ---------------------------------------------------------------------------
-# httpx.ASGITransport buffers the entire response body before returning,
-# which blocks forever on SSE/streaming endpoints. This transport runs the
-# ASGI app as a background task and streams body chunks via an async queue.
+@pytest.fixture(autouse=True)
+def _tenant_namespace(qdrant_env):
+    """Every end-to-end test runs against the test Qdrant node with a tenant namespace of its own."""
 
 
-class _StreamingBody(AsyncByteStream):
-    """Async byte stream backed by an asyncio.Queue, with cleanup."""
-
-    def __init__(self, queue: asyncio.Queue, app_task: asyncio.Task) -> None:
-        self._queue = queue
-        self._app_task = app_task
-
-    async def __aiter__(self) -> typing.AsyncIterator[bytes]:
-        try:
-            while True:
-                chunk = await self._queue.get()
-                if chunk is None:  # sentinel — response complete
-                    break
-                yield chunk
-        finally:
-            if not self._app_task.done():
-                self._app_task.cancel()
-                try:
-                    await self._app_task
-                except asyncio.CancelledError:
-                    pass
-
-    async def aclose(self) -> None:
-        if not self._app_task.done():
-            self._app_task.cancel()
-            try:
-                await self._app_task
-            except asyncio.CancelledError:
-                pass
-
-
-class StreamingASGITransport(ASGITransport):
-    """ASGI transport that properly supports streaming responses (SSE).
-
-    Unlike the base ASGITransport which does ``await self.app(scope, receive, send)``
-    (blocking until the entire response body is produced), this transport launches
-    the ASGI app as a background task and returns the response as soon as headers
-    arrive. Body chunks are yielded incrementally via an async queue.
-    """
-
-    async def handle_async_request(self, request: Request) -> Response:
-        assert isinstance(request.stream, AsyncByteStream)
-
-        scope: dict[str, typing.Any] = {
-            "type": "http",
-            "asgi": {"version": "3.0"},
-            "http_version": "1.1",
-            "method": request.method,
-            "headers": [(k.lower(), v) for (k, v) in request.headers.raw],
-            "scheme": request.url.scheme,
-            "path": request.url.path,
-            "raw_path": request.url.raw_path.split(b"?")[0],
-            "query_string": request.url.query or b"",
-            "server": (request.url.host, request.url.port),
-            "client": self.client if hasattr(self, "client") else ("127.0.0.1", 0),
-            "root_path": self.root_path if hasattr(self, "root_path") else "",
-        }
-
-        # Request side
-        request_body_chunks = request.stream.__aiter__()
-        request_complete = False
-        disconnect_event = asyncio.Event()
-
-        # Response side
-        status_code = None
-        response_headers = None
-        body_queue: asyncio.Queue[bytes | None] = asyncio.Queue()
-        headers_event = asyncio.Event()
-
-        async def receive() -> dict[str, typing.Any]:
-            nonlocal request_complete
-            if request_complete:
-                # Block until client disconnects (stream closed / aclose called)
-                await disconnect_event.wait()
-                return {"type": "http.disconnect"}
-            try:
-                body = await request_body_chunks.__anext__()
-            except StopAsyncIteration:
-                request_complete = True
-                return {"type": "http.request", "body": b"", "more_body": False}
-            return {"type": "http.request", "body": body, "more_body": True}
-
-        async def send(message: dict[str, typing.Any]) -> None:
-            nonlocal status_code, response_headers
-            if message["type"] == "http.response.start":
-                status_code = message["status"]
-                response_headers = message.get("headers", [])
-                headers_event.set()
-            elif message["type"] == "http.response.body":
-                body = message.get("body", b"")
-                more_body = message.get("more_body", False)
-                if body and request.method != "HEAD":
-                    await body_queue.put(body)
-                if not more_body:
-                    await body_queue.put(None)  # sentinel
-
-        # Run the ASGI app in the background
-        app_task = asyncio.create_task(self.app(scope, receive, send))
-
-        # Wait for response headers
-        await headers_event.wait()
-
-        assert status_code is not None
-        assert response_headers is not None
-
-        stream = _StreamingBody(body_queue, app_task)
-        return Response(status_code, headers=response_headers, stream=stream)
-
-
-# The shared test database: one named container and data volume, reused across test runs.
-POSTGRES_CONTAINER = "forgetful-db"
-POSTGRES_IMAGE = "pgvector/pgvector:pg16"
-POSTGRES_VOLUME = "forgetful_db_data"
-
-# Clear child/association tables before their parents, leaving migration history intact.
-ALL_TABLES = [
-    "memory_links",
-    "memory_project_association",
-    "memories",
-    "projects",
-    "users",
-]
-
-
-def _wait_for_healthy(container_name: str, timeout: int = 120) -> None:
-    """Wait for Docker container to report healthy status."""
-    start = time.time()
-    while time.time() - start < timeout:
-        try:
-            result = subprocess.run(
-                ["docker", "inspect", "--format={{.State.Health.Status}}", container_name],
-                capture_output=True, text=True, check=True,
-            )
-            status = result.stdout.strip()
-            if status == "healthy":
-                print(f"  {container_name} is healthy")
-                return
-            if status == "unhealthy":
-                raise RuntimeError(f"Container {container_name} is unhealthy")
-            time.sleep(1)
-        except subprocess.CalledProcessError:
-            time.sleep(1)
-    raise TimeoutError(f"Container {container_name} did not become healthy within {timeout}s")
-
-
-def _container_running(container_name: str) -> bool:
-    """Check if a Docker container is running."""
-    try:
-        result = subprocess.run(
-            ["docker", "inspect", "--format={{.State.Running}}", container_name],
-            capture_output=True, text=True, check=True,
-        )
-        return result.stdout.strip() == "true"
-    except subprocess.CalledProcessError:
-        return False
-
-
-# ---------------------------------------------------------------------------
-# SESSION-SCOPED FIXTURES (once per entire test run)
-# ---------------------------------------------------------------------------
-
-
-@pytest.fixture(scope="session")
-def postgres_backup_tools():
-    """Local runs may skip missing clients; CI must actually exercise backup recovery."""
-    missing = [tool for tool in ("pg_dump", "psql") if shutil.which(tool) is None]
-    if missing:
-        message = f"Install postgresql-client to run backup tests: missing {', '.join(missing)}"
-        if os.environ.get("CI"):
-            pytest.fail(message)
-        pytest.skip(message)
-
-
-def _container_exists(container_name: str) -> bool:
-    """Check if a Docker container exists, running or not."""
-    result = subprocess.run(
-        ["docker", "inspect", "--format={{.Id}}", container_name],
-        capture_output=True, text=True, check=False,
-    )
-    return result.returncode == 0
-
-
-def _postgres_run_command() -> list[str]:
-    """Build the `docker run` that creates the test database from the settings the tests use."""
-    user, database, port = settings.POSTGRES_USER, settings.POSTGRES_DB, str(settings.PGPORT)
-    return [
-        "docker", "run", "-d", "--name", POSTGRES_CONTAINER, "--restart", "unless-stopped",
-        "-e", f"POSTGRES_USER={user}",
-        "-e", f"POSTGRES_PASSWORD={settings.POSTGRES_PASSWORD}",
-        "-e", f"POSTGRES_DB={database}",
-        "-e", f"PGPORT={port}",
-        "-p", f"127.0.0.1:{port}:{port}",
-        "-v", f"{POSTGRES_VOLUME}:/var/lib/postgresql/data",
-        "--health-cmd", f"pg_isready -U {user} -d {database}",
-        "--health-interval", "5s", "--health-timeout", "5s", "--health-retries", "5",
-        POSTGRES_IMAGE,
-    ]
-
-
-@pytest.fixture(scope="session")
-def postgres_container():
-    """Ensure the forgetful-db container is running for the entire test session.
-
-    Creates it with `docker run` from the settings the tests connect with (pgvector image,
-    named data volume, localhost-only port), or starts it again when it was stopped.
-    If already running, skips startup.
-    """
-    if _container_running(POSTGRES_CONTAINER):
-        print(f"\n  {POSTGRES_CONTAINER} already running, reusing")
-    else:
-        print(f"\n  Starting {POSTGRES_CONTAINER} with docker...")
-        if _container_exists(POSTGRES_CONTAINER):
-            command = ["docker", "start", POSTGRES_CONTAINER]
-        else:
-            command = _postgres_run_command()
-        result = subprocess.run(command, capture_output=True, text=True, check=False)
-        if result.returncode != 0:
-            raise RuntimeError(
-                f"Failed to start {POSTGRES_CONTAINER}:\nSTDOUT: {result.stdout}\nSTDERR: {result.stderr}",
-            )
-    _wait_for_healthy(POSTGRES_CONTAINER)
-
-    # Don't tear down — the container is reusable across test runs.
-    # Users can `docker rm -f forgetful-db && docker volume rm forgetful_db_data` manually if needed.
-
-
-@pytest_asyncio.fixture(scope="session", loop_scope="session")
-async def db_adapter(postgres_container):
-    """Session-scoped PostgreSQL adapter with Alembic migrations (run once)."""
-    original_database = settings.DATABASE
-    original_host = settings.POSTGRES_HOST
-
-    settings.DATABASE = "Postgres"
-    settings.POSTGRES_HOST = "127.0.0.1"
-
-    adapter = PostgresDatabaseAdapter()
-    await adapter.init_db()
-    print("  Database migrations complete")
-
-    yield adapter
-
-    await adapter.dispose()
-    settings.DATABASE = original_database
-    settings.POSTGRES_HOST = original_host
-
-
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="module")
 def embedding_adapter(tensorrt_embedder):
     """The real TensorRT embedder of the test session (production settings, one engine for all tests)."""
     return tensorrt_embedder
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="module")
 def reranker_adapter(tensorrt_reranker):
     """The real TensorRT reranker of the test session (production settings, one engine for all tests)."""
     return tensorrt_reranker
 
 
-# ---------------------------------------------------------------------------
-# FUNCTION-SCOPED FIXTURES (per test, reusing the expensive session fixtures)
-# ---------------------------------------------------------------------------
+# ============================================================================
+# App Builder — the fully-wired app on Qdrant behind the qdrant_app fixture
+# ============================================================================
 
+async def build_app(embedding_adapter, reranker_adapter, auth_provider=None):
+    """Build a fully-wired FastMCP app on the Qdrant node the settings point at.
 
-@pytest_asyncio.fixture(loop_scope="session", autouse=True)
-async def clean_database(db_adapter):
-    """Clean all application tables before each test, including repeated runs."""
-    # Small test datasets are much cheaper to DELETE than to TRUNCATE the tables and
-    # restart their sequences. Tests must use returned IDs, not assume they start at 1.
-    async with db_adapter.system_session() as session:
-        for table in ALL_TABLES:
-            await session.execute(Base.metadata.tables[table].delete())
+    Args:
+        embedding_adapter: Embedding adapter instance
+        reranker_adapter: Reranker adapter instance (or None)
+        auth_provider: FastMCP auth provider (None serves the single local tenant, AUTH_MODE=none)
+    """
+    from app.config.settings import settings
 
-
-@pytest.fixture
-def app_settings(request, monkeypatch):
-    """Apply module overrides per test; restore even if app setup fails."""
-    overrides = {
-        **getattr(request.module, "SETTINGS_OVERRIDE", {}),
-        "DATABASE": "Postgres",
-        "POSTGRES_HOST": "127.0.0.1",
-    }
-    for key, value in overrides.items():
-        monkeypatch.setattr(settings, key, value)
-
-
-@pytest_asyncio.fixture(loop_scope="session")
-async def postgres_app(
-    db_adapter, embedding_adapter, reranker_adapter, clean_database, app_settings,
-):
-    """Fresh FastMCP app and services per test, sharing the pool and loaded models."""
-
-    repos = create_repositories(db_adapter, embedding_adapter, reranker_adapter)
+    stack = QdrantStack.from_settings()
+    await stack.schema.ensure()
+    memory_repository = stack.memory_repository(embedding_adapter, reranker_adapter)
 
     @asynccontextmanager
     async def lifespan(app):
-        """Application lifecycle — creates services, attaches to FastMCP instance."""
-        tenant_service = TenantService(repos["user"])
-        memory_service = MemoryService(repos["memory"])
+        """Application lifecycle with the services attached"""
+        memory_service = MemoryService(memory_repository)
 
-        mcp.tenant_service = tenant_service
+        # Store services on FastMCP instance
         mcp.memory_service = memory_service
 
+        # Create and attach registry
         registry = ToolRegistry()
         mcp.registry = registry
 
+        # Register tools
         register_all_tools_metadata(
             registry=registry,
             memory_service=memory_service,
-            re_embedding_service=ReEmbeddingService(repos["memory"], embedding_adapter),
+            re_embedding_service=ReEmbeddingService(memory_repository, embedding_adapter),
         )
+
+        # Resolve instance-level scope ceiling
+        instance_scopes = parse_scopes(settings.FORGETFUL_SCOPES)
+        mcp._instance_permitted_tools = resolve_permitted_tools(instance_scopes, registry)
+        mcp._instance_scopes = instance_scopes
 
         yield
 
-    mcp = FastMCP("Forgetful-Postgres-E2E", lifespan=lifespan)
+    # Create FastMCP app
+    mcp = FastMCP("Forgetful-E2E", lifespan=lifespan, auth=auth_provider)
 
-    # Register routes
+    # Routes
     health.register(mcp)
     auth.register(mcp)
     memories.register(mcp)
+
     meta_tools.register(mcp)
 
-    yield mcp
+    try:
+        yield mcp
+    finally:
+        await stack.close()
 
 
-@pytest_asyncio.fixture(loop_scope="session")
-async def mcp_client(postgres_app):
-    """Function-scoped MCP client — each test gets a fresh connection.
+@pytest.fixture
+async def qdrant_app(embedding_adapter, reranker_adapter):
+    """Create and configure the FastMCP application on the Qdrant test node.
 
-    In-process transport avoids the SSE timeout/hang issues of Docker transport.
+    Function-scoped for test isolation.
     """
-    async with Client(postgres_app) as client:
+    async for app in build_app(embedding_adapter, reranker_adapter):
+        yield app
+
+
+@pytest.fixture
+async def mcp_client(qdrant_app):
+    """Provide connected MCP client for testing
+
+    This fixture creates a Client connected to the in-process
+    FastMCP app via stdio transport. Tests can use this client to call tools directly
+    without starting an HTTP server or Docker containers.
+
+    Usage in tests:
+        async def test_something(mcp_client):
+            result = await mcp_client.call_tool("tool_name", {...})
+    """
+    from fastmcp import Client
+
+    # Create stdio transport for in-process testing
+    async with Client(qdrant_app) as client:
         yield client
 
 
-@pytest_asyncio.fixture(loop_scope="session")
-async def http_client(postgres_app):
-    """Function-scoped HTTP client via streaming ASGI transport for REST API tests.
+@pytest.fixture(params=[
+    pytest.param("*", id="scope-all"),
+    pytest.param("read", id="scope-read-only"),
+    pytest.param("read:memories", id="scope-read-memories"),
+    pytest.param("read,write:memories", id="scope-read-all-write-memories"),
+])
+async def scoped_mcp_client(request, qdrant_app):
+    """Parameterized MCP client with different FORGETFUL_SCOPES settings.
 
-    Uses StreamingASGITransport instead of httpx.ASGITransport to support
-    SSE streaming endpoints (ASGITransport buffers entire response, blocking forever).
+    Each parameterization creates a client where the instance-level scopes
+    are overridden to test permission enforcement.
     """
-    async with Client(postgres_app) as _:
-        asgi_app = postgres_app.http_app()
-        transport = StreamingASGITransport(app=asgi_app)
+    from fastmcp import Client
+
+    scope_string = request.param
+    async with Client(qdrant_app) as client:
+        # Override instance scopes after lifespan has initialized
+        instance_scopes = parse_scopes(scope_string)
+        qdrant_app._instance_permitted_tools = resolve_permitted_tools(instance_scopes, qdrant_app.registry)
+        qdrant_app._instance_scopes = instance_scopes
+        client._scope_string = scope_string  # Stash for test assertions
+        yield client
+
+
+@pytest.fixture
+async def http_client(qdrant_app):
+    """Provide HTTP client for testing REST API routes.
+
+    This fixture creates an httpx.AsyncClient connected to the FastMCP app
+    via ASGI transport, allowing direct HTTP requests to custom routes
+    without starting an HTTP server.
+
+    Usage in tests:
+        async def test_api_endpoint(http_client):
+            response = await http_client.get("/api/v1/memories")
+            assert response.status_code == 200
+    """
+    from fastmcp import Client
+    from httpx import ASGITransport, AsyncClient
+
+    # First, initialize the app by creating MCP client (runs lifespan)
+    async with Client(qdrant_app) as _:
+        # Create HTTP client using ASGI transport with http_app
+        asgi_app = qdrant_app.http_app()
+        transport = ASGITransport(app=asgi_app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             yield client
+
+
+# ============================================================================
+# Static-token app — two tenants, each with its own bearer token
+# ============================================================================
+
+# Plain tokens exist only in the tests; the server is configured with their SHA-256 hashes
+TENANT_TOKENS = {
+    "alice": "alice-test-token-0123456789abcdef0123456789abcdef",
+    "bob": "bob-test-token-fedcba9876543210fedcba9876543210",
+}
+
+
+def static_token_verifier():
+    """The static-token auth provider an AUTH_MODE=static server builds for TENANT_TOKENS."""
+    from app.middleware.static_token import StaticTokenVerifier, hash_token
+
+    return StaticTokenVerifier({tenant: hash_token(token) for tenant, token in TENANT_TOKENS.items()})
+
+
+@pytest.fixture
+async def static_auth_app(embedding_adapter, reranker_adapter):
+    """FastMCP app with static-token auth enabled (tenants alice and bob)."""
+    async for app in build_app(embedding_adapter, reranker_adapter, auth_provider=static_token_verifier()):
+        yield app
+
+
+@pytest.fixture
+async def static_auth_http_client(static_auth_app):
+    """HTTP client for the REST routes of the static-token app (no Authorization header preset)."""
+    from fastmcp import Client
+    from httpx import ASGITransport, AsyncClient
+
+    async with Client(static_auth_app) as _:
+        transport = ASGITransport(app=static_auth_app.http_app())
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            yield client
+
+
+# ============================================================================
+# Auth stack — one auth-enabled app, reached over REST and over MCP on HTTP
+# ============================================================================
+
+
+class AuthStack:
+    """An auth-enabled app behind its own HTTP stack, so bearer tokens go through the real checks.
+
+    ``rest(token)`` and ``mcp(token)`` open a REST client and an MCP client that both send
+    ``Authorization: Bearer <token>`` (nothing when the token is None). The calls travel
+    through the app's ASGI application, not around it.
+    """
+
+    def __init__(self, http_app):
+        self.http_app = http_app
+
+    @staticmethod
+    def _headers(token):
+        return {"Authorization": f"Bearer {token}"} if token is not None else {}
+
+    @asynccontextmanager
+    async def rest(self, token=None):
+        from httpx import ASGITransport, AsyncClient
+
+        async with AsyncClient(
+            transport=ASGITransport(app=self.http_app), base_url="http://test", headers=self._headers(token),
+        ) as client:
+            yield client
+
+    @asynccontextmanager
+    async def mcp(self, token=None):
+        from fastmcp import Client
+        from fastmcp.client.transports import StreamableHttpTransport
+        from httpx import ASGITransport, AsyncClient
+
+        def client_factory(headers=None, timeout=None, auth=None, **_ignored):
+            return AsyncClient(
+                transport=ASGITransport(app=self.http_app),
+                base_url="http://test",
+                headers=headers,
+                timeout=timeout,
+                auth=auth,
+            )
+
+        transport = StreamableHttpTransport(
+            "http://test/mcp", headers=self._headers(token), httpx_client_factory=client_factory,
+        )
+        async with Client(transport) as client:
+            yield client
+
+
+@asynccontextmanager
+async def auth_stack(embedding_adapter, reranker_adapter, auth_provider):
+    """An AuthStack over a fresh app whose auth provider is ``auth_provider``."""
+    async for app in build_app(embedding_adapter, reranker_adapter, auth_provider=auth_provider):
+        http_app = app.http_app()
+        async with http_app.router.lifespan_context(http_app):
+            yield AuthStack(http_app)

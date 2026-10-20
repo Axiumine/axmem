@@ -7,11 +7,10 @@ colliding key turns a harmless log line into a crash:
 
 - on the happy path whenever INFO is enabled for the module (``logger.info``), and
 - on the error path always (``logger.exception``), where it also replaces the real
-  database error with a ``KeyError``.
+  storage error with a ``KeyError``.
 
-The Alembic ``fileConfig`` call run by ``init_db`` disables the app loggers that already
-exist, which hides these crashes in most test runs. The ``info_logging`` fixture puts the
-affected loggers back into the state of a server whose loggers are live.
+The end-to-end counterpart (``tests/e2e/test_reserved_logrecord_key_e2e.py``) runs requests with INFO
+enabled on every app logger; this module checks the source of every logging call.
 """
 
 import ast
@@ -19,14 +18,7 @@ import logging
 from collections.abc import Iterator
 from pathlib import Path
 
-import pytest
-
-from app.exceptions import ConflictError
-from app.models.user_models import UserCreate
-
 APP_DIR = Path(__file__).resolve().parents[2] / "app"
-
-AFFECTED_LOGGERS = ("app.services.tenant_service",)
 
 LOG_METHODS = {"debug", "info", "warning", "warn", "error", "exception", "critical", "log"}
 
@@ -35,31 +27,6 @@ def _reserved_logrecord_keys() -> set[str]:
     """Names ``Logger.makeRecord`` refuses in ``extra`` (plus the formatter-set ones)."""
     probe = logging.LogRecord("probe", logging.INFO, "probe.py", 1, "msg", (), None)
     return set(probe.__dict__) | {"message", "asctime"}
-
-
-@pytest.fixture
-def info_logging(caplog):
-    """Enable INFO on the affected module loggers and capture what they emit."""
-    saved = []
-    for name in AFFECTED_LOGGERS:
-        module_logger = logging.getLogger(name)
-        saved.append((module_logger, module_logger.level, module_logger.disabled))
-        module_logger.disabled = False
-        module_logger.setLevel(logging.INFO)
-    caplog.set_level(logging.INFO)
-    yield caplog
-    for module_logger, level, disabled in saved:
-        module_logger.setLevel(level)
-        module_logger.disabled = disabled
-
-
-def _single_record(caplog, logger_name: str, message: str) -> logging.LogRecord:
-    """The one record ``logger_name`` emitted with ``message`` (others, e.g. init logs, ignored)."""
-    matches = [
-        r for r in caplog.records if r.name == logger_name and r.getMessage() == message
-    ]
-    assert len(matches) == 1, [r.getMessage() for r in caplog.records]
-    return matches[0]
 
 
 def _log_calls(tree: ast.AST) -> Iterator[ast.Call]:
@@ -110,32 +77,3 @@ def test_log_extra_never_uses_reserved_logrecord_keys():
                 if key in reserved
             )
     assert not offenders, "\n".join(offenders)
-
-
-async def test_tenant_creation_with_info_logging(test_tenant_service, info_logging):
-    tenant = await test_tenant_service.get_or_create_tenant("acme")
-
-    assert tenant.external_id == "acme"
-    record = _single_record(info_logging, "app.services.tenant_service", "Creating tenant")
-    assert record.tenant == "acme"
-
-
-async def test_tenant_creation_race_with_info_logging(test_tenant_service, info_logging, monkeypatch):
-    repo = test_tenant_service.user_repo
-    winner = await repo.create_user(UserCreate(external_id="racing", name="racing", email=""))
-    lookups = iter([None, winner])
-
-    async def lookup(external_id):
-        return next(lookups)
-
-    async def conflict(user):
-        raise ConflictError("A user with this external_id already exists")
-
-    monkeypatch.setattr(repo, "get_user_by_external_id", lookup)
-    monkeypatch.setattr(repo, "create_user", conflict)
-
-    assert await test_tenant_service.get_or_create_tenant("racing") == winner
-    record = _single_record(
-        info_logging, "app.services.tenant_service", "Tenant creation race condition, fetching existing tenant",
-    )
-    assert record.tenant == "racing"

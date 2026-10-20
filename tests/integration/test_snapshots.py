@@ -1,4 +1,4 @@
-"""Snapshots of surfaces that must not change by accident: CLI help, settings, DB schema.
+"""Snapshots of surfaces that must not change by accident: CLI help, settings, Qdrant collection layout.
 
 A changed snapshot is a contract change: review the diff, then refresh deliberately with
 ``uv run pytest -m snapshot --snapshot-update``.
@@ -6,17 +6,19 @@ A changed snapshot is a contract change: review the diff, then refresh deliberat
 
 import argparse
 import re
-from pathlib import Path, PurePath
+from datetime import UTC, datetime
+from pathlib import PurePath
+from uuid import UUID
 
 import pytest
-from sqlalchemy.dialects import postgresql, sqlite
-from sqlalchemy.schema import CreateIndex, CreateTable
+from qdrant_client import models as qm
 from syrupy.extensions.json import JSONSnapshotExtension
 
 import app.config.settings as settings_module
 from app.config.settings import Settings
-from app.repositories.postgres.postgres_tables import Base as PostgresBase
-from app.repositories.sqlite.sqlite_tables import Base as SqliteBase
+from app.models.memory_models import MemoryCreate
+from app.repositories.qdrant import schema
+from app.repositories.qdrant.payloads import link_payload, memory_payload
 from app.routes.cli.parser import build_parser
 
 pytestmark = pytest.mark.snapshot
@@ -24,7 +26,6 @@ pytestmark = pytest.mark.snapshot
 SECRET_FIELD = re.compile(r"KEY|SECRET|TOKEN|PASSWORD|CLIENT_ID", re.IGNORECASE)
 URL_PATH_FIELDS = {"GATEWAY_PATH"}  # begin with "/" but are URL paths, not filesystem paths: pin them literally
 VOLATILE_FIELDS = {"SERVICE_VERSION"}  # derived from the git revision, changes with every commit
-ALEMBIC_VERSIONS = Path(__file__).resolve().parents[2] / "alembic" / "versions"
 
 
 @pytest.fixture
@@ -92,34 +93,36 @@ def test_settings_defaults(pristine_settings, json_snapshot):
     assert dumped == json_snapshot
 
 
-def _ddl(base, dialect) -> dict[str, list[str]]:
-    schema = {}
-    for table in sorted(base.metadata.sorted_tables, key=lambda t: t.name):
-        statements = [str(CreateTable(table).compile(dialect=dialect)).strip()]
-        statements += [
-            str(CreateIndex(index).compile(dialect=dialect)).strip()
-            for index in sorted(table.indexes, key=lambda i: i.name or "")
-        ]
-        schema[table.name] = statements
-    return schema
+def _index_name(spec: qm.KeywordIndexParams | qm.PayloadSchemaType) -> str:
+    if isinstance(spec, qm.KeywordIndexParams):
+        return f"{spec.type.value} (tenant index)" if spec.is_tenant else spec.type.value
+    return spec.value
 
 
-def test_sqlite_schema(json_snapshot):
-    assert _ddl(SqliteBase, sqlite.dialect()) == json_snapshot
+def test_qdrant_collection_layout(json_snapshot):
+    """Which collections exist and which payload fields are indexed, and how: filters depend on every one."""
+    names = schema.CollectionNames("axmem")
+    layout = {
+        "live alias": names.live,
+        "links collection": names.links,
+        "memory vectors": {"distance": "Cosine", "size": "<EMBEDDING_DIMENSIONS>"},
+        "link vectors": {"distance": "Dot", "size": len(schema.LINK_VECTOR), "hnsw m": 0},
+        "memory indexes": {field: _index_name(spec) for field, spec in sorted(schema.MEMORY_INDEXES.items())},
+        "link indexes": {field: _index_name(spec) for field, spec in sorted(schema.LINK_INDEXES.items())},
+    }
+    assert layout == json_snapshot
 
 
-def test_postgres_schema(json_snapshot):
-    assert _ddl(PostgresBase, postgresql.dialect()) == json_snapshot
-
-
-def test_migration_chain(json_snapshot):
-    revisions = {}
-    for path in sorted(ALEMBIC_VERSIONS.glob("*.py")):
-        text = path.read_text(encoding="utf-8")
-        revision = re.search(r'^revision(?:: str)? = ["\'](\w+)["\']', text, re.MULTILINE)
-        parent = re.search(r"^down_revision(?:: [^=]+)? = (.+)$", text, re.MULTILINE)
-        revisions[path.name] = {
-            "revision": revision.group(1) if revision else None,
-            "down_revision": parent.group(1).strip().strip("\"'") if parent else None,
-        }
-    assert revisions == json_snapshot
+def test_qdrant_payload_types(json_snapshot):
+    """The exact type of every payload value: a condition on a value of another type silently matches nothing."""
+    now = datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC)
+    tenant, first, second = (UUID(int=value) for value in (1, 2, 3))
+    memory = MemoryCreate(title="t", content="c", context="x", keywords=["k"], tags=["g"], importance=5, project="p")
+    payloads = {
+        "memory": memory_payload(tenant, memory, token="token", now=now),
+        "link": link_payload(tenant, first, second, token="token", now=now),
+    }
+    assert {
+        kind: {field: type(value).__name__ for field, value in sorted(payload.items())}
+        for kind, payload in payloads.items()
+    } == json_snapshot

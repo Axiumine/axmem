@@ -3,7 +3,7 @@ name: forgetful-cli-setup
 description: >-
   Set up the Forgetful CLI and connect from a terminal — install, local or remote mode,
   auth, and verification. Use when connecting a human or headless agent via shell, wiring
-  CI with token auth, or operating a local server (serve, database selection, feature
+  CI with token auth, or operating a local server (serve, Qdrant selection, feature
   flags, re-embedding). Also covers the machine contract: --json output, exit codes, and
   the discovery ladder.
 license: MIT
@@ -31,7 +31,7 @@ Both `forgetful` and `forgetful-ai` invoke the same CLI.
 
 Connection precedence: `--local` > `--server URL` > `FORGETFUL_SERVER` env > local default.
 
-- **Local** (default): runs in-process against the locally configured database — zero
+- **Local** (default): runs in-process against the locally configured Qdrant — zero
   config, no server needed. Right for a personal knowledge base on one machine.
 - **Remote**: drives a deployed server. Set `FORGETFUL_TOKEN` (a bearer token: JWT,
   introspected or static, as the server is configured) in the environment, then
@@ -77,8 +77,12 @@ same operations.
   accepted only on stdio or on a loopback bind: `AUTH_MODE=none forgetful serve --transport http
   --host 127.0.0.1 --port 8020` (or `--transport stdio` for MCP clients that spawn a process). A
   server bound to another address needs `AUTH_MODE=jwt`, `introspection` or `static`.
-- Database via env: `DATABASE=SQLite` with `SQLITE_PATH` (file) or `SQLITE_MEMORY=true`
-  (ephemeral), or `DATABASE=Postgres` with `POSTGRES_HOST/PORT/DB/USER/PASSWORD`.
+- Storage via env: Qdrant is the only store. `QDRANT_URL` (one node or a comma-separated cluster, default
+  `http://127.0.0.1:6333`), `QDRANT_API_KEY`, and `QDRANT_COLLECTION_PREFIX` to keep several deployments apart.
+- Operator commands against the configured Qdrant: `forgetful backup`, `forgetful restore <dir> --yes` (stop the
+  server first), `forgetful export <file>`, `forgetful import <file>`, `forgetful qdrant-check` (compares the
+  nodes of a cluster).
+- Memory ids are UUIDs: `forgetful memory get <uuid>`; a number is refused.
 - After changing embedding provider or model: `forgetful re-embed --dry-run` to preview,
   then `forgetful re-embed` (batch size tunable via `--batch-size`).
 

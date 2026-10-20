@@ -28,7 +28,8 @@ copilot
 # Press Ctrl+S to save
 ```
 
-Your memories will persist in `~/.forgetful/forgetful.db`.
+Your memories are stored in the Qdrant at `http://127.0.0.1:6333` unless `QDRANT_URL` says otherwise (collections
+`axmem_memories` and `axmem_links`; see the [Qdrant configuration](../configuration.md#qdrant-configuration)).
 
 ### Manual Configuration
 
@@ -47,7 +48,7 @@ Alternatively, edit `~/.copilot/mcp-config.json` directly:
 
 ### Custom Setup (Advanced)
 
-For PostgreSQL, custom embeddings, or environment variables:
+For another Qdrant, custom embeddings, or environment variables:
 
 ```json
 {
@@ -56,12 +57,8 @@ For PostgreSQL, custom embeddings, or environment variables:
       "command": "uvx",
       "args": ["forgetful-ai"],
       "env": {
-        "DATABASE": "Postgres",
-        "POSTGRES_HOST": "localhost",
-        "PGPORT": "5432",
-        "POSTGRES_DB": "forgetful",
-        "POSTGRES_USER": "user",
-        "POSTGRES_PASSWORD": "pass",
+        "QDRANT_URL": "http://qdrant.internal:6333",
+        "QDRANT_API_KEY": "your-qdrant-api-key",
         "EMBEDDING_PROVIDER": "Google",
         "EMBEDDING_MODEL": "models/text-embedding-004"
       }

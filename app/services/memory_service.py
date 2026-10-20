@@ -13,7 +13,7 @@ from uuid import UUID
 
 from app.config.logging_config import logging
 from app.config.settings import settings
-from app.exceptions import InvalidStateTransitionError, NotFoundError
+from app.exceptions import InvalidStateTransitionError
 from app.models.memory_models import (
     VALID_SORT_BY,
     VALID_SORT_ORDER,
@@ -221,7 +221,7 @@ class MemoryService:
     async def update_memory(
             self,
             user_id: UUID,
-            memory_id: int,
+            memory_id: UUID,
             updated_memory: MemoryUpdate,
     ) -> Memory | None:
         """Update an existing memory
@@ -252,15 +252,10 @@ class MemoryService:
                         })
             return existing_memory
 
-        search_fields = {"title", "content", "context", "keywords", "tags"}
-        search_fields_changed = bool(search_fields & changed_fields.keys())
-
         modified_memory = await self.memory_repo.update_memory(
             memory_id=memory_id,
             user_id=user_id,
             updated_memory=updated_memory,
-            existing_memory=existing_memory,
-            search_fields_changed=search_fields_changed,
         )
 
         return modified_memory
@@ -268,9 +263,9 @@ class MemoryService:
     async def mark_memory_obsolete(
             self,
             user_id: UUID,
-            memory_id: int,
+            memory_id: UUID,
             reason: str,
-            superseded_by: int | None = None,
+            superseded_by: UUID | None = None,
     ) -> bool:
         """Mark a memory as obsolete (soft delete)
         
@@ -315,7 +310,7 @@ class MemoryService:
 
         return success
 
-    async def unobsolete_memory(self, user_id: UUID, memory_id: int) -> bool:
+    async def unobsolete_memory(self, user_id: UUID, memory_id: UUID) -> bool:
         """Restore a soft-deleted memory to active search results."""
         logger.info(
             "Restoring obsolete memory",
@@ -326,19 +321,18 @@ class MemoryService:
             memory_id=memory_id,
         )
         if not success:
-            memory = await self.memory_repo.get_memory_by_id(
+            # Raises NotFoundError when the memory does not exist for this tenant; otherwise it is simply active
+            await self.memory_repo.get_memory_by_id(
                 memory_id=memory_id,
                 user_id=user_id,
             )
-            if memory is None:
-                raise NotFoundError(f"Memory {memory_id} not found")
             raise InvalidStateTransitionError(f"Memory {memory_id} is not obsolete")
         return True
 
     async def get_memory(
             self,
             user_id: UUID,
-            memory_id: int,
+            memory_id: UUID,
     ) -> Memory | None:
         """Retrieve a single memory by id.
 
@@ -357,7 +351,7 @@ class MemoryService:
     async def find_obsolete_matches(
             self,
             user_id: UUID,
-            memory_id: int,
+            memory_id: UUID,
     ) -> list[ObsoleteMatch]:
         if not settings.OBSOLETE_WARNING_ENABLED:
             return []
@@ -444,9 +438,9 @@ class MemoryService:
     async def link_memories(
             self,
             user_id: UUID,
-            memory_id: int,
-            related_ids: list[int],
-    ) -> list[int]:
+            memory_id: UUID,
+            related_ids: list[UUID],
+    ) -> list[UUID]:
         """Creates a bidirectional links between memories
 
         Duplicate links and self-links are automatically removed
@@ -475,8 +469,8 @@ class MemoryService:
     async def unlink_memories(
             self,
             user_id: UUID,
-            memory_id: int,
-            target_id: int,
+            memory_id: UUID,
+            target_id: UUID,
     ) -> bool:
         """Remove link between two memories.
 

@@ -1,4 +1,4 @@
-"""Shared pieces of the auto-link cutoff tests (SQLite and PostgreSQL suites).
+"""Shared pieces of the auto-link cutoff tests (integration and end-to-end suites).
 
 The anchor and the related memory are clearly similar (cosine 0.83, above the 0.7 cutoff) and the
 unrelated memory is far from both (0.46 and 0.37, below it); the texts are in ``tests/embedding_texts.py``.

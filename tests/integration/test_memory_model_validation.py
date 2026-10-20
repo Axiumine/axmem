@@ -7,6 +7,7 @@ stay readable after a limit is lowered.
 """
 
 import json
+from uuid import UUID, uuid4
 
 import pytest
 from pydantic import ValidationError
@@ -35,11 +36,13 @@ def _create(**overrides) -> MemoryCreate:
     data.update(overrides)
     return MemoryCreate(**data)
 
+MEMORY_ID = UUID("01a157bf-5d0f-77ae-9308-9af4ac2edb17")
+
 
 def _stored_row(**overrides) -> dict:
     """What a repository hands to Memory.model_validate for a stored row."""
     data = {
-        "id": 1,
+        "id": MEMORY_ID,
         "title": "A title",
         "content": "Real content",
         "context": "ctx",
@@ -258,9 +261,9 @@ def test_memory_reads_rows_with_blank_text():
 def test_memory_inside_other_response_models_is_unconstrained():
     oversized = Memory.model_validate(_stored_row(content="c" * (settings.MEMORY_CONTENT_MAX_LENGTH + 1)))
 
-    linked = LinkedMemory(memory=oversized, link_source_id=2)
+    linked = LinkedMemory(memory=oversized, link_source_id=uuid4())
 
-    assert linked.memory.id == 1
+    assert linked.memory.id == MEMORY_ID
 
 
 def test_memory_keeps_the_field_order_of_the_api_response():

@@ -181,7 +181,7 @@ async def test_forgetful_server_setting_selects_remote(monkeypatch):
 
 
 async def test_local_flag_forces_local_even_with_server_configured(
-    monkeypatch, sqlite_runtime_settings,
+    monkeypatch, runtime_settings,
 ):
     monkeypatch.setattr(settings, "FORGETFUL_SERVER", "http://from-settings:1")
 
@@ -193,7 +193,7 @@ async def test_local_flag_forces_local_even_with_server_configured(
         await executor.close()
 
 
-async def test_default_is_local_mode(monkeypatch, sqlite_runtime_settings):
+async def test_default_is_local_mode(monkeypatch, runtime_settings):
     monkeypatch.setattr(settings, "FORGETFUL_SERVER", "")
     monkeypatch.delenv("FORGETFUL_TOKEN", raising=False)
 
@@ -320,4 +320,4 @@ async def test_auth_status_local_mode_reports_local(monkeypatch, capsys):
     assert code == 0
     out = capsys.readouterr().out
     assert "Mode: local" in out
-    assert settings.DATABASE in out
+    assert ", ".join(settings.qdrant_urls) in out

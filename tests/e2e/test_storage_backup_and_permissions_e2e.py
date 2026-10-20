@@ -1,138 +1,92 @@
-"""PostgreSQL backups with the real pg_dump and psql: strict restores and private dumps."""
+"""Where snapshots are written and who may read them, against real files and a real Qdrant node.
+
+The snapshots and exports hold every tenant's data, so the directories and files must be readable by
+their owner only, a shared directory that already exists must be left as it is, and a backup that fails
+must leave nothing behind.
+"""
 
 import os
 import stat
 import sys
-from uuid import uuid4
+from pathlib import Path
 
-import psycopg2
 import pytest
-from sqlalchemy import text
 
 from app.bootstrap import create_backup_service
 from app.config.settings import settings
-
-pytestmark = [
-    pytest.mark.e2e,
-    pytest.mark.asyncio(loop_scope="session"),
-    pytest.mark.usefixtures("postgres_backup_tools"),
-]
+from tests.backup_restore_cases import seed_memories
 
 posix_only = pytest.mark.skipif(sys.platform == "win32", reason="POSIX permission bits")
 
 
-@pytest.fixture
-def backup_directory(tmp_path, monkeypatch):
-    monkeypatch.setattr(settings, "BACKUP_DIR", str(tmp_path / "backups"))
-    return tmp_path / "backups"
-
-
-async def scalar(db_adapter, sql, params=None):
-    async with db_adapter.system_session() as session:
-        return (await session.execute(text(sql), params or {})).scalar()
-
-
-async def test_failed_restore_raises_and_rolls_back_every_statement(
-    db_adapter, backup_directory, tmp_path,
-):
-    dump = tmp_path / "failing-dump.sql"
-    dump.write_text(
-        "CREATE TABLE fg_restore_probe (id integer);\n"
-        "INSERT INTO fg_restore_probe VALUES (1);\n"
-        "INSERT INTO fg_table_that_does_not_exist VALUES (1);\n",
-    )
-    try:
-        with pytest.raises(RuntimeError, match="fg_table_that_does_not_exist"):
-            await create_backup_service(database_type="Postgres").restore_backup(dump)
-
-        assert await scalar(db_adapter, "SELECT to_regclass('public.fg_restore_probe')") is None
-    finally:
-        async with db_adapter.system_session() as session:
-            await session.execute(text("DROP TABLE IF EXISTS fg_restore_probe"))
-
-
-async def test_restore_blocked_by_a_dependent_object_is_reported_and_changes_nothing(
-    db_adapter, backup_directory,
-):
-    """The re-embed failure this guards: the database must not be called restored when it is not."""
-    service = create_backup_service(database_type="Postgres")
-    backup = await service.create_backup()
-    marker = str(uuid4())
-    async with db_adapter.system_session() as session:
-        # Created after the backup: makes DROP TABLE memories fail during the restore.
-        await session.execute(text("CREATE VIEW fg_restore_blocker AS SELECT id FROM memories"))
-        await session.execute(text(
-            "INSERT INTO users (id, external_id, name, email, created_at, updated_at) "
-            "VALUES (:id, 'fg-restore-marker', 'Marker', 'marker@example.test', now(), now())",
-        ), {"id": marker})
-    try:
-        await db_adapter.dispose()
-        with pytest.raises(RuntimeError, match="fg_restore_blocker|depend"):
-            await service.restore_backup(backup)
-
-        # Everything after the failure point was rolled back, not half applied.
-        assert await scalar(
-            db_adapter, "SELECT count(*) FROM users WHERE id = :id", {"id": marker},
-        ) == 1
-    finally:
-        async with db_adapter.system_session() as session:
-            await session.execute(text("DROP VIEW IF EXISTS fg_restore_blocker"))
-            await session.execute(text("DELETE FROM users WHERE id = :id"), {"id": marker})
+def mode(path: Path) -> int:
+    return stat.S_IMODE(os.stat(path).st_mode)
 
 
 @pytest.fixture
-def scratch_database(db_adapter):
-    """An empty database on the same server, with the extension the dump expects to create."""
-    name = "fg_restore_scratch"
-
-    def connect(database):
-        conn = psycopg2.connect(
-            host=settings.POSTGRES_HOST, port=settings.PGPORT, user=settings.POSTGRES_USER,
-            password=settings.POSTGRES_PASSWORD, dbname=database,
-        )
-        conn.autocommit = True
-        return conn
-
-    admin = connect(settings.POSTGRES_DB)
-    with admin.cursor() as cursor:
-        cursor.execute(f"DROP DATABASE IF EXISTS {name} WITH (FORCE)")
-        cursor.execute(f"CREATE DATABASE {name}")
-    try:
-        yield name, connect
-    finally:
-        with admin.cursor() as cursor:
-            cursor.execute(f"DROP DATABASE IF EXISTS {name} WITH (FORCE)")
-        admin.close()
+def umask022():
+    """The common default umask, under which mkdir and open create 0755 and 0644."""
+    previous = os.umask(0o022)
+    yield
+    os.umask(previous)
 
 
-async def test_dump_restores_into_an_empty_database_under_a_strict_restore(
-    db_adapter, backup_directory, scratch_database, monkeypatch,
-):
-    """Strict restores still work where objects are missing and the client is newer than the server."""
-    name, connect = scratch_database
-    backup = await create_backup_service(database_type="Postgres").create_backup()
-    monkeypatch.setattr(settings, "POSTGRES_DB", name)
-
-    await create_backup_service(database_type="Postgres").restore_backup(backup)
-
-    restored = connect(name)
-    try:
-        with restored.cursor() as cursor:
-            cursor.execute("SELECT to_regclass('public.memories') IS NOT NULL")
-            assert cursor.fetchone()[0] is True
-    finally:
-        restored.close()
+@pytest.fixture
+async def seeded(isolated_stack, tensorrt_embedder, umask022):
+    """A repository on collections of its own with a few memories, and the service that backs it up."""
+    repo = isolated_stack.memory_repository(tensorrt_embedder)
+    await seed_memories(repo)
+    return create_backup_service(isolated_stack)
 
 
 @posix_only
-async def test_dump_and_new_backup_directory_are_owner_only(db_adapter, backup_directory):
-    previous = os.umask(0o022)  # the common default, which used to yield a 0644 dump
-    try:
-        backup = await create_backup_service(database_type="Postgres").create_backup()
-    finally:
-        os.umask(previous)
+async def test_new_backup_directory_and_snapshot_files_are_owner_only(seeded, tmp_path, monkeypatch):
+    target = tmp_path / "persistent" / "backups"
+    monkeypatch.setattr(settings, "BACKUP_DIR", str(target))
 
-    assert backup.parent == backup_directory
-    assert stat.S_IMODE(backup.stat().st_mode) == 0o600
-    assert stat.S_IMODE(backup_directory.stat().st_mode) == 0o700
-    assert "PostgreSQL database dump" in backup.read_text()
+    result = await seeded.create_backup()
+
+    assert result.directory.parent == target
+    assert mode(target) == 0o700
+    assert mode(result.directory) == 0o700
+    assert mode(result.directory / "manifest.json") == 0o600
+    assert result.files
+    for path in result.files:
+        assert mode(path) == 0o600, path
+
+
+@posix_only
+async def test_existing_shared_backup_directory_is_not_changed(seeded, tmp_path, monkeypatch):
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    shared.chmod(0o755)
+    monkeypatch.setattr(settings, "BACKUP_DIR", str(shared))
+
+    result = await seeded.create_backup()
+
+    assert mode(shared) == 0o755  # the location may be a directory that is not ours: only the backup inside is private
+    assert mode(result.directory) == 0o700
+
+
+async def test_default_backup_directory_comes_from_the_data_directory(seeded, tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "BACKUP_DIR", "")
+    monkeypatch.setattr("app.config.settings._default_data_dir", tmp_path / "data")
+
+    result = await seeded.create_backup()
+
+    assert result.directory.parent == tmp_path / "data" / "backups"
+
+
+async def test_failed_backup_leaves_no_directory_behind(seeded, tmp_path, monkeypatch):
+    target = tmp_path / "backups"
+    monkeypatch.setattr(settings, "BACKUP_DIR", str(target))
+
+    async def refuse(self, index, collection):
+        raise RuntimeError("snapshot refused")
+
+    monkeypatch.setattr("app.repositories.qdrant.client.NodePool.create_snapshot", refuse)
+
+    with pytest.raises(RuntimeError, match="snapshot refused"):
+        await seeded.create_backup()
+
+    assert list(target.iterdir()) == []

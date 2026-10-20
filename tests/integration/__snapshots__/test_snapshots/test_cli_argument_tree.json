@@ -77,6 +77,31 @@
       "type": null
     }
   ],
+  "forgetful backup": [
+    {
+      "choices": null,
+      "default": null,
+      "flags": [
+        "-h",
+        "--help"
+      ],
+      "help": "show this help message and exit",
+      "nargs": 0,
+      "required": false,
+      "type": null
+    },
+    {
+      "choices": null,
+      "default": false,
+      "flags": [
+        "--force"
+      ],
+      "help": "Back up even if the nodes of a replicated deployment disagree",
+      "nargs": 0,
+      "required": false,
+      "type": null
+    }
+  ],
   "forgetful call": [
     {
       "choices": null,
@@ -144,6 +169,56 @@
       "nargs": null,
       "required": false,
       "type": "_json_object"
+    }
+  ],
+  "forgetful export": [
+    {
+      "choices": null,
+      "default": null,
+      "flags": [
+        "-h",
+        "--help"
+      ],
+      "help": "show this help message and exit",
+      "nargs": 0,
+      "required": false,
+      "type": null
+    },
+    {
+      "choices": null,
+      "default": null,
+      "flags": [
+        "path"
+      ],
+      "help": "File to write",
+      "nargs": null,
+      "required": true,
+      "type": null
+    }
+  ],
+  "forgetful import": [
+    {
+      "choices": null,
+      "default": null,
+      "flags": [
+        "-h",
+        "--help"
+      ],
+      "help": "show this help message and exit",
+      "nargs": 0,
+      "required": false,
+      "type": null
+    },
+    {
+      "choices": null,
+      "default": null,
+      "flags": [
+        "path"
+      ],
+      "help": "File to read",
+      "nargs": null,
+      "required": true,
+      "type": null
     }
   ],
   "forgetful memory": [
@@ -215,7 +290,7 @@
       "help": "Memory id",
       "nargs": null,
       "required": true,
-      "type": "int"
+      "type": "uuid_value"
     }
   ],
   "forgetful memory recent": [
@@ -475,6 +550,20 @@
       "type": null
     }
   ],
+  "forgetful qdrant-check": [
+    {
+      "choices": null,
+      "default": null,
+      "flags": [
+        "-h",
+        "--help"
+      ],
+      "help": "show this help message and exit",
+      "nargs": 0,
+      "required": false,
+      "type": null
+    }
+  ],
   "forgetful re-embed": [
     {
       "choices": null,
@@ -506,6 +595,42 @@
         "--dry-run"
       ],
       "help": "Show what would happen without making changes",
+      "nargs": 0,
+      "required": false,
+      "type": null
+    }
+  ],
+  "forgetful restore": [
+    {
+      "choices": null,
+      "default": null,
+      "flags": [
+        "-h",
+        "--help"
+      ],
+      "help": "show this help message and exit",
+      "nargs": 0,
+      "required": false,
+      "type": null
+    },
+    {
+      "choices": null,
+      "default": null,
+      "flags": [
+        "path"
+      ],
+      "help": "Directory of the backup set",
+      "nargs": null,
+      "required": true,
+      "type": null
+    },
+    {
+      "choices": null,
+      "default": false,
+      "flags": [
+        "--yes"
+      ],
+      "help": "Confirm that the data in Qdrant is replaced",
       "nargs": 0,
       "required": false,
       "type": null
