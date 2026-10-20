@@ -20,7 +20,8 @@ from .core import (
 )
 
 QODANA_LINTER = "jetbrains/qodana-python:2026.2"
-TRIVY_IMAGE = "aquasec/trivy:latest"
+TRIVY_VERSION = "0.75.0"
+TRIVY_IMAGE = f"aquasec/trivy:{TRIVY_VERSION}"  # pinned like semgrep and Qodana: a moving tag changes the findings
 
 
 def trivy_cmd() -> list[str]:

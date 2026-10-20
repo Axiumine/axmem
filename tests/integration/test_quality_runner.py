@@ -2,12 +2,13 @@
 
 import json
 import os
+import re
 import subprocess
 import sys
 
 import pytest
 
-from scripts.quality import cli, core, registry, static, testing
+from scripts.quality import cli, core, registry, security, static, testing
 
 
 @pytest.fixture(autouse=True)
@@ -33,6 +34,20 @@ def test_required_tools_are_gated_before_push():
         "tests", "e2e-qdrant", "coverage", "memray", "trivy", "qodana",
         "gitnexus", "mutation",
     } <= pre_push
+
+
+def test_the_trivy_image_is_pinned_to_a_version(monkeypatch, tmp_path):
+    """Without a trivy binary the gate runs Docker; a moving tag would change its findings from one day to the next."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("TRIVY_BIN", raising=False)
+    monkeypatch.setattr(security.shutil, "which", lambda _name: None)
+    monkeypatch.setattr(security, "docker_ready", lambda: True)
+
+    command = security.trivy_cmd()
+
+    images = [word for word in command if word.startswith("aquasec/trivy")]
+    assert images == [security.TRIVY_IMAGE]
+    assert re.fullmatch(r"aquasec/trivy:\d+\.\d+\.\d+", security.TRIVY_IMAGE)
 
 
 def test_selected_honours_skip_only_and_opt_in(monkeypatch):

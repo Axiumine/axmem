@@ -16,7 +16,6 @@ classifiers = [
 ]
 dependencies = [
     "dotenv==0.9.9",
-    "fastapi==0.136.3",
     "fastmcp==3.2.2",
     "cuda-python==13.4.4",
     "google-genai==1.66.0",
@@ -28,9 +27,6 @@ dependencies = [
     "platformdirs==4.7.0",
     "pydantic==2.12.5",
     "pydantic-settings==2.14.2",
-    "pytest==9.0.3",
-    "pytest-asyncio==1.3.0",
-    "requests==2.33.0",
     "starlette==1.3.1",
     "tensorrt-cu13==11.4.0.106",
     "tensorrt-cu13-bindings==11.4.0.106",
@@ -66,9 +62,13 @@ dev = [
     "mutmut==3.8.0",
     "mypy==2.4.0",
     "pylint==4.1.3",
+    "pytest==9.0.3",
+    "pytest-asyncio==1.3.0",
     "pytest-cov==7.1.0",
     "pytest-memray>=1.11.0 ; sys_platform != 'win32'",
+    "pyyaml==6.0.3",
     "radon==6.0.1",
+    "requests==2.33.0",
     "ruff==0.17.1",
     "syrupy==6.1.1",
     "vulture==2.16",
@@ -314,6 +314,8 @@ pytest_add_cli_args_test_selection = ["tests/architecture/", "tests/integration/
 do_not_mutate = ["app/_version.py"]
 also_copy = [
     "pytest.ini", "main.py", "pyproject.toml", "ruff.toml",
+    ".githooks/",  # the hook tests (test_commit_msg_hook, test_denylist_check_hook) run the scripts of the repository
+    ".github/",  # test_workflows reads the CI workflows
     "test_harness/", "scripts/", "skills/", "docs/", "architecture.md", "README.md",
 ]
 # Modules that start Python child processes in other directories cannot run inside the mutmut

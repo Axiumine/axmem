@@ -11,6 +11,7 @@ from pathlib import PurePath
 from uuid import UUID
 
 import pytest
+from pydantic import SecretStr
 from qdrant_client import models as qm
 from syrupy.extensions.json import JSONSnapshotExtension
 
@@ -23,7 +24,9 @@ from app.routes.cli.parser import build_parser
 
 pytestmark = pytest.mark.snapshot
 
-SECRET_FIELD = re.compile(r"KEY|SECRET|TOKEN|PASSWORD|CLIENT_ID", re.IGNORECASE)
+# A credential is named by what a field ends in. A substring match also masked MEMORY_TOKEN_BUDGET, MEMORY_KEYWORDS_MAX_COUNT
+# and TOKEN_CACHE_TTL_SECONDS, whose defaults the snapshot then could not pin.
+SECRET_FIELD = re.compile(r"(KEY|SECRET|TOKEN|PASSWORD|CLIENT_ID|HASHES)$")
 URL_PATH_FIELDS = {"GATEWAY_PATH"}  # begin with "/" but are URL paths, not filesystem paths: pin them literally
 VOLATILE_FIELDS = {"SERVICE_VERSION"}  # derived from the git revision, changes with every commit
 
@@ -91,6 +94,18 @@ def test_settings_defaults(pristine_settings, json_snapshot):
         else:
             dumped[name] = str(value)
     assert dumped == json_snapshot
+
+
+def test_only_credentials_are_masked_in_the_settings_snapshot():
+    secrets = {name for name in Settings.model_fields if SECRET_FIELD.search(name)}
+    typed_secrets = {name for name, field in Settings.model_fields.items() if isinstance(field.default, SecretStr)}
+
+    assert typed_secrets <= secrets
+    assert {"QDRANT_API_KEY", "GATEWAY_TOKEN", "AUTH_STATIC_TOKEN_HASHES", "FASTMCP_SERVER_AUTH_INTROSPECTION_CLIENT_ID"} <= secrets
+    assert not secrets & {
+        "MEMORY_TOKEN_BUDGET", "MEMORY_KEYWORDS_MAX_COUNT", "MEMORY_KEYWORD_MAX_LENGTH",
+        "TOKEN_CACHE_ENABLED", "TOKEN_CACHE_MAX_SIZE", "TOKEN_CACHE_TTL_SECONDS",
+    }
 
 
 def _index_name(spec: qm.KeywordIndexParams | qm.PayloadSchemaType) -> str:

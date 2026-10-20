@@ -352,6 +352,24 @@ Fixes found by reviewing the feature cuts (no upstream counterpart: the code the
   connectivity guide, the configuration reference and the GPU guide describe what Axmem does now (the
   install route, local mode needing a GPU, the loopback and reverse-proxy warning, the real error messages).
 
+- **Tests, CI and hooks:** the Qdrant preflight of the suites pulls `qdrant/qdrant:v1.19.2` when the image is not local (a
+  clean or pruned runner, or a bumped version) and still ends the run with exit code 2 and the cause when Docker or the
+  pull fails. The jobs on the self-hosted GPU runner no longer run for pull requests from forks (the head repository must
+  be this one; the weekly `mutation` job runs on schedule and manual dispatch only; no workflow uses
+  `pull_request_target`), and the wheel smoke test still runs for them. The weekly mutation run has a concurrency group
+  of its own, so a push to the default branch no longer cancels it. The mutation sandbox holds `.githooks/` and
+  `.github/`, which the hook and workflow tests read, and the protocol-coverage test ignores the names mutmut adds to a
+  mutated class, so mutmut's baseline run passes (checked with the gate on `app.utils.url_helpers*`). `denylist-check` fails closed
+  (exit 2, naming the line numbers of the list that are not valid expressions, never the terms) when grep cannot use the
+  list, no longer drops added lines that begin with `++`, matches against the line without the diff column (so `^term`
+  works) and accepts a term that begins with a dash. The settings-defaults snapshot masks only credentials, so the
+  defaults of `MEMORY_TOKEN_BUDGET`, `MEMORY_KEYWORDS_MAX_COUNT`, `MEMORY_KEYWORD_MAX_LENGTH` and `TOKEN_CACHE_*` are
+  pinned; a schema test no longer leaves a collection behind; the tenant id derivation is pinned by tests; the trivy
+  image is pinned (`aquasec/trivy:0.75.0`); the wheel smoke test installs the dependencies from `uv.lock` (NVIDIA's
+  index for TensorRT, without `tensorrt-cu13-libs`) and the wheel on top, instead of resolving the PyPI placeholders of
+  the TensorRT packages. `pytest`, `pytest-asyncio` and `requests` (test-only) moved from the runtime dependencies to the
+  `dev` group and the unused `fastapi` pin was removed, so an installed Axmem no longer pins them (`requests` still arrives through the SDKs that need it).
+
 ### Security
 
 - Authentication fails closed (`3201a2c3`). A server with no `AUTH_MODE` refuses to start (exit code 1), `AUTH_MODE=none` is accepted only on stdio or on a loopback bind (`127.0.0.1`, `::1`; a hostname such as `localhost` does not count), and the credential modes are refused on stdio, which carries no bearer token. A request-level check refuses to serve when no provider is attached and the mode is not `none`. Fixes the finding that, without `FASTMCP_SERVER_AUTH`, every request was the same default user (`app/middleware/auth.py`), so any caller of a network-bound server read and changed every memory. Existing deployments that relied on that default must set `AUTH_MODE` (and bind to a loopback address if it is `none`) before the next start.

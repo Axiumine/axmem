@@ -107,3 +107,91 @@ def test_without_a_denylist_nothing_is_checked(repo):
 
 def test_unknown_mode_is_a_usage_error(repo):
     assert _guard(repo, "nope").returncode == 2
+
+
+@pytest.mark.parametrize("text", [
+    f"++ {TERM}\n",
+    f"++{TERM}\n",
+    f"+++ {TERM}\n",
+    f"-- {TERM}\n",
+])
+def test_an_added_line_that_begins_with_plus_signs_is_still_scanned(repo, text):
+    (repo / "a.txt").write_text(text, encoding="utf-8")
+    _git(repo, "add", "a.txt")
+    assert _guard(repo, "staged").returncode == 1
+    _git(repo, "commit", "-q", "-m", "chore: x")
+    assert _guard(repo, "range", "HEAD").returncode == 1
+
+
+def test_an_added_line_that_begins_with_plus_signs_but_is_clean_passes(repo):
+    (repo / "a.txt").write_text("++ nothing special\n+++ b/nothing special\n", encoding="utf-8")
+    _git(repo, "add", "a.txt")
+    assert _guard(repo, "staged").returncode == 0
+
+
+def test_a_term_is_matched_against_the_line_without_the_diff_column(repo):
+    (repo / ".git" / "info" / "denylist").write_text("^zzanchored\n", encoding="utf-8")
+    (repo / "a.txt").write_text("zzanchored at the start\n", encoding="utf-8")
+    _git(repo, "add", "a.txt")
+    assert _guard(repo, "staged").returncode == 1
+
+
+def test_a_term_that_begins_with_a_dash_is_not_taken_for_an_option(repo):
+    (repo / ".git" / "info" / "denylist").write_text(f"-{TERM}\n", encoding="utf-8")
+    (repo / "a.txt").write_text(f"see -{TERM}\n", encoding="utf-8")
+    _git(repo, "add", "a.txt")
+    assert _guard(repo, "staged").returncode == 1
+
+
+@pytest.mark.parametrize("trailing_newline", [True, False], ids=["newline", "no-newline"])
+def test_an_invalid_expression_in_the_list_fails_closed_in_every_mode(repo, tmp_path_factory, trailing_newline):
+    invalid = "broken("
+    (repo / ".git" / "info" / "denylist").write_text(
+        f"{TERM}\n{invalid}" + ("\n" if trailing_newline else ""), encoding="utf-8",
+    )
+    (repo / "a.txt").write_text(f"a line with {TERM} inside\n", encoding="utf-8")
+    _git(repo, "add", "a.txt")
+    _git(repo, "commit", "-q", "-m", "chore: x")
+    msg = tmp_path_factory.mktemp("msg") / "COMMIT_EDITMSG"
+    msg.write_text(f"feat: x\n\nmentions {TERM}\n", encoding="utf-8")
+    (repo / "b.txt").write_text(f"another {TERM}\n", encoding="utf-8")
+    _git(repo, "add", "b.txt")
+
+    for result in (_guard(repo, "staged"), _guard(repo, "message", str(msg)), _guard(repo, "range", "HEAD")):
+        assert result.returncode == 2
+        assert "cannot check" in result.stderr
+        assert "line number in" in result.stderr
+        assert ": 2 " in result.stderr
+        assert TERM not in result.stderr.lower()
+        assert invalid not in result.stderr
+
+
+def test_an_invalid_expression_is_reported_even_for_a_clean_change(repo):
+    (repo / ".git" / "info" / "denylist").write_text(f"[unclosed\n{TERM}\nalso(bad\n", encoding="utf-8")
+    (repo / "a.txt").write_text("nothing special\n", encoding="utf-8")
+    _git(repo, "add", "a.txt")
+    result = _guard(repo, "staged")
+    assert result.returncode == 2
+    assert ": 1 3 " in result.stderr
+
+
+def test_a_missing_message_file_fails_closed(repo, tmp_path_factory):
+    result = _guard(repo, "message", str(tmp_path_factory.mktemp("msg") / "absent"))
+    assert result.returncode == 2
+    assert "cannot read the commit message file" in result.stderr
+
+
+def test_a_term_added_while_resolving_a_merge_conflict_is_refused(repo):
+    _commit(repo, "a.txt", "base\n")
+    _git(repo, "checkout", "-q", "-b", "side")
+    _commit(repo, "a.txt", "side\n")
+    _git(repo, "checkout", "-q", "main")
+    _commit(repo, "a.txt", "main\n")
+    _git(repo, "update-ref", "refs/remotes/origin/main", "HEAD")
+    with pytest.raises(subprocess.CalledProcessError):
+        _git(repo, "merge", "-q", "side")
+    (repo / "a.txt").write_text(f"resolved with {TERM}\n", encoding="utf-8")
+    _git(repo, "add", "a.txt")
+    _git(repo, "commit", "-q", "-m", "chore: merge")
+
+    assert _guard(repo, "range", "HEAD").returncode == 1

@@ -38,7 +38,11 @@ synced as above.
 `denylist-check` keeps terms that must not appear in the repository out of it. The terms live in
 `.git/info/denylist` (one extended regular expression per line, matched case-insensitively), a file that belongs
 to the clone and is never tracked, so no tracked file names them. Without the file nothing is checked. The guard
-never prints a term, and `SKIP` does not bypass it (covered by `tests/integration/test_denylist_check_hook.py`).
+never prints a term, and `SKIP` does not bypass it. It fails closed: when `grep` cannot use the list (an invalid
+expression, such as an unbalanced parenthesis, makes it exit with status 2) the hook exits 2 and names the line numbers
+of the list to fix, never their content, instead of letting everything through. Added lines are matched without the
+diff column, so `^term` anchors to the line, and a line that begins with `++` is scanned like any other (covered by
+`tests/integration/test_denylist_check_hook.py`).
 
 `commit-msg` is stage-less: it only validates the message text, so it is not run by `scripts.quality stage`
 and is not part of the pipeline below. Comment lines and the `git commit -v` scissors section are stripped
@@ -61,8 +65,10 @@ run with exit code 2 and the cause when no GPU is visible, TensorRT cannot be im
 installed) asks for more pytest workers than the GPU memory holds.
 
 **Qdrant requirement.** The integration and end-to-end suites run on a real Qdrant node and the cluster suite on three
-nodes, all started through Docker from `qdrant/qdrant:v1.19.2` (pull the image first; `tests/qdrant_support.py` does the
-starting and removes the containers). A run that cannot start Qdrant ends with exit code 2 and the cause, it never skips.
+nodes, all started through Docker from `qdrant/qdrant:v1.19.2` (`tests/qdrant_support.py` does the starting and removes
+the containers). The preflight pulls the image when it is not local, so a clean or pruned runner needs no manual step
+but needs the registry (a pull may take up to half an hour). A run that cannot start Qdrant, because Docker is missing or
+unreachable or the pull fails, ends with exit code 2 and the cause, it never skips.
 Setting `AXMEM_TEST_QDRANT_URL` (and `AXMEM_TEST_QDRANT_API_KEY`) points the integration and end-to-end suites at a server that
 already runs, for example a service container of a CI job; the tests then keep to collections of their own under a
 unique prefix and delete them afterwards. The single node keeps its data in memory (`--tmpfs`), because payload-index creation fsyncs and a slow Docker storage driver turned
@@ -96,7 +102,7 @@ across jobs:
 | `quality.yml` job `mutation` (GPU runner) | `mutation` with `MUTATION=1`, weekly (Mondays 03:17 UTC) and on manual dispatch | 3.14 |
 | `ci.yml` job `lint` (hosted runner) | `ruff` and `tests/architecture` | 3.14 |
 | `ci.yml` job `test` (GPU runner) | integration and end-to-end suites on a Qdrant node started through Docker | 3.14 |
-| `ci.yml` job `smoke-test` (hosted runner) | wheel build smoke test | 3.14 |
+| `ci.yml` job `smoke-test` (hosted runner) | wheel build smoke test: the locked dependencies without `tensorrt-cu13-libs` (`uv sync --locked --no-dev --no-install-project`), then the wheel on top (`uv pip install --no-deps`), then `axmem --help` from another directory; it does not resolve the wheel's own metadata, where the TensorRT packages have no index and PyPI only holds placeholders | 3.14 |
 | `e2e.yml` (GPU runner) | `tests/e2e` on a Qdrant node started through Docker | 3.14 |
 
 The GPU runner is a self-hosted GitHub Actions runner carrying the labels `self-hosted`, `linux` and `gpu`
@@ -106,6 +112,21 @@ nodes, and `uv`. The repository does not install or configure the runner; the dr
 TensorRT stack that belongs to the host, the rest is installed by `uv sync`. Hosted runners cannot run
 these jobs because they have no GPU, and the Windows test matrix was removed because the TensorRT embedder and reranker are
 Linux-only (its engine cache locks with `fcntl`).
+
+**Fork pull requests never reach the GPU runner.** A job on that runner checks out the code of the pull request and runs
+its `conftest.py`, tests and `pyproject.toml` as the runner user, next to the host's Docker daemon, so code from a fork
+would run on the host. Every job that uses it (`ci.yml` `test`, `e2e.yml` `e2e`, `quality.yml` `snapshots`, `coverage`
+and `memory`) therefore carries the job-level condition
+`github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository`, so a
+pull request runs there only when its branch lives in this repository; `mutation` runs on schedule and manual dispatch
+only. A pull request from a fork gets the hosted jobs (lint, static gates, trivy, the wheel smoke test) and shows the
+GPU jobs as skipped; a maintainer who has reviewed it pushes its branch to this repository to run the GPU jobs. No
+workflow uses `pull_request_target`, which would run in the context of the base repository with its secrets, and
+`tests/architecture/test_workflows.py` fails on either mistake. Also set the repository to require approval for all
+outside contributors (Settings, Actions, General): that setting is not in the repository.
+
+The `quality.yml` concurrency group includes the event, so the weekly mutation run (up to six hours, on the default
+branch) is neither cancelled by a push to that branch nor cancels the push run in progress when it starts.
 
 ## Gates
 
@@ -157,7 +178,7 @@ contract change: review the diff in Git, then refresh deliberately.
 
 | Surface | Test | Snapshot directory |
 |---|---|---|
-| CLI argument tree, settings defaults (built from code defaults, ignoring the environment and dotenv files; secrets and the build-derived `SERVICE_VERSION` are masked), the layout of the Qdrant collections (vectors, shards, replicas, payload indexes) and the types of the stored payload | `tests/integration/test_snapshots.py` | `tests/integration/__snapshots__/test_snapshots/` |
+| CLI argument tree, settings defaults (built from code defaults, ignoring the environment and dotenv files; credentials, the fields whose name ends in `KEY`, `SECRET`, `TOKEN`, `PASSWORD`, `CLIENT_ID` or `HASHES`, and the build-derived `SERVICE_VERSION` are masked), the layout of the Qdrant collections (vectors, shards, replicas, payload indexes) and the types of the stored payload | `tests/integration/test_snapshots.py` | `tests/integration/__snapshots__/test_snapshots/` |
 | MCP meta-tool signatures, discovered tool catalogue, HTTP route table | `tests/e2e/test_snapshots_e2e.py` | `tests/e2e/__snapshots__/test_snapshots_e2e/` |
 
 ```bash
@@ -190,7 +211,12 @@ new measurement in a comment next to it.
 With no scope it reports `SKIP`. The gate allows one `mutmut run` two hours; surviving mutants in the
 targets above `MUTATION_MAX_SURVIVORS` (default 0) fail it. `[tool.mutmut]` selects `tests/architecture` and `tests/integration` (which need Docker for their Qdrant node, like the
 other suites) as the tests that must kill a mutant
-and leaves `app/_version.py` unmutated. The scheduled `quality.yml` job sets `MUTATION=1` only, so on a checkout
+and leaves `app/_version.py` unmutated. The tests run in a sandbox (`mutants/`) that holds only `app/`, `tests/` and the
+`also_copy` paths; a selected test that reads another path from the repository root fails there and takes mutmut's baseline
+run with it, which is why `.githooks/` and `.github/` are copied and why
+`tests/architecture/test_mutation_sandbox.py` checks every root path the selected tests name. A test that lists the
+members of a class under `app/` must skip the names containing `__mutmut_` (mutmut adds its originals and mutants to a
+mutated class, see `protocol_methods` in `tests/integration/test_tenant_chokepoint.py`). The scheduled `quality.yml` job sets `MUTATION=1` only, so on a checkout
 of `main` (no diff against `origin/main`) it reports `SKIP` unless `MUTATION_TARGETS` is provided.
 
 ## Secrets
@@ -213,7 +239,8 @@ MUTATION_TARGETS='app.utils.*' uv run python -m scripts.quality gate mutation   
 `SKIP` and `ONLY` take comma-separated gate names and apply to stages. `ONLY` runs just those gates of the
 stage; naming the opt-in `mutation` gate in `ONLY` also selects it. `MUTATION=1` only opts the gate into a
 stage: `gate mutation` runs it directly without that variable. Other knobs: `SEMGREP_PACKS` (extra registry packs, needs
-network), `TRIVY_BIN` (explicit trivy binary; otherwise `PATH`, then the Docker image) and
+network), `TRIVY_BIN` (explicit trivy binary; otherwise `PATH`, then the Docker image `aquasec/trivy:<TRIVY_VERSION>`,
+pinned in `scripts/quality/security.py` like semgrep and Qodana) and
 `MUTATION_MAX_SURVIVORS`.
 
 A skipped gate is a decision to record in the PR description, not a default. A gate whose tool is

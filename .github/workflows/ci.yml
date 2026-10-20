@@ -51,8 +51,12 @@ jobs:
 
   # The integration and end-to-end suites run the real TensorRT embedder and reranker: they need a self-hosted runner
   # with an NVIDIA GPU (driver R580 or newer). See docs/quality-gates.md for the runner requirements.
+  # The job runs the code of the pull request (conftest.py, tests, pyproject.toml) on a host with a Docker daemon, so a
+  # pull request from a fork never reaches it: the head repository must be this one. Keep the condition on every job
+  # that uses the self-hosted runner, and never trigger these workflows with pull_request_target.
   test:
     name: test (py${{ matrix.python }})
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
     strategy:
       fail-fast: false
       matrix:
@@ -87,6 +91,8 @@ jobs:
   smoke-test:
     runs-on: ubuntu-latest
     needs: [lint, test]
+    # `test` is skipped for a pull request from a fork; the wheel check on the hosted runner still runs for it.
+    if: ${{ !cancelled() && needs.lint.result == 'success' && contains(fromJSON('["success", "skipped"]'), needs.test.result) }}
 
     steps:
       - name: Checkout code
@@ -106,13 +112,21 @@ jobs:
       - name: Build wheel
         run: uv build
 
+      # The wheel names the TensorRT packages without an index, and the PyPI projects of those names are placeholders that
+      # fetch the 3.8 GB of libraries when installed. The dependencies come from uv.lock instead, as in every other job
+      # (NVIDIA's index for the TensorRT packages), without the libraries: `axmem --help` never loads them.
+      - name: Install the locked dependencies
+        run: uv sync --locked --no-dev --no-install-project --no-install-package tensorrt-cu13-libs
+
       - name: Test installation and CLI works
         run: |
-          WHEEL=$(ls dist/*.whl)
+          WHEEL=$(ls "$PWD"/dist/*.whl)
           echo "Testing installation from wheel: $WHEEL"
+          uv pip install --no-deps "$WHEEL"
 
-          # Test that CLI command works
-          uvx --from "$WHEEL" axmem --help
+          # Run away from the checkout, so that the installed wheel is what gets imported, not app/ and main.py
+          cd "$(mktemp -d)"
+          "$GITHUB_WORKSPACE/.venv/bin/axmem" --help
           echo "✓ CLI command works"
 
-          echo "✓ Smoke test passed - wheel installs correctly with all dependencies"
+          echo "✓ Smoke test passed - the wheel installs and starts on top of the locked dependencies"

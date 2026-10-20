@@ -294,7 +294,7 @@ def protocol_methods() -> dict[str, inspect.Signature]:
     return {
         name: inspect.signature(member)
         for name, member in inspect.getmembers(MemoryRepository, inspect.isfunction)
-        if not name.startswith("_")
+        if not name.startswith("_") and "__mutmut_" not in name  # mutmut adds its mutants and originals to a mutated class
     }
 
 

@@ -149,7 +149,6 @@ source = { editable = "." }
 dependencies = [
     { name = "cuda-python" },
     { name = "dotenv" },
-    { name = "fastapi" },
     { name = "fastmcp" },
     { name = "google-genai" },
     { name = "httpx" },
@@ -160,10 +159,7 @@ dependencies = [
     { name = "platformdirs" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
     { name = "qdrant-client" },
-    { name = "requests" },
     { name = "starlette" },
     { name = "tensorrt-cu13" },
     { name = "tensorrt-cu13-bindings" },
@@ -188,9 +184,13 @@ dev = [
     { name = "mutmut" },
     { name = "mypy" },
     { name = "pylint" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
     { name = "pytest-cov" },
     { name = "pytest-memray", marker = "sys_platform != 'win32'" },
+    { name = "pyyaml" },
     { name = "radon" },
+    { name = "requests" },
     { name = "ruff" },
     { name = "syrupy" },
     { name = "vulture" },
@@ -203,7 +203,6 @@ harness = [
 requires-dist = [
     { name = "cuda-python", specifier = "==13.4.4" },
     { name = "dotenv", specifier = "==0.9.9" },
-    { name = "fastapi", specifier = "==0.136.3" },
     { name = "fastmcp", specifier = "==3.2.2" },
     { name = "google-genai", specifier = "==1.66.0" },
     { name = "httpx", specifier = "==0.28.1" },
@@ -215,10 +214,7 @@ requires-dist = [
     { name = "platformdirs", specifier = "==4.7.0" },
     { name = "pydantic", specifier = "==2.12.5" },
     { name = "pydantic-settings", specifier = "==2.14.2" },
-    { name = "pytest", specifier = "==9.0.3" },
-    { name = "pytest-asyncio", specifier = "==1.3.0" },
     { name = "qdrant-client", specifier = "==1.19.1" },
-    { name = "requests", specifier = "==2.33.0" },
     { name = "starlette", specifier = "==1.3.1" },
     { name = "tensorrt-cu13", specifier = "==11.4.0.106", index = "https://pypi.nvidia.com/" },
     { name = "tensorrt-cu13-bindings", specifier = "==11.4.0.106", index = "https://pypi.nvidia.com/" },
@@ -239,9 +235,13 @@ dev = [
     { name = "mutmut", specifier = "==3.8.0" },
     { name = "mypy", specifier = "==2.4.0" },
     { name = "pylint", specifier = "==4.1.3" },
+    { name = "pytest", specifier = "==9.0.3" },
+    { name = "pytest-asyncio", specifier = "==1.3.0" },
     { name = "pytest-cov", specifier = "==7.1.0" },
     { name = "pytest-memray", marker = "sys_platform != 'win32'", specifier = ">=1.11.0" },
+    { name = "pyyaml", specifier = "==6.0.3" },
     { name = "radon", specifier = "==6.0.1" },
+    { name = "requests", specifier = "==2.33.0" },
     { name = "ruff", specifier = "==0.17.1" },
     { name = "syrupy", specifier = "==6.1.1" },
     { name = "vulture", specifier = "==2.16" },
@@ -680,22 +680,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/50/79/66800aadf48771f6b62f7eb014e352e5d06856655206165d775e675a02c9/exceptiongroup-1.3.1.tar.gz", hash = "sha256:8b412432c6055b0b7d14c310000ae93352ed6754f70fa8f7c34141f91c4e3219", size = 30371, upload-time = "2025-11-21T23:01:54.787Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/8a/0e/97c33bf5009bdbac74fd2beace167cab3f978feb69cc36f1ef79360d6c4e/exceptiongroup-1.3.1-py3-none-any.whl", hash = "sha256:a7a39a3bd276781e98394987d3a5701d0c4edffb633bb7a5144577f82c773598", size = 16740, upload-time = "2025-11-21T23:01:53.443Z" },
-]
-
-[[package]]
-name = "fastapi"
-version = "0.136.3"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "annotated-doc" },
-    { name = "pydantic" },
-    { name = "starlette" },
-    { name = "typing-extensions" },
-    { name = "typing-inspection" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/81/2d/ff8d91d7b564d464629a0fd50a4489c97fcb836ac230bf3a7269232a9b1f/fastapi-0.136.3.tar.gz", hash = "sha256:e487fae93ad408e6f47641ee4dfe389864fd7bec92e547ea8498fc13f43e83ab", size = 396410, upload-time = "2026-05-23T18:53:15.192Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/e0/82/45359b62a067409bd929ae8a56b8ed13e5a8c8a61194b3c236920999ab83/fastapi-0.136.3-py3-none-any.whl", hash = "sha256:3d2a69bdf04b7e9f3afa292c3bc7a98816bbfafa10bc9b45f3f3700d2f761620", size = 117481, upload-time = "2026-05-23T18:53:16.924Z" },
 ]
 
 [[package]]

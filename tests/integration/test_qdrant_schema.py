@@ -18,6 +18,7 @@ from app.repositories.qdrant.schema import (
     CollectionNames,
     QdrantSchema,
 )
+from tests.qdrant_support import drop_prefix
 
 
 @pytest.fixture
@@ -177,13 +178,16 @@ async def test_make_live_moves_the_alias_that_exists_and_creates_the_one_that_do
     assert await schema.live_generation() == first
 
 
-async def test_the_width_of_a_collection_with_named_vectors_is_unknown(schema, pool):
+async def test_the_width_of_a_collection_with_named_vectors_is_unknown(schema, pool, isolated_qdrant):
+    probe = f"{schema.names.prefix}_named_vectors_probe"  # under the prefix, so the fixture teardown deletes it
     await pool.clients[0].create_collection(
-        "named_vectors_probe_" + schema.names.prefix,
-        vectors_config={"dense": qm.VectorParams(size=3, distance=qm.Distance.DOT)},
+        probe, vectors_config={"dense": qm.VectorParams(size=3, distance=qm.Distance.DOT)},
     )
 
-    assert await schema.vector_width("named_vectors_probe_" + schema.names.prefix) is None
+    assert await schema.vector_width(probe) is None
+
+    drop_prefix(isolated_qdrant.QDRANT_URL, isolated_qdrant.QDRANT_API_KEY.get_secret_value(), schema.names.prefix)
+    assert not await pool.clients[0].collection_exists(probe)
 
 
 async def test_creating_a_collection_that_a_concurrent_start_created_first_is_not_an_error(schema, pool):

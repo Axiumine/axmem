@@ -177,8 +177,8 @@ fails if the guard recorded anything.
 
 Memories live in Qdrant, so the suites need a real server (version 1.19.0 or newer; the tests pin `qdrant/qdrant:v1.19.2`).
 `tests/qdrant_support.py` starts it through Docker on a random loopback port with an API key, once per pytest process, and
-removes the container at the end. Pull the image first (`docker pull qdrant/qdrant:v1.19.2`); a run that cannot start it ends
-with exit code 2 and the cause, it never skips. `AXMEM_TEST_QDRANT_URL` (with `AXMEM_TEST_QDRANT_API_KEY`) points the suites at
+removes the container at the end. The preflight pulls the image (`qdrant/qdrant:v1.19.2`) when it is not local; a run that
+cannot start it (no Docker, an unreachable registry) ends with exit code 2 and the cause, it never skips. `AXMEM_TEST_QDRANT_URL` (with `AXMEM_TEST_QDRANT_API_KEY`) points the suites at
 a server that already runs instead; the tests then work in collections under a prefix of their own and delete them afterwards.
 
 Tests share the node's collections and stay apart by tenant: the `qdrant_env` fixture gives every test a tenant namespace of
@@ -284,11 +284,16 @@ uv tool run ruff check .
    TensorRT libraries are left out of its environment (`--no-install-package tensorrt-cu13-libs`).
 2. `test` (self-hosted GPU runner, `runs-on: [self-hosted, linux, gpu]`): run integration tests (real Qdrant,
    real embedder and reranker) and E2E tests (full stack on real Qdrant).
-3. `smoke-test` (hosted runner): build the wheel and check that `axmem --help` works.
+3. `smoke-test` (hosted runner): build the wheel, install the locked dependencies without the TensorRT libraries and the
+   wheel on top, and check that `axmem --help` works.
 
 The GPU runner is a machine you provide and register with those labels; see
 [quality-gates.md](quality-gates.md#pipeline) for what it needs. The Windows leg was removed because the
 TensorRT reranker is Linux-only.
+
+**Pull requests from forks**: `test` is skipped for them, so that fork code never runs on the self-hosted runner
+(see [quality-gates.md](quality-gates.md#pipeline)); the lint and smoke-test jobs still run. A maintainer who has reviewed
+the change pushes its branch to this repository to run `test`.
 
 **Merge requirements**: Configure branch rules to require this workflow's `test` check.
 The workflow alone does not make it mandatory for merging.

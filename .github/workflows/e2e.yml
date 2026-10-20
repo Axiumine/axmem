@@ -18,6 +18,8 @@ jobs:
   e2e:
     name: e2e (py${{ matrix.python }})
     # The suite runs the real TensorRT embedder and reranker: self-hosted runner with an NVIDIA GPU (see docs/quality-gates.md)
+    # A pull request from a fork never reaches the self-hosted runner (it would run the fork's code next to the host's Docker).
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
     runs-on: [self-hosted, linux, gpu]
     timeout-minutes: 20
     strategy:

@@ -21,6 +21,7 @@ import pytest
 IMAGE = "qdrant/qdrant:v1.19.2"
 API_KEY = "axmem-test-api-key-0123456789abcdef"
 READY_TIMEOUT_SECONDS = 90
+PULL_TIMEOUT_SECONDS = 1800  # the image is about 150 MB, but a clean runner may sit behind a slow or rate-limited registry
 LABEL = "axmem-test=1"
 
 
@@ -34,17 +35,28 @@ def _docker(*args: str, check: bool = True, timeout: float = 120) -> str:
     return result.stdout.strip()
 
 
+def ensure_image() -> None:
+    """Have ``IMAGE`` locally: a clean or pruned runner, or a bumped version, pulls it instead of failing.
+
+    An unreachable daemon or registry still fails: the pull reports the cause.
+    """
+    try:
+        _docker("image", "inspect", IMAGE, timeout=30)
+    except RuntimeError:  # not local, or the daemon does not answer (the pull then says why)
+        _docker("pull", IMAGE, timeout=PULL_TIMEOUT_SECONDS)
+
+
 def require_docker() -> None:
     """End the pytest run (never skip) when no Qdrant server can be started for the suites."""
     if os.environ.get("AXMEM_TEST_QDRANT_URL"):
         return
     try:
-        _docker("image", "inspect", IMAGE, timeout=30)
+        ensure_image()
     except (RuntimeError, FileNotFoundError, subprocess.TimeoutExpired) as exc:
         pytest.exit(
             f"Qdrant preflight failed: {exc}\n"
-            f"These suites run against a real {IMAGE} started through Docker (pull the image first, or set "
-            "AXMEM_TEST_QDRANT_URL to a running server); nothing is skipped.",
+            f"These suites run against a real {IMAGE} started through Docker (pulled when it is not local, so Docker "
+            "and the registry must be reachable; or set AXMEM_TEST_QDRANT_URL to a running server); nothing is skipped.",
             returncode=2,
         )
 

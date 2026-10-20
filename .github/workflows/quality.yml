@@ -14,13 +14,18 @@ on:
 permissions:
   contents: read
 
+# The event is part of the group: the weekly mutation run (up to six hours, on the default branch) must neither be
+# cancelled by a push to that branch nor cancel the push run that is in progress when it starts.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 # GPU runner: a self-hosted runner labelled [self-hosted, linux, gpu] with an NVIDIA GPU (driver R580 or newer).
 # Every job that runs tests/integration, tests/e2e or tests/cluster needs it, because the suites run the real
 # TensorRT embedder and reranker, and a Docker daemon, because they start the real Qdrant nodes. See docs/quality-gates.md for the runner requirements.
+# These jobs run the code of the commit they check next to the host's Docker daemon: every one of them has the condition
+# below (a pull request from a fork never reaches it), or runs only on schedule and manual dispatch. Never trigger this
+# workflow with pull_request_target.
 
 jobs:
   static:
@@ -67,6 +72,7 @@ jobs:
 
   snapshots:
     name: snapshots
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
     runs-on: [self-hosted, linux, gpu]
     steps:
       - uses: actions/checkout@v4
@@ -83,6 +89,7 @@ jobs:
 
   coverage:
     name: 100% coverage (Qdrant node + cluster e2e)
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
     runs-on: [self-hosted, linux, gpu]
     timeout-minutes: 45
     steps:
@@ -102,6 +109,7 @@ jobs:
 
   memory:
     name: memray budgets
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
     runs-on: [self-hosted, linux, gpu]
     steps:
       - uses: actions/checkout@v4
@@ -143,6 +151,7 @@ jobs:
 
   mutation:
     name: mutation (weekly)
+    # Schedule and manual dispatch run on the repository itself, never for a pull request.
     if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
     runs-on: [self-hosted, linux, gpu]
     timeout-minutes: 360

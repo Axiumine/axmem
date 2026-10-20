@@ -16,21 +16,58 @@ refuse() {
     echo "[denylist] $1 contains a term from $list; remove it (the terms are not shown)" >&2
     exit 1
 }
-added_lines() { grep '^+' | grep -v '^+++'; }
-matches() { grep -q -i -E "$pattern"; }
+# Added lines of a diff on stdin, without the "+" column. The state machine (file header, then hunks) is what keeps
+# an added line that itself begins with "++" from being taken for a "+++ b/path" file header and dropped. A combined
+# diff of a merge has one column per parent (the number of leading "@" minus one); a line is added if any column has "+".
+added_lines() {
+    awk '
+        /^diff / { hunk = 0; next }
+        /^@@/ { match($0, /^@+/); columns = RLENGTH - 1; hunk = 1; next }
+        hunk && substr($0, 1, columns) ~ /\+/ { print substr($0, columns + 1) }
+    '
+}
+# Numbers of the lines of the list that are not valid extended regular expressions (never the lines themselves).
+invalid_line_numbers() {
+    number=0
+    while IFS= read -r term || [ -n "$term" ]; do
+        number=$((number + 1))
+        printf '' | grep -q -E -e "$term" 2>/dev/null
+        [ $? -le 1 ] || printf ' %s' "$number"
+    done < "$list"
+}
+# grep answers 0 for a match, 1 for none and 2 (or more) when it could not run, typically an invalid expression in the
+# list. That last case must stop the commit: a guard that cannot read its list lets everything through. grep's own
+# message is dropped, since some implementations quote the expression.
+failed() {
+    numbers=$(invalid_line_numbers)
+    echo "[denylist] cannot check $1: grep failed with status $2; not valid extended regular expressions," \
+        "by line number in $list:${numbers:- none} (the terms are not shown)" >&2
+    exit 2
+}
+# scan <what>: the text on stdin must not match the list. Run as the last stage of a pipeline: callers pass on its status.
+scan() {
+    grep -q -i -E -e "$pattern" 2>/dev/null
+    status=$?
+    case $status in
+        0) refuse "$1" ;;
+        1) ;;
+        *) failed "$1" "$status" ;;
+    esac
+}
 
 case "$1" in
     staged)
-        git diff --cached --name-only | matches && refuse "a staged file name"
-        git diff --cached -U0 --no-color | added_lines | matches && refuse "the staged changes"
+        git diff --cached --name-only | scan "a staged file name" || exit $?
+        git diff --cached -U0 --no-color | added_lines | scan "the staged changes" || exit $?
         ;;
     message)
-        grep -v '^#' "$2" | matches && refuse "the commit message"
+        [ -r "$2" ] || { echo "[denylist] cannot read the commit message file '$2'" >&2; exit 2; }
+        grep -v '^#' "$2" | scan "the commit message" || exit $?
         ;;
     range)
         for commit in $(git rev-list "$2" --not --remotes); do
-            git log -1 --format=%B "$commit" | matches && refuse "the message of commit $commit"
-            git show --format= -U0 --no-color "$commit" | added_lines | matches && refuse "commit $commit"
+            git log -1 --format=%B "$commit" | scan "the message of commit $commit" || exit $?
+            git show --format= -U0 --no-color "$commit" | added_lines | scan "commit $commit" || exit $?
         done
         ;;
     *)
