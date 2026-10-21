@@ -283,7 +283,7 @@ A provider, model, precision (`EMBEDDING_TF32`) or gateway backend that produces
 
 ### Wrong width at start-up
 
-`EMBEDDING_DIMENSIONS` must equal the width the model produces. With the TensorRT provider the check runs at every start (and before `--re-embed` changes anything) and refuses with a `dimensions` cause that names both widths. Change `EMBEDDING_DIMENSIONS` to the width of the model, or choose a model of the width you configured; when the width of existing memories changes, `axmem --re-embed` copies them into a collection of the new width with fresh vectors.
+`EMBEDDING_DIMENSIONS` must equal the width the model produces. With the TensorRT provider the check runs at every start (and before `--re-embed` changes anything) and refuses with a `dimensions` cause that names both widths. The remote providers (`Azure`, `Google`, `OpenAI`, `Ollama`, `gateway`) are not asked at start-up, so they are checked on every reply instead: a vector of another width fails the call with `<provider> returned N-dimensional embeddings but EMBEDDING_DIMENSIONS is M`, before anything is stored or searched, and a `re-embed` or a targeted rebuild stops asking the provider text by text. Change `EMBEDDING_DIMENSIONS` to the width of the model, or choose a model of the width you configured; when the width of existing memories changes, `axmem --re-embed` copies them into a collection of the new width with fresh vectors.
 
 ### TensorRT (local GPU) to OpenAI (cloud)
 

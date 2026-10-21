@@ -243,3 +243,34 @@ def test_an_embedding_model_that_is_not_a_repository_id_exits_naming_the_setting
 
     assert result.returncode == 1
     assert "Error: the embedder cannot start: EMBEDDING_MODEL='azure/some/deployment' is not a Hugging Face" in result.stderr
+
+
+@pytest.mark.parametrize("model", ["embedder", "reranker"])
+def test_a_tokenizer_that_cannot_be_parsed_exits_with_the_cause(model, tensorrt_embedder, tensorrt_reranker, tmp_path):
+    """The model file is the real one (linked, not copied); the tokenizer beside it is not JSON."""
+    from app.config.settings import settings
+    from app.repositories.embeddings.tensorrt_model import (
+        ONNX_FILE,
+        TOKENIZER_FILE,
+        fetch_model,
+        model_slug,
+    )
+
+    repository, directory_setting = {
+        "embedder": (settings.EMBEDDING_MODEL, "EMBEDDING_MODEL_DIR"),
+        "reranker": (settings.RERANKING_MODEL, "RERANKING_MODEL_DIR"),
+    }[model]
+    real = fetch_model(repository, getattr(settings, directory_setting))
+    root = tmp_path / model_slug(repository)
+    (root / "onnx").mkdir(parents=True)
+    (root / ONNX_FILE).symlink_to(real.onnx)
+    (root / TOKENIZER_FILE).write_text("{ this is not a tokenizer")
+    other = {"EMBEDDING_PROVIDER": "Ollama"} if model == "reranker" else {"RERANKING_ENABLED": "false"}
+
+    result = run_program(argv=["serve", "--transport", "stdio"], **{directory_setting: str(tmp_path)}, **other)
+
+    assert result.returncode == 1
+    assert f"Error: the {model} cannot start: the tokenizer in {root / TOKENIZER_FILE} cannot be parsed" in result.stderr
+    assert f"Delete {root} to fetch the model again" in result.stderr
+    assert "Traceback" not in result.stderr
+

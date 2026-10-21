@@ -238,6 +238,7 @@ def test_azure_supports_dimensions_reads_environment(monkeypatch):
 
 async def test_azure_adapter_sends_dimensions_by_default(fake_azure, monkeypatch):
     monkeypatch.setattr(settings, "EMBEDDING_DIMENSIONS", 256)
+    fake_azure.vector_size = 256
 
     await ea.AzureOpenAIAdapter().generate_embedding("hello")
 
@@ -290,7 +291,8 @@ async def call_while_gated(call, gate: Gate):
     return await task
 
 
-async def test_azure_adapter_does_not_block_the_event_loop(fake_azure):
+async def test_azure_adapter_does_not_block_the_event_loop(fake_azure, monkeypatch):
+    monkeypatch.setattr(settings, "EMBEDDING_DIMENSIONS", fake_azure.vector_size)
     gate = Gate()
     fake_azure.on_request = gate.block
     adapter = ea.AzureOpenAIAdapter()

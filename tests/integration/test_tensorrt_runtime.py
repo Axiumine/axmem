@@ -12,7 +12,12 @@ from cuda.bindings import driver
 from cuda.bindings import runtime as cudart
 
 from app.config.settings import settings
-from app.exceptions import TensorRTError, TensorRTStartupError
+from app.exceptions import (
+    EmbeddingUnavailableError,
+    TensorRTError,
+    TensorRTStartupError,
+    TensorRTUnavailableError,
+)
 from app.repositories.embeddings import tensorrt_runtime
 from app.repositories.embeddings.tensorrt_model import fetch_model
 from app.repositories.embeddings.tensorrt_reranker import PROFILE
@@ -129,6 +134,35 @@ def test_probe_gpu_reports_an_nvml_that_cannot_be_used_as_a_startup_error(monkey
     assert raised.value.cause == "gpu-error"
     assert "libnvidia-ml.so.1" in str(raised.value)
     assert nvml.shut_down is (failing_call != "init_v2")  # an NVML that was opened is closed again
+
+
+class _FailingCuda:
+    """The CUDA runtime module of ``cuda.bindings`` with one call that answers with an error."""
+
+    def __init__(self, call, error):
+        self.call, self.error = call, error
+
+    def __getattr__(self, name):
+        if name == self.call:
+            return lambda *args: (self.error,)
+        return getattr(cudart, name)
+
+
+@pytest.mark.parametrize("call", ["cudaGetDeviceProperties", "cudaDeviceGetAttribute", "cudaMemGetInfo"])
+@pytest.mark.parametrize(("error", "cause"), [
+    (cudart.cudaError_t.cudaErrorNoDevice, "no-gpu"),
+    (cudart.cudaError_t.cudaErrorInsufficientDriver, "driver"),
+    (cudart.cudaError_t.cudaErrorUnknown, "gpu-error"),
+])
+def test_probe_gpu_reports_a_cuda_failure_after_the_device_count_as_a_startup_error(monkeypatch, call, error, cause):
+    """The start-up handlers and the test preflight catch ``TensorRTStartupError`` only."""
+    monkeypatch.setattr(tensorrt_runtime, "cudart", _FailingCuda(call, error))
+
+    with pytest.raises(TensorRTStartupError) as raised:
+        probe_gpu()
+
+    assert raised.value.cause == cause
+    assert error.name in str(raised.value)
 
 
 def test_gpu_memory_still_answers_when_nvml_cannot_say(monkeypatch):
@@ -279,12 +313,13 @@ def test_failed_cuda_state_is_reported_then_refuses_all_work(plan_bytes):
     engine.verify()  # healthy engine: nothing recorded
 
     cudart.cudaMemcpy(0, 0, 4, cudart.cudaMemcpyKind.cudaMemcpyHostToDevice)  # a CUDA call that fails
-    with pytest.raises(TensorRTError, match="cudaErrorInvalidValue"):
+    with pytest.raises(TensorRTUnavailableError, match="cudaErrorInvalidValue"):
         engine.verify()
 
     for call in (engine.verify, lambda: engine.infer(make_inputs(1, 4))):
-        with pytest.raises(TensorRTError, match="unusable after an earlier failure"):
+        with pytest.raises(TensorRTUnavailableError, match="unusable after an earlier failure") as raised:
             call()
+        assert isinstance(raised.value, EmbeddingUnavailableError)  # what a re-embedding does not ask again about
     engine.close()
 
 
@@ -295,10 +330,10 @@ def test_closed_engine_refuses_work_and_closing_twice_is_harmless(plan_bytes):
     engine.close()
     engine.close()
 
-    with pytest.raises(TensorRTError, match="closed"):
-        engine.infer(make_inputs(1, 4))
-    with pytest.raises(TensorRTError, match="closed"):
-        engine.verify()
+    for call in (lambda: engine.infer(make_inputs(1, 4)), engine.verify):
+        with pytest.raises(TensorRTUnavailableError, match="closed") as raised:
+            call()
+        assert isinstance(raised.value, EmbeddingUnavailableError)
 
 
 def test_build_rejects_a_file_that_is_not_onnx(tmp_path):
@@ -377,7 +412,7 @@ def test_a_failed_call_notes_the_cuda_error_so_that_the_health_route_can_report_
         engine.infer(make_inputs(65, 16))  # a call that fails, outside the profile
 
     assert "cudaErrorInvalidValue" in engine.failure
-    with pytest.raises(TensorRTError, match="unusable after an earlier failure"):
+    with pytest.raises(TensorRTUnavailableError, match="unusable after an earlier failure"):
         engine.infer(make_inputs(1, 4))
     engine.close()
 

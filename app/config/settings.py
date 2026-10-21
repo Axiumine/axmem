@@ -126,7 +126,8 @@ class Settings(BaseSettings):
     QDRANT_TIMEOUT_SECONDS: float = Field(default=30.0, gt=0, allow_inf_nan=False)
     # Attempts for a write that failed with an ambiguous error (timeout, reset, 5xx); retries reuse the claim token.
     QDRANT_WRITE_ATTEMPTS: int = Field(default=3, ge=1, le=10)
-    # Directory for snapshots and exports. Empty keeps them in the data directory of the platform.
+    # Directory `axmem backup` writes its snapshot sets to. Empty keeps them in the data directory of the platform.
+    # `axmem export` does not use it: it writes the file named on the command line.
     BACKUP_DIR: str = ""
 
     # Authentication. The server fails closed: with AUTH_MODE unset it refuses to start.
@@ -294,7 +295,7 @@ class Settings(BaseSettings):
 
     @property
     def backup_directory(self) -> Path:
-        """Where snapshots and exports are written."""
+        """Where ``axmem backup`` writes its snapshot sets (an export goes to the file named on its command line)."""
         return Path(self.BACKUP_DIR) if self.BACKUP_DIR else _default_data_dir / "backups"
 
     @property

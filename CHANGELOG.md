@@ -149,7 +149,7 @@ without the mark, with the commit that landed it, in the commit that lands it.
   guards, the archive format, the cluster check and the operator commands. The snapshot gate pins the collection layout
   and the payload types instead of the SQL DDL and the Alembic chain. The standalone end-to-end test runs on Qdrant.
   The GPU preflight and the Docker preflight apply to every suite and never skip.
-- `BACKUP_DIR` now says where `forgetful backup` and `forgetful export` write; the database backup that `--re-embed`
+- `BACKUP_DIR` now says where `forgetful backup` writes (an export writes the file named on its command line); the database backup that `--re-embed`
   made is gone with the database. `.env.example` shows the Qdrant settings instead of SQLite and PostgreSQL.
 - The integration and end-to-end suites run the real TensorRT embedder and reranker on the GPU through the session
   fixtures `tensorrt_embedder` and `tensorrt_reranker` (the production adapters; there is no test-only embedder), with
@@ -545,6 +545,38 @@ Fixes found by reviewing the feature cuts (no upstream counterpart: the code the
     1000 neighbours of a memory; it now ranks every neighbour (their importance is read in chunks of 1000) before it takes
     the most important `max_links`. The checksum of a snapshot was already computed in chunks at this revision, and a test
     now pins it.
+
+- **Review of the engine and provider errors:**
+  - **A `tokenizer.json` that cannot be parsed** raised a bare `Exception` from the `tokenizers` library, which no start-up
+    handler knows, so `serve` and `re-embed` ended in a traceback. It is a `model-unavailable` start-up refusal that names the
+    file and the model directory to delete, like the other model-file errors.
+  - **A cached engine that TensorRT refuses is no longer deleted on the spot:** every deserialize failure of a plan whose
+    fingerprint matched removed the cached directory, which a GPU too full to hold the engine (or a driver that does not
+    suit it) caused as well as a damaged file. An entry that lost its plan or its fingerprint is still removed and
+    rebuilt; for a plan that TensorRT refuses the start builds a plan from the same model first and replaces the entry
+    only when that one loads, and when TensorRT refuses the new plan too it keeps the cached entry, stores nothing and
+    refuses the start with `engine-unusable` and TensorRT's message. A plan is cached only after this process has loaded
+    it, a file that cannot be read is no proof of damage (the cache is the cause of the refusal, nothing is removed), and
+    an engine loaded before the cache failed to store it or to prune its siblings is released.
+  - **A closed engine, or one that met a CUDA error it cannot recover from, raises `TensorRTUnavailableError`**, a
+    `TensorRTError` that is also an `EmbeddingUnavailableError` (so does the check that finds the error after a call that returned), so a
+    targeted rebuild records the batch as failed at once instead of retrying every memory against an engine that refuses
+    them all. The messages are unchanged.
+  - **A failed start releases the reranker's engine:** only the embedder's warm-up was guarded, so a reranker whose
+    warm-up failed kept its engine and device buffers while anything held the exception. Both adapters now release the
+    engine when anything after the engine was loaded fails, including the start-up report (CUDA context and GPU memory).
+  - **`probe_gpu` fails with `TensorRTStartupError` at every step:** a CUDA error after the device count (properties,
+    compute capability, memory) was a plain `TensorRTError`, which the documented causes and the preflight of the test
+    suites do not expect. It is `no-gpu`, `driver` or `gpu-error` by the same table as the device count.
+  - **The Azure, Google, OpenAI and Ollama adapters check every reply:** a vector of another width than
+    `EMBEDDING_DIMENSIONS` was returned as it came (only the TensorRT and gateway providers checked), to be refused by
+    Qdrant on a write or searched against a collection of another width. It now raises `EmbeddingUnavailableError`
+    (`<provider> returned N-dimensional embeddings but EMBEDDING_DIMENSIONS is M. Set EMBEDDING_DIMENSIONS=N, or choose a
+    model that produces M ...`) and a number that is NaN or infinite is refused. The adapters stay as they were otherwise;
+    none of them is asked at start-up.
+  - **`BACKUP_DIR` is where `axmem backup` writes, not `axmem export`:** the code was right and the documentation
+    (the setting comment, `.env.example`, the configuration reference) was not. `export` takes the file to write on its
+    command line, owner-only like a backup, and never touches `BACKUP_DIR`; a test pins it.
 
 - **Tests, CI and hooks:** the Qdrant preflight of the suites pulls `qdrant/qdrant:v1.19.2` when the image is not local (a
   clean or pruned runner, or a bumped version) and still ends the run with exit code 2 and the cause when Docker or the

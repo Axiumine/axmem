@@ -88,21 +88,21 @@ class TensorRTEmbeddingsAdapter(EmbeddingsAdapter):
         self._executor = ThreadPoolExecutor(max_workers=self.workers, thread_name_prefix="tensorrt-embed")
         try:
             self._check_width(self.embed([WARM_UP_TEXT])[0])
+            self.startup = StartupReport(
+                role="embedder",
+                seconds=time.perf_counter() - started,
+                cache_hit=opened.cache_hit,
+                reason=opened.reason,
+                engine_dir=opened.directory,
+                gpu=gpu,
+                tf32=self.tf32,
+                workers=self.workers,
+                cuda_context=cuda_context_handle(),
+                memory=gpu_memory(),
+            )
         except BaseException:
             self.close()  # a refused start must not keep the engine in GPU memory
             raise
-        self.startup = StartupReport(
-            role="embedder",
-            seconds=time.perf_counter() - started,
-            cache_hit=opened.cache_hit,
-            reason=opened.reason,
-            engine_dir=opened.directory,
-            gpu=gpu,
-            tf32=self.tf32,
-            workers=self.workers,
-            cuda_context=cuda_context_handle(),
-            memory=gpu_memory(),
-        )
         logger.info(self.startup.summary())
 
     def _check_width(self, vector: list[float]) -> None:

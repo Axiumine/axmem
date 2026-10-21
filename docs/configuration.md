@@ -147,7 +147,7 @@ export and import.
 
 ### `BACKUP_DIR`
 - **Default**: empty (the `backups` directory in the platform data directory)
-- **Description**: Where `axmem backup` and `axmem export` write
+- **Description**: Where `axmem backup` writes its snapshot sets. `axmem export <file>` does not use it: it writes exactly the file you name (the parent directory must exist), owner-only like a backup, so keep exports in a directory that is as safe as this one
 - **Notes**:
   - Created as `0700` if missing; the files themselves are `0600`
   - Must be persistent storage
@@ -688,7 +688,7 @@ ENFORCE_ENV_OVERWRITE=true
 ### `EMBEDDING_DIMENSIONS`
 - **Default**: `384`
 - **Description**: Vector dimensions for embeddings
-- **Note**: Must match the model's output dimensions. With `TensorRT` the server embeds one text at startup and refuses to start with an error that names both widths when they differ; with `gateway` every reply is checked. Changing it for existing memories needs `--re-embed`
+- **Note**: Must match the model's output dimensions. With `TensorRT` the server embeds one text at startup and refuses to start with an error that names both widths when they differ; with `gateway`, `Azure`, `Google`, `OpenAI` and `Ollama` every reply is checked (the vector must be exactly this wide and hold no NaN or infinite number; a wrong width is refused with `<provider> returned N-dimensional embeddings but EMBEDDING_DIMENSIONS is M`, and a re-embedding then records the batch as failed at once). Changing it for existing memories needs `--re-embed`
 - **Example**: `EMBEDDING_DIMENSIONS=384`
 
 ### `EMBEDDING_TF32`

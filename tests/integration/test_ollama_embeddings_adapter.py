@@ -50,6 +50,7 @@ async def test_generate_embedding_returns_vector(mock_settings, mock_ollama_clie
     mock_response = MagicMock()
     mock_response.embeddings = [[0.1, 0.2, 0.3]]
     mock_client.embed.return_value = mock_response
+    mock_settings.EMBEDDING_DIMENSIONS = 3
 
     adapter = OllamaEmbeddingsAdapter()
     result = await adapter.generate_embedding("test text")
@@ -58,7 +59,7 @@ async def test_generate_embedding_returns_vector(mock_settings, mock_ollama_clie
     mock_client.embed.assert_called_once_with(
         model="nomic-embed-text",
         input="test text",
-        dimensions=768,
+        dimensions=3,
     )
 
 

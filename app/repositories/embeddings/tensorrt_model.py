@@ -151,7 +151,14 @@ def fetch_model(repository: str, model_dir: str | Path, setting: str = "EMBEDDIN
 
 def load_tokenizer(path: Path) -> tuple[Tokenizer, int]:
     """The tokenizer (truncating a text, or a query and document pair, to 512 tokens; no padding) and its pad id."""
-    tokenizer = Tokenizer.from_file(str(path))
+    try:
+        tokenizer = Tokenizer.from_file(str(path))
+    except Exception as exc:  # noqa: BLE001 - the tokenizers library raises a bare Exception for a file it cannot parse
+        raise TensorRTStartupError(
+            "model-unavailable",
+            f"the tokenizer in {path} cannot be parsed ({type(exc).__name__}: {exc}). "
+            f"Delete {path.parent} to fetch the model again.",
+        ) from exc
     tokenizer.enable_truncation(max_length=MAX_SEQUENCE)
     tokenizer.no_padding()
     pad_id = tokenizer.token_to_id("[PAD]")

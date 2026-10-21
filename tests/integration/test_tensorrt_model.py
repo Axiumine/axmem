@@ -194,3 +194,25 @@ def test_a_tokenizer_without_a_pad_token_is_refused(tmp_path):
         load_tokenizer(path)
 
     assert raised.value.cause == "model-unavailable"
+
+
+@pytest.mark.parametrize("content", ["{not json", "[]", "", '{"model": 3}'])
+def test_a_tokenizer_that_cannot_be_parsed_is_a_startup_error_not_a_bare_exception(tmp_path, content):
+    """The tokenizers library raises a plain Exception, which no start-up handler would turn into a one-line refusal."""
+    path = tmp_path / TOKENIZER_FILE
+    path.write_text(content)
+
+    with pytest.raises(TensorRTStartupError, match=r"the tokenizer in .*tokenizer\.json cannot be parsed") as raised:
+        load_tokenizer(path)
+
+    assert raised.value.cause == "model-unavailable"
+    assert f"Delete {tmp_path} to fetch the model again" in str(raised.value)
+    assert isinstance(raised.value.__cause__, Exception)
+
+
+def test_a_tokenizer_file_that_is_gone_is_a_startup_error_too(tmp_path):
+    with pytest.raises(TensorRTStartupError, match="cannot be parsed .*No such file") as raised:
+        load_tokenizer(tmp_path / TOKENIZER_FILE)
+
+    assert raised.value.cause == "model-unavailable"
+

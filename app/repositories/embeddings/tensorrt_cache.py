@@ -111,20 +111,53 @@ def _describe_change(group: Path, current: dict[str, object]) -> str:
     return "fingerprint changed: " + ", ".join(changed)
 
 
+def _discard(directory: Path, why: object) -> None:
+    logger.warning(f"Discarding the cached TensorRT engine {directory.name}: {why}")
+    shutil.rmtree(directory)
+
+
 def _cached_engine(
     directory: Path, current: dict[str, object], profile: OptimizationProfile, contexts: int,
-) -> tuple[TensorRTEngine | None, str]:
-    """The engine stored in ``directory`` and the reason there is none; a damaged entry is removed."""
+) -> tuple[TensorRTEngine | None, str, PlanRejectedError | None]:
+    """The engine stored in ``directory``, why there is none, and TensorRT's refusal of the stored plan if it gave one.
+
+    An entry with no plan, or whose stored fingerprint is missing or different from the one that names it, is
+    damaged and removed. A plan that TensorRT refuses is not proof of damage: the same refusal comes from a GPU too
+    full to hold the engine, or from a driver that does not suit it. It stays in place until ``open_engine`` has built
+    a plan from the same model that this process can load, and is replaced only then. A file that cannot be read
+    (permission, I/O error) is not judged at all: the ``OSError`` ends the start with the cache as the cause.
+    """
     if not directory.exists():
-        return None, ""
+        return None, "", None
+    plan = directory / PLAN_NAME
+    if _stored_fingerprint(directory) != current or not plan.is_file():
+        _discard(directory, "its fingerprint or its plan is missing or different")
+        return None, "the cached engine was damaged", None
     try:
-        if _stored_fingerprint(directory) != current:
-            raise ValueError("the stored fingerprint is missing or different")
-        return TensorRTEngine((directory / PLAN_NAME).read_bytes(), profile, contexts=contexts), ""
-    except (OSError, ValueError, PlanRejectedError) as exc:
-        logger.warning(f"Discarding the cached TensorRT engine {directory.name}: {exc}")
-        shutil.rmtree(directory)
-        return None, "the cached engine was damaged or rejected by TensorRT"
+        return TensorRTEngine(plan.read_bytes(), profile, contexts=contexts), "", None
+    except PlanRejectedError as exc:
+        logger.warning(
+            f"TensorRT rejected the cached engine {directory.name} ({exc}); building a new one to tell a damaged file "
+            "from a GPU that cannot hold the engine",
+        )
+        return None, "TensorRT rejected the cached engine", exc
+
+
+def _load_built(
+    plan: bytes, profile: OptimizationProfile, contexts: int, rejection: PlanRejectedError | None, key: str,
+) -> TensorRTEngine:
+    """Load a plan built a moment ago. When TensorRT refuses that too after refusing the cached one, the file is not at fault."""
+    try:
+        return TensorRTEngine(plan, profile, contexts=contexts)
+    except PlanRejectedError as exc:
+        if rejection is None:
+            raise
+        raise TensorRTStartupError(
+            "engine-unusable",
+            f"TensorRT rejects the cached engine {key} and an engine built a moment ago from the same model alike "
+            f"({exc}), so the cached file is not at fault and was kept. Check that the GPU has the free memory "
+            "the engine needs and that the driver suits TensorRT (see docs/gpu-models.md).",
+        ) from exc
 
 
 def _store(group: Path, key: str, current: dict[str, object], plan: bytes) -> Path:
@@ -169,19 +202,26 @@ def open_engine(
         group.mkdir(parents=True, exist_ok=True)
         with _locked(group / LOCK_NAME):
             directory = group / key
-            engine, reason = _cached_engine(directory, current, profile, contexts)
-            cache_hit = engine is not None
+            engine, reason, rejection = _cached_engine(directory, current, profile, contexts)
+            plan: bytes | None = None
             if engine is None:
                 reason = reason or _describe_change(group, current)
                 logger.info(f"Building the TensorRT engine ({reason}); this takes several seconds")
                 plan = build_plan(onnx_path, profile, tf32=tf32)
-                directory = _store(group, key, current, plan)
-                engine = TensorRTEngine(plan, profile, contexts=contexts)
-            _prune(group, keep=key)
+                engine = _load_built(plan, profile, contexts, rejection, key)  # only a plan this process loads is cached
+            try:
+                if plan is not None:
+                    if rejection is not None:  # a fresh build loads where the stored plan did not: replace it
+                        _discard(directory, f"{rejection}; a plan built a moment ago from the same model loads")
+                    directory = _store(group, key, current, plan)
+                _prune(group, keep=key)
+            except BaseException:
+                engine.close()  # a refused start must not keep the engine in GPU memory
+                raise
     except OSError as exc:
         raise TensorRTStartupError(
             "engine-unusable",
             f"the engine cache {group} cannot be used ({type(exc).__name__}: {exc}). Point the engine cache "
             "directory setting of this model at a directory the process can write.",
         ) from exc
-    return OpenedEngine(engine, directory, cache_hit, reason or "cache hit", time.perf_counter() - started)
+    return OpenedEngine(engine, directory, plan is None, reason or "cache hit", time.perf_counter() - started)

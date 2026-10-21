@@ -30,6 +30,14 @@ class TensorRTError(RuntimeError):
     """A local TensorRT model (the embedder or the reranker) failed; the message names the cause."""
 
 
+class TensorRTUnavailableError(TensorRTError, EmbeddingUnavailableError):
+    """A local TensorRT engine can serve no call any more: it was closed, or a CUDA error it cannot recover from
+    (an illegal address, a hardware fault) made it refuse all work until the process restarts.
+
+    It is an ``EmbeddingUnavailableError`` too, so that a re-embedding does not ask the engine again text by text.
+    """
+
+
 class TensorRTStartupError(TensorRTError):
     """A local TensorRT model cannot start, so the server refuses to start.
 

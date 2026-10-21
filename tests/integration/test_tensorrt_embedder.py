@@ -17,6 +17,7 @@ from pydantic import ValidationError
 
 from app.config.settings import Settings, settings
 from app.exceptions import TensorRTError, TensorRTStartupError
+from app.repositories.embeddings import tensorrt_embedder as tensorrt_embedder_module
 from app.repositories.embeddings import tensorrt_model
 from app.repositories.embeddings.tensorrt_common import ensure_finite
 from app.repositories.embeddings.tensorrt_embedder import (
@@ -322,6 +323,22 @@ def test_a_start_with_the_wrong_width_is_refused_and_releases_the_engine(tensorr
     assert "Set EMBEDDING_DIMENSIONS=384" in message
     assert "--re-embed" in message
     assert process_gpu_bytes() == pytest.approx(held, abs=256 * 1024**2)  # the refused engine is not kept
+
+
+def test_a_failure_after_the_warm_up_refuses_the_start_and_releases_the_engine(tensorrt_embedder, monkeypatch):
+    """The report of the start-up reads the CUDA context and the GPU memory; a failure there leaves no engine behind."""
+    held = process_gpu_bytes()
+
+    def nvml_gone():
+        raise TensorRTError("CUDA call failed: the device went away")
+
+    monkeypatch.setattr(tensorrt_embedder_module, "gpu_memory", nvml_gone)
+
+    with pytest.raises(TensorRTError, match="the device went away") as raised:
+        TensorRTEmbeddingsAdapter()
+
+    assert raised.value is not None  # the traceback keeps the half-built adapter alive, so only close() frees its engine
+    assert process_gpu_bytes() == pytest.approx(held, abs=256 * 1024**2)
 
 
 def test_the_configured_width_comes_from_the_settings(tensorrt_embedder):

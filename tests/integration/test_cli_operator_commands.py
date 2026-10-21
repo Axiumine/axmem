@@ -115,6 +115,18 @@ async def test_export_then_import_report_what_they_moved(seeded, tmp_path, capsy
     )
 
 
+async def test_an_export_goes_to_the_file_it_is_given_and_never_into_the_backup_directory(seeded, tmp_path, capsys):
+    """BACKUP_DIR is where `backup` writes; `export` writes the one file named on its command line (the docs say so)."""
+    target = tmp_path / "somewhere-else" / "export.jsonl"
+    target.parent.mkdir()
+
+    assert await operator_commands.export_memories(target) == 0
+
+    assert json.loads(target.read_text().splitlines()[0])["kind"] == "header"
+    assert f"to {target}" in capsys.readouterr().out
+    assert not (tmp_path / "backups").exists()  # nothing was created in the backup directory, not even the directory
+
+
 async def test_import_creates_the_collections_of_a_qdrant_that_has_none(seeded, tmp_path, capsys, monkeypatch):
     """The documented recovery after the loss of a node: a new Qdrant, no server started yet."""
     path = tmp_path / "export.jsonl"

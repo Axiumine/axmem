@@ -123,8 +123,13 @@ fingerprint. The fingerprint is made of:
 Any change rebuilds the engine at the next start. The startup log names the cause, for example
 `Building the TensorRT engine (fingerprint changed: tensorrt (11.3.0.1 -> 11.4.0.106))`,
 and, once the new engine exists, lists the removed directories of other fingerprints of that model
-(`Pruned stale TensorRT engine directories: ...`). A damaged or unreadable cache entry is
-discarded with a warning and rebuilt. Concurrent starts of several server processes serialize on
+(`Pruned stale TensorRT engine directories: ...`). An entry that has lost its plan or
+its fingerprint file is damaged: it is discarded with a warning and rebuilt. A plan that TensorRT refuses is not taken
+for a damaged file, because a GPU too full to hold the engine (or a driver that does not suit it) refuses an intact plan
+alike. The start then builds a plan from the same model, and only when that one loads here is the refused entry replaced.
+When TensorRT refuses the new plan too, the cached entry is kept, nothing new is stored, and the start fails with
+`engine-unusable` and the TensorRT message: free GPU memory or fix the driver, then start again. A file that cannot be
+read (permissions, I/O error) is not judged: the start fails with `engine-unusable` naming the cache directory. Concurrent starts of several server processes serialize on
 a lock file in the cache directory, so an engine is built once.
 
 Every start logs one line per model with the warm-up result:
@@ -290,11 +295,11 @@ defaults or name the repositories you placed.
 |---|---|---|
 | `no-gpu` | CUDA reports no device (also `CUDA_VISIBLE_DEVICES=-1`) | Expose an NVIDIA GPU, or choose another embeddings provider and `RERANKING_PROVIDER=HTTP` or `RERANKING_ENABLED=false` |
 | `driver` | The driver does not support CUDA 13 | Install driver R580 or newer, reload the kernel modules |
-| `gpu-error` | CUDA or NVML failed while probing the device | Check `nvidia-smi` and the kernel log |
+| `gpu-error` | CUDA or NVML failed while probing the device (any step, after the device count too) | Check `nvidia-smi` and the kernel log |
 | `tensorrt-missing` | TensorRT or the CUDA Python bindings cannot be imported | Run `uv sync`; see the hint in the message |
-| `model-unavailable` | Model files cannot be fetched, read or recorded, or fail their SHA-256 record | Restore network access, or delete the model directory named in the message |
+| `model-unavailable` | Model files cannot be fetched, read or recorded, fail their SHA-256 record, or `tokenizer.json` cannot be parsed | Restore network access, or delete the model directory named in the message |
 | `build-failed` | TensorRT could not build the engine, or the model holds half-precision or quantised tensors (only fp32 and integer ones are accepted) | Read the TensorRT error in the message |
-| `engine-unusable` | TensorRT built an engine but cannot create an execution context or run it, or the engine cache directory cannot be written | Delete the engine cache directory, or point the `*_ENGINE_CACHE_DIR` setting at a writable one; if it repeats, report the TensorRT version and GPU |
+| `engine-unusable` | TensorRT built an engine but cannot load it, create an execution context or run it (also when it refuses a cached engine and a new one alike, which keeps the cached one), or the engine cache directory cannot be read or written | Delete the engine cache directory, or point the `*_ENGINE_CACHE_DIR` setting at a writable one; if it repeats, report the TensorRT version and GPU |
 | `dimensions` | The embedder produces vectors of another width than `EMBEDDING_DIMENSIONS` | Set `EMBEDDING_DIMENSIONS` to the width in the message, or choose a model of the configured width |
 
 The message is printed as `Error: the embedder cannot start: <message>` or

@@ -21,6 +21,7 @@ from app.exceptions import (
     OperatorCommandError,
     QdrantStartupError,
     TensorRTStartupError,
+    TensorRTUnavailableError,
 )
 from app.models.memory_models import MemoryCreate
 from app.models.tenant_models import Tenant
@@ -138,6 +139,10 @@ def _unexpected(status: int):
         (ClusterInconsistentError("the nodes differ"), "the nodes differ"),
         (OperatorCommandError("Qdrant refused the snapshot s: HTTP 400"), "Qdrant refused the snapshot s: HTTP 400"),
         (EmbeddingUnavailableError("budget spent"), "the embeddings provider is unavailable: budget spent"),
+        (  # a TensorRT engine is both: its own message already says what to do
+            TensorRTUnavailableError("the TensorRT engine is unusable after an earlier failure (x); restart the server"),
+            "the TensorRT engine is unusable after an earlier failure (x); restart the server",
+        ),
         (PermissionError(13, "Permission denied", "/var/backups"), "Permission denied: /var/backups"),
         (OSError(28, "No space left on device"), "No space left on device"),
         (OSError("plain"), "plain"),

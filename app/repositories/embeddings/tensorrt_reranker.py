@@ -75,19 +75,23 @@ class TensorRTRerankAdapter:
         )
         self._engine = opened.engine
         self._executor = ThreadPoolExecutor(max_workers=self.workers, thread_name_prefix="tensorrt-rerank")
-        self.score("warm-up query", ["warm-up document"])
-        self.startup = StartupReport(
-            role="reranker",
-            seconds=time.perf_counter() - started,
-            cache_hit=opened.cache_hit,
-            reason=opened.reason,
-            engine_dir=opened.directory,
-            gpu=gpu,
-            tf32=self.tf32,
-            workers=self.workers,
-            cuda_context=cuda_context_handle(),
-            memory=gpu_memory(),
-        )
+        try:
+            self.score("warm-up query", ["warm-up document"])
+            self.startup = StartupReport(
+                role="reranker",
+                seconds=time.perf_counter() - started,
+                cache_hit=opened.cache_hit,
+                reason=opened.reason,
+                engine_dir=opened.directory,
+                gpu=gpu,
+                tf32=self.tf32,
+                workers=self.workers,
+                cuda_context=cuda_context_handle(),
+                memory=gpu_memory(),
+            )
+        except BaseException:
+            self.close()  # a refused start must not keep the engine and its device buffers in GPU memory
+            raise
         logger.info(self.startup.summary())
 
     async def rerank(self, query: str, documents: list[str]) -> list[tuple[int, float]]:

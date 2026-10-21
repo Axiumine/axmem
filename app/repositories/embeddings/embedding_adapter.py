@@ -1,6 +1,8 @@
 """Embedding Adapter to abstract provider specific implementation details"""
 import asyncio
 import logging
+import math
+from collections.abc import Sequence
 from typing import NotRequired, TypedDict
 
 from google import genai
@@ -8,6 +10,7 @@ from google.genai import types
 from openai import AzureOpenAI, OpenAI
 
 from app.config.settings import settings
+from app.exceptions import EmbeddingUnavailableError
 from app.protocols.embedding_protocol import EmbeddingsAdapter
 from app.utils.url_helpers import redact_url
 
@@ -35,14 +38,39 @@ class _OneTextPerRequest(EmbeddingsAdapter):
 
     ``generate_embeddings`` calls ``generate_embedding`` for each text in turn, so it keeps
     that method's logging, error handling and rate-limit behaviour.
+
+    A provider answers with whatever width its model has, so every vector goes through ``_checked``
+    before it leaves the adapter: nothing stored or searched may have another width than the collection.
     """
+
+    provider = "The embeddings provider"  # how an error text names the provider; each adapter sets its own
 
     async def generate_embeddings(self, texts: list[str]) -> list[list[float]]:
         return [await self.generate_embedding(text) for text in texts]
 
+    def _checked(self, vector: Sequence[float]) -> list[float]:
+        """The vector as floats, refusing one that is not ``EMBEDDING_DIMENSIONS`` wide or holds a non-finite number.
+
+        A wrong width concerns every call (the model or the deployment is not the configured one), so it is an
+        ``EmbeddingUnavailableError`` and a re-embedding does not ask again text by text.
+        """
+        width = settings.EMBEDDING_DIMENSIONS
+        if len(vector) != width:
+            raise EmbeddingUnavailableError(
+                f"{self.provider} returned {len(vector)}-dimensional embeddings but EMBEDDING_DIMENSIONS is {width}. "
+                f"Set EMBEDDING_DIMENSIONS={len(vector)}, or choose a model that produces {width}; memories already "
+                "stored need `--re-embed` after a change (see docs/embedding_migration.md).",
+            )
+        floats = [float(value) for value in vector]
+        if not all(map(math.isfinite, floats)):
+            raise RuntimeError(f"{self.provider} returned a non-finite number in the embedding")
+        return floats
+
 
 class AzureOpenAIAdapter(_OneTextPerRequest):
     """Generate embeddings using Azure Open AI Embeddings Provider"""
+
+    provider = "Azure OpenAI"
 
     def __init__(self):
         logger.info("Initialising Azure Open AI embeddings adapter", extra={
@@ -95,12 +123,13 @@ class AzureOpenAIAdapter(_OneTextPerRequest):
         if response is None:
             raise RuntimeError("Azure response did not contain embedding vector")
 
-        embeddings  = response.data[0].embedding
+        return self._checked(response.data[0].embedding)
 
-        return embeddings
 
 class GoogleEmbeddingsAdapter(_OneTextPerRequest):
     """Generate embeddings using Google Generative AI embedding models."""
+
+    provider = "Google"
 
     def __init__(self):
         logger.info("Initialising Google Generative AI embeddings adapter", extra={
@@ -144,7 +173,7 @@ class GoogleEmbeddingsAdapter(_OneTextPerRequest):
         values = embeddings[0].values
         if values is None:
             raise TypeError("'NoneType' object is not iterable")
-        return list(map(float, values))
+        return self._checked(values)
 
 
 def _openai_api_key(base_url: str | None) -> str:
@@ -168,6 +197,8 @@ class OpenAIEmbeddingsAdapter(_OneTextPerRequest):
     When base_url is set and no API key is provided, a placeholder key is used.
     Set OPENAI_SUPPORTS_DIMENSIONS=false for endpoints that don't support the dimensions param.
     """
+
+    provider = "OpenAI"
 
     def __init__(self):
         base_url: str | None = settings.OPENAI_BASE_URL or None
@@ -214,11 +245,13 @@ class OpenAIEmbeddingsAdapter(_OneTextPerRequest):
         if response is None:
             raise RuntimeError("OpenAI response did not contain embedding vector")
 
-        return response.data[0].embedding
+        return self._checked(response.data[0].embedding)
 
 
 class OllamaEmbeddingsAdapter(_OneTextPerRequest):
     """Generate embeddings using Ollama's native API."""
+
+    provider = "Ollama"
 
     def __init__(self):
         from ollama import AsyncClient
@@ -250,4 +283,4 @@ class OllamaEmbeddingsAdapter(_OneTextPerRequest):
         if not response or not response.embeddings:
             raise RuntimeError("Ollama did not return embedding vector")
 
-        return list(response.embeddings[0])
+        return self._checked(response.embeddings[0])

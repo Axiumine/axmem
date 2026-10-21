@@ -15,7 +15,7 @@ from __future__ import annotations
 import logging
 import os
 import queue
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
@@ -23,7 +23,7 @@ from typing import Any
 
 import numpy as np
 
-from app.exceptions import TensorRTError, TensorRTStartupError
+from app.exceptions import TensorRTError, TensorRTStartupError, TensorRTUnavailableError
 
 try:
     import tensorrt as trt
@@ -86,15 +86,20 @@ class _TrtLogger(trt.ILogger):
 TRT_LOGGER = _TrtLogger()
 
 
-def cuda_check(result: tuple[Any, ...]) -> Any:
-    """Return the value of a cuda-python call (None, one value or a tuple); raise on a CUDA error."""
+def _unpacked(result: tuple[Any, ...], failure: Callable[[Any], TensorRTError]) -> Any:
+    """The value of a cuda-python call (None, one value or a tuple); ``failure(error)`` is raised on a CUDA error."""
     error, *values = result
     if error != _SUCCESS:
         cudart.cudaGetLastError()  # a recoverable error must not make the post-call guard fail later
-        raise TensorRTError(f"CUDA call failed: {error.name} ({_error_text(error)})")
+        raise failure(error)
     if not values:
         return None
     return values[0] if len(values) == 1 else tuple(values)
+
+
+def cuda_check(result: tuple[Any, ...]) -> Any:
+    """Return the value of a cuda-python call (None, one value or a tuple); raise on a CUDA error."""
+    return _unpacked(result, lambda error: TensorRTError(f"CUDA call failed: {error.name} ({_error_text(error)})"))
 
 
 def _error_text(error: Any) -> str:
@@ -136,15 +141,18 @@ class GpuInfo:
 
 
 def probe_gpu() -> GpuInfo:
-    """Describe the first visible CUDA device, or raise the startup error that explains its absence."""
+    """Describe the first visible CUDA device, or raise the startup error that explains why it cannot be used.
+
+    Every CUDA failure on the way, not only a missing device, is a ``TensorRTStartupError`` with its cause.
+    """
     error, count = cudart.cudaGetDeviceCount()
     if error != _SUCCESS or not count:
         raise device_failure(error)
-    properties = cuda_check(cudart.cudaGetDeviceProperties(0))
+    properties = _unpacked(cudart.cudaGetDeviceProperties(0), device_failure)
     attribute = cudart.cudaDeviceAttr
-    major = cuda_check(cudart.cudaDeviceGetAttribute(attribute.cudaDevAttrComputeCapabilityMajor, 0))
-    minor = cuda_check(cudart.cudaDeviceGetAttribute(attribute.cudaDevAttrComputeCapabilityMinor, 0))
-    _free, total = cuda_check(cudart.cudaMemGetInfo())
+    major = _unpacked(cudart.cudaDeviceGetAttribute(attribute.cudaDevAttrComputeCapabilityMajor, 0), device_failure)
+    minor = _unpacked(cudart.cudaDeviceGetAttribute(attribute.cudaDevAttrComputeCapabilityMinor, 0), device_failure)
+    _free, total = _unpacked(cudart.cudaMemGetInfo(), device_failure)
     return GpuInfo(
         name=properties.name.decode(errors="replace"),
         compute_capability=f"{major}.{minor}",
@@ -432,7 +440,7 @@ class TensorRTEngine:
             cuda_check(cudart.cudaPeekAtLastError())
         except TensorRTError as exc:
             self._failure = str(exc)
-            raise
+            raise TensorRTUnavailableError(self._failure) from exc  # the engine serves nothing from here on
 
     def close(self) -> None:
         """Release the device buffers once every borrowed slot has come back. Safe to call twice."""
@@ -454,8 +462,8 @@ class TensorRTEngine:
 
     def _ensure_usable(self) -> None:
         if self._closed:
-            raise TensorRTError("the TensorRT engine is closed")
+            raise TensorRTUnavailableError("the TensorRT engine is closed")
         if self._failure:
-            raise TensorRTError(
+            raise TensorRTUnavailableError(
                 f"the TensorRT engine is unusable after an earlier failure ({self._failure}); restart the server",
             )

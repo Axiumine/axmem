@@ -96,6 +96,7 @@ async def test_generate_embedding_returns_vector(mock_settings, mock_openai_clie
     mock_response = MagicMock()
     mock_response.data = [mock_embedding]
     mock_client.embeddings.create.return_value = mock_response
+    mock_settings.EMBEDDING_DIMENSIONS = 3
 
     adapter = OpenAIEmbeddingsAdapter()
     result = await adapter.generate_embedding("test text")
@@ -104,7 +105,7 @@ async def test_generate_embedding_returns_vector(mock_settings, mock_openai_clie
     mock_client.embeddings.create.assert_called_once_with(
         input=["test text"],
         model="text-embedding-3-small",
-        dimensions=256,
+        dimensions=3,
     )
 
 
@@ -123,6 +124,7 @@ async def test_generate_embeddings_embeds_each_text_in_order(mock_settings, mock
         return response
 
     mock_client.embeddings.create.side_effect = respond
+    mock_settings.EMBEDDING_DIMENSIONS = 1
 
     adapter = OpenAIEmbeddingsAdapter()
 
@@ -161,6 +163,7 @@ async def test_generate_embedding_without_dimensions(mock_settings, mock_openai_
 
     _, mock_client = mock_openai_client
     mock_settings.OPENAI_SUPPORTS_DIMENSIONS = False
+    mock_settings.EMBEDDING_DIMENSIONS = 3
 
     mock_embedding = MagicMock()
     mock_embedding.embedding = [0.1, 0.2, 0.3]

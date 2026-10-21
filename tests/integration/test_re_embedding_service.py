@@ -435,6 +435,48 @@ async def test_rebuild_targeted_does_not_retry_one_by_one_when_the_provider_is_u
     assert {failure["reason"] for failure in result.failed} == {"embedding_failed"}
 
 
+async def test_rebuild_targeted_records_a_provider_that_answers_with_another_width_after_one_request(
+    shared_repo, monkeypatch,
+):
+    """A remote model of another width cannot serve any memory: the batch fails once and nothing wrong is stored."""
+    from tests.embedding_provider_server import FakeEmbeddingProvider, adapter_for
+
+    user_id, memories = await _seed(shared_repo, 3)
+    before = {memory.id: await shared_repo.get_memory_by_id(user_id, memory.id) for memory in memories}
+    with FakeEmbeddingProvider([0.25] * 1536) as server:
+        adapter = adapter_for("OpenAI", server, monkeypatch)
+
+        result = await ReEmbeddingService(shared_repo, adapter, batch_size=20).rebuild_targeted(user_id=user_id)
+
+    assert len(server.requests) == 1  # the first text refused the batch; no text was asked again on its own
+    assert result.rebuilt_ids == []
+    assert sorted(failure["memory_id"] for failure in result.failed) == sorted(memory.id for memory in memories)
+    assert {failure["reason"] for failure in result.failed} == {"embedding_failed"}
+    assert {memory.id: await shared_repo.get_memory_by_id(user_id, memory.id) for memory in memories} == before
+
+
+async def test_rebuild_targeted_stops_asking_a_tensorrt_engine_that_can_serve_no_more(shared_repo):
+    """An engine that was closed (or failed for good) refuses every call alike: the batch is recorded once, not per memory."""
+    from app.repositories.embeddings.tensorrt_embedder import TensorRTEmbeddingsAdapter
+    from tests.embedding_doubles import spy_on
+
+    user_id, memories = await _seed(shared_repo, 3)
+    embedder = TensorRTEmbeddingsAdapter()
+    try:
+        embedder._engine.close()  # the executor still runs jobs, so each call reaches the engine and is refused there
+        spy = spy_on(embedder)
+
+        result = await ReEmbeddingService(shared_repo, spy, batch_size=20).rebuild_targeted(user_id=user_id)
+    finally:
+        embedder.close()
+
+    spy.generate_embeddings.assert_awaited_once()
+    spy.generate_embedding.assert_not_called()  # the engine is closed for every memory alike
+    assert result.rebuilt_ids == []
+    assert sorted(failure["memory_id"] for failure in result.failed) == sorted(memory.id for memory in memories)
+    assert {failure["reason"] for failure in result.failed} == {"embedding_failed"}
+
+
 async def test_rebuild_targeted_embeds_a_batch_in_one_call(shared_repo, embedding_spy):
     user_id, memories = await _seed(shared_repo, 3)
 

@@ -46,7 +46,8 @@ async def test_azure_answer_without_a_response_object_is_reported(azure_adapter)
         await azure_adapter.generate_embedding("hello")
 
 
-async def test_azure_answer_returns_the_first_embedding(azure_adapter):
+async def test_azure_answer_returns_the_first_embedding(azure_adapter, monkeypatch):
+    monkeypatch.setattr(settings, "EMBEDDING_DIMENSIONS", 2)
     answer = SimpleNamespace(data=[SimpleNamespace(embedding=[0.25, 0.5])])
     azure_adapter.client = SimpleNamespace(embeddings=SimpleNamespace(create=lambda **_request: answer))
 
@@ -60,7 +61,8 @@ def test_google_adapter_requires_an_api_key(monkeypatch):
         ea.GoogleEmbeddingsAdapter()
 
 
-async def test_google_embedding_values_are_returned_as_floats(google_adapter):
+async def test_google_embedding_values_are_returned_as_floats(google_adapter, monkeypatch):
+    monkeypatch.setattr(settings, "EMBEDDING_DIMENSIONS", 2)
     _google_answering(google_adapter, [SimpleNamespace(values=[1, 2.5])])
 
     result = await google_adapter.generate_embedding("hello")

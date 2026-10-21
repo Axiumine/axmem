@@ -11,6 +11,7 @@ import pytest
 
 from app.config.settings import settings
 from app.exceptions import TensorRTStartupError
+from app.repositories.embeddings import tensorrt_cache
 from app.repositories.embeddings.tensorrt_cache import (
     FINGERPRINT_NAME,
     LOCK_NAME,
@@ -21,7 +22,12 @@ from app.repositories.embeddings.tensorrt_cache import (
 )
 from app.repositories.embeddings.tensorrt_model import fetch_model
 from app.repositories.embeddings.tensorrt_reranker import PROFILE
-from app.repositories.embeddings.tensorrt_runtime import OptimizationProfile, probe_gpu
+from app.repositories.embeddings.tensorrt_runtime import (
+    OptimizationProfile,
+    PlanRejectedError,
+    TensorRTEngine,
+    probe_gpu,
+)
 
 GROUP = "model-group"
 
@@ -176,25 +182,63 @@ def test_an_unreadable_fingerprint_rebuilds_the_engine(model, cache_copy, caplog
     opened.engine.close()
 
     assert not opened.cache_hit
-    assert opened.reason == "the cached engine was damaged or rejected by TensorRT"
+    assert opened.reason == "the cached engine was damaged"
     assert "Discarding the cached TensorRT engine" in caplog.text
     assert json.loads((entry / FINGERPRINT_NAME).read_text())["model_sha256"] == model.onnx_sha256
 
 
-def test_a_plan_that_tensorrt_rejects_is_replaced_by_a_fresh_build(model, cache_copy):
+def test_an_entry_without_its_plan_is_damaged_and_rebuilt(model, cache_copy, caplog):
     entry = cache_copy / GROUP / current_key(model)
-    plan = entry / PLAN_NAME
-    plan.write_bytes(plan.read_bytes()[:4096])
+    (entry / PLAN_NAME).unlink()
+    caplog.set_level(logging.INFO)
 
     opened = open_cached(model, cache_copy)
     opened.engine.close()
 
     assert not opened.cache_hit
-    assert "damaged or rejected" in opened.reason
+    assert opened.reason == "the cached engine was damaged"
+    assert "its fingerprint or its plan is missing or different" in caplog.text
+    assert (entry / PLAN_NAME).stat().st_size > 1_000_000
+
+
+def test_a_plan_that_tensorrt_rejects_is_replaced_once_a_fresh_build_loads(model, cache_copy, caplog):
+    """A truncated plan: a plan built a moment ago from the same model loads here, so the stored file is the problem."""
+    entry = cache_copy / GROUP / current_key(model)
+    plan = entry / PLAN_NAME
+    plan.write_bytes(plan.read_bytes()[:4096])
+    caplog.set_level(logging.INFO)
+
+    opened = open_cached(model, cache_copy)
+    opened.engine.close()
+
+    assert not opened.cache_hit
+    assert opened.reason == "TensorRT rejected the cached engine"
+    assert "TensorRT rejected the cached engine" in caplog.text
+    assert "a plan built a moment ago from the same model loads" in caplog.text
     assert plan.stat().st_size > 1_000_000
     again = open_cached(model, cache_copy)
     again.engine.close()
     assert again.cache_hit
+
+
+class RecordedEngines:
+    """The real ``TensorRTEngine`` class, noting every engine the cache creates so that a test can see what became of it."""
+
+    def __init__(self, monkeypatch, *, refuse=False):
+        self.created: list[TensorRTEngine] = []
+        outer = self
+
+        class Recording(TensorRTEngine):
+            def __init__(self, plan, profile, *, contexts=1):
+                if refuse:
+                    raise PlanRejectedError(
+                        "engine-unusable",
+                        "TensorRT cannot deserialize the plan: Cuda Error in allocate: 2 (out of memory)",
+                    )
+                super().__init__(plan, profile, contexts=contexts)
+                outer.created.append(self)
+
+        monkeypatch.setattr(tensorrt_cache, "TensorRTEngine", Recording)
 
 
 def test_a_cache_directory_that_cannot_be_created_is_a_startup_error(model, tmp_path):
@@ -218,8 +262,78 @@ def test_a_cache_directory_that_cannot_be_written_is_a_startup_error(model, cach
         raise PermissionError(13, "Permission denied")
 
     monkeypatch.setattr("app.repositories.embeddings.tensorrt_cache.shutil.rmtree", refuse)
+    engines = RecordedEngines(monkeypatch)
 
     with pytest.raises(TensorRTStartupError, match="cannot be used.*Permission denied") as raised:
         open_cached(model, cache_copy)
 
     assert raised.value.cause == "engine-unusable"
+    assert [engine._closed for engine in engines.created] == [True]  # the engine it had loaded is released
+
+
+def test_a_plan_the_gpu_cannot_hold_is_not_a_damaged_file_and_stays_in_the_cache(model, cache_copy, monkeypatch, caplog):
+    """The GPU is too full for any engine: TensorRT refuses the intact plan and one built a moment ago alike."""
+    entry = cache_copy / GROUP / current_key(model)
+    plan = entry / PLAN_NAME
+    intact = plan.read_bytes()
+    monkeypatch.setattr(tensorrt_cache, "build_plan", lambda *args, **kwargs: intact)  # the build is not under test
+    RecordedEngines(monkeypatch, refuse=True)
+    caplog.set_level(logging.INFO)
+
+    with pytest.raises(TensorRTStartupError, match=r"the cached file is not at fault and was kept.*free memory") as raised:
+        open_cached(model, cache_copy)
+
+    assert raised.value.cause == "engine-unusable"
+    assert "out of memory" in str(raised.value)
+    assert plan.read_bytes() == intact
+    assert (entry / FINGERPRINT_NAME).is_file()
+    assert "Discarding the cached TensorRT engine" not in caplog.text
+    assert "TensorRT rejected the cached engine" in caplog.text
+
+
+def test_a_plan_built_just_now_that_tensorrt_rejects_is_not_cached(model, tmp_path, monkeypatch):
+    monkeypatch.setattr(tensorrt_cache, "build_plan", lambda *args, **kwargs: b"not a plan")
+
+    with pytest.raises(PlanRejectedError) as raised:
+        open_cached(model, tmp_path / "engines")
+
+    assert raised.value.cause == "engine-unusable"
+    assert not list((tmp_path / "engines" / GROUP).glob("*/" + PLAN_NAME))  # nothing was stored that cannot load
+
+
+def test_a_plan_that_cannot_be_read_is_not_judged_damaged(model, cache_copy, monkeypatch):
+    """A read that fails (permission, I/O error) says nothing about the file: the entry stays and the cache is the cause."""
+    entry = cache_copy / GROUP / current_key(model)
+    intact = (entry / PLAN_NAME).read_bytes()
+    original = tensorrt_cache.Path.read_bytes
+
+    def unreadable(path):
+        if path.name == PLAN_NAME:
+            raise PermissionError(13, "Permission denied")
+        return original(path)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(tensorrt_cache.Path, "read_bytes", unreadable)
+        with pytest.raises(TensorRTStartupError, match="cannot be used.*Permission denied") as raised:
+            open_cached(model, cache_copy)
+
+    assert raised.value.cause == "engine-unusable"
+    assert (entry / PLAN_NAME).read_bytes() == intact
+
+
+def test_an_engine_is_released_when_the_cache_cannot_store_it(model, cold_build, tmp_path, monkeypatch):
+    """The plan loads but cannot be written: the start is refused and the engine does not stay in GPU memory."""
+    plan = (cold_build[1].directory / PLAN_NAME).read_bytes()
+    monkeypatch.setattr(tensorrt_cache, "build_plan", lambda *args, **kwargs: plan)  # the build is not under test
+
+    def disk_full(*args, **kwargs):
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(tensorrt_cache, "_store", disk_full)
+    engines = RecordedEngines(monkeypatch)
+
+    with pytest.raises(TensorRTStartupError, match="cannot be used.*No space left on device"):
+        open_cached(model, tmp_path / "engines")
+
+    assert len(engines.created) == 1
+    assert engines.created[0]._closed

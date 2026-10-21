@@ -406,7 +406,7 @@ For vector search and optional cross-encoder reranking, see
 - `MEMORY_TOKEN_BUDGET` – Max tokens for query results (default: `8000`)
 - `EMBEDDING_PROVIDER` – `TensorRT` (default, in-process on the GPU), `Azure`, `Google`, `OpenAI`, `Ollama` or `gateway`
 - `EMBEDDING_MODEL` – For `TensorRT`, the Hugging Face repository of the ONNX model (default: `BAAI/bge-small-en-v1.5`)
-- `EMBEDDING_DIMENSIONS` – Vector width (default: `384`); checked against the model at startup
+- `EMBEDDING_DIMENSIONS` – Vector width (default: `384`); checked against the model at startup (`TensorRT`) and against every reply of a remote provider
 - `RERANKING_ENABLED` – Rerank search results (default: `true`; needs an NVIDIA GPU unless `RERANKING_PROVIDER=HTTP`)
 - `RERANKING_PROVIDER` – `TensorRT` (default, local GPU) or `HTTP`
 - `MEMORY_NUM_AUTO_LINK` – Auto-link count (default: `3`, set `0` to disable)
