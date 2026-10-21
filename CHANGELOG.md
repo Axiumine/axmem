@@ -607,6 +607,26 @@ Fixes found by reviewing the feature cuts (no upstream counterpart: the code the
   index for TensorRT, without `tensorrt-cu13-libs`) and the wheel on top, instead of resolving the PyPI placeholders of
   the TensorRT packages. `pytest`, `pytest-asyncio` and `requests` (test-only) moved from the runtime dependencies to the
   `dev` group and the unused `fastapi` pin was removed, so an installed Axmem no longer pins them (`requests` still arrives through the SDKs that need it).
+- **Documentation review:** statements that the code contradicted were corrected. `docs/tool_reference.md` gives the
+  real return values (`mark_memory_obsolete` and `unobsolete_memory` return `{"success": true}`, `query_memory` the
+  whole result object), lists every parameter of `get_recent_memories` and the provenance fields `agent_id`,
+  `agent_version` and `agent_model`, and documents the tenth tool, `rebuild_embeddings`; `docs/api_reference.md` shows
+  the real search response (`primary_memories`, `linked_memories`, `scores`, `total_count`, `token_count`,
+  `truncated`) and `obsolete_matches` in the create response; `docs/prompts/custom_agent_integration.md` says ten tools
+  and names `linked_memory_ids` instead of a field that never existed. The Copilot CLI, OpenCode and Gemini CLI guides
+  and the two `axmem-setup` commands start `axmem` from a checkout with `AUTH_MODE=none` (or a bearer token for a
+  server on a network) instead of a `uvx axmem` that has no package to resolve and a server that exits without an
+  auth mode, drop the OAuth sign-in, and no longer point at a log file that nothing writes (the log goes to standard
+  error); the Axmem CLI section of the connectivity guide installs with `uv tool install .`. `docs/search.md` lists
+  all six embedding providers and the search settings in place of an empty section; the architecture overview names the
+  tenant in the link id and anchors every line link at the right symbol; `docs/quality-gates.md` describes the
+  scheduled mutation job (`app.utils.*` and `app.config.*`, up to 50 survivors) instead of `SKIP`;
+  `docs/dev/architecture-tests.md` names the `lint` job and seven rules; the test harness README counts its six
+  skills. `.env.example` no longer pins `SERVICE_VERSION` (a copied file made `/` and `/health` report a stale
+  version for every release) and lists the settings it left out; `docs/configuration.md` warns about the `["*"]`
+  default of `CORS_ORIGINS`. `docs/gpu-models.md` explains that the tiktoken data is fetched on the first query unless
+  `TIKTOKEN_CACHE_DIR` holds it, and that a host which drops packets makes that query wait for the connect timeout, with
+  the pre-load command.
 
 ### Security
 

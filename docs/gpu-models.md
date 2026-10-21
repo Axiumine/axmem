@@ -232,22 +232,31 @@ RERANKING_ENGINE_CACHE_DIR=/opt/models/tensorrt
 ```
 
 Memory queries also use tiktoken's token-counting data, which has a separate cache
-(`TIKTOKEN_CACHE_DIR`, read by tiktoken itself). Without it, queries still work but budget tokens
-with an approximate character-based estimate. Populate it while the network is available and keep
-it on persistent storage:
+(`TIKTOKEN_CACHE_DIR`, read by tiktoken itself; `HF_HUB_OFFLINE` does not cover it). Without it, queries still
+work but budget tokens with an approximate character-based estimate. Populate it while the network is
+available and keep it on persistent storage, with the variable set to the same directory for the pre-load and
+for the server:
 
 ```bash
-uv run python -c 'from app.utils.token_counter import TokenCounter; TokenCounter()'
+TIKTOKEN_CACHE_DIR=/opt/models/tiktoken \
+  uv run python -c 'from app.utils.token_counter import TokenCounter; TokenCounter()'
 ```
 
 ```dotenv
 TIKTOKEN_CACHE_DIR=/opt/models/tiktoken
 ```
 
+Do this before the first query on any host whose outbound traffic is dropped rather than refused (a firewall
+that discards packets, a network namespace without a route). tiktoken downloads its data with a request that
+has no timeout of its own, so the first query then waits for the operating system's connect timeout (about
+two minutes on Linux defaults) before the estimate takes over, and every query that arrives meanwhile waits
+behind it, because the data is loaded once under a lock. A host that refuses the connection falls back at once.
+
 Fully offline operation also needs a locally reachable Qdrant and authentication service, as
 applicable. The embeddings provider and the reranker are local in the default setup, so with the model
 files and the tiktoken data on disk the server makes no call to any other host. Without the tiktoken
-data the first query tries to download it, and falls back to the estimate when that fails.
+data the first query tries to download it, and falls back to the estimate when that fails (at once when the
+connection is refused, after the operating system's connect timeout when the packets are dropped, see above).
 
 ### Verifying the files
 

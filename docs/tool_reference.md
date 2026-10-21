@@ -1,6 +1,8 @@
 # Axmem MCP Server - Complete Tool Reference
 
-This guide provides comprehensive documentation for all tools available in the Axmem MCP server.
+This guide documents the ten tools of the Axmem MCP server: `create_memory`, `query_memory`, `get_memory`,
+`update_memory`, `link_memories`, `unlink_memories`, `mark_memory_obsolete`, `unobsolete_memory`,
+`get_recent_memories` and `rebuild_embeddings`.
 
 ---
 
@@ -140,6 +142,9 @@ Create an atomic memory with automatic linking to related memories.
 - `confidence` (optional): Encoding confidence score (0.0-1.0)
 - `encoding_agent` (optional): Agent/process that created this memory (max 100 chars)
 - `encoding_version` (optional): Version of encoding process/prompt (max 50 chars)
+- `agent_id` (optional): Agent identity (max 100 chars)
+- `agent_version` (optional): Agent version (max 50 chars)
+- `agent_model` (optional): LLM model used (max 100 chars)
 
 Blank (whitespace-only) `title` and `content` values are rejected, as are strings that cannot be
 encoded as UTF-8 (for example a lone surrogate).
@@ -205,9 +210,12 @@ Semantic search across all memories with context-aware ranking.
 - `project` (optional): Only search memories in this project scope
 - `strict_project_filter` (optional): Apply the project scope to linked memories as well
 
-**Returns:**
-- List of memories ranked by semantic relevance
-- Each memory includes its 1-hop graph connections
+**Returns:** an object (`MemoryQueryResult`), not a bare list:
+- `query`: The query that was run
+- `primary_memories`: The memories that matched, with at most `k` entries
+- `linked_memories`: Memories one hop away from the primaries (empty when `include_links` is false); each entry holds the `memory` and the `link_source_id` of the primary it hangs from
+- `total_count`, `token_count`: How many memories (primary and linked) were returned and how many tokens they use
+- `truncated`: `true` when memories were dropped because of the token budget (`MEMORY_TOKEN_BUDGET`) or `MEMORY_MAX_MEMORIES`
 - `scores`: One `MemoryScore` per primary memory (`memory_id`, `similarity`, `rerank_score`), aligned by index with `primary_memories`. Primaries are importance-sorted after retrieval, so list position is not similarity rank.
 
 **Example:**
@@ -222,7 +230,7 @@ results = execute_axmem_tool(
         "k": 5
     }
 )
-# Returns: {"primary_memories": [...], "linked_memories": [...], ...}
+# Returns: {"query": "...", "primary_memories": [...], "linked_memories": [...], "scores": [...], "total_count": 6, "token_count": 1480, "truncated": False}
 ```
 
 ### `get_memory`
@@ -261,6 +269,7 @@ Update existing memory fields (PATCH semantics - only updates provided fields).
 - `confidence` (optional): Confidence score (0.0-1.0)
 - `encoding_agent` (optional): Agent/process identifier
 - `encoding_version` (optional): Version of encoding process
+- `agent_id`, `agent_version`, `agent_model` (optional): Agent identity, version and LLM model, as in `create_memory`
 
 **Returns:**
 - Updated memory object
@@ -380,7 +389,7 @@ Soft delete a memory with audit trail and supersession tracking.
 - `superseded_by` (optional): ID of replacement memory (must be an existing memory other than `memory_id`)
 
 **Returns:**
-- Updated memory with obsolete flag
+- Dict `{"success": true}`. The memory itself is not returned; read it with `get_memory` to see `is_obsolete`, `obsolete_reason`, `superseded_by` and `obsoleted_at`
 
 **Errors:** fails if the memory is already obsolete (use `unobsolete_memory` first; the original reason and timestamp are kept), if `superseded_by` equals `memory_id`, or if either memory is not found.
 
@@ -404,7 +413,9 @@ Restore a memory previously marked obsolete (undo `mark_memory_obsolete`).
 - `memory_id` (required): ID of the obsolete memory to restore
 
 **Returns:**
-- Boolean success flag
+- Dict `{"success": true}`. The memory is not returned; `get_memory` shows it active again
+
+**Errors:** fails if the memory is not found (or belongs to another tenant) or is not obsolete.
 
 **Example:**
 ```python
@@ -416,16 +427,23 @@ execute_axmem_tool(
 
 ### `get_recent_memories`
 
-Retrieve most recent memories sorted by creation timestamp.
+Retrieve memories newest first by default, with pagination, sorting and filters.
 
 **Parameters:**
-- `limit` (optional): Max memories to return (default: 10)
+- `limit` (optional): Max memories to return (default: 10; 1 to 100, a value outside the range is clamped)
+- `offset` (optional): Memories to skip for pagination (default: 0)
 - `project` (optional): Only memories in this project scope
+- `include_obsolete` (optional): Include obsolete memories (default: false)
+- `sort_by` (optional): `created_at` (default), `updated_at` or `importance`
+- `sort_order` (optional): `desc` (default, newest or most important first) or `asc`
+- `tags` (optional): Only memories that carry at least one of these tags
+- `importance_min` (optional): Minimum importance, 1 to 10, inclusive
+- `created_since` (optional): Only memories created at or after this ISO 8601 timestamp, which must carry a timezone (`2026-08-01T00:00:00Z`)
 
 **Returns:**
 - An object (not a bare list) with two keys:
-  - `memories`: list of recent memories, sorted by `created_at` DESC (newest first)
-  - `total_count`: total number of matching memories
+  - `memories`: list of memories, sorted by `sort_by` and `sort_order` (`created_at` descending, newest first, by default)
+  - `total_count`: total number of matching memories, counted before `limit` and `offset` apply
 - Each memory's `linked_memory_ids` includes both directions of links (same set as `get_memory`).
 
 **Example:**
@@ -452,6 +470,33 @@ total = result["total_count"]   # how many matched in total
 > `result["total_count"]` if you need the total. For example, replace `for m in result:`
 > with `for m in result["memories"]:`. The REST endpoint is unaffected — this change is
 > only in the MCP tool surface.
+
+### `rebuild_embeddings`
+
+Embed memories of the calling tenant again with the configured embedder, and refresh their automatic links, without
+touching any other tenant and without switching the vector collection. Use it to repair a memory whose embedding or
+links are missing or stale (for example one that `create_memory` stored but could not link); the operator command
+`axmem re-embed` is the whole-store migration that this tool is not.
+
+**Parameters:**
+- `memory_ids` (optional, List[UUID string]): Memories to rebuild. A list must not be empty; leave it out (or `null`) to rebuild the project or the whole tenant
+- `project` (optional): Only memories in this project scope. With `memory_ids`, every id must belong to that scope. An unknown scope is rejected
+
+**Returns:**
+- `rebuilt_ids`: Ids that were embedded again
+- `skipped_ids`: Ids that were not touched: not owned by the caller, or edited while the rebuild ran so that the newer embedding was kept
+- `failed`: A list of `{"memory_id": ..., "reason": ...}`, with the reason one of `embedding_failed`, `persistence_failed`, `auto_link_failed` or `not_found_or_not_owned`; details go to the server log only
+
+A bad scope (an empty `memory_ids`, an unknown `project`, ids outside the project) answers `VALIDATION_ERROR: ...`. When the
+embedder is unavailable as a whole (a TensorRT engine that failed for good, a remote reply of the wrong width) every memory of
+the batch is reported in `failed` at once instead of being retried one by one.
+
+**Example:**
+```python
+execute_axmem_tool("rebuild_embeddings", {"memory_ids": ["3f2b8c1e-5d4a-4e7b-9c6a-1b2d3e4f5a6b"]})
+execute_axmem_tool("rebuild_embeddings", {"project": "api-gateway"})
+# Returns: {"rebuilt_ids": ["3f2b8c1e-..."], "skipped_ids": [], "failed": []}
+```
 
 ---
 

@@ -25,8 +25,11 @@ Ask the user which setup they prefer:
 **Question**: "How would you like to configure Axmem?"
 
 **Options**:
-1. **Standard (Recommended)** - Uses uvx to run Axmem against a Qdrant on `http://127.0.0.1:6333`. Perfect for most users.
-2. **Custom** - For advanced setups: remote HTTP server, another Qdrant, custom embeddings, authentication, etc.
+1. **Standard (Recommended)** - Runs the installed `axmem` command against a Qdrant on `http://127.0.0.1:6333`, as the one local tenant (`AUTH_MODE=none`). Perfect for most users.
+2. **Custom** - For advanced setups: remote HTTP server, another Qdrant, custom embeddings, a bearer token, etc.
+
+Axmem is not published to PyPI yet, so `uvx axmem` does not resolve. Check that `axmem` is on the `PATH` (`which axmem`);
+if not, it is installed from a checkout of the repository with `uv tool install .`.
 
 ## Step 3a: Standard Setup
 
@@ -37,12 +40,17 @@ If user chose Standard, add this to their `opencode.json`:
   "mcp": {
     "axmem": {
       "type": "local",
-      "command": ["uvx", "axmem"],
-      "enabled": true
+      "command": ["axmem", "serve", "--transport", "stdio"],
+      "enabled": true,
+      "environment": {
+        "AUTH_MODE": "none"
+      }
     }
   }
 }
 ```
+
+Axmem refuses to start without `AUTH_MODE`; `none` is right for a local STDIO server (every request is the one local tenant).
 
 Report: "Axmem is now configured! Your memories are stored in the Qdrant at `http://127.0.0.1:6333` (start one first if none runs). Restart OpenCode to activate."
 
@@ -59,17 +67,18 @@ WebFetch: https://github.com/Axiumine/axmem/blob/main/docs/configuration.md
    - **Remote HTTP server** - Connect to Axmem running elsewhere
    - **Qdrant address** - Use a Qdrant on another host (`QDRANT_URL`, `QDRANT_API_KEY`)
    - **Custom embeddings** - Use different embedding model/provider
-   - **Authentication** - API key or OAuth setup
+   - **Authentication** - A bearer token for a server on a network (`AUTH_MODE=jwt`, `introspection` or `static`, see the configuration docs); there is no OAuth sign-in
 
 3. Based on their answers, build the appropriate configuration:
 
-**For HTTP remote server:**
+**For HTTP remote server** (a server on a network needs the token; one on this machine with `AUTH_MODE=none` needs no `headers`):
 ```jsonc
 {
   "mcp": {
     "axmem": {
       "type": "remote",
-      "url": "http://HOST:PORT/mcp",
+      "url": "https://HOST:PORT/mcp",
+      "headers": { "Authorization": "Bearer <token>" },
       "enabled": true,
       "timeout": 30000
     }
@@ -83,13 +92,15 @@ WebFetch: https://github.com/Axiumine/axmem/blob/main/docs/configuration.md
   "mcp": {
     "axmem": {
       "type": "local",
-      "command": ["uvx", "axmem"],
+      "command": ["axmem", "serve", "--transport", "stdio"],
       "enabled": true,
       "environment": {
+        "AUTH_MODE": "none",
         "QDRANT_URL": "http://qdrant.internal:6333",
         "QDRANT_API_KEY": "your-qdrant-api-key",
         "EMBEDDING_PROVIDER": "Google",
-        "EMBEDDING_MODEL": "models/text-embedding-004"
+        "EMBEDDING_MODEL": "models/gemini-embedding-001",
+        "GOOGLE_AI_API_KEY": "your-google-api-key"
       }
     }
   }
@@ -101,7 +112,8 @@ WebFetch: https://github.com/Axiumine/axmem/blob/main/docs/configuration.md
 ## Troubleshooting
 
 If setup fails:
-- Check if `uvx` is installed: `which uvx`
+- Check that `axmem` is installed: `which axmem` (`uv tool install .` from a checkout)
+- Run `AUTH_MODE=none axmem serve --transport stdio` by hand: a start that is refused prints one `Error:` line with the cause
 - For HTTP: verify the server is running and accessible
 - Restart OpenCode after configuration changes
 

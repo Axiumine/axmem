@@ -157,7 +157,7 @@ List memories with pagination, sorting, and filtering.
 **Query Parameters:**
 
 | Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
+|---|---|---|---|
 | `limit` | int | 20 | Results per page (1-100) |
 | `offset` | int | 0 | Skip N results |
 | `sort_by` | string | created_at | Sort field: `created_at`, `updated_at`, `importance` |
@@ -232,7 +232,7 @@ created the first time it is used, and each tenant has its own scopes. A blank o
 **Provenance Fields (all optional):**
 
 | Field | Type | Description |
-|-------|------|-------------|
+|---|---|---|
 | `source_repo` | string | Repository source (e.g., 'owner/repo', max 200 chars) |
 | `source_files` | string[] | List of file paths that informed this memory (at most 50 paths, each max 4096 chars) |
 | `source_url` | string | URL to original source material (max 2048 chars) |
@@ -254,9 +254,16 @@ blank `context`.
   "title": "Memory title",
   "linked_memory_ids": [],
   "project": "billing",
-  "similar_memories": []
+  "similar_memories": [],
+  "obsolete_matches": []
 }
 ```
+
+`linked_memory_ids` are the memories the new one was linked to automatically, and `similar_memories` summarises
+each of them (`id`, `title`, `keywords`, `tags`, `importance`, the two timestamps and `similarity`).
+`obsolete_matches` is always present: it lists the obsolete memories whose similarity reaches
+`OBSOLETE_WARNING_THRESHOLD` (each with `id`, `title`, `similarity`, `obsolete_reason`, `superseded_by`,
+`obsoleted_at` and `project`), and stays `[]` when `OBSOLETE_WARNING_ENABLED` is false.
 
 ### PUT /api/v1/memories/{id}
 
@@ -336,12 +343,21 @@ never exceed the server's `MEMORY_TOKEN_BUDGET`, which applies when the field is
 **Response:**
 ```json
 {
-  "memories": [...],
-  "total": 10
+  "query": "search query",
+  "primary_memories": [...],
+  "linked_memories": [{"memory": {...}, "link_source_id": "3f2b8c1e-5d4a-4e7b-9c6a-1b2d3e4f5a6b"}],
+  "scores": [{"memory_id": "3f2b8c1e-5d4a-4e7b-9c6a-1b2d3e4f5a6b", "similarity": 0.83, "rerank_score": 0.97}],
+  "total_count": 10,
+  "token_count": 1520,
+  "truncated": false
 }
 ```
 
-`truncated` is `true` when memories were dropped because of the token budget or `MEMORY_MAX_MEMORIES`.
+`primary_memories` are memory objects as above (sorted by importance, then by search order), `scores` has one
+entry per primary memory in the same order (`rerank_score` is `null` unless reranking is enabled), and each
+entry of `linked_memories` names the primary it hangs from in `link_source_id`. `total_count` counts the primary and the linked
+memories returned and `token_count` the tokens they use. `truncated` is `true` when memories were dropped because of the token
+budget or `MEMORY_MAX_MEMORIES`.
 
 ### POST /api/v1/memories/{id}/links
 

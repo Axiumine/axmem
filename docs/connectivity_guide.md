@@ -2,8 +2,7 @@ This section provides more detailed instructions on how to connect axmem to vari
 
 > **Install first.** Axmem is not published to PyPI yet, so the `uvx axmem` commands below only work once a release
 > exists. Until then, install it from a checkout with `uv tool install .` (see the README) and replace `uvx axmem` with
-> `axmem serve --transport stdio` (or just `axmem` for the CLI) in every example. `uvx axmem[ollama]` becomes
-> `uv tool install ".[ollama]"`.
+> `axmem serve --transport stdio` (or just `axmem` for the CLI) in every example.
 
 - [Claude Code](#claude-code)
 - [VS Code](#vs-code)
@@ -65,7 +64,7 @@ claude mcp add --scope user axmem uvx axmem \
 
 ### STDIO with Environment Variables (Ollama)
 ```bash
-claude mcp add --scope user axmem "uvx axmem[ollama]" \
+claude mcp add --scope user axmem uvx axmem \
   -e EMBEDDING_PROVIDER=Ollama \
   -e OLLAMA_BASE_URL=http://localhost:11434 \
   -e EMBEDDING_MODEL=nomic-embed-text \
@@ -386,8 +385,10 @@ required. It executes the same tool registry the meta-tools use.
 
 ### Local (default)
 
+Axmem is not published to PyPI yet, so install it from a checkout of the repository (run this in its root):
+
 ```bash
-uv tool install axmem
+uv tool install .
 axmem memory search "wsl dns" -c "wsl networking"
 axmem memory save "content" --title "Title" --importance 7
 ```
@@ -395,11 +396,11 @@ axmem memory save "content" --title "Title" --importance 7
 Local mode uses the same Qdrant and settings as a locally launched server
 (`~/.config/axmem/.env` is shared by both).
 
-### From a source checkout (before a PyPI release)
+### Without installing it
 
-`uv tool install axmem` needs a PyPI release, which does not exist yet; from a clone, `uv tool install .` installs
-the checkout. To exercise the CLI without installing, run the console script through the project venv - edits apply
-immediately:
+`uv tool install axmem` (and `uvx axmem`) need a PyPI release, which does not exist yet; `uv tool install .` from a
+clone installs the checkout, as above. To exercise the CLI without installing, run the console script through the
+project venv - edits apply immediately:
 
 ```bash
 uv run axmem --help          # top-level help lists the subcommands
@@ -407,8 +408,7 @@ uv run axmem tools list
 uv run axmem memory recent
 ```
 
-To put a real `axmem` on your PATH from local source (the shipped experience),
-install the checkout editable:
+To keep the `axmem` on your PATH in step with the source you edit, install the checkout editable:
 
 ```bash
 uv tool install --editable .     # run from the repo root

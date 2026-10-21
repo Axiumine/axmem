@@ -6,14 +6,23 @@ Custom commands for using Axmem with [Gemini CLI](https://github.com/google-gemi
 
 ## Prerequisites
 
-Ensure Axmem MCP server is configured:
+Ensure Axmem MCP server is configured. Axmem is not published to PyPI yet, so `uvx axmem` does not resolve: from a
+checkout of the repository, `uv tool install .` puts the `axmem` command on your `PATH` (after a release, `uvx axmem`
+does the same). Axmem also fails closed: a server with no `AUTH_MODE` exits at start. A server that Gemini CLI starts
+runs over STDIO, which carries no bearer token, so set `AUTH_MODE=none` for it once, in the user config file (every
+request is then the one local tenant, `DEFAULT_TENANT`):
 
 ```bash
-# STDIO transport (recommended for local use)
-gemini mcp add axmem uvx axmem
+mkdir -p ~/.config/axmem && echo "AUTH_MODE=none" >> ~/.config/axmem/.env
 
-# Or HTTP transport (for remote use)
+# STDIO transport (recommended for local use); a bare `axmem` serves over STDIO
+gemini mcp add axmem axmem
+
+# Or HTTP transport. A server on this machine started with AUTH_MODE=none and SERVER_HOST=127.0.0.1 needs no credential
 gemini mcp add -t http axmem http://localhost:8020/mcp
+
+# A server on a network runs AUTH_MODE=jwt, introspection or static and needs the token as a header
+gemini mcp add -t http --header "Authorization: Bearer $AXMEM_TOKEN" axmem https://axmem.example.com/mcp
 ```
 
 ## Installation
@@ -29,7 +38,7 @@ Or copy individual commands as needed.
 ## Available Commands
 
 | Command | Description |
-|---------|-------------|
+|---|---|
 | `/encode-repo` | Bootstrap a repository into Axmem's knowledge base using a 7-phase protocol |
 | `/axmem-setup` | Configure the Axmem MCP server |
 | `/memory-explore` | Deep exploration of the Axmem knowledge graph |

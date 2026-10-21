@@ -30,7 +30,7 @@ TensorRT model directory is warm.
 ## Running
 
 ```bash
-uv run python -m test_harness                                  # full 8-skill walkthrough
+uv run python -m test_harness                                  # full 6-skill walkthrough
 uv run python -m test_harness --skills axmem-recall        # subset (canonical order)
 uv run python -m test_harness --timeout 600 --output /tmp/uat
 uv run python -m test_harness --rebuild-image                  # force image rebuild

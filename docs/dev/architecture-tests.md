@@ -22,7 +22,7 @@ uv run --frozen pytest tests/architecture/ -v
 
 The pytest command includes the real repository check, source-file coverage, and rule proofs.
 It needs no Qdrant, model downloads, or service credentials after dependencies are installed.
-CI runs it as a required successful step in the existing `test` job on every push and PR.
+CI runs it as a required successful step in the `lint` job (`ci.yml`, hosted runner, no GPU) on every push and PR.
 Branch protection must separately require that job to block merges.
 
 ## How the rules are tested
@@ -35,7 +35,7 @@ Each proof uses one production contract, isolated because the production rules o
 3. The same import fails with the contract enabled, naming the rule and dependency path.
 4. Removing the import restores a passing result.
 
-Each of the six rules is tested with a direct import, an indirect import through a neutral
+Each of the seven rules is tested with a direct import, an indirect import through a neutral
 helper, a re-export, a `TYPE_CHECKING` import, and an import inside a function.
 The helper is outside both endpoint areas, so it proves indirect checking rather than another
 direct violation. Every command uses `--no-cache`, and unexpected checker errors fail the proof.
@@ -100,7 +100,7 @@ Sources: [Import Linter release metadata](https://pypi.org/pypi/import-linter/2.
 The exact locked dependency set was checked against PyPI release metadata on 2026-10-17:
 
 | Package | Version | License |
-| --- | --- | --- |
+|---|---|---|
 | import-linter | 2.15 | BSD-2-Clause |
 | grimp | 3.17 | BSD-2-Clause |
 | click | 8.4.2 | BSD-3-Clause |

@@ -105,7 +105,7 @@ across jobs:
 | `quality.yml` job `memory` (GPU runner) | `memray` | 3.14 |
 | `quality.yml` job `trivy` (hosted runner) | `trivy` | 3.14 |
 | `quality.yml` job `qodana` (hosted runner) | Qodana action with the `QODANA_TOKEN` repository secret; not run for pull requests from forks | n/a |
-| `quality.yml` job `mutation` (GPU runner) | `mutation` with `MUTATION=1`, weekly (Mondays 03:17 UTC) and on manual dispatch | 3.14 |
+| `quality.yml` job `mutation` (GPU runner) | `mutation` over `app.utils.*` and `app.config.*` with `MUTATION=1` and at most 50 survivors, weekly (Mondays 03:17 UTC) and on manual dispatch, informational | 3.14 |
 | `ci.yml` job `lint` (hosted runner) | `ruff` and `tests/architecture` | 3.14 |
 | `ci.yml` job `test` (GPU runner) | integration and end-to-end suites on a Qdrant node started through Docker | 3.14 |
 | `ci.yml` job `smoke-test` (hosted runner) | wheel build smoke test: the locked dependencies without `tensorrt-cu13-libs` (`uv sync --locked --no-dev --no-install-project`), then the wheel on top (`uv pip install --no-deps`), then `axmem --help` from another directory; it does not resolve the wheel's own metadata, where the TensorRT packages have no index and PyPI only holds placeholders | 3.14 |
@@ -222,8 +222,10 @@ and leaves `app/_version.py` unmutated. The tests run in a sandbox (`mutants/`) 
 run with it, which is why `.githooks/` and `.github/` are copied and why
 `tests/architecture/test_mutation_sandbox.py` checks every root path the selected tests name. A test that lists the
 members of a class under `app/` must skip the names containing `__mutmut_` (mutmut adds its originals and mutants to a
-mutated class, see `protocol_methods` in `tests/integration/test_tenant_chokepoint.py`). The scheduled `quality.yml` job sets `MUTATION=1` only, so on a checkout
-of `main` (no diff against `origin/main`) it reports `SKIP` unless `MUTATION_TARGETS` is provided.
+mutated class, see `protocol_methods` in `tests/integration/test_tenant_chokepoint.py`). The scheduled `quality.yml` job
+runs on a checkout of `main`, where no diff against `origin/main` exists, so it sets its own scope: `MUTATION=1`,
+`MUTATION_TARGETS='app.utils.* app.config.*'` and `MUTATION_MAX_SURVIVORS=50`. It is an informational ratchet
+(`continue-on-error`): the tolerated survivors are lowered as mutants get killed.
 
 ## Secrets
 

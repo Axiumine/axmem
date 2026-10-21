@@ -6,7 +6,7 @@ You have access to Axmem, a semantic memory system that provides persistent know
 
 Axmem is an MCP (Model Context Protocol) server that gives AI agents persistent memory. It stores knowledge as atomic notes using Zettelkasten principles, automatically builds knowledge graphs through semantic linking, and retrieves relevant context through natural language queries.
 
-**Key capability**: Axmem exposes only 3 meta-tools that provide access to 17 internal tools. This preserves your context window (~500 tokens vs ~15-20K if all tools were exposed directly).
+**Key capability**: Axmem exposes only 3 meta-tools that provide access to 10 internal tools. This preserves your context window (about 500 tokens, instead of the full schema of every tool).
 
 ---
 
@@ -16,7 +16,7 @@ Axmem is an MCP (Model Context Protocol) server that gives AI agents persistent 
 Each memory contains ONE concept. If you can't easily title something in 5-50 words, break it down further.
 
 | Field | Limit | Purpose |
-|-------|-------|---------|
+|---|---|---|
 | Title | 200 chars | Short, searchable phrase |
 | Content | 2000 chars | Single concept (~300-400 words) |
 | Context | 500 chars | Why this matters |
@@ -36,7 +36,7 @@ When you create a memory, Axmem automatically:
 1. Generates an embedding vector for the content
 2. Finds semantically similar memories (≥0.7 cosine similarity by default)
 3. Creates bidirectional links (default: 3 connections)
-4. Returns `auto_linked_to` list showing what was connected
+4. Returns `linked_memory_ids` (the ids that were linked) and `similar_memories` (a summary of each, with its similarity); `obsolete_matches` warns about similar memories that are marked obsolete
 
 ### Token Budget
 Queries return at most 20 memories, capped at ~8K tokens by default. Primary results are
@@ -130,7 +130,7 @@ execute_axmem_tool("create_memory", {
 Axmem organizes knowledge across 2 types:
 
 | Type | What it stores | When to use |
-|------|---------------|-------------|
+|---|---|---|
 | **Memories** | Atomic concepts, decisions, patterns | ONE concept that's directly queryable |
 | **Projects** | Organizational scope | Group related knowledge |
 
@@ -153,7 +153,7 @@ Is this ONE concept/decision/pattern?
 ### Memory Tools
 
 | Tool | Required Params | Purpose |
-|------|-----------------|---------|
+|---|---|---|
 | `create_memory` | `title`, `content`, `context`, `keywords`, `tags`, `importance` | Store |
 | `query_memory` | `query`, `query_context` | Semantic search |
 | `get_memory` | `memory_id` | Retrieve by ID |

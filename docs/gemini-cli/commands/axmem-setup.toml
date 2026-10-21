@@ -24,15 +24,21 @@ Ask the user which setup they prefer:
 **Question**: "How would you like to configure Axmem?"
 
 **Options**:
-1. **Standard (Recommended)** - Uses uvx to run Axmem against a Qdrant on `http://127.0.0.1:6333`. Perfect for most users.
-2. **Custom** - For advanced setups: remote HTTP server, another Qdrant, custom embeddings, authentication, etc.
+1. **Standard (Recommended)** - Runs the installed `axmem` command against a Qdrant on `http://127.0.0.1:6333`, as the one local tenant (`AUTH_MODE=none`). Perfect for most users.
+2. **Custom** - For advanced setups: remote HTTP server, another Qdrant, custom embeddings, a bearer token, etc.
+
+Axmem is not published to PyPI yet, so `uvx axmem` does not resolve. Check that `axmem` is on the `PATH` (`which axmem`);
+if not, it is installed from a checkout of the repository with `uv tool install .`.
 
 ## Step 3a: Standard Setup
 
-If user chose Standard:
+If user chose Standard. Axmem refuses to start without `AUTH_MODE`, and a server that Gemini CLI starts runs over STDIO,
+which carries no bearer token, so `AUTH_MODE=none` goes into the user config file first (every request is then the
+one local tenant):
 
 ```bash
-gemini mcp add axmem uvx axmem
+mkdir -p ~/.config/axmem && echo "AUTH_MODE=none" >> ~/.config/axmem/.env
+gemini mcp add axmem axmem
 ```
 
 Confirm success:
@@ -55,25 +61,28 @@ WebFetch: https://github.com/Axiumine/axmem/blob/main/docs/configuration.md
    - **Remote HTTP server** - Connect to Axmem running elsewhere
    - **Qdrant address** - Use a Qdrant on another host (`QDRANT_URL`, `QDRANT_API_KEY`)
    - **Custom embeddings** - Use different embedding model/provider
-   - **Authentication** - API key or OAuth setup
+   - **Authentication** - A bearer token for a server on a network (`AUTH_MODE=jwt`, `introspection` or `static`, see the configuration docs); there is no OAuth sign-in
 
 3. Based on their answers, guide them through the relevant configuration options from the docs.
 
 4. Build the appropriate command:
 
-**For HTTP remote server:**
+**For HTTP remote server** (a server on a network needs the token; one on this machine with `AUTH_MODE=none` needs no header):
 ```bash
-gemini mcp add -t http axmem http://HOST:PORT/mcp
+gemini mcp add -t http --header "Authorization: Bearer $AXMEM_TOKEN" axmem https://HOST:PORT/mcp
 ```
 
 **For stdio with environment variables:**
 ```bash
 # Gemini CLI doesn't support inline env vars in mcp add
 # User needs to set environment variables before running gemini:
+export AUTH_MODE=none
 export QDRANT_URL=http://qdrant.internal:6333
 export QDRANT_API_KEY=your-qdrant-api-key
 export EMBEDDING_PROVIDER=Google
-gemini mcp add axmem uvx axmem
+export EMBEDDING_MODEL=models/gemini-embedding-001
+export GOOGLE_AI_API_KEY=your-google-api-key
+gemini mcp add axmem axmem
 ```
 
 5. Test the configuration:
@@ -84,7 +93,8 @@ gemini mcp list | grep -i axmem
 ## Troubleshooting
 
 If setup fails:
-- Check if `uvx` is installed: `which uvx`
+- Check that `axmem` is installed: `which axmem` (`uv tool install .` from a checkout)
+- Run `AUTH_MODE=none axmem` by hand: a start that is refused prints one `Error:` line with the cause
 - For HTTP: verify the server is running and accessible
 - Check Gemini CLI logs for MCP connection errors
 

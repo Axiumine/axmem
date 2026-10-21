@@ -300,8 +300,8 @@ TensorRT reranker is Linux-only.
 (see [quality-gates.md](quality-gates.md#pipeline)); the lint and smoke-test jobs still run. A maintainer who has reviewed
 the change pushes its branch to this repository to run `test`.
 
-**Merge requirements**: Configure branch rules to require this workflow's `test` check.
-The workflow alone does not make it mandatory for merging.
+**Merge requirements**: Configure branch rules to require this workflow's `lint` check (the one that runs the architecture
+tests) and its `test` check. The workflow alone does not make them mandatory for merging.
 
 **Test Coverage**: Integration tests validate business logic and the Qdrant repository with the real embedder and reranker. E2E tests validate the complete application stack. Both need Docker for their Qdrant node.
 

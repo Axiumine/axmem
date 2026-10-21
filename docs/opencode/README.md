@@ -6,11 +6,21 @@ Custom commands and skills for using Axmem with [OpenCode](https://opencode.ai).
 
 Ensure you have:
 - [OpenCode](https://opencode.ai) installed
-- [uvx](https://docs.astral.sh/uv/concepts/tools/) available (comes with uv)
+- Axmem installed. It is not published to PyPI yet, so `uvx axmem` does not resolve. From a checkout of the repository,
+  `uv tool install .` puts the `axmem` command on your `PATH` (after a release, `uvx axmem` does the same)
+- A Qdrant server and an NVIDIA GPU for the default embedder, as in the [README](../../README.md#quick-start)
 
 ## MCP Server Configuration
 
-Add Axmem to your OpenCode configuration file (`opencode.json` or `opencode.jsonc`):
+Add Axmem to your OpenCode configuration file (`opencode.json` or `opencode.jsonc`).
+
+A server started by the client runs over STDIO, which carries no bearer token, and Axmem fails closed: without
+`AUTH_MODE` it exits at start. For a local server set `AUTH_MODE=none` (every request is then the one local tenant,
+`DEFAULT_TENANT`), once for every launch in the user config file or in the `environment` of the entry:
+
+```bash
+mkdir -p ~/.config/axmem && echo "AUTH_MODE=none" >> ~/.config/axmem/.env
+```
 
 ### Standard Setup (Recommended)
 
@@ -23,8 +33,11 @@ Setup against a Qdrant on its default address (`http://127.0.0.1:6333`; see the
   "mcp": {
     "axmem": {
       "type": "local",
-      "command": ["uvx", "axmem"],
-      "enabled": true
+      "command": ["axmem", "serve", "--transport", "stdio"],
+      "enabled": true,
+      "environment": {
+        "AUTH_MODE": "none"
+      }
     }
   }
 }
@@ -42,13 +55,15 @@ For another Qdrant, custom embeddings, or remote servers:
   "mcp": {
     "axmem": {
       "type": "local",
-      "command": ["uvx", "axmem"],
+      "command": ["axmem", "serve", "--transport", "stdio"],
       "enabled": true,
       "environment": {
+        "AUTH_MODE": "none",
         "QDRANT_URL": "http://qdrant.internal:6333",
         "QDRANT_API_KEY": "your-qdrant-api-key",
         "EMBEDDING_PROVIDER": "Google",
-        "EMBEDDING_MODEL": "models/text-embedding-001"
+        "EMBEDDING_MODEL": "models/gemini-embedding-001",
+        "GOOGLE_AI_API_KEY": "your-google-api-key"
       }
     }
   }
@@ -57,7 +72,9 @@ For another Qdrant, custom embeddings, or remote servers:
 
 ### Remote HTTP Server
 
-For connecting to an Axmem instance running elsewhere:
+For connecting to an Axmem instance running elsewhere. A server on this machine started with `AUTH_MODE=none` and
+`SERVER_HOST=127.0.0.1` needs no credential (`http://localhost:8020/mcp`). A server on a network runs
+`AUTH_MODE=jwt`, `introspection` or `static`, and the client sends the token as a header (the token names the tenant):
 
 ```jsonc
 {
@@ -65,8 +82,9 @@ For connecting to an Axmem instance running elsewhere:
   "mcp": {
     "axmem": {
       "type": "remote",
-      "url": "http://localhost:8020/mcp",
-      "enabled": true,
+      "url": "https://axmem.example.com/mcp",
+      "headers": { "Authorization": "Bearer <token>" },
+      "enabled": true
     }
   }
 }
@@ -104,7 +122,7 @@ cp -r skills/axmem-* .opencode/skill/
 ## Available Commands
 
 | Command | Description |
-|---------|-------------|
+|---|---|
 | `/axmem-setup` | Configure the Axmem MCP server |
 | `/memory-search` | Search memories semantically |
 | `/memory-save` | Save current context as an atomic memory with curation workflow |
@@ -201,12 +219,21 @@ See the [OpenCode skills documentation](https://opencode.ai/docs/skills/) for mo
 
 ### MCP Server Not Found
 
-Verify uvx is installed:
+Verify the `axmem` command is on your `PATH`:
 ```bash
-which uvx
+which axmem
 ```
 
-If not found, install uv: https://docs.astral.sh/uv/getting-started/installation/
+If not found, install it from a checkout with `uv tool install .` (needs
+[uv](https://docs.astral.sh/uv/getting-started/installation/)).
+
+### Server Exits at Start
+
+Run the command by hand to read the reason; it is one `Error:` line. The usual causes: no `AUTH_MODE` (set
+`AUTH_MODE=none` as above), a Qdrant that does not answer at `QDRANT_URL`, or no visible NVIDIA GPU.
+```bash
+AUTH_MODE=none axmem serve --transport stdio
+```
 
 ### Connection Timeout
 
@@ -216,7 +243,7 @@ Increase the timeout in your configuration:
   "mcp": {
     "axmem": {
       "type": "local",
-      "command": ["uvx", "axmem"],
+      "command": ["axmem", "serve", "--transport", "stdio"],
       "timeout": 60000
     }
   }
@@ -232,4 +259,7 @@ curl http://localhost:8020/health
 
 ### View Logs
 
-Check Axmem logs at `~/.axmem/axmem.log` (if logging is enabled).
+Axmem writes its log to standard error and keeps no log file. For a server that OpenCode starts over STDIO, read
+what the client records of the server's stderr; for an HTTP server, read the console or the journal of the process
+that runs it. `LOG_LEVEL=DEBUG` (in the `environment` of the entry, or in the HTTP server's environment) makes it more
+talkative; see [configuration.md](../configuration.md).

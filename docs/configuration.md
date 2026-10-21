@@ -16,7 +16,7 @@ cp .env.example .env
 uv run main.py --transport http
 ```
 
-[`.env.example`](../.env.example) lists every setting with its default and the provider blocks.
+[`.env.example`](../.env.example) lists every setting with its default (most of them commented out) and the provider blocks. It leaves `SERVICE_VERSION` unset on purpose: a copied value would be reported for every release.
 
 ---
 
@@ -64,6 +64,7 @@ uv run main.py --transport http
 ### `CORS_ENABLED`, `CORS_ORIGINS`
 - **Default**: `false`, `["*"]`
 - **Description**: Adds CORS headers to the HTTP server for browser clients. `CORS_ORIGINS` is a JSON list of the origins that may call it. With `AUTH_MODE=none` and `CORS_ENABLED=true` the origins you name here (a `*` does not count) also pass the `Host`/`Origin` check of a credential-free server, see [Authentication Configuration](#authentication-configuration); any other cross-origin request is refused with `403`
+- **Note**: The default `["*"]` allows every origin, and the server answers with `Access-Control-Allow-Credentials: true`, so once CORS is enabled any web page may call the server and read the answers (Starlette then echoes the caller's `Origin` instead of `*`). The bearer token is still required in a credential mode, and with `AUTH_MODE=none` the loopback guard ignores a `*`; name the origins you trust all the same
 - **Example**: `CORS_ENABLED=true`, `CORS_ORIGINS=["http://localhost:3001"]`
 
 ### `AXMEM_ALLOWED_HOSTS`
@@ -795,7 +796,7 @@ ENFORCE_ENV_OVERWRITE=true
 
 **Note**: These settings only apply when `EMBEDDING_PROVIDER=Ollama`
 
-> Ollama uses native async via the `ollama` Python SDK. No API key required (Ollama runs locally). Install it with `uv sync --extra ollama` from a checkout (`uv tool install ".[ollama]"` for the CLI).
+> Ollama uses native async via the `ollama` Python SDK. No API key required (Ollama runs locally). The SDK is a core dependency, installed with the server; the `ollama` extra of the package is redundant.
 
 #### `OLLAMA_BASE_URL`
 - **Default**: `http://localhost:11434`
