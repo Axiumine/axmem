@@ -13,10 +13,11 @@ from uuid import uuid4
 import pytest
 from qdrant_client import models as qm
 
-from app.exceptions import ConflictError, NotFoundError
+from app.exceptions import ConflictError, NotFoundError, OutcomeUnknownError
 from app.models.memory_models import MemoryCreate, MemoryUpdate
 from app.repositories.qdrant import store as store_module
 from app.repositories.qdrant.archive import QdrantArchiveAdapter
+from app.repositories.qdrant.store import VERSION_KEY, Scope
 from tests.backup_restore_cases import seed_memories
 
 
@@ -268,3 +269,65 @@ async def test_a_memory_that_does_not_exist_is_reported_missing_after_one_majori
 
     memory_reads = [scroll for scroll in scrolls[mark:] if role(stack, scroll) == "memories"]
     assert [scroll.consistency for scroll in memory_reads] == [qm.ReadConsistencyType.QUORUM, None]
+
+
+# ---- the read-back of a write is a read that the replicas can disagree about too -------------------------------------
+
+
+@pytest.fixture
+def disagreeing_after(undecided, monkeypatch):
+    """Call it with the name of a conditional write of the store and a number: once that write is done, the replicas are
+    undecided for that many majority reads (a writer that overtook this one has just rewritten the point)."""
+    disagree, repo, tenant, memory, other, scrolls = undecided
+
+    def after(write: str, reads: int) -> None:
+        real = getattr(repo.store, write)
+
+        async def written_then_overtaken(*args, **kwargs):
+            await real(*args, **kwargs)
+            disagree(reads)
+
+        monkeypatch.setattr(repo.store, write, written_then_overtaken)
+
+    return after, disagree, repo, tenant, memory, other
+
+
+async def version_of(repo, tenant, memory) -> int:
+    [point] = await repo.store.get(Scope.of(tenant), repo.memories, [memory.id], with_payload=[VERSION_KEY], quorum=True)
+    return int(point.payload[VERSION_KEY])
+
+
+async def test_an_edit_that_landed_is_not_replayed_because_the_replicas_disagree_when_it_is_read_back(disagreeing_after):
+    after, _disagree, repo, tenant, memory, _other = disagreeing_after
+    after("replace", store_module.AGREEMENT_ATTEMPTS - 1)
+    before = await version_of(repo, tenant, memory)
+
+    edited = await repo.update_memory(tenant, memory.id, MemoryUpdate(title="Alpha, edited"))
+
+    assert edited.title == "Alpha, edited"
+    assert await version_of(repo, tenant, memory) == before + 1  # applied once; a read-back that found nothing would apply it again
+
+
+async def test_an_obsolete_mark_that_landed_is_not_refused_because_the_replicas_disagree_when_it_is_read_back(disagreeing_after):
+    after, _disagree, repo, tenant, memory, other = disagreeing_after
+    after("patch", store_module.AGREEMENT_ATTEMPTS - 1)
+    before = await version_of(repo, tenant, memory)
+
+    assert await repo.mark_obsolete(tenant, memory.id, "superseded", other.id) is True  # not "already obsolete"
+
+    stored = await repo.get_memory_by_id(tenant, memory.id)
+    assert (stored.is_obsolete, stored.superseded_by) == (True, other.id)
+    assert await version_of(repo, tenant, memory) == before + 1
+
+
+async def test_a_write_whose_read_back_never_gets_an_agreed_answer_has_an_unknown_outcome_and_is_not_replayed(disagreeing_after):
+    after, disagree, repo, tenant, memory, _other = disagreeing_after
+    after("replace", 1000)
+    before = await version_of(repo, tenant, memory)
+
+    with pytest.raises(OutcomeUnknownError, match="cannot be told.*kept holding different versions.*repeat the change"):
+        await repo.update_memory(tenant, memory.id, MemoryUpdate(title="Alpha, edited"))
+
+    disagree(0)  # the replicas settle: the write had landed, and only once
+    assert (await repo.get_memory_by_id(tenant, memory.id)).title == "Alpha, edited"
+    assert await version_of(repo, tenant, memory) == before + 1

@@ -17,6 +17,8 @@ from uuid import UUID
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
+from app.exceptions import ConflictError
+
 
 def _finite_float(token: str) -> float:
     """``json`` hook for number tokens: reject values that overflow to infinity (``1e999``)."""
@@ -43,7 +45,12 @@ class RequestError(Exception):
 def handle_request_errors(
     handler: Callable[[Request], Awaitable[Response]],
 ) -> Callable[[Request], Awaitable[Response]]:
-    """Turn a ``RequestError`` raised inside a handler into its JSON error response."""
+    """Turn a ``RequestError`` raised inside a handler into its JSON error response, and a ``ConflictError`` into a 409.
+
+    A ``ConflictError`` can come out of any read or write of a memory (a write that kept losing to other writers,
+    replicas that kept holding different versions of a memory, a write whose outcome cannot be told), and
+    in every case the request should be repeated, so no route is left to answer it with a 500.
+    """
 
     @functools.wraps(handler)
     async def wrapper(request: Request) -> Response:
@@ -51,6 +58,8 @@ def handle_request_errors(
             return await handler(request)
         except RequestError as e:
             return JSONResponse({"error": e.message}, status_code=e.status_code)
+        except ConflictError as e:
+            return JSONResponse({"error": str(e)}, status_code=409)
 
     return wrapper
 

@@ -9,10 +9,15 @@ from uuid import uuid4
 import pytest
 
 from app.config.settings import settings
-from app.exceptions import OperatorCommandError
+from app.exceptions import OperatorCommandError, QdrantStartupError
 from app.models.memory_models import MemoryCreate
 from app.repositories.qdrant import memory_reembedding as module
 from app.repositories.qdrant.store import SYSTEM
+from tests.relayout_support import (
+    link_ids,
+    stop_after_removing_the_old_links,
+    stop_before_copying_back,
+)
 
 
 def new_memory(title: str) -> MemoryCreate:
@@ -34,10 +39,6 @@ async def world(isolated_stack, tensorrt_embedder, monkeypatch):
 
 async def shards(stack, collection: str) -> int:
     return (await stack.pool.clients[0].get_collection(collection)).config.params.shard_number
-
-
-async def link_ids(stack) -> set:
-    return {point.id async for point in stack.store.iterate(SYSTEM, stack.schema.names.links, with_payload=False)}
 
 
 async def assert_whole_in_the_new_layout(stack, repo, tenant, memories, before: set) -> None:
@@ -164,3 +165,67 @@ async def test_the_staged_copy_is_kept_when_the_new_links_collection_ends_up_sho
         await repo.rebuild_links()
 
     assert {point.id async for point in stack.store.iterate(SYSTEM, staging, with_payload=False)} == before
+
+
+# ---- a stop half way must not let anything run on links that are not there ---------------------------------------------
+
+
+UNFINISHED = r"_links_relayout holds the links of .*_links: an `axmem re-embed` .* stopped .* Run `axmem re-embed` again"
+
+
+async def test_the_server_refuses_to_start_on_an_empty_links_collection_whose_links_wait_in_staging(world, monkeypatch):
+    stack, repo, _tenant, _memories = world
+    monkeypatch.setattr(settings, "QDRANT_SHARD_NUMBER", 2)
+    await stop_before_copying_back(stack, repo)  # the new links collection matches the settings, so no other check objects
+
+    with pytest.raises(QdrantStartupError, match=UNFINISHED):
+        await stack.schema.ensure()
+    with pytest.raises(QdrantStartupError, match=UNFINISHED):
+        await stack.schema.require_links_whole()
+
+    await stack.schema.ensure(replacing=True)  # the re-embedding that finishes the move opens the collections the same way
+
+
+async def test_the_server_does_not_make_an_empty_links_collection_while_the_links_wait_in_staging(world, monkeypatch):
+    stack, repo, _tenant, _memories = world
+    monkeypatch.setattr(settings, "QDRANT_SHARD_NUMBER", 2)
+    await stop_after_removing_the_old_links(stack, repo)
+
+    with pytest.raises(QdrantStartupError, match=UNFINISHED):
+        await stack.schema.ensure()
+
+    assert not await stack.schema.exists(stack.schema.names.links)  # a start-up that created it would hide the staged links
+
+
+async def test_nothing_is_refused_once_the_staged_links_are_back(world, monkeypatch):
+    stack, repo, tenant, memories = world
+    monkeypatch.setattr(settings, "QDRANT_SHARD_NUMBER", 2)
+    before = await stop_before_copying_back(stack, repo)
+
+    assert await repo.rebuild_links() is True
+
+    await stack.schema.require_links_whole()
+    await assert_whole_in_the_new_layout(stack, repo, tenant, memories, before)
+
+
+async def test_finishing_only_an_unfinished_rebuild_leaves_links_that_are_whole_alone(world, monkeypatch):
+    stack, repo, _tenant, _memories = world
+    before = await link_ids(stack)
+    monkeypatch.setattr(settings, "QDRANT_SHARD_NUMBER", 2)  # the layout differs, but no move was started
+
+    assert await repo.rebuild_links(unfinished_only=True) is False
+
+    assert await link_ids(stack) == before
+    assert await shards(stack, stack.schema.names.links) == 1
+    assert not await stack.schema.exists(stack.schema.names.links_staging)
+
+
+@pytest.mark.parametrize("stopped", [stop_after_removing_the_old_links, stop_before_copying_back])
+async def test_finishing_an_unfinished_rebuild_copies_the_staged_links_back(world, monkeypatch, stopped):
+    stack, repo, tenant, memories = world
+    monkeypatch.setattr(settings, "QDRANT_SHARD_NUMBER", 2)
+    before = await stopped(stack, repo)
+
+    assert await repo.rebuild_links(unfinished_only=True) is True
+
+    await assert_whole_in_the_new_layout(stack, repo, tenant, memories, before)

@@ -466,11 +466,13 @@ Fixes found by reviewing the feature cuts (no upstream counterpart: the code the
     restores at replication factor 2; a replica still not `Active` after 90 seconds, which Qdrant sometimes leaves in
     `ManualRecovery` after a restore into an emptied cluster, gets its file uploaded once more, which activates it), and
     makes the generation live after the last file. A backup of other nodes, or of the same
-    addresses in another order, is refused before anything is uploaded. The cluster tests restore for replication factors 3, 2 and 1.
+    addresses in another order, is refused before anything is uploaded. The cluster tests restore for replication factors 3, 2 and 1, each over
+    collections that exist and over an emptied Qdrant.
     `backup` deletes the snapshot from its node whatever happens to the download (a failed download left a snapshot as
     large as the node's shards behind each time; one that cannot be deleted is named in the log), and takes the snapshot
     under the same long timeout instead of the ordinary request timeout, which gave up on a large collection while the
-    node went on and kept the snapshot unnamed.
+    node went on and kept the snapshot unnamed (a snapshot that takes longer than that one hour is still not waited for and stays on its node
+    unnamed).
   - **`re-embed` and the layout settings:** a changed `QDRANT_SHARD_NUMBER`, `QDRANT_REPLICATION_FACTOR` or
     `QDRANT_WRITE_CONSISTENCY_FACTOR` stopped the server with a message that told the operator to "create a new
     collection", which `re-embed` could not do (it refused to open the old collection with the same message, and left the
@@ -483,7 +485,8 @@ Fixes found by reviewing the feature cuts (no upstream counterpart: the code the
   - **Another embedder of the same width:** a provider, model, precision (`EMBEDDING_TF32`) or gateway backend that
     produced vectors of the same width passed the start-up check, and queries were then embedded in another vector
     space than the stored vectors. Every new memory generation records the embedder that fills it (collection metadata
-    `axmem_embedder`, kept in snapshots), and the server refuses to start on a mismatch with a message that names both
+    `axmem_embedder`; a test now checks that it comes back with a snapshot restored into an emptied Qdrant, on one node and in
+    the cluster), and the server refuses to start on a mismatch with a message that names both
     and `axmem re-embed`. A collection that recorded nothing is taken to be the configured embedder's and records it,
     with a warning.
   - **Edits that were overtaken:** a write that landed and was then overtaken by two more writes before the writer read it
@@ -503,8 +506,37 @@ Fixes found by reviewing the feature cuts (no upstream counterpart: the code the
     only while the replicas it asks hold the same version of it, so a memory that other writers are rewriting at that
     moment can be missing from the answer: the reads that decide a write or answer for one memory (the memory an edit
     or an obsolete mark works on, the superseding memory, the targets of a link, `get_memory_by_id`) repeat it a few
-    times and, when the replicas never agree, fail with `ConflictError` (409, nothing changed) instead of reporting the
-    memory missing or skipping a link. The cluster test of overlapping edits found it.
+    times and, when the replicas never agree, fail with `ConflictError` instead of reporting the memory missing or
+    skipping a link. The cluster test of overlapping edits found it.
+  - **A conflict is a 409 on every REST route:** `GET /api/v1/memories/{id}`, `POST` and `GET .../links` and
+    `DELETE .../links/{target}` caught only `NotFoundError`, so a memory the replicas kept disagreeing about
+    (`ConflictError`, which `get_memory_by_id` and the targets of a link now raise instead of reporting the memory missing)
+    ended as a 500, and `GET .../links` failed as a whole for one such linked memory where it used to skip a missing one.
+    `handle_request_errors`, which wraps every memory route, now answers any `ConflictError` as `409` with the message, so
+    no route can leave one unanswered; the explicit handlers of `PUT` and `DELETE` are gone for it. A list of links with
+    a linked memory the replicas disagree about is a 409, never a shorter list.
+  - **The read-back of a write waits for the replicas as well:** `QdrantStore.landed` made one majority read and, when it
+    returned nothing, took the write for lost. A majority read returns nothing while the replicas hold different versions
+    of the point, which is how a point looks that another writer has just overtaken, so an edit that had landed was
+    replayed over the newer one (and an obsolete mark that had landed was refused as "already obsolete" or retried). It
+    now reads like every read that answers for one point (`get_agreed`): it waits for the replicas to agree, and when they
+    never do it raises `OutcomeUnknownError` (409; the write may have been applied: read the memory and repeat the change
+    if it is missing) instead of guessing. A point that no read finds is still a write that did not apply.
+  - **A `re-embed` that stopped while it moved the links left a server that started without them:** the links collection
+    is removed and made again in the new layout before the staged links are copied back, and a run that stopped in between
+    left a collection that was missing or empty and passed every start-up check, so `axmem serve` started with no links
+    and no warning (and a backup or an export would have left them out). `serve` and `import` (the schema check), `backup`
+    and `export` now refuse, naming `<prefix>_links_relayout` and `axmem re-embed`, while that staging collection exists,
+    and never create an empty links collection in its place. The next `re-embed` finishes the move first, before it embeds
+    anything (`rebuild_links(unfinished_only=True)`), so the links are back within moments whatever becomes of the rest of
+    that run; the report says the links were rebuilt. `restore` removes the staging collection, since the snapshot is the
+    source of truth for the links. [docs/embedding_migration.md](docs/embedding_migration.md) said that a half-finished run
+    left nothing to restore and now describes this state and the cost of the run that ends it.
+  - **Statements that said more than the code or the tests:** a snapshot "never stays on its node" (one that cannot be
+    deleted is only named in the log, and one that takes longer than 3600 s stays unnamed), the cluster restore tests
+    covering replication factor 3 over an emptied Qdrant (that layout is now tested) and the embedder record "kept in
+    snapshots" (no test restored one; the single-node end-to-end test and every cluster restore layout now read it back
+    before `ensure()` could record it again).
   - **Smaller:** moving the alias and creating it are repeated after a lost answer without failing on the alias that
     had moved (one request, checked first); a generation that cannot be discarded is retried, and a failed discard no
     longer replaces the error that ended the run (or the validation report). `qdrant-check` says when nodes could not be

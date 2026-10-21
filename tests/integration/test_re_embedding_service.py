@@ -17,6 +17,11 @@ from app.protocols.memory_protocol import ValidationResult
 from app.services import re_embedding_service as service_module
 from app.services.re_embedding_service import MAX_CATCH_UP_PASSES, ReEmbeddingService
 from tests.embedding_doubles import failing_on
+from tests.relayout_support import (
+    link_ids,
+    stop_after_removing_the_old_links,
+    stop_before_copying_back,
+)
 
 
 def _memory(index: int, project: str | None = None) -> MemoryCreate:
@@ -275,9 +280,9 @@ async def test_the_links_are_rebuilt_after_the_switch_and_the_result_says_so(iso
         calls.append("activate")
         await activate(generation)
 
-    async def tracked_rebuild():
-        calls.append("rebuild")
-        return await rebuild()
+    async def tracked_rebuild(*, unfinished_only=False):
+        calls.append("finish what a run left" if unfinished_only else "rebuild")
+        return await rebuild(unfinished_only=unfinished_only)
 
     monkeypatch.setattr(isolated_repo, "activate_generation", tracked_activate)
     monkeypatch.setattr(isolated_repo, "rebuild_links", tracked_rebuild)
@@ -286,8 +291,40 @@ async def test_the_links_are_rebuilt_after_the_switch_and_the_result_says_so(iso
     monkeypatch.setattr(settings, "QDRANT_SHARD_NUMBER", 2)
     moved = await ReEmbeddingService(isolated_repo, embedding_spy).re_embed_all()
 
-    assert calls == ["activate", "rebuild", "activate", "rebuild"]
+    finish = "finish what a run left"
+    assert calls == [finish, "activate", "rebuild", finish, "activate", "rebuild"]
     assert (unchanged.links_rebuilt, moved.links_rebuilt) == (False, True)
+
+
+async def test_a_move_of_the_links_that_an_earlier_run_left_half_way_is_finished_before_anything_is_embedded(
+    isolated_repo, isolated_stack, embedding_spy, monkeypatch,
+):
+    tenant, memories = await _seed(isolated_repo, 2)
+    await isolated_repo.create_links_batch(tenant, memories[0].id, [memories[1].id])
+    monkeypatch.setattr(settings, "QDRANT_SHARD_NUMBER", 2)
+    before = await stop_before_copying_back(isolated_stack, isolated_repo)
+    embedding_spy.generate_embeddings.side_effect = RuntimeError("provider down")
+
+    with pytest.raises(RuntimeError, match="provider down"):
+        await ReEmbeddingService(isolated_repo, embedding_spy).re_embed_all()
+
+    # The run failed at once, and the links are back all the same: the server can start again
+    assert await link_ids(isolated_stack) == before != set()
+    assert not await isolated_stack.schema.exists(isolated_stack.schema.names.links_staging)
+    await isolated_stack.schema.require_links_whole()
+
+
+async def test_a_run_that_finishes_the_move_of_the_links_of_an_earlier_one_says_the_links_were_rebuilt(
+    isolated_repo, isolated_stack, embedding_spy, monkeypatch,
+):
+    await _seed(isolated_repo, 1)
+    monkeypatch.setattr(settings, "QDRANT_SHARD_NUMBER", 2)
+    await stop_after_removing_the_old_links(isolated_stack, isolated_repo)
+
+    result = await ReEmbeddingService(isolated_repo, embedding_spy).re_embed_all()
+
+    assert result.links_rebuilt  # nothing was left to rebuild after the switch: the earlier run's move is what was finished
+    assert not await isolated_stack.schema.exists(isolated_stack.schema.names.links_staging)
 
 
 async def test_catching_up_with_edits_is_bounded_when_writers_never_stop(isolated_repo, embedding_spy, monkeypatch):

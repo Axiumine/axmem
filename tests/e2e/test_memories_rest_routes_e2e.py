@@ -11,11 +11,13 @@ from uuid import UUID
 
 import pytest
 from fastmcp.exceptions import ToolError
+from qdrant_client import models as qm
 from rest_helpers import MISSING_ID
 
 from app.config.settings import settings
 from app.exceptions import InvalidStateTransitionError
 from app.models.tenant_models import Tenant
+from app.repositories.qdrant import store as store_module
 
 API = "/api/v1/memories"
 
@@ -289,6 +291,122 @@ class TestWritesThatKeepLosingToConcurrentChanges:
         assert response.status_code == 409, response.text
         assert "error" in response.json()
         assert (await http_client.get(f"{API}/{memory_id}")).json()["is_obsolete"] is False
+
+
+class UndecidedReplicas:
+    """Replicas that disagree about some memories: a majority read that asks for one of them finds nothing.
+
+    Qdrant returns a point from a majority read only while the replicas asked hold the same version of it, so a memory
+    that is being rewritten is missing from the answer. One node cannot disagree with itself; this is what the cluster
+    answers (tests/cluster/test_cluster_concurrency.py meets it for real), and everything else is the real node.
+    """
+
+    def __init__(self, client, ids: set[str]):
+        self._client = client
+        self._ids = ids
+
+    async def scroll(self, collection_name, *args, **kwargs):
+        asked = kwargs.get("scroll_filter")
+        asks_for_an_undecided_memory = any(
+            isinstance(condition, qm.HasIdCondition) and self._ids & {str(point_id) for point_id in condition.has_id}
+            for condition in (asked.must if asked is not None and asked.must else [])
+        )
+        if kwargs.get("consistency") == qm.ReadConsistencyType.QUORUM and asks_for_an_undecided_memory:
+            return [], None
+        return await self._client.scroll(collection_name, *args, **kwargs)
+
+    def __getattr__(self, name):
+        return getattr(self._client, name)
+
+
+class TestReplicasThatNeverAgreeAboutAMemory:
+    """Every route that reads a memory answers 409 (try again), never 500 and never "not found", while its replicas disagree."""
+
+    @pytest.fixture
+    def undecided(self, http_client, qdrant_app, monkeypatch):
+        """The ids (as text) of the memories the replicas disagree about; empty to begin with, and the test fills it."""
+        monkeypatch.setattr(store_module, "AGREEMENT_WAIT_SECONDS", 0.0)
+        monkeypatch.setattr(settings, "MEMORY_NUM_AUTO_LINK", 0)  # the links are exactly the ones a test makes
+        ids: set[str] = set()
+        pool = qdrant_app.memory_service.memory_repo.store.pool
+        pool.clients = [UndecidedReplicas(client, ids) for client in pool.clients]
+        return ids
+
+    @staticmethod
+    def assert_try_again(response):
+        assert response.status_code == 409, response.text
+        assert "kept holding different versions" in response.json()["error"]
+        assert "try again" in response.json()["error"]
+
+    @pytest.mark.asyncio
+    async def test_get_is_409_and_the_memory_is_there_once_the_replicas_agree(self, http_client, undecided):
+        memory_id = await _create_memory(http_client)
+        undecided.add(memory_id)
+
+        self.assert_try_again(await http_client.get(f"{API}/{memory_id}"))
+
+        undecided.clear()
+        assert (await http_client.get(f"{API}/{memory_id}")).status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_linking_to_a_memory_the_replicas_disagree_about_is_409_and_links_nothing(self, http_client, undecided):
+        source = await _create_memory(http_client, title="Source of the link", content="A note about gardening in spring")
+        target = await _create_memory(http_client, title="Target of the link", content="Quarterly tax filing deadlines")
+        undecided.add(target)
+
+        self.assert_try_again(await http_client.post(f"{API}/{source}/links", json={"related_ids": [target]}))
+
+        undecided.clear()
+        assert target not in (await http_client.get(f"{API}/{source}")).json()["linked_memory_ids"]
+
+    @pytest.mark.asyncio
+    async def test_linking_from_a_memory_the_replicas_disagree_about_is_409(self, http_client, undecided):
+        source = await _create_memory(http_client, title="Source of the link", content="A note about gardening in spring")
+        target = await _create_memory(http_client, title="Target of the link", content="Quarterly tax filing deadlines")
+        undecided.add(source)
+
+        self.assert_try_again(await http_client.post(f"{API}/{source}/links", json={"related_ids": [target]}))
+
+    @pytest.mark.asyncio
+    async def test_listing_links_is_409_when_one_linked_memory_cannot_be_read_and_is_not_a_shorter_list(
+        self, http_client, undecided,
+    ):
+        source = await _create_memory(http_client, title="Source of the link", content="A note about gardening in spring")
+        target = await _create_memory(http_client, title="Target of the link", content="Quarterly tax filing deadlines")
+        linked = await http_client.post(f"{API}/{source}/links", json={"related_ids": [target]})
+        assert linked.status_code == 200, linked.text
+        undecided.add(target)
+
+        self.assert_try_again(await http_client.get(f"{API}/{source}/links"))
+
+        undecided.clear()
+        listed = await http_client.get(f"{API}/{source}/links")
+        assert [m["id"] for m in listed.json()["linked_memories"]] == [target]
+
+    @pytest.mark.asyncio
+    async def test_unlinking_is_409_and_keeps_the_link(self, http_client, undecided):
+        source = await _create_memory(http_client, title="Source of the link", content="A note about gardening in spring")
+        target = await _create_memory(http_client, title="Target of the link", content="Quarterly tax filing deadlines")
+        linked = await http_client.post(f"{API}/{source}/links", json={"related_ids": [target]})
+        assert linked.status_code == 200, linked.text
+        undecided.add(source)
+
+        self.assert_try_again(await http_client.delete(f"{API}/{source}/links/{target}"))
+
+        undecided.clear()
+        assert target in (await http_client.get(f"{API}/{source}")).json()["linked_memory_ids"]
+
+    @pytest.mark.asyncio
+    async def test_update_and_soft_delete_stay_409(self, http_client, undecided):
+        memory_id = await _create_memory(http_client)
+        undecided.add(memory_id)
+
+        self.assert_try_again(await http_client.put(f"{API}/{memory_id}", json={"title": "Never stored"}))
+        self.assert_try_again(await _obsolete(http_client, memory_id, {"reason": "never stored"}))
+
+        undecided.clear()
+        stored = (await http_client.get(f"{API}/{memory_id}")).json()
+        assert (stored["title"], stored["is_obsolete"]) == (MEMORY["title"], False)
 
 
 async def _default_user_id(qdrant_app):

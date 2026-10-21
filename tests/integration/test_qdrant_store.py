@@ -311,7 +311,7 @@ async def test_landed_says_the_outcome_is_unknown_when_the_history_has_been_over
     assert await store.landed(scope, collection, crowded.id, from_version=40 - CLAIM_HISTORY - 1, token="h15") is True
 
 
-async def test_landed_warns_about_a_point_that_cannot_be_read_back_and_counts_the_write_as_lost(store, collection, caplog):
+async def test_landed_warns_about_a_point_that_does_not_exist_and_counts_the_write_as_lost(store, collection, caplog):
     tenant = uuid4()
     missing = uuid4()
     caplog.set_level(logging.WARNING, logger=store_module.logger.name)
@@ -319,6 +319,7 @@ async def test_landed_warns_about_a_point_that_cannot_be_read_back_and_counts_th
     assert await store.landed(Scope.of(tenant), collection, missing, from_version=1, token="t") is False
 
     [warning] = [record for record in caplog.records if "could not be read back" in record.getMessage()]
+    assert "does not exist" in warning.getMessage()
     assert warning.point_id == str(missing)
 
 

@@ -140,8 +140,11 @@ class QdrantMemoryReembeddingMixin(QdrantMemoryBase):
         )
         return sum(1 for point in after if point.payload.get(TOKEN_KEY) == token)
 
-    async def rebuild_links(self) -> bool:
+    async def rebuild_links(self, *, unfinished_only: bool = False) -> bool:
         """Give the links collection the layout the settings describe; return whether it had to be rebuilt.
+
+        ``unfinished_only`` leaves a links collection that is whole alone and finishes only a rebuild that an earlier run
+        left half way (its staging collection exists), which is what a run does before it embeds anything.
 
         A collection keeps the shard count, replication factor and write consistency factor it was created with, so
         the links follow a new layout the way the memories do, by moving into a collection made with it. A collection
@@ -151,10 +154,10 @@ class QdrantMemoryReembeddingMixin(QdrantMemoryBase):
         collection is removed only after the staged copy holds every link, and the staged copy only after the
         new collection does. Nothing else may write links meanwhile (the re-embedding runs with the server stopped).
         """
-        links, staging = self.links, f"{self.links}_relayout"
+        links, staging = self.links, self.schema.names.links_staging
         staged = await self.schema.exists(staging)
         differs = await self.schema.links_layout_differs()
-        if not staged and not differs:
+        if not staged and (unfinished_only or not differs):
             return False
         if differs:
             # The links collection is still whole: stage a fresh copy in the new layout, then remove the old collection

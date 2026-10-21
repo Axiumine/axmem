@@ -95,7 +95,7 @@ Public endpoint (no credential) for clients to detect the mode before sending on
 | 401 | Unauthorized (missing, invalid or expired token) |
 | 403 | Forbidden (the instance ceiling or the token's scopes do not permit the tool the route stands for; on a server without a credential, a request with a foreign `Origin`) |
 | 404 | Not Found (including a path id that is not a UUID, such as `/api/v1/memories/abc`, and a memory that belongs to another tenant) |
-| 409 | Conflict (concurrent changes to the same memory kept an update or an obsolete mark from being applied; the request can be repeated) |
+| 409 | Conflict (concurrent changes to the same memory kept an update or an obsolete mark from being applied; or, on a cluster, the replicas kept holding different versions of a memory the request reads or links, or the outcome of a write could not be told; the request can be repeated, and after an unknown outcome the memory should be read first) |
 | 413 | Content Too Large (a request body above `REQUEST_BODY_MAX_BYTES`) |
 | 415 | Unsupported Media Type (a body that is not declared as `application/json`) |
 | 421 | Misdirected Request (on a server without a credential, a `Host` that is not `localhost` or a loopback address) |
@@ -201,6 +201,8 @@ Get a single memory by ID.
 
 **Response:** Memory object (see above)
 
+**Errors:** `404` when the memory does not exist or belongs to another tenant. `409` when the replicas of a cluster kept holding different versions of the memory (it is being rewritten at that moment); repeat the request.
+
 ### POST /api/v1/memories
 
 Create a new memory.
@@ -284,7 +286,7 @@ A field that is omitted or `null` is left unchanged. `project` replaces the memo
 **Response:** Updated memory object
 
 **Errors:** `404` with `Memory not found` when the memory does not exist or belongs to another tenant. `409` when concurrent changes to
-the same memory kept the update from being applied after a few attempts; repeat the request.
+the same memory kept the update from being applied after a few attempts, or when the outcome of the write could not be told (the message says so, and the update may have been applied: read the memory first); repeat the request.
 
 ### DELETE /api/v1/memories/{id}
 
@@ -362,6 +364,8 @@ anything else returns `400`.
 }
 ```
 
+`409` when the replicas of a cluster kept holding different versions of the memory or of one of the targets; nothing is linked, repeat the request.
+
 ### GET /api/v1/memories/{id}/links
 
 Get memories linked to this memory.
@@ -378,6 +382,8 @@ Get memories linked to this memory.
 }
 ```
 
+`409` when the replicas of a cluster kept holding different versions of the memory or of one of its linked memories (the list is never shortened for it); repeat the request.
+
 ### DELETE /api/v1/memories/{id}/links/{target_id}
 
 Remove a link between two memories (bidirectional).
@@ -388,6 +394,8 @@ Remove a link between two memories (bidirectional).
   "success": true
 }
 ```
+
+`409` when the replicas of a cluster kept holding different versions of the memory; the link stays, repeat the request.
 
 ---
 

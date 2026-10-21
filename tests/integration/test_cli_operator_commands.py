@@ -15,17 +15,20 @@ from pydantic import SecretStr
 import app.config.logging_config as logging_config
 from app import bootstrap
 from app.config.settings import settings
+from app.exceptions import QdrantStartupError
 from app.models.memory_models import MemoryCreate
 from app.protocols.maintenance_protocol import ConsistencyReport, NodeReport
 from app.routes.cli import operator_commands
 from app.routes.cli.parser import build_parser, dispatch
 from tests.backup_restore_cases import seed_memories
 from tests.qdrant_support import drop_prefix, unique_prefix
+from tests.relayout_support import stop_after_removing_the_old_links
 
 
 @pytest.fixture(autouse=True)
-def logging_calls(monkeypatch):
+def logging_calls(monkeypatch, tmp_path_factory):
     """Record what the commands ask of the logging set-up, so a test run installs no handlers and no exit hook."""
+    tmp_path_factory.getbasetemp()  # pytest registers the clean-up of its temp directory at exit, the first time it is asked
     configured, registered = [], []
     monkeypatch.setattr(logging_config, "configure_logging", lambda **kwargs: configured.append(kwargs))
     monkeypatch.setattr(atexit, "register", registered.append)
@@ -66,6 +69,20 @@ async def test_backup_then_restore_with_confirmation(seeded, capsys):
 
     assert f"Restored: {saved}" in capsys.readouterr().out
     assert (await repo.get_memory_by_id(user_id, originals[2].id)).is_obsolete
+
+
+async def test_restore_removes_the_staging_collection_of_a_re_embed_that_did_not_finish(seeded, isolated_stack, capsys):
+    names = isolated_stack.schema.names
+    assert await operator_commands.backup() == 0
+    saved = Path(capsys.readouterr().out.splitlines()[0].removeprefix("Backup saved: "))
+    await isolated_stack.schema.create_links_collection(names.links_staging)  # links waiting for a move that never finished
+    with pytest.raises(QdrantStartupError, match="_links_relayout holds the links"):
+        await isolated_stack.schema.ensure()
+
+    assert await operator_commands.restore(saved, confirmed=True) == 0
+
+    assert not await isolated_stack.schema.exists(names.links_staging)  # the restored links are the ones to serve
+    await isolated_stack.schema.ensure()
 
 
 async def test_restore_without_confirmation_changes_nothing_and_exits_2(seeded, tmp_path, capsys):
@@ -308,3 +325,47 @@ async def test_a_failure_that_is_not_the_operators_to_fix_keeps_its_traceback_an
             await operator_commands._with_service(bug)
 
     assert closed == [True]
+
+
+# ---- links that wait for a re-embed to finish moving them -------------------------------------------------------------
+
+
+@pytest.fixture
+async def links_waiting_in_staging(seeded, isolated_stack, monkeypatch):
+    """What a re-embed leaves that stopped after it removed the old links collection: the links wait in staging."""
+    repo, *_ = seeded
+    monkeypatch.setattr(settings, "QDRANT_SHARD_NUMBER", 2)
+    await stop_after_removing_the_old_links(isolated_stack, repo)
+    return isolated_stack.schema.names
+
+
+@pytest.mark.parametrize("command", ["backup", "export"])
+async def test_a_command_that_copies_the_links_away_refuses_while_they_wait_in_staging(
+    links_waiting_in_staging, command, tmp_path, capsys,
+):
+    target = tmp_path / "export.jsonl"
+
+    exit_code = await (operator_commands.backup() if command == "backup" else operator_commands.export_memories(target))
+
+    assert exit_code == 1
+    captured = capsys.readouterr()
+    assert "Error: " in captured.err and "_links_relayout holds the links" in captured.err
+    assert "Run `axmem re-embed` again" in captured.err
+    assert not target.exists()  # no set that leaves the links out
+    assert not (tmp_path / "backups").exists()
+
+
+async def test_import_refuses_while_the_links_wait_in_staging_and_does_not_make_an_empty_links_collection(
+    seeded, isolated_stack, tmp_path, capsys, monkeypatch,
+):
+    repo, *_ = seeded
+    path = tmp_path / "export.jsonl"
+    assert await operator_commands.export_memories(path) == 0
+    capsys.readouterr()
+    monkeypatch.setattr(settings, "QDRANT_SHARD_NUMBER", 2)
+    await stop_after_removing_the_old_links(isolated_stack, repo)
+
+    assert await operator_commands.import_memories(path) == 1
+
+    assert "_links_relayout holds the links" in capsys.readouterr().err
+    assert not await isolated_stack.schema.exists(isolated_stack.schema.names.links)

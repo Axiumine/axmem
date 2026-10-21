@@ -19,11 +19,13 @@ def _start_logging() -> None:
     atexit.register(shutdown_logging)
 
 
-async def _with_service(run: Callable, *, create_collections: bool = False) -> int:
+async def _with_service(run: Callable, *, create_collections: bool = False, links_whole: bool = False) -> int:
     """Open the Qdrant stack, run ``run(service)`` and close the stack; a failure an operator can fix is exit code 1.
 
     ``create_collections`` makes the collections exist, with the layout the settings ask for, before ``run``
     (a command that writes into a Qdrant that may be new, as an import after the loss of a node does).
+    ``links_whole`` refuses a command that copies the links away (backup, export) while the links of an unfinished
+    ``re-embed`` still wait in their staging collection, since the set would leave them out.
 
     The failures an operator really meets (Qdrant down or refusing the key, a model that cannot start, a file
     that cannot be read or written, a full disk, a JSON file that is damaged) end as ``Error: <cause>`` and
@@ -42,6 +44,8 @@ async def _with_service(run: Callable, *, create_collections: bool = False) -> i
             await stack.schema.ensure()  # also checks the server version
         else:
             await stack.pool.require_supported_server()
+        if links_whole:
+            await stack.schema.require_links_whole()
         return await run(create_backup_service(stack))
     except Exception as exc:
         cause = operator_failure(exc)
@@ -65,7 +69,7 @@ async def backup(*, force: bool = False) -> int:
         )
         return 0
 
-    return await _with_service(run)
+    return await _with_service(run, links_whole=True)
 
 
 async def restore(path: Path, *, confirmed: bool) -> int:
@@ -92,7 +96,7 @@ async def export_memories(path: Path) -> int:
         print(f"Exported {summary.memories} memories and {summary.links} links of {summary.tenants} tenants to {path}")
         return 0
 
-    return await _with_service(run)
+    return await _with_service(run, links_whole=True)
 
 
 async def import_memories(path: Path) -> int:

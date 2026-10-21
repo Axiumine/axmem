@@ -66,10 +66,15 @@ class RecordingSchema:
     def __init__(self, pool: RecordingPool) -> None:
         self.pool = pool
         self.made_live: list[str] = []
+        self.discarded: list[str] = []
 
     async def make_live(self, generation: str) -> None:
         assert len(self.pool.uploads) >= 2 * len(self.pool.urls), "the collection goes live only when every file is in"
         self.made_live.append(generation)
+
+    async def discard(self, collection: str) -> None:
+        assert self.made_live, "the staging collection of an unfinished re-embed goes when the restored data is live"
+        self.discarded.append(collection)
 
 
 @pytest.fixture(autouse=True)
@@ -167,6 +172,8 @@ async def test_every_nodes_files_go_back_to_that_node_and_the_collection_goes_li
         for collection in (MEMORIES, NAMES.links)
     ]
     assert schema.made_live == [MEMORIES]
+    # The snapshot is the source of truth: links an unfinished re-embed left in staging are not the restored ones
+    assert schema.discarded == [NAMES.links_staging]
 
 
 async def test_a_refusal_after_some_files_were_restored_says_how_many_and_that_the_restore_can_be_repeated(tmp_path):

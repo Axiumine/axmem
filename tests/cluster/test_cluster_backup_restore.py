@@ -15,6 +15,7 @@ from app.config.settings import settings
 from app.exceptions import NotFoundError
 from app.models.memory_models import MemoryUpdate
 from app.repositories.qdrant.memory_repository import QdrantStack
+from app.repositories.qdrant.schema import EMBEDDER_KEY, embedder_identity
 from tests.cluster.cluster_support import (
     a_memory,
     wait_for_active_replicas,
@@ -30,7 +31,7 @@ SHARDS = 3
 # node restores meanwhile; on a loaded host that takes minutes
 SETTLE_SECONDS = 900
 # replication factor, write consistency factor, whether the collections are gone (an empty Qdrant) when the set is restored
-LAYOUTS = [(3, 2, False), (2, 1, False), (1, 1, False), (2, 1, True), (1, 1, True)]
+LAYOUTS = [(3, 2, False), (2, 1, False), (1, 1, False), (3, 2, True), (2, 1, True), (1, 1, True)]
 
 
 def use_layout(monkeypatch, cluster, tmp_path, replication: int, write_consistency: int) -> str:
@@ -87,6 +88,9 @@ async def assert_as_backed_up(cluster, stack, repo, tenant, memories, wanted, ex
     assert report.consistent, report
     assert len({node.points for node in report.nodes}) == 1
     assert report.nodes[0].points == len(memories) + 3  # twelve memories and three links
+    # The embedder the generation records came back with the snapshot, which ensure() below would otherwise record again
+    metadata = (await stack.pool.clients[0].get_collection(live)).config.metadata or {}
+    assert metadata.get(EMBEDDER_KEY) == embedder_identity(settings.EMBEDDING_DIMENSIONS)
     await stack.schema.ensure()  # the restored collections are the ones the settings describe
 
 

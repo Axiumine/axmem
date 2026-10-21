@@ -12,7 +12,6 @@ from starlette.responses import JSONResponse
 
 from app.exceptions import (
     AssociationNotFoundError,
-    ConflictError,
     InvalidStateTransitionError,
     NotFoundError,
 )
@@ -206,8 +205,6 @@ def register(mcp: AxmemMCP):
             )
         except NotFoundError:
             return JSONResponse({"error": "Memory not found"}, status_code=404)
-        except ConflictError as e:
-            return JSONResponse({"error": str(e)}, status_code=409)
 
         if not memory:
             return JSONResponse({"error": "Memory not found"}, status_code=404)
@@ -252,8 +249,6 @@ def register(mcp: AxmemMCP):
             return JSONResponse({"error": "Memory not found"}, status_code=404)
         except InvalidStateTransitionError as e:
             return JSONResponse({"error": str(e)}, status_code=422)
-        except ConflictError as e:
-            return JSONResponse({"error": str(e)}, status_code=409)
 
         if not success:
             return JSONResponse({"error": "Memory not found"}, status_code=404)

@@ -136,8 +136,8 @@ class QdrantBackupAdapter:
         is only some of them, so restoring one node's snapshot alone would bring back part of the data. Each file is
         uploaded to the node it was taken from (node N of the backup is the N-th entry of ``QDRANT_URL``), and the
         snapshot wins over whatever the collection holds now (``priority=snapshot``). The restored memory generation
-        becomes the live one once every file is in. In a cluster the replicas then settle; check their states
-        afterwards (docs/configuration.md).
+        becomes the live one once every file is in, and the staging collection of an unfinished ``re-embed`` is removed.
+        In a cluster the replicas then settle; check their states afterwards (docs/configuration.md).
 
         The manifest is read as untrusted input and checked before anything is uploaded: every file must be
         a snapshot of this set that the checksum confirms, every collection one of this deployment's, and the nodes
@@ -166,6 +166,9 @@ class QdrantBackupAdapter:
                     ) from exc
                 raise
         await self.schema.make_live(next(entry["collection"] for entry in files if entry["role"] == "memories"))
+        # The snapshot is the source of truth: the links that an unfinished `re-embed` left in its staging collection
+        # are not the restored ones, and copying them back later would add links the restored data never had
+        await self.schema.discard(self.schema.names.links_staging)
         logger.info("Qdrant backup restored", extra={"backup_path": str(backup_path), "nodes": len(self.pool.urls)})
 
     def _node_entries(self, manifest_path: Path) -> list[dict[str, Any]]:

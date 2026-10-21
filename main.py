@@ -254,7 +254,8 @@ def _what_became_of_the_new_collection(service) -> str:
     return (
         f"The switch to {service.switch_started} had begun, so the live collection may now be that one and the edits "
         "made while it was copied may be missing from it. The previous collection is untouched; run the command "
-        "again to copy what is missing."
+        "again to copy what is missing. If the links were being moved into another layout, the server will not start "
+        "until the command has been run again, which finishes the links first."
     )
 
 

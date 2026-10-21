@@ -309,9 +309,10 @@ class MemoryRepository(Protocol):
         """Delete a generation that was never activated."""
         ...
 
-    async def rebuild_links(self) -> bool:
+    async def rebuild_links(self, *, unfinished_only: bool = False) -> bool:
         """Give the stored links the layout the settings describe (shards, replicas, write consistency); return
-        whether they had to be rebuilt. A run that stopped half way is finished by running it again."""
+        whether they had to be rebuilt. A run that stopped half way is finished by running it again;
+        ``unfinished_only`` does nothing else than finish such a run."""
         ...
 
     async def validate_generation(self, generation: str) -> ValidationResult:

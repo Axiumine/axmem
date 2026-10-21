@@ -173,9 +173,20 @@ cannot be renamed, so the links are copied to a staging collection (`<prefix>_li
 old links collection is removed, a new one is created in its place and filled from the staging copy, and the staging
 copy is removed. The old collection is removed only after the staged copy holds every link, and the staged copy only
 after the new collection does; if either copy is short the run stops with `Rebuilding the links stopped: ...` and
-removes nothing. A run that was stopped half way (power loss, `kill -9`) is finished by running `axmem re-embed` again.
-Nothing else may write links meanwhile, which is another reason to stop the server first. The previous memory
-collection keeps the old layout, and the previous links are not kept.
+removes nothing. Nothing else may write links meanwhile, which is another reason to stop the server first. The previous
+memory collection keeps the old layout, and the previous links are not kept.
+
+**A run stopped half way** (power loss, `kill -9`, a node that went away) can leave the links only in the staging
+collection: the old links collection is gone and the new one is missing or does not hold them all yet. While
+`<prefix>_links_relayout` exists, `axmem serve`, `axmem import`, `axmem backup` and `axmem export` refuse with
+`Qdrant collection <prefix>_links_relayout holds the links of <prefix>_links: an axmem re-embed ... stopped ... Run
+axmem re-embed again`, because a server that started anyway would show no links and a backup or an export would leave
+them out. Run `axmem re-embed` again. The first thing that run does, before it embeds anything, is to copy the staged
+links back and remove the staging collection, so the links are whole again within moments, whatever becomes of the rest
+of the run (it then goes on as any `re-embed` does: it embeds every memory again into another new generation and
+switches to it, which takes as long as the first run; stop it with Ctrl+C after the links are back if all you wanted was
+the links, and the new generation is discarded). `axmem restore` removes the staging collection, because the snapshot is
+the source of truth for the links.
 
 ---
 
@@ -204,8 +215,10 @@ An unknown project scope, or one that holds none of your memories, is rejected w
 
 ## Failure Handling
 
-The tool is designed to be safe. The live collection is never modified by a run that does not finish, so there is
-nothing to restore.
+The tool is designed to be safe. The live memory collection is never modified by a run that does not finish, so there
+is nothing to restore. The one thing a run changes after it has switched is the links collection, when its layout
+differs from the settings: if that run is stopped half way, the links wait in `<prefix>_links_relayout` until
+`axmem re-embed` is run again (see "Step 3" above).
 
 ### Automatic Discard
 

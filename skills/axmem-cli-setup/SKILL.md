@@ -97,6 +97,8 @@ same operations.
 - After changing embedding provider, model, precision or the `QDRANT_SHARD_NUMBER`,
   `QDRANT_REPLICATION_FACTOR` or `QDRANT_WRITE_CONSISTENCY_FACTOR` layout (the server refuses to start on
   either mismatch): stop the server, `axmem re-embed --dry-run` to preview, then `axmem re-embed` (batch size
-  tunable via `--batch-size`); it also rebuilds the links collection in the new layout.
+  tunable via `--batch-size`); it also rebuilds the links collection in the new layout. If a run was stopped while it moved
+  the links, `serve`, `import`, `backup` and `export` refuse and name `<prefix>_links_relayout`: run `axmem re-embed` again, which copies
+  the links back before it embeds anything.
 
 Done when: `/health` answers (HTTP) or an MCP client lists the three meta-tools (stdio).

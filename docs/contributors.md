@@ -209,11 +209,12 @@ suite. Four modules protect the storage design and are worth reading first:
   write whose answer is lost takes effect once, a write that was overtaken is still counted as applied (and one overtaken beyond
   the claim history reports an unknown outcome), and an edit that straddles a re-embedding switch is made again on the new
   generation. The detector is tested against a check-then-write updater that must be reported as losing changes.
-- `test_qdrant_read_consistency.py`: the reads that decide a write or copy data away ask a majority of the replicas, and replicas that disagree about a memory are awaited, then answered with a conflict (never "missing").
+- `test_qdrant_read_consistency.py`: the reads that decide a write or copy data away ask a majority of the replicas, and replicas that disagree about a memory are awaited, then answered with a conflict (never "missing"); the same goes for the read-back of a write, which is neither replayed nor reported lost because the replicas disagree about the point it wrote.
 - `test_qdrant_store.py`: the scopes, create-if-absent, the guarded writes and the read-back of claim tokens.
 - `test_qdrant_schema.py` and `test_qdrant_pool.py`: the collection layout and embedder checks that stop a start, the generations
   and the live alias, the failover between nodes and the retry of ambiguous failures. `test_qdrant_links_rebuild.py` stops the move
-  of the links collection to a new layout at each of its steps and finishes it.
+  of the links collection to a new layout at each of its steps (`tests/relayout_support.py` leaves the node at the two that matter), finishes it, and
+  checks that nothing starts or copies the links away while they wait in the staging collection.
 
 ### End-to-End Tests
 

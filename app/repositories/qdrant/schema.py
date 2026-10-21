@@ -86,6 +86,11 @@ class CollectionNames:
     def links(self) -> str:
         return f"{self.prefix}_links"
 
+    @property
+    def links_staging(self) -> str:
+        """Where the links wait while ``re-embed`` moves them into a collection of another layout."""
+        return f"{self.links}_relayout"
+
     def new_generation(self) -> str:
         stamp = datetime.now(UTC).strftime("%Y%m%dt%H%M%S")
         return f"{self.live}_{stamp}{uuid.uuid4().hex[:4]}"
@@ -148,6 +153,8 @@ class QdrantSchema:
 
     async def _ensure_links(self, client: AsyncQdrantClient, replacing: bool) -> None:
         name = self.names.links
+        if not replacing:
+            await self._require_no_unfinished_relayout(client)
         if not await client.collection_exists(name):
             await self._create_links(client, name)
         await self._verify(client, name, vector_size=len(LINK_VECTOR), indexes=LINK_INDEXES, layout=not replacing)
@@ -185,6 +192,25 @@ class QdrantSchema:
         )
         if not replacing:
             await self._check_embedder(client, generation)
+
+    async def _require_no_unfinished_relayout(self, client: AsyncQdrantClient) -> None:
+        """Refuse to go on while the links wait in the staging collection of a ``re-embed`` that did not finish.
+
+        The links collection is removed and made again in the new layout before the staged links are copied back. A run
+        that stopped in between leaves a links collection that is missing or empty and passes every other check, so a
+        server would start without the links, and a backup or an export would leave them out, without a word.
+        """
+        staging = self.names.links_staging
+        if await client.collection_exists(staging):
+            raise QdrantStartupError(
+                f"Qdrant collection {staging} holds the links of {self.names.links}: an `axmem re-embed` that moved the "
+                f"links into another layout stopped before it copied them back, so {self.names.links} may be missing or "
+                "hold only some of them. Run `axmem re-embed` again; it finishes the links first",
+            )
+
+    async def require_links_whole(self) -> None:
+        """Raise ``QdrantStartupError`` while the links wait in the staging collection of an unfinished ``re-embed``."""
+        await self._read(self._require_no_unfinished_relayout)
 
     async def _check_embedder(self, client: AsyncQdrantClient, generation: str) -> None:
         """Refuse a memory collection whose vectors another embedder made; record the embedder of one that says nothing.

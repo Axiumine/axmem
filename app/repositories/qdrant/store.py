@@ -469,17 +469,31 @@ class QdrantStore:
         """Whether the conditional write guarded on ``from_version`` that carried ``token`` is the one that applied.
 
         The response of a conditional write does not say, so this reads the point back from a majority of the replicas
-        and looks for the token in the claim history, which later writes extend and do not overwrite.
+        and looks for the token in the claim history, which later writes extend and do not overwrite. A majority read
+        omits a point while the replicas hold different versions of it, which is what a point that other writers are
+        rewriting looks like, so the read-back waits for the replicas to agree like any read that answers for one point
+        (``get_agreed``); an empty answer is not taken for "the write was lost".
+
+        Returns:
+            False when the point does not exist for ``scope`` in ``collection`` (a write to it cannot have applied)
 
         Raises:
-            OutcomeUnknownError: If more than ``CLAIM_HISTORY`` writes landed since, so the token is gone
+            OutcomeUnknownError: If more than ``CLAIM_HISTORY`` writes landed since, so the token is gone, or the
+                replicas kept holding different versions of the point, so it cannot be read back
         """
-        points = await self.get(
-            scope, collection, [point_id], with_payload=[VERSION_KEY, TOKEN_KEY, HISTORY_KEY], quorum=True,
-        )
+        try:
+            points = await self.get_agreed(
+                scope, collection, [point_id], with_payload=[VERSION_KEY, TOKEN_KEY, HISTORY_KEY],
+            )
+        except ConflictError as exc:
+            raise OutcomeUnknownError(
+                f"The outcome of a write to {point_id} cannot be told: the replicas of {collection} kept holding "
+                "different versions of it when it was read back. It may or may not have been applied; read it again "
+                "and repeat the change if it is missing",
+            ) from exc
         if not points:
             logger.warning(
-                "A point could not be read back after a write; it is suspect until the nodes agree",
+                "A point could not be read back after a write because it does not exist; the write was not applied",
                 extra={"point_id": str(point_id), "collection": collection},
             )
             return False

@@ -35,7 +35,8 @@ class ReEmbedResult:
     generation: str | None = None
     # The generation that served before; it keeps the old vectors until it is deleted
     previous_generation: str | None = None
-    # Whether the stored links had to be rebuilt in the layout the settings describe
+    # Whether the stored links had to be rebuilt in the layout the settings describe (or a rebuild an earlier run
+    # left half way had to be finished)
     links_rebuilt: bool = False
 
 
@@ -93,6 +94,9 @@ class ReEmbeddingService:
             ReEmbedResult with counts, the validation outcome and the names of the generations
         """
         self.switch_started = None
+        # A rebuild of the links that an earlier run left half way comes first: it embeds nothing, and until it is done
+        # the server (and a backup or an export) refuses to run, whatever becomes of this run
+        links_resumed = await self.memory_repository.rebuild_links(unfinished_only=True)
         total = await self.memory_repository.count_all_memories()
         source = await self.memory_repository.live_generation()
         target = await self.memory_repository.create_generation()
@@ -121,7 +125,7 @@ class ReEmbeddingService:
         for _ in range(MAX_CATCH_UP_PASSES):
             if await self._copy_all(source, target) == 0:
                 break
-        links_rebuilt = await self.memory_repository.rebuild_links()
+        links_rebuilt = await self.memory_repository.rebuild_links() or links_resumed
         logger.info("Validation passed and generation activated", extra={"generation": target})
         return ReEmbedResult(
             total_processed=processed,

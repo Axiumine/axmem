@@ -70,7 +70,7 @@ def rest_route(mcp: AxmemMCP, method: str, path: str) -> Callable[[TenantHandler
 
     In this order: the credential (401), the tool the route stands for (403), the content type of a request
     that carries a body (415). The handler runs only for an authorised tenant, and a ``RequestError`` it
-    raises is answered as JSON.
+    raises is answered as JSON, a ``ConflictError`` as a 409 (see ``handle_request_errors``).
 
     Raises:
         KeyError: When ``ROUTE_TOOLS`` has no entry for the route, so a route cannot skip the scope check

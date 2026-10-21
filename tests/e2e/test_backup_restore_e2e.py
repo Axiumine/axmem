@@ -7,6 +7,7 @@ import pytest
 from app.bootstrap import create_backup_service
 from app.config.settings import settings
 from app.models.memory_models import MemoryCreate
+from app.repositories.qdrant.schema import EMBEDDER_KEY, embedder_identity
 from tests.backup_restore_cases import (
     assert_originals_present,
     run_reembed_cli,
@@ -21,6 +22,11 @@ async def seeded(isolated_stack, tensorrt_embedder, tmp_path, monkeypatch):
     repo = isolated_stack.memory_repository(tensorrt_embedder)
     user_id, originals = await seed_memories(repo)
     return isolated_stack, repo, user_id, originals
+
+
+async def _recorded_embedder(stack, collection: str):
+    metadata = (await stack.pool.clients[0].get_collection(collection)).config.metadata or {}
+    return metadata.get(EMBEDDER_KEY)
 
 
 class TestSnapshotBackup:
@@ -42,6 +48,22 @@ class TestSnapshotBackup:
         await backup.restore_backup(result.directory)
 
         await assert_originals_present(repo, user_id, originals)
+
+    async def test_the_embedder_a_generation_records_comes_back_with_a_snapshot_into_an_emptied_qdrant(self, seeded):
+        stack, repo, *_ = seeded
+        live = await repo.live_generation()
+        wanted = embedder_identity(settings.EMBEDDING_DIMENSIONS)
+        assert await _recorded_embedder(stack, live) == wanted
+        backup = create_backup_service(stack)
+        result = await backup.create_backup()
+        for collection in (live, stack.schema.names.links):  # a Qdrant that lost its collections
+            await stack.schema.discard(collection)
+        assert not await stack.schema.live_exists()
+
+        await backup.restore_backup(result.directory)
+
+        # Read before any ensure(): that records the configured embedder again when the record did not come back
+        assert await _recorded_embedder(stack, live) == wanted
 
     async def test_backup_files_are_private_to_the_owner(self, seeded):
         stack, _repo, _user_id, _originals = seeded
