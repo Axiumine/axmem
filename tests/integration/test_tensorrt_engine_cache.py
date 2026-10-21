@@ -301,24 +301,47 @@ def test_a_plan_built_just_now_that_tensorrt_rejects_is_not_cached(model, tmp_pa
     assert not list((tmp_path / "engines" / GROUP).glob("*/" + PLAN_NAME))  # nothing was stored that cannot load
 
 
-def test_a_plan_that_cannot_be_read_is_not_judged_damaged(model, cache_copy, monkeypatch):
+@pytest.mark.parametrize(("read", "name"), [("read_bytes", PLAN_NAME), ("read_text", FINGERPRINT_NAME)])
+def test_a_file_that_cannot_be_read_is_not_judged_damaged(model, cache_copy, monkeypatch, read, name):
     """A read that fails (permission, I/O error) says nothing about the file: the entry stays and the cache is the cause."""
     entry = cache_copy / GROUP / current_key(model)
-    intact = (entry / PLAN_NAME).read_bytes()
-    original = tensorrt_cache.Path.read_bytes
+    intact = {file: (entry / file).read_bytes() for file in (PLAN_NAME, FINGERPRINT_NAME)}
+    original = getattr(tensorrt_cache.Path, read)
 
     def unreadable(path):
-        if path.name == PLAN_NAME:
+        if path.name == name:
             raise PermissionError(13, "Permission denied")
         return original(path)
 
     with monkeypatch.context() as patch:
-        patch.setattr(tensorrt_cache.Path, "read_bytes", unreadable)
+        patch.setattr(tensorrt_cache.Path, read, unreadable)
         with pytest.raises(TensorRTStartupError, match="cannot be used.*Permission denied") as raised:
             open_cached(model, cache_copy)
 
     assert raised.value.cause == "engine-unusable"
-    assert (entry / PLAN_NAME).read_bytes() == intact
+    assert {file: (entry / file).read_bytes() for file in intact} == intact  # nothing was removed or rewritten
+
+
+def test_a_fingerprint_that_cannot_be_read_in_another_entry_only_goes_undescribed(model, cache_copy, monkeypatch, caplog):
+    """The rebuild is worded from the newest entry already there; one the process may not read does not stop it."""
+    old_key = current_key(model)
+    original = tensorrt_cache.Path.read_text
+
+    def unreadable(path, *args, **kwargs):
+        if path.name == FINGERPRINT_NAME:
+            raise PermissionError(13, "Permission denied")
+        return original(path, *args, **kwargs)
+
+    caplog.set_level(logging.INFO)
+    with monkeypatch.context() as patch:
+        patch.setattr(tensorrt_cache.Path, "read_text", unreadable)
+        opened = open_cached(model, cache_copy, tf32=True)
+    opened.engine.close()
+
+    assert not opened.cache_hit
+    assert opened.reason == "no cached engine"  # the entry that could be compared was unreadable
+    assert not (cache_copy / GROUP / old_key).exists()  # and was pruned like any other entry of an older fingerprint
+    assert (opened.directory / PLAN_NAME).stat().st_size > 1_000_000
 
 
 def test_an_engine_is_released_when_the_cache_cannot_store_it(model, cold_build, tmp_path, monkeypatch):

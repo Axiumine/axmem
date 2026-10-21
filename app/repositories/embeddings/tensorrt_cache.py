@@ -82,9 +82,22 @@ def _locked(path: Path) -> Iterator[None]:
 
 
 def _stored_fingerprint(directory: Path) -> object:
+    """The fingerprint stored in ``directory``, or None when the file is missing or is not JSON.
+
+    A file that is there but cannot be read (permission, I/O error) says nothing about the engine: its ``OSError`` is
+    not caught, so the caller never takes the entry for a damaged one.
+    """
     try:
         return json.loads((directory / FINGERPRINT_NAME).read_text())
-    except (OSError, ValueError):
+    except (FileNotFoundError, ValueError):
+        return None
+
+
+def _described_fingerprint(directory: Path) -> object:
+    """The fingerprint of an entry that is about to be pruned, read only to word the log line: one that cannot be read is skipped."""
+    try:
+        return _stored_fingerprint(directory)
+    except OSError:
         return None
 
 
@@ -99,7 +112,7 @@ def _is_engine_dir(path: Path) -> bool:
 def _describe_change(group: Path, current: dict[str, object]) -> str:
     """Why a rebuild is needed, judged from the newest engine already in the group."""
     entries = sorted((p for p in group.iterdir() if _is_engine_dir(p)), key=lambda p: p.stat().st_mtime)
-    stored = [s for s in map(_stored_fingerprint, entries) if isinstance(s, dict)]
+    stored = [s for s in map(_described_fingerprint, entries) if isinstance(s, dict)]
     if not stored:
         return "no cached engine"
     previous = stored[-1]

@@ -128,8 +128,9 @@ its fingerprint file is damaged: it is discarded with a warning and rebuilt. A p
 for a damaged file, because a GPU too full to hold the engine (or a driver that does not suit it) refuses an intact plan
 alike. The start then builds a plan from the same model, and only when that one loads here is the refused entry replaced.
 When TensorRT refuses the new plan too, the cached entry is kept, nothing new is stored, and the start fails with
-`engine-unusable` and the TensorRT message: free GPU memory or fix the driver, then start again. A file that cannot be
-read (permissions, I/O error) is not judged: the start fails with `engine-unusable` naming the cache directory. Concurrent starts of several server processes serialize on
+`engine-unusable` and the TensorRT message: free GPU memory or fix the driver, then start again. A plan or fingerprint
+file that cannot be read (permissions, I/O error) is not judged: the start fails with `engine-unusable` naming the
+cache directory and the entry is left as it is. Concurrent starts of several server processes serialize on
 a lock file in the cache directory, so an engine is built once.
 
 Every start logs one line per model with the warm-up result:

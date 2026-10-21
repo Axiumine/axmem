@@ -275,7 +275,10 @@ missing (for example no Docker for `e2e-qdrant`) reports `SKIP` with the reason 
 * The same convention applies to the other linters: `# noqa: <code> - reason` for ruff,
   `# type: ignore[<code>]` with a reason for mypy (`warn_unused_ignores` flags stale ones). The code base
   uses no inline pylint disables; a noisy check is disabled once, with a comment, in
-  `[tool.pylint."messages control"]`.
+  `[tool.pylint."messages control"]`. The members of the native modules `tensorrt` and `cuda.*` are not checked
+  (`ignored-modules` in `[tool.pylint.typecheck]`, the counterpart of the mypy override): they are filled in at
+  import, so with them installed pylint called every attribute missing and a commit of a few files that touched
+  `tensorrt_runtime.py` fell below the 8/10 score on errors that were never real.
 * Raise the Python version (`quality.yml`, `ci.yml`, `e2e.yml`, `pyproject.toml`
   `requires-python`, classifiers and the mypy, pylint and ruff targets, `.python-version`, `flake.nix`,
   the test harness Dockerfile) together.

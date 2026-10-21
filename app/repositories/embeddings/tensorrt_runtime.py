@@ -16,7 +16,7 @@ import logging
 import os
 import queue
 from collections.abc import Callable, Iterator, Mapping
-from contextlib import contextmanager, suppress
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -425,9 +425,10 @@ class TensorRTEngine:
                 # A sticky CUDA error (an illegal address, a hardware fault) fails this call and every later one
                 # at the call itself, so the guard in the callers (``verify``, which runs after a call that
                 # returned) is never reached: note it here, or the health route would report a poisoned engine
-                # as healthy for the life of the process.
-                with suppress(TensorRTError):
-                    self._record_cuda_error()
+                # as healthy for the life of the process. The call that meets it ends as ``TensorRTUnavailableError``
+                # like the ones after it (the failure that raised it stays in the traceback), so a caller that
+                # stops asking an unavailable engine does so from this call on, not from the next one.
+                self._record_cuda_error()
                 raise
 
     def verify(self) -> None:

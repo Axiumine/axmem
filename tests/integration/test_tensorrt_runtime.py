@@ -408,9 +408,11 @@ def test_a_failed_call_notes_the_cuda_error_so_that_the_health_route_can_report_
     assert engine.failure == ""
 
     cudart.cudaMemcpy(0, 0, 4, cudart.cudaMemcpyKind.cudaMemcpyHostToDevice)  # a CUDA call that fails
-    with pytest.raises(ProfileError):
+    with pytest.raises(TensorRTUnavailableError, match="cudaErrorInvalidValue") as raised:
         engine.infer(make_inputs(65, 16))  # a call that fails, outside the profile
 
+    assert isinstance(raised.value, EmbeddingUnavailableError)  # the call that met the error is already refused for good
+    assert isinstance(raised.value.__cause__.__context__, ProfileError)  # and the failure of the call stays in the chain
     assert "cudaErrorInvalidValue" in engine.failure
     with pytest.raises(TensorRTUnavailableError, match="unusable after an earlier failure"):
         engine.infer(make_inputs(1, 4))

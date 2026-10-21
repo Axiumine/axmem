@@ -556,12 +556,16 @@ Fixes found by reviewing the feature cuts (no upstream counterpart: the code the
     rebuilt; for a plan that TensorRT refuses the start builds a plan from the same model first and replaces the entry
     only when that one loads, and when TensorRT refuses the new plan too it keeps the cached entry, stores nothing and
     refuses the start with `engine-unusable` and TensorRT's message. A plan is cached only after this process has loaded
-    it, a file that cannot be read is no proof of damage (the cache is the cause of the refusal, nothing is removed), and
-    an engine loaded before the cache failed to store it or to prune its siblings is released.
+    it, a plan or a fingerprint file that cannot be read is no proof of damage (the cache is the cause of the refusal,
+    nothing is removed; the fingerprint of another, older entry that cannot be read only leaves the reason of the
+    rebuild without its comparison), and an engine loaded before the cache failed to store it or to prune its siblings
+    is released.
   - **A closed engine, or one that met a CUDA error it cannot recover from, raises `TensorRTUnavailableError`**, a
-    `TensorRTError` that is also an `EmbeddingUnavailableError` (so does the check that finds the error after a call that returned), so a
-    targeted rebuild records the batch as failed at once instead of retrying every memory against an engine that refuses
-    them all. The messages are unchanged.
+    `TensorRTError` that is also an `EmbeddingUnavailableError` (so does the check that finds the error after a call that returned, and
+    so does the call that first meets the error: it used to raise the plain `TensorRTError` of its own failure, and only
+    the calls after it were refused, so the batch that met the error was still retried memory by memory; the failure of
+    that call stays in the exception chain), so a targeted rebuild records the batch as failed at once instead of
+    retrying every memory against an engine that refuses them all. The messages of the later calls are unchanged.
   - **A failed start releases the reranker's engine:** only the embedder's warm-up was guarded, so a reranker whose
     warm-up failed kept its engine and device buffers while anything held the exception. Both adapters now release the
     engine when anything after the engine was loaded fails, including the start-up report (CUDA context and GPU memory).
@@ -578,7 +582,9 @@ Fixes found by reviewing the feature cuts (no upstream counterpart: the code the
     (the setting comment, `.env.example`, the configuration reference) was not. `export` takes the file to write on its
     command line, owner-only like a backup, and never touches `BACKUP_DIR`; a test pins it.
 
-- **Tests, CI and hooks:** the Qdrant preflight of the suites pulls `qdrant/qdrant:v1.19.2` when the image is not local (a
+- **Tests, CI and hooks:** pylint no longer checks the members of the native modules `tensorrt` and `cuda.*`, which it
+  could not see and reported as missing whenever they were installed, so a commit that touched `tensorrt_runtime.py`
+  with few other files failed the pre-commit score on errors that were never real. The Qdrant preflight of the suites pulls `qdrant/qdrant:v1.19.2` when the image is not local (a
   clean or pruned runner, or a bumped version) and still ends the run with exit code 2 and the cause when Docker or the
   pull fails. The jobs on the self-hosted GPU runner no longer run for pull requests from forks (the head repository must
   be this one; the weekly `mutation` job runs on schedule and manual dispatch only; no workflow uses

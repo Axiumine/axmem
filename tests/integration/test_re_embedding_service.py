@@ -477,6 +477,43 @@ async def test_rebuild_targeted_stops_asking_a_tensorrt_engine_that_can_serve_no
     assert {failure["reason"] for failure in result.failed} == {"embedding_failed"}
 
 
+async def test_rebuild_targeted_stops_at_the_call_that_meets_a_cuda_error(shared_repo, monkeypatch):
+    """The engine fails the batch that meets a sticky CUDA error as one it can serve no more, so no memory is asked again."""
+    import numpy as np
+    from cuda.bindings import runtime as cudart
+
+    from app.repositories.embeddings.tensorrt_embedder import (
+        MAX_BATCH,
+        TensorRTEmbeddingsAdapter,
+    )
+    from tests.embedding_doubles import spy_on
+
+    user_id, memories = await _seed(shared_repo, 3)
+    embedder = TensorRTEmbeddingsAdapter()  # a private adapter: this test ruins its engine on purpose
+    try:
+        engine = embedder._engine
+        real_infer = engine.infer
+
+        def meets_a_cuda_error(arrays):
+            cudart.cudaMemcpy(0, 0, 4, cudart.cudaMemcpyKind.cudaMemcpyHostToDevice)  # fails on the thread of the call
+            ids = np.ones((MAX_BATCH + 1, 16), dtype=np.int64)  # then the call itself fails, outside the profile
+            return real_infer(dict.fromkeys(engine.input_names, ids))
+
+        monkeypatch.setattr(engine, "infer", meets_a_cuda_error)
+        spy = spy_on(embedder)
+
+        result = await ReEmbeddingService(shared_repo, spy, batch_size=20).rebuild_targeted(user_id=user_id)
+    finally:
+        embedder.close()
+
+    spy.generate_embeddings.assert_awaited_once()
+    spy.generate_embedding.assert_not_called()  # the first failure already made the engine refuse every call
+    assert "cudaErrorInvalidValue" in engine.failure
+    assert result.rebuilt_ids == []
+    assert sorted(failure["memory_id"] for failure in result.failed) == sorted(memory.id for memory in memories)
+    assert {failure["reason"] for failure in result.failed} == {"embedding_failed"}
+
+
 async def test_rebuild_targeted_embeds_a_batch_in_one_call(shared_repo, embedding_spy):
     user_id, memories = await _seed(shared_repo, 3)
 
