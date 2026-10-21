@@ -626,7 +626,16 @@ Fixes found by reviewing the feature cuts (no upstream counterpart: the code the
   version for every release) and lists the settings it left out; `docs/configuration.md` warns about the `["*"]`
   default of `CORS_ORIGINS`. `docs/gpu-models.md` explains that the tiktoken data is fetched on the first query unless
   `TIKTOKEN_CACHE_DIR` holds it, and that a host which drops packets makes that query wait for the connect timeout, with
-  the pre-load command.
+  the pre-load command. Three of these corrections were themselves wrong and were fixed: `skipped_ids` of
+  `rebuild_embeddings` holds only a memory that was edited, made obsolete or deleted while the rebuild ran (an id that
+  does not exist, belongs to another tenant or is obsolete is a `failed` entry with `not_found_or_not_owned`, and an
+  `auto_link_failed` entry also carries `phase`), in `docs/tool_reference.md`, `docs/embedding_migration.md` and the
+  tool's own description (the discovered tool catalogue snapshot follows); `.env.example` puts the explanation of
+  `FASTMCP_SERVER_AUTH_JWT_PUBLIC_KEY` (and of `GATEWAY_TENANT` and the provenance defaults, which had the same fault)
+  on its own line, because a comment after an empty value is read as the value and a copied block made both a JWKS URI
+  and a public key reach the verifier, which refuses to start; `docs/gpu-models.md` sets `TIKTOKEN_CACHE_DIR` in the
+  process environment, since tiktoken reads only that and a line in a settings file never reaches it. The mutation
+  sandbox copies `.env.example`, which `tests/integration/test_reference_docs.py` parses.
 
 ### Security
 

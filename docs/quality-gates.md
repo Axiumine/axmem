@@ -219,7 +219,7 @@ targets above `MUTATION_MAX_SURVIVORS` (default 0) fail it. `[tool.mutmut]` sele
 other suites) as the tests that must kill a mutant
 and leaves `app/_version.py` unmutated. The tests run in a sandbox (`mutants/`) that holds only `app/`, `tests/` and the
 `also_copy` paths; a selected test that reads another path from the repository root fails there and takes mutmut's baseline
-run with it, which is why `.githooks/` and `.github/` are copied and why
+run with it, which is why `.githooks/`, `.github/` and `.env.example` are copied and why
 `tests/architecture/test_mutation_sandbox.py` checks every root path the selected tests name. A test that lists the
 members of a class under `app/` must skip the names containing `__mutmut_` (mutmut adds its originals and mutants to a
 mutated class, see `protocol_methods` in `tests/integration/test_tenant_chokepoint.py`). The scheduled `quality.yml` job

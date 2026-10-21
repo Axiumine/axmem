@@ -484,8 +484,8 @@ links are missing or stale (for example one that `create_memory` stored but coul
 
 **Returns:**
 - `rebuilt_ids`: Ids that were embedded again
-- `skipped_ids`: Ids that were not touched: not owned by the caller, or edited while the rebuild ran so that the newer embedding was kept
-- `failed`: A list of `{"memory_id": ..., "reason": ...}`, with the reason one of `embedding_failed`, `persistence_failed`, `auto_link_failed` or `not_found_or_not_owned`; details go to the server log only
+- `skipped_ids`: Ids that were not rewritten because the memory was edited, made obsolete or deleted while the rebuild ran, so that the newer state was kept
+- `failed`: A list of `{"memory_id": ..., "reason": ...}`, with the reason one of `embedding_failed`, `persistence_failed`, `auto_link_failed` or `not_found_or_not_owned` (an id that does not exist, belongs to another tenant or is obsolete); an `auto_link_failed` entry also carries `"phase": "auto_link"`, and the memory itself was rebuilt; details go to the server log only
 
 A bad scope (an empty `memory_ids`, an unknown `project`, ids outside the project) answers `VALIDATION_ERROR: ...`. When the
 embedder is unavailable as a whole (a TensorRT engine that failed for good, a remote reply of the wrong width) every memory of

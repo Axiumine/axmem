@@ -324,6 +324,7 @@ pytest_add_cli_args_test_selection = ["tests/architecture/", "tests/integration/
 do_not_mutate = ["app/_version.py"]
 also_copy = [
     "pytest.ini", "main.py", "pyproject.toml", "ruff.toml",
+    ".env.example",  # test_reference_docs parses it
     ".githooks/",  # the hook tests (test_commit_msg_hook, test_denylist_check_hook) run the scripts of the repository
     ".github/",  # test_workflows reads the CI workflows
     "test_harness/", "scripts/", "skills/", "docs/", "architecture.md", "README.md",

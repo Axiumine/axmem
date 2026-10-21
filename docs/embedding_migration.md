@@ -208,7 +208,9 @@ if its version is still the one seen when the batch was read, and the check is p
 (a conditional write in Qdrant), so there is no window between check and write. A memory edited while the
 rebuild is running is reported in `skipped_ids` and keeps the embedding generated for its new content.
 `failed` entries carry a short reason code (`embedding_failed`, `persistence_failed`,
-`auto_link_failed`, `not_found_or_not_owned`); the underlying error is written to the server log.
+`auto_link_failed`, `not_found_or_not_owned`; an id that does not exist, belongs to another tenant or is obsolete is
+reported as `not_found_or_not_owned`, not in `skipped_ids`, and an `auto_link_failed` entry also carries `"phase": "auto_link"`);
+the underlying error is written to the server log.
 An unknown project scope, or one that holds none of your memories, is rejected with a validation error.
 
 ---

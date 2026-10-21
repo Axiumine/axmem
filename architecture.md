@@ -115,7 +115,7 @@ first because CPython copies an unknown keyword verbatim into the `TypeError` th
 traceback would carry.
 
 The full operation set is dynamic: scopes affect what a caller sees.
-[tool_metadata_registry.py:783](app/routes/mcp/tool_metadata_registry.py#L783) constructs adapter
+[tool_metadata_registry.py:784](app/routes/mcp/tool_metadata_registry.py#L784) constructs adapter
 callables and registers metadata/implementations together. Despite its filename, this is a module
 of registration helpers, not a second `ToolMetadataRegistry` class.
 [ToolRegistry.execute:183](app/routes/mcp/tool_registry.py#L183) looks up and awaits the callable.

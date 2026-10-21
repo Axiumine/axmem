@@ -744,10 +744,11 @@ def register_memory_tools_metadata(
                 },
             ],
             "returns": (
-                "Dict with rebuilt_ids (List[str]), skipped_ids (List[str]; not owned, or edited "
-                "while the rebuild ran so a newer embedding was kept), "
-                "failed (List[Dict[memory_id, reason]]; reason is a code such as embedding_failed, "
-                "persistence_failed or not_found_or_not_owned). "
+                "Dict with rebuilt_ids (List[str]), skipped_ids (List[str]; edited, made obsolete or deleted "
+                "while the rebuild ran so the newer state was kept), "
+                "failed (List[Dict[memory_id, reason]]; reason is embedding_failed, persistence_failed, "
+                "auto_link_failed or not_found_or_not_owned, the last for an id that does not exist, belongs "
+                "to another tenant or is obsolete; an auto_link_failed entry also has phase). "
                 "An unknown project scope is rejected with VALIDATION_ERROR"
             ),
             "examples": [

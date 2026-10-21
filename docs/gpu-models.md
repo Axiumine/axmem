@@ -235,15 +235,16 @@ Memory queries also use tiktoken's token-counting data, which has a separate cac
 (`TIKTOKEN_CACHE_DIR`, read by tiktoken itself; `HF_HUB_OFFLINE` does not cover it). Without it, queries still
 work but budget tokens with an approximate character-based estimate. Populate it while the network is
 available and keep it on persistent storage, with the variable set to the same directory for the pre-load and
-for the server:
+for the server. tiktoken reads the variable from the process environment only, and Axmem never copies a value
+from a settings file (the dotenv file next to the checkout or the one in the user settings directory) into the
+environment, so a line there has no effect: set it in the shell that starts the server, the `Environment=` line
+of its service unit or the `-e` option of its container.
 
 ```bash
 TIKTOKEN_CACHE_DIR=/opt/models/tiktoken \
   uv run python -c 'from app.utils.token_counter import TokenCounter; TokenCounter()'
-```
 
-```dotenv
-TIKTOKEN_CACHE_DIR=/opt/models/tiktoken
+TIKTOKEN_CACHE_DIR=/opt/models/tiktoken HF_HUB_OFFLINE=1 AUTH_MODE=none uv run --no-sync main.py serve
 ```
 
 Do this before the first query on any host whose outbound traffic is dropped rather than refused (a firewall
