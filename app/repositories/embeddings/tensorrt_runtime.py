@@ -322,28 +322,60 @@ def _set_shape(context: Any, name: str, shape: tuple[int, ...]) -> None:
         )
 
 
+def _release_step(failures: list[tuple[str, str]], step: str, free: Callable[[Any], Any], handle: Any) -> None:
+    """Call ``free(handle)`` and check its CUDA result; a failure goes to ``failures`` and never stops the caller.
+
+    Once CUDA has recorded a sticky error (an illegal address, a hardware fault) every later call reports it, the
+    calls that free memory among them. A teardown that stopped at the first one would leave the rest allocated and
+    would replace the error that caused the teardown with its own.
+    """
+    try:
+        cuda_check(free(handle))
+    except Exception as exc:  # noqa: BLE001 - a step that fails must not keep the later steps from running
+        failures.append((step, str(exc)))
+
+
+def _log_release_failures(what: str, failures: list[tuple[str, str]]) -> None:
+    """One log line for the steps of a teardown that failed while the others ran; nothing when all succeeded."""
+    if failures:
+        steps = ", ".join(step for step, _ in failures)
+        reasons = "; ".join(dict.fromkeys(reason for _, reason in failures))  # each distinct reason once
+        logger.error(
+            f"{what}: {len(failures)} release step(s) failed and every other step ran ({steps}); what they name "
+            f"stays allocated until the process exits. Reason: {reasons}",
+        )
+
+
 class _Slot:
     """One execution context with its own stream and device buffers; used by one thread at a time."""
 
     def __init__(self, engine: Any, inputs: list[str], output: str, profile: OptimizationProfile) -> None:
-        context = engine.create_execution_context()
-        if context is None:
+        self.context: Any = engine.create_execution_context()
+        if self.context is None:
             raise TensorRTStartupError(
                 "engine-unusable", f"TensorRT cannot create an execution context: {TRT_LOGGER.last_error}",
             )
-        self.context: Any = context
         self.inputs = inputs
         self.output = output
-        self.dtypes = {
-            name: np.dtype(trt.nptype(engine.get_tensor_dtype(name))) for name in (*inputs, output)
-        }
-        for name in inputs:
-            _set_shape(context, name, profile.max_shape)
-        output_shape = tuple(context.get_tensor_shape(output))
-        capacity = {name: int(np.prod(profile.max_shape)) * self.dtypes[name].itemsize for name in inputs}
-        capacity[output] = int(np.prod(output_shape)) * self.dtypes[output].itemsize
-        self.stream = cuda_check(cudart.cudaStreamCreate())
-        self.buffers = {name: cuda_check(cudart.cudaMalloc(size)) for name, size in capacity.items()}
+        self.stream: Any = None
+        self.buffers: dict[str, int] = {}
+        try:
+            self.dtypes = {
+                name: np.dtype(trt.nptype(engine.get_tensor_dtype(name))) for name in (*inputs, output)
+            }
+            for name in inputs:
+                _set_shape(self.context, name, profile.max_shape)
+            output_shape = tuple(self.context.get_tensor_shape(output))
+            capacity = {name: int(np.prod(profile.max_shape)) * self.dtypes[name].itemsize for name in inputs}
+            capacity[output] = int(np.prod(output_shape)) * self.dtypes[output].itemsize
+            self.stream = cuda_check(cudart.cudaStreamCreate())
+            for name, size in capacity.items():
+                self.buffers[name] = cuda_check(cudart.cudaMalloc(size))
+        except BaseException:
+            # The slot never reaches the engine's pool, so nothing else can free the stream and the buffers
+            # made so far; the error that stopped it is the one that surfaces.
+            _log_release_failures("A TensorRT execution slot failed half-way and was released", self.release())
+            raise
 
     def run(self, arrays: Mapping[str, np.ndarray]) -> np.ndarray:
         """Copy the inputs to the device, execute, and return the output as a host array."""
@@ -375,11 +407,22 @@ class _Slot:
         if not self.context.execute_async_v3(int(self.stream)):
             raise TensorRTError(f"TensorRT could not run the engine: {TRT_LOGGER.last_error}")
 
-    def release(self) -> None:
+    def release(self) -> list[tuple[str, str]]:
+        """Free the context, the stream and every buffer, one attempt each, and return what failed.
+
+        The execution context goes first (it was built on the engine and writes to these buffers), then the stream,
+        then the buffers. A step that fails is reported in the result and the next one still runs. What was freed is
+        forgotten, so a second call does nothing.
+        """
+        failures: list[tuple[str, str]] = []
         self.context = None
-        cuda_check(cudart.cudaStreamDestroy(self.stream))
-        for pointer in self.buffers.values():
-            cuda_check(cudart.cudaFree(pointer))
+        stream, self.stream = self.stream, None
+        buffers, self.buffers = self.buffers, {}
+        if stream is not None:
+            _release_step(failures, "destroying the stream", cudart.cudaStreamDestroy, stream)
+        for name, pointer in buffers.items():
+            _release_step(failures, f"freeing the buffer of {name}", cudart.cudaFree, pointer)
+        return failures
 
 
 class TensorRTEngine:
@@ -392,21 +435,29 @@ class TensorRTEngine:
 
     def __init__(self, plan: bytes, profile: OptimizationProfile, *, contexts: int = 1) -> None:
         self._runtime: Any = trt.Runtime(TRT_LOGGER)
-        engine = self._runtime.deserialize_cuda_engine(plan)
-        if engine is None:
+        self._engine: Any = self._runtime.deserialize_cuda_engine(plan)
+        if self._engine is None:
             raise PlanRejectedError(
                 "engine-unusable", f"TensorRT cannot deserialize the plan: {TRT_LOGGER.last_error}",
             )
-        names = [engine.get_tensor_name(i) for i in range(engine.num_io_tensors)]
-        self.input_names = [n for n in names if engine.get_tensor_mode(n) == trt.TensorIOMode.INPUT]
-        output = next(n for n in names if engine.get_tensor_mode(n) == trt.TensorIOMode.OUTPUT)
         self._failure = ""
         self._closed = False
-        self._engine: Any = engine
         self._slots: queue.SimpleQueue[_Slot] = queue.SimpleQueue()
-        self._size = contexts
-        for _ in range(contexts):
-            self._slots.put(_Slot(engine, self.input_names, output, profile))
+        self._size = 0  # the slots made so far; ``close`` takes this many back from the pool
+        try:
+            names = [self._engine.get_tensor_name(i) for i in range(self._engine.num_io_tensors)]
+            mode = self._engine.get_tensor_mode
+            self.input_names = [n for n in names if mode(n) == trt.TensorIOMode.INPUT]
+            output = next(n for n in names if mode(n) == trt.TensorIOMode.OUTPUT)
+            for _ in range(contexts):
+                self._slots.put(_Slot(self._engine, self.input_names, output, profile))
+                self._size += 1
+        except BaseException:
+            # An engine that cannot be built is never handed out, so nobody else could close the slots made before
+            # the one that failed: release them, then the engine and the runtime. The error that stopped the
+            # construction is the one that surfaces; a step of the release that fails is only logged.
+            self.close()
+            raise
 
     @property
     def failure(self) -> str:
@@ -444,14 +495,21 @@ class TensorRTEngine:
             raise TensorRTUnavailableError(self._failure) from exc  # the engine serves nothing from here on
 
     def close(self) -> None:
-        """Release the device buffers once every borrowed slot has come back. Safe to call twice."""
+        """Release the device buffers once every borrowed slot has come back. Safe to call twice.
+
+        Every slot is released, then the engine, then the runtime (each is built on the one before), whatever a step
+        reports: a step that fails is logged in one line with the others and does not raise, so the error that led to
+        this call, if there is one, is not replaced by a consequence of it.
+        """
         if self._closed:
             return
         self._closed = True
+        failures: list[tuple[str, str]] = []
         for _ in range(self._size):
-            self._slots.get().release()
+            failures += self._slots.get().release()
         self._engine = None
         self._runtime = None
+        _log_release_failures("The TensorRT engine was closed", failures)
 
     @contextmanager
     def _borrowed(self) -> Iterator[_Slot]:

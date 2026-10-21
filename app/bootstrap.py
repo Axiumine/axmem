@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import atexit
 from collections.abc import Callable
+from contextlib import ExitStack
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -138,8 +139,11 @@ def _shared_tensorrt_reranker():
 
 
 def _release_tensorrt_adapters() -> None:
-    while _TENSORRT_ADAPTERS:
-        _TENSORRT_ADAPTERS.popitem()[1].close()
+    adapters = list(_TENSORRT_ADAPTERS.values())
+    _TENSORRT_ADAPTERS.clear()
+    with ExitStack() as stack:  # the latest adapter closes first, and one that raises keeps no other from closing
+        for adapter in adapters:
+            stack.callback(adapter.close)
 
 
 atexit.register(_release_tensorrt_adapters)

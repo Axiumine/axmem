@@ -60,6 +60,8 @@ class TensorRTRerankAdapter:
         model = model or settings.RERANKING_MODEL
         self.workers = workers or settings.RERANKING_WORKERS
         self.tf32 = settings.RERANKING_TF32 if tf32 is None else tf32
+        # Made before the engine, so that nothing which can fail stands between the engine and the ``try`` below.
+        self._executor = ThreadPoolExecutor(max_workers=self.workers, thread_name_prefix="tensorrt-rerank")
         gpu = probe_gpu()
         files = fetch_model(model, model_dir or settings.RERANKING_MODEL_DIR, "RERANKING_MODEL")
         self._tokenizer, self._pad_id = load_tokenizer(files.tokenizer)
@@ -74,7 +76,6 @@ class TensorRTRerankAdapter:
             contexts=self.workers,
         )
         self._engine = opened.engine
-        self._executor = ThreadPoolExecutor(max_workers=self.workers, thread_name_prefix="tensorrt-rerank")
         try:
             self.score("warm-up query", ["warm-up document"])
             self.startup = StartupReport(
@@ -89,10 +90,11 @@ class TensorRTRerankAdapter:
                 cuda_context=cuda_context_handle(),
                 memory=gpu_memory(),
             )
+            logger.info(self.startup.summary())
         except BaseException:
-            self.close()  # a refused start must not keep the engine and its device buffers in GPU memory
+            # A refused start must not keep the engine and its device buffers in GPU memory; the error that refused it surfaces.
+            self.close()
             raise
-        logger.info(self.startup.summary())
 
     async def rerank(self, query: str, documents: list[str]) -> list[tuple[int, float]]:
         """Score documents by relevance to query, best first."""
@@ -128,6 +130,8 @@ class TensorRTRerankAdapter:
         return f"the reranker engine is unusable after an earlier failure ({failure}); restart the server" if failure else ""
 
     def close(self) -> None:
-        """Wait for running jobs, then release the engine and its device memory."""
-        self._executor.shutdown(wait=True)
-        self._engine.close()
+        """Wait for running jobs, then release the engine and its device memory (even when the wait fails)."""
+        try:
+            self._executor.shutdown(wait=True)
+        finally:
+            self._engine.close()

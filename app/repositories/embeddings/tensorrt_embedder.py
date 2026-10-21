@@ -71,6 +71,8 @@ class TensorRTEmbeddingsAdapter(EmbeddingsAdapter):
         self.dimensions = dimensions or settings.EMBEDDING_DIMENSIONS
         self.tf32 = settings.EMBEDDING_TF32 if tf32 is None else tf32
         self.workers = 1
+        # Made before the engine, so that nothing which can fail stands between the engine and the ``try`` below.
+        self._executor = ThreadPoolExecutor(max_workers=self.workers, thread_name_prefix="tensorrt-embed")
         gpu = probe_gpu()
         files = fetch_model(self.model, model_dir or settings.EMBEDDING_MODEL_DIR, "EMBEDDING_MODEL")
         self._tokenizer, self._pad_id = load_tokenizer(files.tokenizer)
@@ -85,7 +87,6 @@ class TensorRTEmbeddingsAdapter(EmbeddingsAdapter):
             contexts=self.workers,
         )
         self._engine = opened.engine
-        self._executor = ThreadPoolExecutor(max_workers=self.workers, thread_name_prefix="tensorrt-embed")
         try:
             self._check_width(self.embed([WARM_UP_TEXT])[0])
             self.startup = StartupReport(
@@ -100,10 +101,10 @@ class TensorRTEmbeddingsAdapter(EmbeddingsAdapter):
                 cuda_context=cuda_context_handle(),
                 memory=gpu_memory(),
             )
+            logger.info(self.startup.summary())
         except BaseException:
-            self.close()  # a refused start must not keep the engine in GPU memory
+            self.close()  # a refused start must not keep the engine in GPU memory; the error that refused it surfaces
             raise
-        logger.info(self.startup.summary())
 
     def _check_width(self, vector: list[float]) -> None:
         if len(vector) != self.dimensions:
@@ -156,6 +157,8 @@ class TensorRTEmbeddingsAdapter(EmbeddingsAdapter):
         return f"the embedder engine is unusable after an earlier failure ({failure}); restart the server" if failure else ""
 
     def close(self) -> None:
-        """Wait for running jobs, then release the engine and its device memory."""
-        self._executor.shutdown(wait=True)
-        self._engine.close()
+        """Wait for running jobs, then release the engine and its device memory (even when the wait fails)."""
+        try:
+            self._executor.shutdown(wait=True)
+        finally:
+            self._engine.close()

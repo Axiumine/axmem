@@ -687,6 +687,30 @@ Fixes found by reviewing the feature cuts (no upstream counterpart: the code the
   TensorRT reranker or embedder raises `TensorRTUnavailableError`, which is no longer an `EmbeddingUnavailableError`
   (both are a `ModelUnavailableError`), so the reranker is not reported as the embeddings provider; `rebuild_embeddings`
   still stops at either.
+- **TensorRT teardown after a failure:**
+  - **A release that fails no longer hides the error that led to it, and no longer leaves the rest allocated.** After a
+    sticky CUDA error (an illegal address, a hardware fault) every CUDA call reports it, the calls that destroy a stream
+    and free a buffer included. `_Slot.release` stopped at the first of them, so the buffers behind it were never freed,
+    `TensorRTEngine.close` stopped at the first slot (the later slots, the engine and the runtime stayed, and a second
+    `close` did nothing because the engine already counted as closed), and the error of the release replaced the error
+    of the warm-up that the adapter had been cleaning up after (a plain `TensorRTError` instead of the
+    `TensorRTUnavailableError` the warm-up met). Every step now runs once, in the order context, stream, buffers, then
+    the engine and the runtime, whatever a step reports; the steps that failed are one `ERROR` log line (the steps and
+    each distinct reason) and `close` does not raise, so the error that ended the start is the one that surfaces.
+  - **An engine or a slot that cannot be made releases what it made.** `_Slot` made its stream and buffers one after the
+    other and `TensorRTEngine.__init__` made its slots in a loop; an out-of-memory error at the second buffer or the
+    third slot left the stream, the buffers and the slots already made allocated on the device, with nothing that could
+    free them (the half-made object is never handed out). Both now release what they had made and raise the original
+    error. The adapters make their worker pool before the engine (a count the pool refuses used to build the engine
+    first) and log the start-up report inside the guard that closes the engine on a failure, and their `close` releases
+    the engine even when the wait for the workers fails. `_release_tensorrt_adapters` (at exit) closes every shared
+    adapter, the latest first, even when one of them raises.
+  - **Tests** (`tests/integration/test_tensorrt_teardown.py`): the failures are injected at the CUDA wrapper calls
+    (`cudaMalloc`, `cudaStreamCreate`, `cudaFree`, `cudaStreamDestroy`, `cudaStreamSynchronize`,
+    `cudaPeekAtLastError`) of `tensorrt_runtime` on the real engines, never in a model. They assert that the original
+    error surfaces, that every stream and buffer that was made was released exactly once, that the secondary failures
+    are one log line, and that the GPU memory of the process (read through `gpu_memory()`) is back to where it was; a
+    loop of five starts, failed warm-ups and closes of a real embedder and of a real reranker shows no growth.
 - **Tests:** `tests/integration/test_cli_operator_commands.py` errored when run on its own (the fixture that records
   `atexit.register` met pytest's registration of its temp-directory clean-up); pytest's base temp directory is now made
   at the start of the session, and every file of `tests/integration` that touches logging, `atexit`, the environment
