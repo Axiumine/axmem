@@ -1,13 +1,32 @@
-"""The CI workflows keep fork code off the self-hosted GPU runner and keep the weekly run alive."""
+"""The CI workflows run on hosted runners only, and only the checks that need neither a GPU nor Docker.
 
+The suites that run the real TensorRT models and a real Qdrant (tests, end-to-end, cluster, coverage, memory budgets,
+Qodana, mutation) run on the developer machine in the pre-push Git hook; ``tests/integration/test_quality_runner.py``
+and ``tests/integration/test_pre_push_hook.py`` prove that side. These tests keep the GPU and Docker work from coming
+back into a workflow.
+"""
+
+import re
 from pathlib import Path
 
 import pytest
 import yaml
 
+from scripts.quality import registry, security
+
 WORKFLOWS_DIR = Path(__file__).resolve().parents[2] / ".github" / "workflows"
 WORKFLOWS = sorted(WORKFLOWS_DIR.glob("*.yml"))
-FORK_GUARD = "github.event.pull_request.head.repo.full_name == github.repository"
+GATE_COMMAND = re.compile(r"scripts\.quality\s+gate\s+([\w-]+)")
+# What a workflow may ask `scripts.quality` for: the gates that run on any Linux machine, none of them on a GPU or Docker.
+HOSTED_GATES = {
+    "ruff", "imports", "bandit", "semgrep", "vulture", "radon-cc", "radon-mi", "mypy", "pylint", "trivy",
+}
+# Words of a step that only a GPU or a Docker host can act on.
+GPU_OR_DOCKER_WORDS = re.compile(
+    r"docker|nvidia-smi|tests/(integration|e2e|cluster)|\bpytest\b.*\s-m\s+(cluster|memory|snapshot)|--memray|mutmut|MUTATION|qodana",
+    re.IGNORECASE,
+)
+JOBS_OF = {"ci.yml": {"lint", "smoke-test"}, "quality.yml": {"static", "trivy"}, "publish.yml": {"publish"}}
 
 
 def _load(path):
@@ -16,22 +35,50 @@ def _load(path):
     return document
 
 
-def _self_hosted_jobs():
-    return [
-        (path.name, name, job)
-        for path in WORKFLOWS
-        for name, job in _load(path)["jobs"].items()
-        if "self-hosted" in job.get("runs-on", [])
-    ]
+def _jobs():
+    return [(path.name, name, job) for path in WORKFLOWS for name, job in _load(path)["jobs"].items()]
 
 
-def test_the_gpu_runner_jobs_are_found():
-    names = {(workflow, name) for workflow, name, _ in _self_hosted_jobs()}
+def _steps():
+    return [(workflow, name, step) for workflow, name, job in _jobs() for step in job["steps"]]
 
-    assert {
-        ("ci.yml", "test"), ("e2e.yml", "e2e"), ("quality.yml", "snapshots"), ("quality.yml", "coverage"),
-        ("quality.yml", "memory"), ("quality.yml", "mutation"),
-    } <= names
+
+CHECKED = [path for path in WORKFLOWS if {"push", "pull_request"} & set(_load(path)["triggers"])]
+JOB_IDS = [f"{workflow}:{name}" for workflow, name, _ in _jobs()]
+STEP_IDS = [f"{workflow}:{name}:{number}" for number, (workflow, name, _) in enumerate(_steps())]
+INSTALLS = [(workflow, name, step) for workflow, name, step in _steps() if "uv sync" in step.get("run", "")]
+INSTALL_IDS = [f"{workflow}:{name}" for workflow, name, _ in INSTALLS]
+
+
+def _gates_named():
+    return {gate for _, _, step in _steps() for gate in GATE_COMMAND.findall(step.get("run", ""))}
+
+
+def test_the_workflows_and_their_jobs_are_the_hosted_ones():
+    assert {path.name for path in WORKFLOWS} == set(JOBS_OF)
+    assert {path.name for path in CHECKED} == {"ci.yml", "quality.yml"}
+    for path in WORKFLOWS:
+        assert set(_load(path)["jobs"]) == JOBS_OF[path.name], path.name
+
+
+def test_the_jobs_of_the_removed_gpu_workflow_and_suites_are_gone():
+    names = {name for _, name, _ in _jobs()}
+
+    assert not (WORKFLOWS_DIR / "e2e.yml").exists()
+    assert names.isdisjoint({"test", "e2e", "snapshots", "coverage", "memory", "qodana", "mutation"})
+
+
+@pytest.mark.parametrize(("workflow", "name", "job"), _jobs(), ids=JOB_IDS)
+def test_every_job_runs_on_a_hosted_runner(workflow, name, job):
+    runner = job["runs-on"]
+
+    assert isinstance(runner, str), f"{workflow} job {name} names its runner with a list, a mapping or a matrix"
+    assert re.fullmatch(r"ubuntu-[\w.-]+", runner), f"{workflow} job {name} runs on {runner!r}, not a hosted Ubuntu runner"
+
+
+@pytest.mark.parametrize(("workflow", "name", "job"), _jobs(), ids=JOB_IDS)
+def test_no_job_starts_a_container_or_a_service(workflow, name, job):
+    assert not {"container", "services"} & set(job), f"{workflow} job {name} starts a container"
 
 
 @pytest.mark.parametrize("workflow", WORKFLOWS, ids=lambda path: path.name)
@@ -39,28 +86,86 @@ def test_no_workflow_runs_on_pull_request_target(workflow):
     assert "pull_request_target" not in _load(workflow)["triggers"]
 
 
-@pytest.mark.parametrize(
-    ("workflow", "name", "job"), _self_hosted_jobs(), ids=[f"{workflow}:{name}" for workflow, name, _ in _self_hosted_jobs()],
-)
-def test_a_pull_request_from_a_fork_never_reaches_the_self_hosted_runner(workflow, name, job):
-    condition = str(job.get("if", ""))
-    only_schedule_and_dispatch = "schedule" in condition and "pull_request" not in condition
-
-    assert FORK_GUARD in condition or only_schedule_and_dispatch, f"{workflow} job {name} runs fork code on the GPU host"
+@pytest.mark.parametrize("workflow", WORKFLOWS, ids=lambda path: path.name)
+def test_no_workflow_is_scheduled(workflow):
+    assert "schedule" not in _load(workflow)["triggers"]
 
 
-@pytest.mark.parametrize("workflow", [path for path in WORKFLOWS if "schedule" in _load(path)["triggers"]], ids=lambda path: path.name)
-def test_the_scheduled_run_does_not_share_a_concurrency_group_with_pushes(workflow):
+@pytest.mark.parametrize(("workflow", "name", "step"), _steps(), ids=STEP_IDS)
+def test_no_step_needs_a_gpu_or_docker(workflow, name, step):
+    text = f"{step.get('name', '')} {step.get('uses', '')} {step.get('run', '')}"
+
+    assert not GPU_OR_DOCKER_WORDS.search(text), f"{workflow} job {name}: {text.strip()!r} needs a GPU or Docker"
+
+
+def test_the_workflows_ask_only_for_gates_that_need_neither_a_gpu_nor_docker():
+    named = _gates_named()
+
+    assert named <= HOSTED_GATES
+    assert not named & (set(registry.GATES) - HOSTED_GATES)
+
+
+def test_every_hosted_gate_runs_in_a_workflow_and_in_the_ci_stage():
+    assert _gates_named() == HOSTED_GATES
+    assert {gate for group in registry.STAGES["ci"] for gate in group} == HOSTED_GATES
+
+
+@pytest.mark.parametrize(("workflow", "name", "step"), INSTALLS, ids=INSTALL_IDS)
+def test_the_environment_is_installed_without_the_tensorrt_libraries(workflow, name, step):
+    command = step["run"]
+
+    assert "--locked" in command
+    assert "--no-install-package tensorrt-cu13-libs" in command  # 3.8 GB that no hosted check loads
+
+
+def test_the_installs_are_found():
+    assert INSTALL_IDS == ["ci.yml:lint", "ci.yml:smoke-test", "quality.yml:static"]
+
+
+@pytest.mark.parametrize("workflow", CHECKED, ids=lambda path: path.name)
+def test_a_newer_run_cancels_the_older_run_of_the_same_workflow_and_ref(workflow):
     concurrency = _load(workflow)["concurrency"]
 
     assert concurrency["cancel-in-progress"] is True
-    assert "github.event_name" in concurrency["group"]
+    assert "github.workflow" in concurrency["group"]
+    assert "github.ref" in concurrency["group"]
 
 
-def test_the_wheel_smoke_test_takes_the_tensorrt_pins_from_the_lock_not_from_pypi():
-    commands = [step.get("run", "") for step in _load(WORKFLOWS_DIR / "ci.yml")["jobs"]["smoke-test"]["steps"]]
-    script = "\n".join(commands)
+@pytest.mark.parametrize("workflow", CHECKED, ids=lambda path: path.name)
+def test_code_from_a_pull_request_gets_a_read_only_token_and_no_secret(workflow):
+    document = _load(workflow)
+    checkouts = [
+        step for job in document["jobs"].values() for step in job["steps"]
+        if str(step.get("uses", "")).startswith("actions/checkout")
+    ]
 
+    assert document["permissions"] == {"contents": "read"}
+    assert "secrets." not in workflow.read_text(encoding="utf-8")
+    assert checkouts
+    assert all(step["with"]["persist-credentials"] is False for step in checkouts)
+
+
+@pytest.mark.parametrize("workflow", CHECKED, ids=lambda path: path.name)
+def test_no_job_keeps_a_fork_guard_for_a_runner_that_is_gone(workflow):
+    for name, job in _load(workflow)["jobs"].items():
+        assert "head.repo.full_name" not in str(job.get("if", "")), f"{workflow} job {name} guards a runner it does not use"
+
+
+def test_the_wheel_smoke_test_waits_for_lint_and_takes_the_tensorrt_pins_from_the_lock_not_from_pypi():
+    job = _load(WORKFLOWS_DIR / "ci.yml")["jobs"]["smoke-test"]
+    script = "\n".join(step.get("run", "") for step in job["steps"])
+
+    assert job["needs"] == ["lint"]
     assert "uvx" not in script  # resolves the wheel's own metadata, where the TensorRT packages have no index
     assert "uv sync --locked --no-dev --no-install-project --no-install-package tensorrt-cu13-libs" in script
     assert "uv pip install --no-deps" in script
+
+
+def test_the_trivy_job_installs_the_version_that_the_gate_pins_and_hands_the_gate_its_binary():
+    job = _load(WORKFLOWS_DIR / "quality.yml")["jobs"]["trivy"]
+    script = "\n".join(step.get("run", "") for step in job["steps"])
+
+    assert job["env"]["TRIVY_VERSION"] == security.TRIVY_VERSION
+    assert re.fullmatch(r"[0-9a-f]{64}", job["env"]["TRIVY_SHA256"])
+    assert "sha256sum --check" in script
+    assert 'TRIVY_BIN=$RUNNER_TEMP/trivy/trivy" >> "$GITHUB_ENV"' in script  # without it the gate runs a Docker image

@@ -12,6 +12,8 @@ import sys
 import textwrap
 from pathlib import Path
 
+import pytest
+
 from tests.qdrant_support import IMAGE, PULL_TIMEOUT_SECONDS
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -117,3 +119,32 @@ def test_a_server_that_already_runs_needs_no_docker_at_all(tmp_path):
 
 def test_the_pull_may_take_as_long_as_a_slow_registry_needs():
     assert PULL_TIMEOUT_SECONDS >= 900
+
+
+@pytest.mark.parametrize(
+    ("path", "marker"),
+    [
+        ("tests/integration/test_version_resolution.py", []),
+        ("tests/e2e/test_health_e2e.py", []),
+        ("tests/cluster/test_cluster_failover.py", ["-m", "cluster"]),
+    ],
+    ids=lambda value: value if isinstance(value, str) else "",
+)
+def test_every_suite_of_the_pre_push_gates_ends_the_run_when_docker_is_missing(tmp_path, path, marker):
+    empty = tmp_path / "no-commands"
+    empty.mkdir()
+    environment = {name: value for name, value in os.environ.items() if name != "AXMEM_TEST_QDRANT_URL"}
+
+    result = subprocess.run(  # noqa: S603
+        [sys.executable, "-m", "pytest", path, "-p", "no:cacheprovider", *marker],
+        cwd=ROOT,
+        env={**environment, "PATH": str(empty)},
+        capture_output=True,
+        text=True,
+        timeout=300,
+        check=False,
+    )
+
+    assert result.returncode == 2, result.stdout + result.stderr
+    assert "Qdrant preflight failed" in result.stdout + result.stderr
+    assert not re.search(r"\d+ (skipped|passed|failed)", result.stdout)

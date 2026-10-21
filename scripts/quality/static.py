@@ -13,6 +13,7 @@ from .core import (
     SOURCE_PATHS,
     TYPED_PATHS,
     Ctx,
+    MissingToolError,
     Skip,
     check,
     docker_ready,
@@ -47,7 +48,7 @@ def gate_pylint(ctx: Ctx) -> tuple[bool, str]:
     argv = [*venv_tool("pylint"), "--fail-under=8.0"]
     if ctx.scoped:
         # A score over a handful of changed files is meaningless for convention/refactor
-        # messages; those count in the project-wide score checked on push and in CI.
+        # messages; those count in the project-wide score checked on push and in hosted CI.
         argv.append("--disable=C,R")
     return check([*argv, *paths])
 
@@ -120,7 +121,7 @@ def semgrep_cmd() -> list[str]:
             "docker", "run", "--rm", "-v", f"{ROOT}:/src", "-w", "/src",
             f"semgrep/semgrep:{SEMGREP_VERSION}", "semgrep",
         ]
-    raise Skip("semgrep unavailable (install semgrep, uv, or docker)")
+    raise MissingToolError("semgrep is not installed and neither uvx nor a Docker daemon can run it")
 
 
 def gate_semgrep(ctx: Ctx) -> tuple[bool, str]:

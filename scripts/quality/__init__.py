@@ -1,1 +1,1 @@
-"""Quality-gate orchestration shared by Git hooks, CI and developers (see docs/quality-gates.md)."""
+"""Quality-gate orchestration shared by the Git hooks, hosted CI (static gates only) and developers (see docs/quality-gates.md)."""

@@ -30,7 +30,16 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 
 from . import registry
-from .core import HOOKS_DIR, ROOT, Ctx, Result, Skip, run, staged_files
+from .core import (
+    HOOKS_DIR,
+    ROOT,
+    Ctx,
+    MissingToolError,
+    Result,
+    Skip,
+    run,
+    staged_files,
+)
 
 
 def run_gate(name: str, ctx: Ctx) -> Result:
@@ -40,6 +49,8 @@ def run_gate(name: str, ctx: Ctx) -> Result:
         ok, out = fn(ctx)
     except Skip as why:
         return Result(name, "SKIP", time.monotonic() - started, note=str(why))
+    except MissingToolError as why:
+        return Result(name, "FAIL", time.monotonic() - started, output=str(why))
     return Result(name, "PASS" if ok else "FAIL", time.monotonic() - started, output=out)
 
 

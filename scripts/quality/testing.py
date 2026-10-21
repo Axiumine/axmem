@@ -7,6 +7,7 @@ import os
 from .core import (
     SUITES,
     Ctx,
+    MissingToolError,
     Skip,
     check,
     docker_ready,
@@ -51,7 +52,10 @@ def gate_tests(_ctx: Ctx) -> tuple[bool, str]:
 def gate_e2e_qdrant(_ctx: Ctx) -> tuple[bool, str]:
     """The three-node Qdrant cluster tests (docker): replication, failover, race and fault detectors."""
     if not docker_ready():
-        raise Skip("docker daemon unavailable (the cluster e2e starts three Qdrant nodes)")
+        raise MissingToolError(
+            "no Docker daemon answers: the cluster e2e starts three Qdrant nodes and is never skipped "
+            "(start Docker, or leave the gate out on purpose with SKIP=e2e-qdrant)",
+        )
     return check_tests(
         [*venv_tool("pytest"), "tests/cluster", "-m", "cluster", *PYTEST,
          "--cov", "--cov-branch", "--cov-append", "--cov-report=", "--cov-fail-under=0"],

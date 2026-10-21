@@ -46,9 +46,16 @@ Hooks table in [docs/quality-gates.md](quality-gates.md#hooks).
 
 `pre-commit` checks staged files (lint, import boundaries, security, dead code, complexity, types,
 snapshots, fast tests, GitNexus impact); `pre-push` runs the full pipeline: the same static gates over
-the whole project, the architecture, integration and end-to-end suites with coverage (they start a real Qdrant
+the whole project and trivy, the architecture, integration and end-to-end suites with coverage (they start a real Qdrant
 node in Docker), the three-node Qdrant cluster e2e (Docker), **100 % combined coverage**, memory budgets (memray),
-trivy, Qodana and, only when asked for, mutation testing. CI runs the same gates on Python 3.14.
+Qodana and, only when asked for, mutation testing.
+
+**The `pre-push` hook is the GPU gate.** Hosted CI has no GPU and the project has no self-hosted runner, so CI runs the
+static gates only (below). The suites that run the real TensorRT models and a real Qdrant run on your machine when you
+`git push`, and the push is refused when any gate fails, when the machine has no NVIDIA GPU or no Docker daemon
+(the suites end the run, they never skip), when a tool a gate needs is missing, or when the pushed commit is not the
+checked-out one (check the branch out and push it). Commit before you push: the gates test the working tree. The details
+and the tests that prove them are in [docs/quality-gates.md](quality-gates.md#the-pre-push-hook-is-the-gpu-gate).
 The Qodana token (`QODANA_TOKEN`) lives in your git-ignored dotenv file (see `.env.example` for the key
 name), never in a tracked file. Python 3.14 is the only supported version (`.python-version`).
 
@@ -231,7 +238,8 @@ suite. Four modules protect the storage design and are worth reading first:
 uv run pytest tests/e2e/
 ```
 
-**CI Status**: Runs automatically in the CI and E2E workflows on every push/PR, on the GPU runner
+**CI Status**: Not run in CI (hosted runners have no GPU). Runs in the `pre-push` hook on your machine, as part of the
+`tests` gate.
 
 The suite is large (several thousand tests across the integration and e2e directories), so run a single file or `-k` selection
 while iterating and the whole directory before pushing.
@@ -280,59 +288,36 @@ uv tool run ruff check .
 
 **Triggers**: Every push and pull request
 
-**Purpose**: Fast feedback for contributors
+**Purpose**: Fast feedback for contributors, on hosted runners only. The workflows have no GPU and no Docker, so they run
+only the checks that need neither; the rest runs in the `pre-push` hook (see
+[quality-gates.md](quality-gates.md#where-the-gates-run)).
 
 **Matrix**: Python 3.14.
 
 **Jobs**:
-1. `lint` (hosted Ubuntu runner, no GPU): check architecture boundaries and rule proofs, then run linting. The
-   TensorRT libraries are left out of its environment (`--no-install-package tensorrt-cu13-libs`).
-2. `test` (self-hosted GPU runner, `runs-on: [self-hosted, linux, gpu]`): run integration tests (real Qdrant,
-   real embedder and reranker) and E2E tests (full stack on real Qdrant).
-3. `smoke-test` (hosted runner): build the wheel, install the locked dependencies without the TensorRT libraries and the
-   wheel on top, and check that `axmem --help` works.
+1. `lint` (hosted Ubuntu runner): check architecture boundaries, rule proofs and the rules of the workflow files
+   (`tests/architecture/`), then run ruff. The TensorRT libraries are left out of its environment
+   (`--no-install-package tensorrt-cu13-libs`).
+2. `smoke-test` (hosted runner, after `lint`): build the wheel, install the locked dependencies without the TensorRT
+   libraries and the wheel on top, and check that `axmem --help` works.
 
-The GPU runner is a machine you provide and register with those labels; see
-[quality-gates.md](quality-gates.md#pipeline) for what it needs. The Windows leg was removed because the
-TensorRT reranker is Linux-only.
-
-**Pull requests from forks**: `test` is skipped for them, so that fork code never runs on the self-hosted runner
-(see [quality-gates.md](quality-gates.md#pipeline)); the lint and smoke-test jobs still run. A maintainer who has reviewed
-the change pushes its branch to this repository to run `test`.
+A push to a branch with an open pull request starts a push run and a pull request run; a newer run cancels an older one
+of the same workflow and ref. The Windows leg was removed because the TensorRT reranker is Linux-only.
 
 **Merge requirements**: Configure branch rules to require this workflow's `lint` check (the one that runs the architecture
-tests) and its `test` check. The workflow alone does not make them mandatory for merging.
-
-**Test Coverage**: Integration tests validate business logic and the Qdrant repository with the real embedder and reranker. E2E tests validate the complete application stack. Both need Docker for their Qdrant node.
-
-### `e2e.yml` - End-to-End Validation
-
-**Triggers**: Every branch push, pull request, and manual workflow dispatch
-
-**Purpose**: Validate the full stack with a real Qdrant node
-
-**Matrix**: Python 3.14, on the self-hosted GPU runner (`runs-on: [self-hosted, linux, gpu]`).
-
-**Steps**:
-1. Check the Docker daemon (the suites start the Qdrant node).
-2. Run the E2E tests (`tests/e2e/`), including backup recovery.
-
-**Merge requirements**: Configure the repository's branch rules to require the `e2e` check.
-The workflow alone does not make a check mandatory for merging.
-
-**Test Coverage**: Validates the full application stack on Qdrant, including snapshot backup and restore.
+tests). The workflow alone does not make it mandatory for merging. CI does not run the tests: they are proven by the
+`pre-push` hook of whoever pushes.
 
 ### `quality.yml` - Quality Gates
 
-**Triggers**: Every push and pull request, a weekly schedule (mutation testing) and manual dispatch
+**Triggers**: Every push and pull request, and manual dispatch
 
-**Purpose**: Run the same gates as the local Git hooks (`scripts/quality`) so a bypassed hook is caught
+**Purpose**: Run the static gates of the local Git hooks (`scripts/quality`) under the same gate names, so a bypassed hook
+is caught
 
-**Jobs**: `static` (lint, import boundaries, security, dead code, complexity, types and pylint on a hosted
-runner, on Python 3.14), then on the self-hosted GPU runner `snapshots`, `coverage` (single-node and cluster
-suites combined, 100 % required), `memory` (memray budgets) and `mutation` (weekly and manual only); `trivy` and `qodana` (uses the
-`QODANA_TOKEN` repository secret; skipped for pull requests from forks) run on hosted runners. See
-[quality-gates.md](quality-gates.md).
+**Jobs**: `static` (lint, import boundaries, security, dead code, complexity, types and pylint, on Python 3.14) and `trivy`
+(the pinned release binary, checked against its SHA-256). Snapshots, coverage, memory budgets, Qodana and mutation are not
+here: they need the GPU, Docker or a token and run in the `pre-push` hook. See [quality-gates.md](quality-gates.md).
 
 ### `publish.yml` - PyPI Publication
 

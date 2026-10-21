@@ -32,7 +32,7 @@ class ExpiringJWTVerifier(JWTVerifier):
         if access_token is None:
             return None
         if access_token.claims.get("exp") is None:
-            logger.info("Bearer token rejected for client %s: it has no exp claim", access_token.client_id)
+            logger.info("Bearer token rejected for client %s: it has no exp claim", access_token.client_id)  # nosemgrep: python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure - logs the client id, never the token
             return None
         return access_token
 
@@ -62,6 +62,6 @@ class AudienceIntrospectionVerifier(IntrospectionTokenVerifier):
         if access_token is None or not self.audience:
             return access_token
         if not audience_matches(access_token.claims.get("aud"), self.audience):
-            logger.info("Bearer token rejected for client %s: its audience is not this server", access_token.client_id)
+            logger.info("Bearer token rejected for client %s: its audience is not this server", access_token.client_id)  # nosemgrep: python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure - logs the client id, never the token
             return None
         return access_token

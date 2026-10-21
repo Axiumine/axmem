@@ -1,5 +1,9 @@
 name: CI
 
+# Hosted runners only, and only the checks that need neither an NVIDIA GPU nor Docker. The suites that run the real
+# TensorRT models and a real Qdrant (tests, end-to-end, cluster, coverage, memory budgets, Qodana, mutation) run on the
+# developer machine in the pre-push Git hook: see docs/quality-gates.md.
+
 on:
   push:
     branches: ["**"]
@@ -14,8 +18,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Static checks need no GPU and run on hosted runners. The TensorRT libraries (about 3.8 GB) are
-  # left out of the environment: ruff, import-linter and the architecture tests never load them.
+  # The TensorRT libraries (about 3.8 GB) are left out of the environment: ruff, import-linter and the architecture
+  # tests (which include the tests of these workflow files) never load them.
   lint:
     name: lint (py${{ matrix.python }})
     strategy:
@@ -43,56 +47,15 @@ jobs:
       - name: Install dependencies
         run: uv sync --locked --all-extras --dev --no-install-package tensorrt-cu13-libs
 
-      - name: Check architecture boundaries and rule proofs
+      - name: Check architecture boundaries, rule proofs and workflow rules
         run: uv run --frozen --no-sync pytest tests/architecture/ -v
 
       - name: Run linting
-        run: uv tool run ruff check .
-
-  # The integration and end-to-end suites run the real TensorRT embedder and reranker: they need a self-hosted runner
-  # with an NVIDIA GPU (driver R580 or newer). See docs/quality-gates.md for the runner requirements.
-  # The job runs the code of the pull request (conftest.py, tests, pyproject.toml) on a host with a Docker daemon, so a
-  # pull request from a fork never reaches it: the head repository must be this one. Keep the condition on every job
-  # that uses the self-hosted runner, and never trigger these workflows with pull_request_target.
-  test:
-    name: test (py${{ matrix.python }})
-    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
-    strategy:
-      fail-fast: false
-      matrix:
-        python: ["3.14"]
-    runs-on: [self-hosted, linux, gpu]
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python }}
-
-      - name: Install dependencies
-        run: uv sync --locked --all-extras --dev
-
-      - name: Run integration tests
-        run: uv run pytest tests/integration/ -v
-
-      - name: Run Qdrant E2E tests
-        run: uv run pytest tests/e2e/ -v
+        run: uv run --frozen --no-sync ruff check .
 
   smoke-test:
     runs-on: ubuntu-latest
-    needs: [lint, test]
-    # `test` is skipped for a pull request from a fork; the wheel check on the hosted runner still runs for it.
-    if: ${{ !cancelled() && needs.lint.result == 'success' && contains(fromJSON('["success", "skipped"]'), needs.test.result) }}
+    needs: [lint]
 
     steps:
       - name: Checkout code

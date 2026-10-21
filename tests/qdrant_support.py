@@ -1,10 +1,10 @@
 """Real Qdrant servers for the tests: a throwaway single node, and a throwaway three-node cluster.
 
-Nothing is simulated. The suites talk to ``qdrant/qdrant`` (the version the service requires and the CI
-pins) started through Docker with an API key, on random loopback ports, and removed at the end. A run that
+Nothing is simulated. The suites talk to ``qdrant/qdrant`` (the version the service requires and the gates
+pin) started through Docker with an API key, on random loopback ports, and removed at the end. A run that
 cannot start the container ends at once, it never skips (see ``require_docker``). ``AXMEM_TEST_QDRANT_URL``
-(with ``AXMEM_TEST_QDRANT_API_KEY``) points the suites at a server that already runs, such as a service
-container of a CI job; the tests then keep to collections of their own and delete them afterwards.
+(with ``AXMEM_TEST_QDRANT_API_KEY``) points the suites at a server that already runs, such as a
+Qdrant you started yourself; the tests then keep to collections of their own and delete them afterwards.
 """
 import contextlib
 import os

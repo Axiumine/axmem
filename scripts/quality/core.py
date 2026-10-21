@@ -53,6 +53,14 @@ class Skip(Exception):  # noqa: N818 - control-flow signal, not an error
     """Raised by a gate that cannot or need not run (reason in args[0])."""
 
 
+class MissingToolError(Exception):
+    """Raised by a gate whose tool or daemon is absent (reason in args[0]).
+
+    The gate fails instead of skipping: a push that these gates guard must not pass because the machine cannot
+    run one of them. ``SKIP=<gate>`` is the deliberate way to leave a gate out.
+    """
+
+
 GateFn = Callable[[Ctx], tuple[bool, str]]
 
 

@@ -2,8 +2,9 @@
 #            Qodana analysis is configured by qodana.yaml file                  #
 #            https://www.jetbrains.com/help/qodana/qodana-yaml.html             #
 #                                                                               #
-#  Never put QODANA_TOKEN here: it lives in the git-ignored .env file locally   #
-#  and in the QODANA_TOKEN repository secret in CI.                             #
+#  Never put QODANA_TOKEN here: it lives in the git-ignored dotenv file or in   #
+#  the environment of the machine that pushes (Qodana runs in the pre-push      #
+#  hook).                                                                       #
 #-------------------------------------------------------------------------------#
 version: "1.0"
 

@@ -11,6 +11,7 @@ from pathlib import Path
 from .core import (
     ROOT,
     Ctx,
+    MissingToolError,
     Skip,
     check,
     docker_ready,
@@ -39,7 +40,10 @@ def trivy_cmd() -> list[str]:
             "-v", f"{ROOT}:/src", "-v", f"{cache}:/cache", "-w", "/src",
             TRIVY_IMAGE, "--cache-dir", "/cache",
         ]
-    raise Skip("trivy unavailable (install trivy or docker)")
+    raise MissingToolError(
+        "trivy is not installed (TRIVY_BIN names a binary) and no Docker daemon can run its image: "
+        "install trivy or start Docker, or leave the gate out on purpose with SKIP=trivy",
+    )
 
 
 def gate_trivy(_ctx: Ctx) -> tuple[bool, str]:
@@ -48,7 +52,7 @@ def gate_trivy(_ctx: Ctx) -> tuple[bool, str]:
 
 def gate_qodana(_ctx: Ctx) -> tuple[bool, str]:
     if not shutil.which("qodana"):
-        raise Skip("qodana CLI not installed")
+        raise MissingToolError("the qodana CLI is not installed: install it, or leave the gate out on purpose with SKIP=qodana")
     secrets = load_dotenv_values(("QODANA_TOKEN",))
     if "QODANA_TOKEN" not in secrets:
         return False, "QODANA_TOKEN is not set (put it in the git-ignored dotenv file or the environment)"

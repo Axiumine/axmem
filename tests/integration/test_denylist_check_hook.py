@@ -13,7 +13,7 @@ SYSTEM_PATH = "/usr/bin:/bin"
 
 pytestmark = pytest.mark.skipif(
     sys.platform == "win32" or shutil.which("sh") is None or shutil.which("git") is None,
-    reason="the guard is a POSIX shell script; it is exercised on developer machines and Linux CI",
+    reason="the guard is a POSIX shell script; it runs on developer machines",
 )
 
 

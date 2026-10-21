@@ -31,6 +31,10 @@ GATES: dict[str, tuple[GateFn, str]] = {
 
 _STATIC = ["ruff", "imports", "bandit", "semgrep", "vulture", "radon-cc", "radon-mi"]
 
+# What needs neither a GPU nor Docker: the static gates, trivy, and the type checks. Hosted CI runs exactly these (by
+# name, split across jobs), and `stage ci` runs them in one go on a developer machine.
+_HOSTED = [[*_STATIC, "trivy"], ["mypy", "pylint"]]
+
 # Gates inside a group run in parallel; groups run in order and a failed group stops the stage.
 STAGES: dict[str, list[list[str]]] = {
     "pre-commit": [
@@ -39,27 +43,19 @@ STAGES: dict[str, list[list[str]]] = {
         ["snapshots", "tests-fast"],
         ["gitnexus"],
     ],
+    # The one place that runs the GPU, Docker and Qdrant gates (tests, e2e-qdrant, coverage, memray, qodana, mutation):
+    # hosted CI has no GPU and no Docker. The cheap gates come first, so a failure there saves the long suites.
     "pre-push": [
-        _STATIC,
-        ["mypy", "pylint"],
+        *_HOSTED,
         ["tests"],
         ["e2e-qdrant"],
         ["coverage"],
         ["memray"],
-        ["trivy"],
         ["qodana"],
         ["mutation"],
         ["gitnexus"],
     ],
-    "ci": [
-        _STATIC,
-        ["mypy", "pylint"],
-        ["tests"],
-        ["e2e-qdrant"],
-        ["coverage"],
-        ["memray"],
-        ["trivy"],
-    ],
+    "ci": _HOSTED,
 }
 
 # Slow gates that only run when asked for (MUTATION=1 or ONLY=mutation).

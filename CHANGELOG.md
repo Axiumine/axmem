@@ -13,7 +13,7 @@ without the mark, with the commit that landed it, in the commit that lands it.
 
 ### Added
 
-- Quality gates run from one orchestrator, `scripts/quality`, used by the Git hooks and CI: ruff, import-linter,
+- Quality gates run from one orchestrator, `scripts/quality`, used by the Git hooks and by hosted CI for its static gates: ruff, import-linter,
   bandit, semgrep, vulture, radon, mypy, pylint, syrupy snapshots, 100 % branch coverage, memray budgets, trivy,
   Qodana, mutmut and GitNexus (proposed upstream as #163).
 - `commit-msg` hook (`95c1e5f1`): `[🤖 ]<type>(<scope>): <subject>`, subject up to 150 characters, body up to 10
@@ -160,11 +160,10 @@ without the mark, with the commit that landed it, in the commit that lands it.
   `docs/contributors.md` lists. HTTP mock transports and in-process fake endpoints for the remote providers, spies
   and wrappers that delegate to the real adapters (fault injection on cue, added latency, a vector cut to another
   width) and fault injection in the engine (a barrier around `TensorRTEngine.infer`, hidden libraries in a
-  subprocess, one invalid `cudaMemcpy`) remain. Every CI job that runs tests or coverage (`ci.yml` `test`, `e2e.yml`, and the `snapshots`, `coverage`,
-  `memory` and `mutation` jobs of `quality.yml`) moves to `runs-on: [self-hosted, linux, gpu]`; the static gates,
-  the architecture tests, `trivy`, `qodana` and the wheel smoke test stay on hosted runners, and the static job
-  installs without the TensorRT libraries. The runner is not provisioned by the repository. The Windows leg of
-  `ci.yml` is gone.
+  subprocess, one invalid `cudaMemcpy`) remain. The suites that run these engines need an NVIDIA GPU, which hosted runners do not have, and the project has no
+  self-hosted runner: they run on the developer machine in the `pre-push` hook (see the CI entry under Fixed). The
+  static gates, the architecture tests, `trivy` and the wheel smoke test run on hosted runners, and the static job
+  installs without the TensorRT libraries. The Windows leg of `ci.yml` is gone.
 - `RERANKING_PROVIDER` accepts `TensorRT` (default) and `HTTP`; `FastEmbed` is now rejected at startup with an error
   naming the setting. The reranker needs an NVIDIA GPU; `RERANKING_ENABLED=false` or `RERANKING_PROVIDER=HTTP` runs
   without one. The reranker is Linux-only (the engine cache locks with `fcntl`) and the package classifier reads
@@ -586,10 +585,7 @@ Fixes found by reviewing the feature cuts (no upstream counterpart: the code the
   could not see and reported as missing whenever they were installed, so a commit that touched `tensorrt_runtime.py`
   with few other files failed the pre-commit score on errors that were never real. The Qdrant preflight of the suites pulls `qdrant/qdrant:v1.19.2` when the image is not local (a
   clean or pruned runner, or a bumped version) and still ends the run with exit code 2 and the cause when Docker or the
-  pull fails. The jobs on the self-hosted GPU runner no longer run for pull requests from forks (the head repository must
-  be this one; the weekly `mutation` job runs on schedule and manual dispatch only; no workflow uses
-  `pull_request_target`), and the wheel smoke test still runs for them. The weekly mutation run has a concurrency group
-  of its own, so a push to the default branch no longer cancels it. The mutation sandbox holds `.githooks/` and
+  pull fails. The mutation sandbox holds `.githooks/` and
   `.github/`, which the hook and workflow tests read, and the protocol-coverage test ignores the names mutmut adds to a
   mutated class, so mutmut's baseline run passes (checked with the gate on `app.utils.url_helpers*`). `denylist-check` fails closed
   (exit 2, naming the line numbers of the list that are not valid expressions, never the terms) when grep cannot use the
@@ -607,6 +603,31 @@ Fixes found by reviewing the feature cuts (no upstream counterpart: the code the
   index for TensorRT, without `tensorrt-cu13-libs`) and the wheel on top, instead of resolving the PyPI placeholders of
   the TensorRT packages. `pytest`, `pytest-asyncio` and `requests` (test-only) moved from the runtime dependencies to the
   `dev` group and the unused `fastapi` pin was removed, so an installed Axmem no longer pins them (`requests` still arrives through the SDKs that need it).
+- **CI runs only what needs no GPU and no Docker; the pre-push hook is the GPU gate:** the earlier CI moved the test,
+  snapshot, coverage, memory and mutation jobs to a self-hosted GPU runner behind a guard against pull requests from
+  forks. There is no such runner and hosted runners have no GPU, so those jobs (`ci.yml` `test`, the whole of `e2e.yml`,
+  and the `snapshots`, `coverage`, `memory`, `qodana` and weekly `mutation` jobs of `quality.yml`) are gone, with the fork
+  guard that protected them and the schedule. GitHub Actions now runs, on hosted `ubuntu-latest` runners only, ruff, the
+  architecture tests (which include the rules of the workflow files), the static gates of `quality.yml` (ruff, import
+  boundaries, bandit, semgrep with the registry packs, vulture, radon, mypy, pylint), `trivy` (the pinned release binary,
+  checked against its SHA-256, instead of a Docker image) and the wheel smoke test, all installed with `--locked` and
+  without `tensorrt-cu13-libs`; the steps were run in a clean container with no GPU and no Docker. `tests/architecture/test_workflows.py` now fails
+  on a self-hosted or non-Ubuntu runner, a container or service, a schedule, `pull_request_target`, a secret, a token that
+  is not read-only, a checkout that keeps its credentials, a gate that needs the GPU or Docker, an install that fetches the
+  TensorRT libraries, a missing concurrency group, and a trivy version that differs from the gate's; `test_mutation_sandbox.py`
+  checks that mutation is a gate of the pre-push hook and of no workflow. Both concurrency groups are now
+  `workflow-ref` (the event no longer matters without a schedule). The `pre-push` hook is the one place that runs the
+  suites: tests, the Qdrant cluster suite, 100 % coverage, memory budgets, Qodana and (opt-in) mutation. A gate whose
+  tool or daemon is missing (the cluster suite without Docker, trivy with neither a binary nor Docker, Qodana without
+  its CLI, semgrep with nothing to run it) now fails with the cause instead of reporting `SKIP`, and `trivy` runs with
+  the static gates, before the long suites. The hook refuses the push of a commit that is not the checked-out `HEAD`
+  (it used to skip the pipeline for such a push and let it through unchecked), and still lets a deletion and a tag on
+  `HEAD` through its checks. Tests run real `git push` commands against a bare repository for the hook, each gate of the
+  pipeline failing, the order of the gates, and the real suites ending their run without a GPU and without Docker.
+  `stage ci` is the set of hosted gates. Two findings of the first clean run were fixed: semgrep's registry packs
+  flagged the two log lines that name a rejected token's client id (inline `nosemgrep` with the reason, in
+  `app/middleware/token_verifiers.py`), and `trivy` reported `certifi` 2026.1.4 (GHSA-6q48-6c7w-9gw2, critical, fixed in
+  2026.10.19), so `uv.lock` now locks `certifi` 2026.10.19 (nothing else moved).
 - **Documentation review:** statements that the code contradicted were corrected. `docs/tool_reference.md` gives the
   real return values (`mark_memory_obsolete` and `unobsolete_memory` return `{"success": true}`, `query_memory` the
   whole result object), lists every parameter of `get_recent_memories` and the provenance fields `agent_id`,
@@ -619,8 +640,8 @@ Fixes found by reviewing the feature cuts (no upstream counterpart: the code the
   auth mode, drop the OAuth sign-in, and no longer point at a log file that nothing writes (the log goes to standard
   error); the Axmem CLI section of the connectivity guide installs with `uv tool install .`. `docs/search.md` lists
   all six embedding providers and the search settings in place of an empty section; the architecture overview names the
-  tenant in the link id and anchors every line link at the right symbol; `docs/quality-gates.md` describes the
-  scheduled mutation job (`app.utils.*` and `app.config.*`, up to 50 survivors) instead of `SKIP`;
+  tenant in the link id and anchors every line link at the right symbol; `docs/quality-gates.md` describes how
+  the mutation gate is scoped instead of `SKIP`;
   `docs/dev/architecture-tests.md` names the `lint` job and seven rules; the test harness README counts its six
   skills. `.env.example` no longer pins `SERVICE_VERSION` (a copied file made `/` and `/health` report a stale
   version for every release) and lists the settings it left out; `docs/configuration.md` warns about the `["*"]`
@@ -639,6 +660,8 @@ Fixes found by reviewing the feature cuts (no upstream counterpart: the code the
 
 ### Security
 
+- `certifi` is locked at 2026.10.19 (was 2026.1.4, which bundles root CAs named in GHSA-6q48-6c7w-9gw2); it is a
+  transitive dependency of the HTTP clients and the only entry of `uv.lock` that changed.
 - Authentication fails closed (`3201a2c3`). A server with no `AUTH_MODE` refuses to start (exit code 1), `AUTH_MODE=none` is accepted only on stdio or on a loopback bind (`127.0.0.1`, `::1`; a hostname such as `localhost` does not count), and the credential modes are refused on stdio, which carries no bearer token. A request-level check refuses to serve when no provider is attached and the mode is not `none`. Fixes the finding that, without `FASTMCP_SERVER_AUTH`, every request was the same default user (`app/middleware/auth.py`), so any caller of a network-bound server read and changed every memory. Existing deployments that relied on that default must set `AUTH_MODE` (and bind to a loopback address if it is `none`) before the next start.
 - Tenant isolation is tested on every access path: tenant A cannot read, update, delete, link, unlink, search or list tenant B's memories over the MCP tools, the REST routes and the CLI (local and remote), and another tenant's id answers exactly like an id that does not exist.
 - Static tokens are stored as SHA-256 hashes only, compared in constant time, and never logged; the settings validator refuses a value that is not a 64-character hexadecimal digest without repeating it, so a token pasted by mistake is not echoed. A static token has no expiry: revoke it by removing its hash and restarting.

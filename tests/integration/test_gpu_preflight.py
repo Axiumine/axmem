@@ -81,3 +81,28 @@ def test_a_failed_preflight_ends_the_pytest_run_without_skipping(tmp_path, envir
     assert expected in result.stdout + result.stderr
     assert "no tests ran" in result.stdout  # the run ended; the test was neither run nor skipped
     assert not re.search(r"\d+ (skipped|passed)", result.stdout)
+
+
+# One small file of every suite that the pre-push gates run: the conftest of its directory ends the whole run.
+SUITE_FILES = [
+    ("tests/integration/test_version_resolution.py", []),
+    ("tests/e2e/test_health_e2e.py", []),
+    ("tests/cluster/test_cluster_failover.py", ["-m", "cluster"]),
+]
+
+
+@pytest.mark.parametrize(("path", "marker"), SUITE_FILES, ids=lambda value: value if isinstance(value, str) else "")
+def test_every_suite_of_the_pre_push_gates_ends_the_run_when_no_gpu_is_visible(path, marker):
+    result = subprocess.run(  # noqa: S603
+        [sys.executable, "-m", "pytest", path, "-p", "no:cacheprovider", *marker],
+        cwd=ROOT,
+        env={**os.environ, "CUDA_VISIBLE_DEVICES": "-1"},
+        capture_output=True,
+        text=True,
+        timeout=300,
+        check=False,
+    )
+
+    assert result.returncode == 2, result.stdout + result.stderr
+    assert "GPU preflight failed (no-gpu)" in result.stdout + result.stderr
+    assert not re.search(r"\d+ (skipped|passed|failed)", result.stdout)  # nothing ran, nothing was skipped

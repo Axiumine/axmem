@@ -12,7 +12,7 @@ SCISSORS = "# ------------------------ >8 ------------------------"
 
 pytestmark = pytest.mark.skipif(
     sys.platform == "win32" or shutil.which("bash") is None,
-    reason="the hook is a bash script; it is exercised on developer machines and Linux CI",
+    reason="the hook is a bash script; it runs on developer machines",
 )
 
 

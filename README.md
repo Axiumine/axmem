@@ -460,6 +460,11 @@ Python 3.14 is the supported version. After `uv sync --locked --all-extras --dev
 Git hooks with `uv run python -m scripts.quality install`. Commits and pushes then run the lint, type,
 security, snapshot, coverage (100 %), memory-budget and optional mutation gates described in
 [docs/quality-gates.md](docs/quality-gates.md), which also explains how to run or bypass a single gate.
+
+The `pre-push` hook is the GPU gate: GitHub Actions runs only the static checks (hosted runners have no GPU, and there is
+no self-hosted runner), so the integration, end-to-end and cluster suites, the 100 % coverage gate, the memory budgets and
+Qodana run on the machine that pushes, and a push is refused when one fails or when the machine has no NVIDIA GPU or no
+Docker daemon.
 Before changing code, read the [architecture overview](architecture.md).
 
 ---

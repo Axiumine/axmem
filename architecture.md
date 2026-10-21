@@ -12,7 +12,7 @@ Alembic are gone; memory ids are UUIDs; tenants have no stored record), and for 
 and environment variables to Axmem, and for the documentation that positions Axmem as a standalone memory server (no
 code changed), and for the review of authentication and the REST routes (token verifiers, scope checks on the REST routes,
 the loopback guard, the refusal of an old `FORGETFUL_SCOPES`, an incomplete auth mode that refuses only `serve`), and for the review of the TensorRT and
-provider errors (an unparsable tokenizer, the engine cache, an unavailable engine, the GPU probe, the width check of the remote providers, `BACKUP_DIR`), and for the review of the documentation (line anchors re-derived from the code, the link id with its tenant, the tiktoken pre-load), on the `axmem` branch.
+provider errors (an unparsable tokenizer, the engine cache, an unavailable engine, the GPU probe, the width check of the remote providers, `BACKUP_DIR`), and for the review of the documentation (line anchors re-derived from the code, the link id with its tenant, the tiktoken pre-load), and for CI that runs only the static checks on hosted runners while the pre-push hook runs the GPU suites, on the `axmem` branch.
 This is a selective interpretation, not an exhaustive dependency inventory.
 The component groupings below are inferred for readability; the described execution paths
 and wiring were verified against source. Line numbers are inspection starting points and may drift.
@@ -329,7 +329,7 @@ The external-library list is explicit, not a complete ban on every possible inte
 
 Run `uv run lint-imports --no-cache` for the rules alone, or
 `uv run pytest tests/architecture/` for the rules, source coverage, and deliberate-violation proofs.
-The CI `lint` job runs the latter on a hosted runner; [validation notes](docs/dev/architecture-tests.md) describe the proofs.
+The CI `lint` job runs the latter on a hosted runner without a GPU; [validation notes](docs/dev/architecture-tests.md) describe the proofs.
 
 ## Tests and validation entry points
 
@@ -344,9 +344,10 @@ The CI `lint` job runs the latter on a hosted runner; [validation notes](docs/de
 | Memory budgets | [test_memory_budget_e2e.py](tests/e2e/test_memory_budget_e2e.py) (embedder and reranker engines loaded before the measured section) holds `limit_memory` budgets for bulk create and query; they are enforced only under `--memray` (Linux/macOS) and otherwise run as smoke tests. |
 | Agent walkthroughs | [test_harness/walkthrough.py:227](test_harness/walkthrough.py#L227) orchestrates agent sessions; this is evaluation infrastructure, not a production request path. Generated run workspaces are excluded from the map. |
 
-Suites that run tests execute on a self-hosted GPU runner in CI (`runs-on: [self-hosted, linux, gpu]`), never for a pull request from a fork
-([tests/architecture/test_workflows.py](tests/architecture/test_workflows.py) checks it); only the static gates and
-the architecture tests run on hosted runners. Storage-sensitive changes should exercise the end-to-end and cluster suites; contract/business-rule changes
+CI runs only on hosted runners and only what needs neither a GPU nor Docker (the static gates, trivy, the architecture tests and
+the wheel smoke test; [tests/architecture/test_workflows.py](tests/architecture/test_workflows.py) checks that no workflow brings
+a self-hosted runner, a schedule or a GPU or Docker job back). The suites above run in the `pre-push` Git hook on the developer machine,
+which refuses the push when a gate fails or when there is no NVIDIA GPU or Docker daemon. Storage-sensitive changes should exercise the end-to-end and cluster suites; contract/business-rule changes
 should first use the focused integration tests. Source links identify tests, not evidence that those
 suites have passed for any particular revision. Repository lint command: `uv tool run ruff check .`;
 the full set of gates (types, security, complexity, 100% combined coverage, mutation) is described in
