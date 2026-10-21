@@ -235,11 +235,10 @@ def engine_failures(adapters) -> list[str]:
     health route reports it, so that a probe or a supervisor restarts the server. Remote providers and a disabled
     reranker (None) have nothing to report.
     """
-    return [
-        reason
-        for adapter in adapters
-        if callable(getattr(adapter, "unusable_reason", None)) and (reason := adapter.unusable_reason())
-    ]
+    reasons = (
+        adapter.unusable_reason() for adapter in adapters if callable(getattr(adapter, "unusable_reason", None))
+    )
+    return [reason for reason in reasons if reason]
 
 
 @dataclass

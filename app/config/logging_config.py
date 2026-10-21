@@ -33,8 +33,8 @@ def wants_colour(stream: object) -> bool:
     """
     if os.environ.get("NO_COLOR"):
         return False
-    isatty = getattr(stream, "isatty", None)
-    return bool(isatty and isatty())
+    isatty = getattr(stream, "isatty", lambda: False)
+    return bool(isatty())
 
 
 class ConsoleFormatter(logging.Formatter):

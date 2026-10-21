@@ -268,6 +268,7 @@ class QdrantStore:
             ConflictError: If the replicas kept holding different versions of a point
         """
         wanted = list(dict.fromkeys(ids))
+        missing = wanted
         wait = AGREEMENT_WAIT_SECONDS
         for attempt in range(AGREEMENT_ATTEMPTS):
             found = await self.get(
