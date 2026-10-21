@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from uuid import UUID
 
 from app.config.settings import settings
-from app.exceptions import EmbeddingUnavailableError
+from app.exceptions import ModelUnavailableError
 from app.models.memory_models import clean_scope
 from app.protocols.embedding_protocol import EmbeddingsAdapter
 from app.protocols.memory_protocol import (
@@ -334,7 +334,8 @@ class ReEmbeddingService:
 
         The batch goes to the provider in one call. When that call fails, each memory is
         retried on its own, so one memory the provider rejects does not fail the others. A
-        provider that says it cannot serve any call (``EmbeddingUnavailableError``) is not asked again
+        provider that says it cannot serve any call (``ModelUnavailableError``: an ``EmbeddingUnavailableError`` of a
+        remote provider, or the ``TensorRTUnavailableError`` of a closed or failed local engine) is not asked again
         for every memory: the whole batch is recorded as failed.
         """
         try:
@@ -342,7 +343,7 @@ class ReEmbeddingService:
                 [build_embedding_text(stored.memory) for stored in batch],
             )
             return list(zip(batch, embeddings, strict=True))
-        except EmbeddingUnavailableError:
+        except ModelUnavailableError:
             logger.exception("rebuild_embeddings: the embeddings provider is unavailable, not retrying", extra={
                 "user_id": str(user_id),
                 "batch_size": len(batch),

@@ -37,11 +37,11 @@ dependencies = [
     "qdrant-client==1.19.1",
 ]
 
-[project.optional-dependencies]
-ollama = ["ollama>=0.4"]
-
 # TensorRT 11 for CUDA 13 comes from NVIDIA's index (the PyPI project of the same name only
 # holds an installer stub). The index is explicit: only the packages named below use it.
+# [tool.uv.sources] is not part of a built wheel: an install of the wheel (pip, `uv tool install`) passes
+# `--extra-index-url https://pypi.nvidia.com` instead; the README (Installing the package) lists the commands,
+# and tests/integration/test_install_requirements.py keeps them in step with this file.
 [[tool.uv.index]]
 name = "nvidia"
 url = "https://pypi.nvidia.com"

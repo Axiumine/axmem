@@ -21,6 +21,7 @@ from app.bootstrap import (
     dispose_runtime,
     get_embedding_adapter,
     get_reranker_adapter,
+    load_token_counter,
     operator_failure,
 )
 from app.config.auth import AuthConfigError, build_auth_provider
@@ -36,7 +37,13 @@ from app.version import get_version
 
 # Global references - initialized in lifespan()
 _queue_listener = None
+# The one-line cause when the lifespan refused to start for a reason an operator can fix (set by lifespan(), reported by _serve())
+_startup_refusal: str | None = None
 logger = logging.getLogger(__name__)
+
+
+class StartupRefusedError(RuntimeError):
+    """The lifespan could not build the runtime for a reason an operator can fix; the message is the one-line cause."""
 
 
 @asynccontextmanager
@@ -54,7 +61,17 @@ async def lifespan(app):
 
     logger.info("Starting session", extra={"service": settings.SERVICE_NAME})
 
-    runtime = await build_runtime()
+    global _startup_refusal
+    try:
+        runtime = await build_runtime()
+    except Exception as exc:
+        # ``_serve`` checked this before it bound anything; a node that went away since is a race. Without this, the
+        # web server would end the start-up with the traceback of the error
+        cause = operator_failure(exc)
+        if cause is None:  # a bug keeps its traceback
+            raise
+        _startup_refusal = cause
+        raise StartupRefusedError(cause) from exc
     services = runtime.services
 
     mcp.engine_failures = runtime.engine_failures
@@ -353,7 +370,8 @@ def _http_middleware():
       cannot reach the server by DNS rebinding or a cross-origin request. With ``CORS_ENABLED`` the origins
       that ``CORS_ORIGINS`` lists by name pass it too (a ``*`` never does), and so do the hosts that
       ``AXMEM_ALLOWED_HOSTS`` names: naming an origin or a host is the operator's decision.
-    - ``CORS_ENABLED``: CORS headers.
+    - ``CORS_ENABLED``: CORS headers. Credentials are sent only when ``CORS_ALLOW_CREDENTIALS`` asks for them, which
+      ``Settings`` allows only with named origins; with ``["*"]`` the answer is ``*`` and carries no credentials header.
     - The body limit (``REQUEST_BODY_MAX_BYTES``), innermost of these, so that its 413 answer carries the CORS headers.
     """
     from starlette.middleware import Middleware
@@ -375,7 +393,7 @@ def _http_middleware():
             Middleware(
                 CORSMiddleware,
                 allow_origins=settings.CORS_ORIGINS,
-                allow_credentials=True,
+                allow_credentials=settings.CORS_ALLOW_CREDENTIALS,  # never with a "*": Settings refuses that
                 allow_methods=["*"],
                 allow_headers=[
                     "mcp-protocol-version",
@@ -390,14 +408,8 @@ def _http_middleware():
     return middleware
 
 
-def _serve(transport, host, port):
-    """Run the MCP server on the given transport (shared by legacy and new spellings).
-
-    Fails closed first: a server without a configured authentication mode, one whose mode lacks its
-    settings (no issuer and audience for ``jwt``, no token hashes for ``static``, ...), one that
-    would serve anonymous requests on a non-loopback address, and one whose old
-    ``FORGETFUL_SCOPES`` would turn into the allow-everything ceiling do not start.
-    """
+def _configuration_refusal(transport, host) -> str | None:
+    """Why the configuration must not serve (no authentication mode, an incomplete one, an old scope ceiling), if so."""
     from app.config.auth import AuthConfigError, ensure_startup_allowed
     from app.config.legacy_settings import (
         LegacySettingsError,
@@ -410,56 +422,122 @@ def _serve(transport, host, port):
             raise _auth_refusal
         ensure_legacy_scopes_replaced()
     except (AuthConfigError, LegacySettingsError) as exc:
-        print(f"Error: {exc}", file=sys.stderr)
-        return 1
+        return str(exc)
+    return None
 
-    # Build or load the TensorRT engines before the server reports ready: a server that cannot
-    # embed or rerank refuses to start, and says why, instead of failing inside the lifespan.
-    from app.config.logging_config import logging_while_starting
 
-    with logging_while_starting(settings.LOG_LEVEL, settings.LOG_FORMAT):
-        for model, start in (("embedder", get_embedding_adapter), ("reranker", get_reranker_adapter)):
-            try:
-                start()
-            except Exception as exc:
-                cause = operator_failure(exc)
-                if cause is None:  # a bug keeps its traceback
-                    raise
-                print(f"Error: the {model} cannot start: {cause}", file=sys.stderr)
-                return 1
-        # Qdrant and the scope ceiling are checked here too: inside the lifespan a refusal ends as a traceback
+def _start_refusal() -> str | None:
+    """Why the tokenizer, a model or Qdrant cannot start, if one cannot: the line that follows ``Error:``.
+
+    The cheap check comes first (the tokenizer is a few milliseconds from a cache, at most its time limit without
+    one), then the engines, which can take minutes to build, then Qdrant and the scope ceiling: inside the
+    lifespan a refusal would end as a traceback of the web server.
+    """
+    for what, start in (
+        ("the token counter", load_token_counter),
+        ("the embedder", get_embedding_adapter),
+        ("the reranker", get_reranker_adapter),
+    ):
         try:
-            asyncio.run(check_runtime_start())
+            start()
         except Exception as exc:
             cause = operator_failure(exc)
-            if cause is None:
+            if cause is None:  # a bug keeps its traceback
                 raise
-            print(f"Error: {cause}", file=sys.stderr)
-            return 1
+            return f"{what} cannot start: {cause}"
+    try:
+        asyncio.run(check_runtime_start())
+    except Exception as exc:
+        cause = operator_failure(exc)
+        if cause is None:
+            raise
+        return cause
+    return None
 
+
+def _kept_startup_refusal() -> str | None:
+    """The cause that the lifespan kept when it refused to start, if it did."""
+    return _startup_refusal
+
+
+def _refusals_without_traceback(app):
+    """The app, with a refusal of the lifespan reported to uvicorn without the text of its traceback.
+
+    Starlette answers a lifespan that raised with ``lifespan.startup.failed`` and the traceback as its message, which
+    uvicorn logs. ``lifespan()`` has already kept the one-line cause of a failure an operator can fix, and ``_serve``
+    prints that after uvicorn has stopped, so the message is left empty. Any other failure keeps its traceback.
+    """
+
+    async def guarded(scope, receive, send):
+        async def quiet(message):
+            if message["type"] == "lifespan.startup.failed" and _startup_refusal is not None:
+                message = {**message, "message": ""}
+            await send(message)
+
+        await app(scope, receive, quiet if scope["type"] == "lifespan" else send)
+
+    return guarded
+
+
+def _run_server(transport, host, port):
     if transport == "stdio":
         import warnings
         warnings.filterwarnings("ignore", category=DeprecationWarning)
         mcp.run(show_banner=False)
-    else:
-        # Serve the app through uvicorn directly instead of mcp.run(): FastMCP would wrap
-        # serve() in its own lifespan, deferring dispose_runtime() until uvicorn has already
-        # re-raised SIGTERM/SIGINT, so shutdown cleanup never ran. With uvicorn as the only
-        # lifespan owner, teardown completes inside its shutdown phase. The uvicorn options
-        # below are the ones mcp.run(transport="http") applied, with or without CORS.
-        import fastmcp
-        import uvicorn
+        return
+    # Serve the app through uvicorn directly instead of mcp.run(): FastMCP would wrap
+    # serve() in its own lifespan, deferring dispose_runtime() until uvicorn has already
+    # re-raised SIGTERM/SIGINT, so shutdown cleanup never ran. With uvicorn as the only
+    # lifespan owner, teardown completes inside its shutdown phase. The uvicorn options
+    # below are the ones mcp.run(transport="http") applied, with or without CORS.
+    import fastmcp
+    import uvicorn
 
-        app = mcp.http_app(middleware=_http_middleware())
-        uvicorn.run(
-            app,
-            host=host,
-            port=port,
-            timeout_graceful_shutdown=2,
-            lifespan="on",
-            ws="websockets-sansio",
-            log_level=fastmcp.settings.log_level.lower(),
-        )
+    uvicorn.run(
+        _refusals_without_traceback(mcp.http_app(middleware=_http_middleware())),
+        host=host,
+        port=port,
+        timeout_graceful_shutdown=2,
+        lifespan="on",
+        ws="websockets-sansio",
+        log_level=fastmcp.settings.log_level.lower(),
+    )
+
+
+def _serve(transport, host, port):
+    """Run the MCP server on the given transport (shared by legacy and new spellings).
+
+    Fails closed first: a server without a configured authentication mode, one whose mode lacks its
+    settings (no issuer and audience for ``jwt``, no token hashes for ``static``, ...), one that
+    would serve anonymous requests on a non-loopback address, and one whose old
+    ``FORGETFUL_SCOPES`` would turn into the allow-everything ceiling do not start.
+
+    Then the tokenizer, the TensorRT engines, Qdrant and the scope ceiling are checked before the server reports
+    ready: a server that cannot count tokens, embed or rerank, or reach Qdrant, refuses to start and says why. A
+    failure that still happens inside the lifespan (a node that went away since) ends the same way.
+    """
+    global _startup_refusal
+    _startup_refusal = None
+    refusal = _configuration_refusal(transport, host)
+    if refusal is None:
+        from app.config.logging_config import logging_while_starting
+
+        with logging_while_starting(settings.LOG_LEVEL, settings.LOG_FORMAT):
+            refusal = _start_refusal()
+    if refusal is not None:
+        print(f"Error: {refusal}", file=sys.stderr)
+        return 1
+
+    try:
+        _run_server(transport, host, port)
+    except (Exception, SystemExit):
+        kept = _kept_startup_refusal()  # set by the lifespan, which ran inside the server: not what this function assigned
+        if kept is None:
+            raise
+        # uvicorn exits with code 3 and FastMCP raises an exception group when the lifespan fails to start
+        print(f"Error: {kept}", file=sys.stderr)
+        return 1
+    return None
 
 
 def _legacy_launcher(argv):

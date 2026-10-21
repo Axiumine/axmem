@@ -349,7 +349,7 @@
             "type": "List[str]"
           }
         },
-        "returns": "List of memory IDs that were successfully linked"
+        "returns": "Dict with linked_memory_ids: the target memory IDs that were newly linked (a target that does not exist for the tenant, the source itself and a link that exists already are skipped)"
       },
       {
         "category": "memory",
@@ -433,7 +433,7 @@
             "type": "Optional[str]"
           }
         },
-        "returns": "Boolean indicating success"
+        "returns": "Dict {\"success\": true} once the memory is marked obsolete; a memory that is not found, is already obsolete or would be superseded by itself is an error, never false"
       },
       {
         "category": "memory",
@@ -455,7 +455,7 @@
             "type": "str"
           }
         },
-        "returns": "Boolean indicating success"
+        "returns": "Dict {\"success\": true} once the memory is active again; a memory that is not found or is not obsolete is an error, never false"
       },
       {
         "category": "memory",

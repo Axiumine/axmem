@@ -13,6 +13,7 @@
   "AZURE_ENDPOINT": "",
   "AZURE_SUPPORTS_DIMENSIONS": true,
   "BACKUP_DIR": "",
+  "CORS_ALLOW_CREDENTIALS": false,
   "CORS_ENABLED": false,
   "CORS_ORIGINS": "['*']",
   "DEFAULT_TENANT": "default",
@@ -99,6 +100,7 @@
   "SERVICE_DESCRIPTION": "Axmem Memory Service",
   "SERVICE_NAME": "Axmem",
   "SERVICE_VERSION": "<varies per build>",
+  "TIKTOKEN_LOAD_TIMEOUT_SECONDS": 30.0,
   "TOKEN_CACHE_ENABLED": true,
   "TOKEN_CACHE_MAX_SIZE": 1000,
   "TOKEN_CACHE_TTL_SECONDS": 300

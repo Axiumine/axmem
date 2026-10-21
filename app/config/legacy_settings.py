@@ -4,9 +4,13 @@
 version still loads. Without a word that is silent, and not harmless: the old store settings leave the server
 on an empty Qdrant, and an old ``FORGETFUL_SCOPES`` used to limit the tools.
 
-Two things follow:
+Three things follow:
 
 - ``warn_about_legacy_settings`` logs one warning that names every ignored setting and what replaces it.
+- ``warn_about_old_config_files`` looks, read-only, at the settings files that earlier versions read from places this
+  version does not (the user configuration directory of the old product name and ``docker/.env``). Everything in them
+  is ignored, whatever its name, so the warning names the settings (never their values) and says where the file this
+  version reads lives.
 - ``ensure_legacy_scopes_replaced`` refuses to start when ``FORGETFUL_SCOPES`` is set and ``AXMEM_SCOPES``
   is not. That is the one removed setting whose silence fails open: the instance would allow every tool
   instead of the tools the operator had chosen.
@@ -16,12 +20,14 @@ variables that belong to other software (``POSTGRES_PORT``, ``SQLITE_TMPDIR``, `
 """
 import logging
 import os
+import re
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from dotenv import dotenv_values
+from platformdirs import user_config_dir
 
-from app.config.settings import Settings, settings
+from app.config.settings import USER_CONFIG_FILE, Settings, settings
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +92,12 @@ LEGACY_SETTINGS: dict[str, str] = {
     "FORGETFUL_SERVER": _renamed("AXMEM_SERVER"),
     "FORGETFUL_TOKEN": _renamed("AXMEM_TOKEN"),
 }
+
+# The product's name before the rename: its user configuration directory is where `auth login` wrote the settings file
+OLD_PRODUCT = "forgetful"
+# What a name in a settings file looks like; anything else on a line is not listed (a log line stays one readable line)
+_SETTING_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,63}")
+_LISTED_NAMES = 40
 
 SCOPES_NOTE = (
     "FORGETFUL_SCOPES no longer limits the tools: AXMEM_SCOPES is '*', so the instance allows every tool."
@@ -171,3 +183,64 @@ def warn_about_legacy_settings(
     logger.warning(
         f"Settings of an earlier version are ignored ({listing}).{scopes}", extra={"ignored_settings": list(found)},
     )
+
+
+def old_dotenv_files() -> list[Path]:
+    """The settings files that earlier versions read and this version does not.
+
+    The user configuration directory is the one the platform gives the old product name (``~/.config/forgetful`` on
+    Linux, ``~/Library/Application Support/forgetful`` on macOS, the local application data directory on Windows),
+    exactly as the old release computed it. ``docker/.env`` was read relative to the working directory. The ``.env``
+    of the working directory is still read, so it is not listed.
+    """
+    return [Path(user_config_dir(OLD_PRODUCT)) / ".env", Path("docker") / ".env"]
+
+
+def _names_in(path: Path) -> list[str] | None:
+    """The settings an existing file sets, upper-cased and sorted (never their values); None when it cannot be read.
+
+    The file is only read: nothing is created, moved or written. A name that a settings file cannot hold is left out,
+    and so is a bare ``NAME`` line, which sets nothing.
+    """
+    try:
+        values = dotenv_values(path, encoding="utf-8")
+    except (OSError, UnicodeError):
+        return None
+    return sorted({name.upper() for name, value in values.items() if value is not None and _SETTING_NAME.fullmatch(name)})
+
+
+def _listing(names: list[str]) -> str:
+    shown = [f"{name} ({LEGACY_SETTINGS[name]})" if name in LEGACY_SETTINGS else name for name in names[:_LISTED_NAMES]]
+    more = f" and {len(names) - _LISTED_NAMES} more" if len(names) > _LISTED_NAMES else ""
+    return "; ".join(shown) + more
+
+
+def warn_about_old_config_files(old_paths: Sequence[Path] | None = None) -> None:
+    """Log one warning for each old settings file that exists: it is not read, so what it sets does not apply.
+
+    A file that sets nothing says nothing. The warning names the settings (never a value), says where the file this
+    version reads is (``USER_CONFIG_FILE``, and the file of the working directory) and leaves the old file as it was.
+    """
+    for path in old_dotenv_files() if old_paths is None else old_paths:
+        try:
+            if not path.is_file():
+                continue
+        except OSError:  # a directory above it cannot be searched: nothing can be said about the file
+            continue
+        names = _names_in(path)
+        where = (
+            f"Axmem reads {USER_CONFIG_FILE} and the settings file of the working directory: "
+            "move the settings you still need there, under the names this version uses"
+        )
+        if names is None:
+            logger.warning(
+                f"The settings file {path} of an earlier version exists and cannot be read; Axmem does not read it "
+                f"either. {where}.",
+                extra={"old_settings_file": str(path)},
+            )
+        elif names:
+            logger.warning(
+                f"The settings file {path} of an earlier version is not read any more, so its {len(names)} "
+                f"setting(s) do not apply ({_listing(names)}). {where}.",
+                extra={"old_settings_file": str(path), "ignored_settings": names},
+            )

@@ -6,6 +6,7 @@ stack from one place. Heavy imports stay inside functions to keep module import 
 """
 from __future__ import annotations
 
+import asyncio
 import atexit
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -14,6 +15,7 @@ from typing import TYPE_CHECKING, Any
 from app.config.legacy_settings import (
     ensure_legacy_scopes_replaced,
     warn_about_legacy_settings,
+    warn_about_old_config_files,
 )
 from app.config.logging_config import logging
 from app.config.settings import (
@@ -28,6 +30,7 @@ from app.exceptions import (
     OperatorCommandError,
     QdrantStartupError,
     TensorRTError,
+    TokenizerUnavailableError,
 )
 from app.routes.mcp.tool_metadata_registry import register_all_tools_metadata
 from app.routes.mcp.tool_registry import ToolRegistry
@@ -187,15 +190,24 @@ def _missing_package_cause(exc: ImportError) -> str:
 def operator_failure(exc: BaseException) -> str | None:
     """One line that says why a command or the start-up failed, when an operator can act on the cause.
 
-    The failures an operator really meets are answered here: a model or engine that cannot start, an
-    embeddings provider that refuses, Qdrant down or rejecting the key or the layout, a failed HTTP call, a file
+    The failures an operator really meets are answered here: a model, an engine or the tokenizer that cannot start, an
+    embeddings provider that refuses (its own error, or the error of the OpenAI, Azure OpenAI, Google or Ollama SDK,
+    named after the provider), Qdrant down or rejecting the key or the layout, a failed HTTP call (named after the
+    server it went to: Qdrant, the embeddings gateway, the rerank service or the introspection endpoint), a file
     that cannot be read or written (permission, a full disk), a value or a JSON file that is wrong, and a
     provider package that is not installed. Anything else is a bug and returns None, so it keeps its traceback.
     """
     from app.repositories.qdrant.client import describe_failure
+    from app.repositories.service_failures import describe_service_failure
 
     causes: tuple[tuple[type | tuple[type, ...], Callable[[Any], str]], ...] = (
-        ((TensorRTError, QdrantStartupError, ClusterInconsistentError, OperatorCommandError), str),
+        (
+            (
+                TensorRTError, QdrantStartupError, ClusterInconsistentError, OperatorCommandError,
+                TokenizerUnavailableError,
+            ),
+            str,
+        ),
         (EmbeddingUnavailableError, lambda error: f"the embeddings provider is unavailable: {error}"),
         (OSError, _os_error_cause),
         (ImportError, _missing_package_cause),
@@ -203,7 +215,7 @@ def operator_failure(exc: BaseException) -> str | None:
     )
     cause = next((describe(exc) for kinds, describe in causes if isinstance(exc, kinds)), None)
     if cause is None:
-        cause = describe_failure(exc) or ""
+        cause = describe_failure(exc) or describe_service_failure(exc) or ""
     return " ".join(cause.split()) or None
 
 
@@ -265,10 +277,25 @@ class Runtime:
         return engine_failures(self.adapters)
 
 
+def load_token_counter() -> None:
+    """Load the tiktoken encoding of the token counter now, within ``TIKTOKEN_LOAD_TIMEOUT_SECONDS``.
+
+    A query reaches the encoding lazily, and a host that has no tiktoken data and drops the packets of outbound
+    connections would leave that first query waiting for the operating system's connect timeout. Start-up loads it
+    first, so the wait is bounded and ends the start with a cause (``TokenizerUnavailableError``) that names
+    ``TIKTOKEN_CACHE_DIR``. It is a no-op once the shared counter holds its encoding.
+    """
+    from app.utils.token_counter import preload_token_counter
+
+    preload_token_counter(settings.TIKTOKEN_LOAD_TIMEOUT_SECONDS)
+
+
 async def build_runtime() -> Runtime:
     """Build the full runtime stack: adapters -> Qdrant -> repository -> services -> registry -> scopes."""
     ensure_legacy_scopes_replaced()
     warn_about_legacy_settings()
+    warn_about_old_config_files()
+    await asyncio.to_thread(load_token_counter)  # a blocked download must not stop the event loop
     embeddings_adapter = get_embedding_adapter()
     reranker_adapter = get_reranker_adapter()
     logger.info("Embedding adapters initialized")

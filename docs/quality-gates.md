@@ -118,7 +118,7 @@ name, split across jobs (`stage ci` runs the same set in one go on a developer m
 | `quality.yml` job `static` | ruff, imports, bandit, semgrep (with `p/python p/security-audit` added), vulture, radon-cc, radon-mi, mypy, pylint |
 | `quality.yml` job `trivy` | `trivy`, with the pinned release binary downloaded and checked against its SHA-256 (no Docker image) |
 | `ci.yml` job `lint` | `tests/architecture` (the import contracts, the rule proofs and the rules of these workflow files) and ruff |
-| `ci.yml` job `smoke-test` | wheel build smoke test: the locked dependencies (`uv sync --locked --no-dev --no-install-project`), then the wheel on top (`uv pip install --no-deps`), then `axmem --help` from another directory; it does not resolve the wheel's own metadata, where the TensorRT packages have no index and PyPI only holds placeholders |
+| `ci.yml` job `smoke-test` | wheel build smoke test: the locked dependencies (`uv sync --locked --no-dev --no-install-project`), then the wheel on top (`uv pip install --no-deps`), then `axmem --help` from another directory; a second step resolves the wheel's own metadata, where the TensorRT packages have no index and PyPI only holds placeholders, with the `--extra-index-url https://pypi.nvidia.com` that the README documents (`uv pip compile`, nothing is downloaded) and checks that the three packages come from NVIDIA's index, the libraries as a wheel |
 | `publish.yml` job `publish` | builds the package and publishes it to PyPI when a release is published |
 
 Every `uv sync` of these workflows uses `--locked` and leaves out `tensorrt-cu13-libs` (`--no-install-package tensorrt-cu13-libs`), the

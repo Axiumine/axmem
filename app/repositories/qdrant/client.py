@@ -66,18 +66,14 @@ def describe_request_failure(exc: UnexpectedResponse | ResponseHandlingException
 
 
 def describe_failure(exc: BaseException) -> str | None:
-    """``describe_request_failure`` for a Qdrant client error or a failed HTTP call to a node, else None."""
+    """``describe_request_failure`` for an error of the Qdrant client, else None.
+
+    A plain ``httpx`` error is not Qdrant's alone (the snapshot download is, but the gateway, the rerank service and the
+    introspection endpoint leave the same errors): ``app.repositories.service_failures`` names the server by the
+    address of the request.
+    """
     if isinstance(exc, UnexpectedResponse | ResponseHandlingException):
         return describe_request_failure(exc)
-    if isinstance(exc, httpx.HTTPStatusError):
-        if exc.response.status_code in (401, 403):
-            return f"Qdrant refused the request (HTTP {exc.response.status_code}): check QDRANT_API_KEY"
-        return f"Qdrant answered HTTP {exc.response.status_code} to {exc.request.method} {exc.request.url.path}"
-    if isinstance(exc, httpx.HTTPError):
-        return (
-            f"Qdrant cannot be reached or did not answer in time ({type(exc).__name__}); "
-            "check QDRANT_URL and that the node runs"
-        )
     return None
 
 

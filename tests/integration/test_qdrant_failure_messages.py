@@ -40,22 +40,15 @@ def test_a_node_that_does_not_answer_says_what_to_check():
     assert message == "Qdrant cannot be reached or did not answer in time (ConnectError); check QDRANT_URL and that the node runs"
 
 
-def _status_error(status: int) -> httpx.HTTPStatusError:
-    request = httpx.Request("GET", "http://node:6333/collections/axmem_links/snapshots/s1?x=1")
-    return httpx.HTTPStatusError("failed", request=request, response=httpx.Response(status, request=request))
-
-
-def test_describe_failure_covers_the_qdrant_client_and_plain_http_errors():
+def test_describe_failure_covers_the_errors_of_the_qdrant_client():
     assert describe_failure(unexpected(401)) == "Qdrant refused the request (HTTP 401): check QDRANT_API_KEY"
     assert describe_failure(ResponseHandlingException(httpx.ReadTimeout("slow"))).startswith("Qdrant cannot be reached")
-    assert describe_failure(_status_error(403)) == "Qdrant refused the request (HTTP 403): check QDRANT_API_KEY"
-    assert describe_failure(_status_error(500)) == (
-        "Qdrant answered HTTP 500 to GET /collections/axmem_links/snapshots/s1"
-    )
-    assert describe_failure(httpx.ConnectTimeout("slow")) == (
-        "Qdrant cannot be reached or did not answer in time (ConnectTimeout); check QDRANT_URL and that the node runs"
-    )
 
 
 def test_describe_failure_leaves_every_other_error_to_the_caller():
     assert describe_failure(KeyError("bug")) is None
+
+
+def test_a_plain_http_error_is_not_taken_for_a_qdrant_error():
+    """It may come from the gateway, the rerank service or the introspection endpoint: ``service_failures`` names it."""
+    assert describe_failure(httpx.ConnectTimeout("slow")) is None

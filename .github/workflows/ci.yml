@@ -93,3 +93,25 @@ jobs:
           echo "✓ CLI command works"
 
           echo "✓ Smoke test passed - the wheel installs and starts on top of the locked dependencies"
+
+      # What a user does with the wheel: pip and `uv tool install` resolve its own metadata, where the TensorRT packages have
+      # no index. With the extra index that the README documents, all three resolve to NVIDIA's files and the libraries to
+      # the real wheel, not to the PyPI placeholder. Resolving downloads no wheel.
+      - name: Resolve the wheel with the documented index
+        run: |
+          printf '%s\n' "$PWD"/dist/*.whl > "$RUNNER_TEMP/wheel-requirement.txt"
+          uv pip compile --python-version 3.14 --format pylock.toml --extra-index-url https://pypi.nvidia.com \
+            "$RUNNER_TEMP/wheel-requirement.txt" > "$RUNNER_TEMP/wheel-resolution.toml"
+          python3 - "$RUNNER_TEMP/wheel-resolution.toml" <<'PYTHON'
+          import sys
+          import tomllib
+
+          with open(sys.argv[1], "rb") as handle:
+              packages = {package["name"]: package for package in tomllib.load(handle)["packages"]}
+          for name in ("tensorrt-cu13", "tensorrt-cu13-bindings", "tensorrt-cu13-libs"):
+              files = [package_file["url"] for package_file in packages[name].get("wheels", [])]
+              files += [packages[name]["sdist"]["url"]] if "sdist" in packages[name] else []
+              assert files and all(url.startswith(f"https://pypi.nvidia.com/{name}/") for url in files), (name, files)
+          assert packages["tensorrt-cu13-libs"].get("wheels"), "the libraries must resolve to a wheel, not to the placeholder"
+          print("✓ The wheel resolves with the documented index: the three TensorRT packages come from NVIDIA's index")
+          PYTHON

@@ -14,6 +14,7 @@ from cuda.bindings import runtime as cudart
 from app.config.settings import settings
 from app.exceptions import (
     EmbeddingUnavailableError,
+    ModelUnavailableError,
     TensorRTError,
     TensorRTStartupError,
     TensorRTUnavailableError,
@@ -319,7 +320,8 @@ def test_failed_cuda_state_is_reported_then_refuses_all_work(plan_bytes):
     for call in (engine.verify, lambda: engine.infer(make_inputs(1, 4))):
         with pytest.raises(TensorRTUnavailableError, match="unusable after an earlier failure") as raised:
             call()
-        assert isinstance(raised.value, EmbeddingUnavailableError)  # what a re-embedding does not ask again about
+        assert isinstance(raised.value, ModelUnavailableError)  # what a re-embedding does not ask again about
+        assert not isinstance(raised.value, EmbeddingUnavailableError)  # the reranker's engine raises it too
     engine.close()
 
 
@@ -333,7 +335,7 @@ def test_closed_engine_refuses_work_and_closing_twice_is_harmless(plan_bytes):
     for call in (lambda: engine.infer(make_inputs(1, 4)), engine.verify):
         with pytest.raises(TensorRTUnavailableError, match="closed") as raised:
             call()
-        assert isinstance(raised.value, EmbeddingUnavailableError)
+        assert isinstance(raised.value, ModelUnavailableError)
 
 
 def test_build_rejects_a_file_that_is_not_onnx(tmp_path):
@@ -411,7 +413,7 @@ def test_a_failed_call_notes_the_cuda_error_so_that_the_health_route_can_report_
     with pytest.raises(TensorRTUnavailableError, match="cudaErrorInvalidValue") as raised:
         engine.infer(make_inputs(65, 16))  # a call that fails, outside the profile
 
-    assert isinstance(raised.value, EmbeddingUnavailableError)  # the call that met the error is already refused for good
+    assert isinstance(raised.value, ModelUnavailableError)  # the call that met the error is already refused for good
     assert isinstance(raised.value.__cause__.__context__, ProfileError)  # and the failure of the call stays in the chain
     assert "cudaErrorInvalidValue" in engine.failure
     with pytest.raises(TensorRTUnavailableError, match="unusable after an earlier failure"):

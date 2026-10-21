@@ -22,6 +22,7 @@ from app.exceptions import (
     QdrantStartupError,
     TensorRTStartupError,
     TensorRTUnavailableError,
+    TokenizerUnavailableError,
 )
 from app.models.memory_models import MemoryCreate
 from app.models.tenant_models import Tenant
@@ -139,6 +140,10 @@ def _unexpected(status: int):
         (ClusterInconsistentError("the nodes differ"), "the nodes differ"),
         (OperatorCommandError("Qdrant refused the snapshot s: HTTP 400"), "Qdrant refused the snapshot s: HTTP 400"),
         (EmbeddingUnavailableError("budget spent"), "the embeddings provider is unavailable: budget spent"),
+        (  # a message that already names TIKTOKEN_CACHE_DIR and the command that fills it
+            TokenizerUnavailableError("the tiktoken encoding of the token counter cannot be loaded (ConnectionError): set TIKTOKEN_CACHE_DIR"),
+            "the tiktoken encoding of the token counter cannot be loaded (ConnectionError): set TIKTOKEN_CACHE_DIR",
+        ),
         (  # a TensorRT engine is both: its own message already says what to do
             TensorRTUnavailableError("the TensorRT engine is unusable after an earlier failure (x); restart the server"),
             "the TensorRT engine is unusable after an earlier failure (x); restart the server",

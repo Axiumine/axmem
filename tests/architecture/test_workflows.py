@@ -7,6 +7,7 @@ back into a workflow.
 """
 
 import re
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -159,6 +160,35 @@ def test_the_wheel_smoke_test_waits_for_lint_and_takes_the_tensorrt_pins_from_th
     assert "uvx" not in script  # resolves the wheel's own metadata, where the TensorRT packages have no index
     assert "uv sync --locked --no-dev --no-install-project --no-install-package tensorrt-cu13-libs" in script
     assert "uv pip install --no-deps" in script
+
+
+def _smoke_test_step_and_pyproject():
+    pyproject = tomllib.loads((WORKFLOWS_DIR.parents[1] / "pyproject.toml").read_text(encoding="utf-8"))
+    job = _load(WORKFLOWS_DIR / "ci.yml")["jobs"]["smoke-test"]
+    (step,) = [step for step in job["steps"] if step.get("name") == "Resolve the wheel with the documented index"]
+    return pyproject["tool"]["uv"], job["steps"], step
+
+
+def test_the_smoke_test_resolves_the_wheel_with_the_index_that_pyproject_declares():
+    uv, _, step = _smoke_test_step_and_pyproject()
+    (index,) = [entry for entry in uv["index"] if entry["name"] == "nvidia"]
+
+    assert f"--extra-index-url {index['url'].rstrip('/')}" in step["run"]
+    assert "uv pip compile" in step["run"]
+
+
+def test_the_smoke_test_expects_the_real_wheels_of_every_package_that_only_the_extra_index_serves():
+    uv, _, step = _smoke_test_step_and_pyproject()
+
+    assert all(f'"{name}"' in step["run"] for name in uv["sources"])
+    assert "the libraries must resolve to a wheel" in step["run"]
+
+
+def test_the_smoke_test_resolves_the_wheel_after_it_is_built():
+    _, steps, step = _smoke_test_step_and_pyproject()
+    names = [candidate.get("name") for candidate in steps]
+
+    assert names.index(step["name"]) > names.index("Build wheel")
 
 
 def test_the_trivy_job_installs_the_version_that_the_gate_pins_and_hands_the_gate_its_binary():

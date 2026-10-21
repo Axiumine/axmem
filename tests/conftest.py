@@ -16,6 +16,18 @@ from tests.qdrant_support import (
 )
 
 
+@pytest.fixture(scope="session", autouse=True)
+def base_temp_made_first(tmp_path_factory):
+    """Make pytest's base temp directory before any test can patch ``atexit.register``.
+
+    pytest registers the clean-up of that directory with ``atexit`` the first time a test asks for a temp directory.
+    A test that records or replaces ``atexit.register`` (the commands and the server register the log shutdown there)
+    and is the first, or the only one, to ask would make pytest call its patch with the clean-up's five arguments:
+    ``list.append`` refused them, so a test file run on its own errored while the same file passed in a full run.
+    """
+    return tmp_path_factory.getbasetemp()
+
+
 @pytest.fixture(autouse=True)
 def local_tenant_mode(monkeypatch):
     """Run as the single local tenant, as a server bound to loopback with AUTH_MODE=none does.

@@ -61,11 +61,11 @@ uv run main.py --transport http
 - **Note**: The default is far above what the limits of a memory allow (a memory with every field at its maximum is well under 1 MiB). Raise it only together with `MEMORY_CONTENT_MAX_LENGTH` or the other limits below if you raise those by a large factor
 - **Example**: `REQUEST_BODY_MAX_BYTES=4194304`
 
-### `CORS_ENABLED`, `CORS_ORIGINS`
-- **Default**: `false`, `["*"]`
-- **Description**: Adds CORS headers to the HTTP server for browser clients. `CORS_ORIGINS` is a JSON list of the origins that may call it. With `AUTH_MODE=none` and `CORS_ENABLED=true` the origins you name here (a `*` does not count) also pass the `Host`/`Origin` check of a credential-free server, see [Authentication Configuration](#authentication-configuration); any other cross-origin request is refused with `403`
-- **Note**: The default `["*"]` allows every origin, and the server answers with `Access-Control-Allow-Credentials: true`, so once CORS is enabled any web page may call the server and read the answers (Starlette then echoes the caller's `Origin` instead of `*`). The bearer token is still required in a credential mode, and with `AUTH_MODE=none` the loopback guard ignores a `*`; name the origins you trust all the same
-- **Example**: `CORS_ENABLED=true`, `CORS_ORIGINS=["http://localhost:3001"]`
+### `CORS_ENABLED`, `CORS_ORIGINS`, `CORS_ALLOW_CREDENTIALS`
+- **Default**: `false`, `["*"]`, `false`
+- **Description**: Adds CORS headers to the HTTP server for browser clients. `CORS_ORIGINS` is a JSON list of the origins that may call it. With `AUTH_MODE=none` and `CORS_ENABLED=true` the origins you name here (a `*` does not count) also pass the `Host`/`Origin` check of a credential-free server, see [Authentication Configuration](#authentication-configuration); any other cross-origin request is refused with `403`. `CORS_ALLOW_CREDENTIALS=true` adds `Access-Control-Allow-Credentials: true` for the origins you name, so that a page of one of them may send cookies and read the answers; it is off by default, and the settings refuse it together with a `*` in `CORS_ORIGINS` (the start ends with `Error: CORS_ALLOW_CREDENTIALS=true needs CORS_ORIGINS to name the origins it trusts`)
+- **Note**: The default `["*"]` allows every origin, and the server answers with `Access-Control-Allow-Origin: *` and no `Access-Control-Allow-Credentials`, so once CORS is enabled any web page may call the server and read the answers of a request that carries the token itself, while the browser sends no cookie along. An earlier build sent `Access-Control-Allow-Credentials: true` whatever `CORS_ORIGINS` said, which let any page make credentialed calls. The bearer token is still required in a credential mode, and with `AUTH_MODE=none` the loopback guard ignores a `*`; name the origins you trust all the same
+- **Example**: `CORS_ENABLED=true`, `CORS_ORIGINS=["http://localhost:3001"]`, and with cookies `CORS_ALLOW_CREDENTIALS=true`
 
 ### `AXMEM_ALLOWED_HOSTS`
 - **Default**: `[]`
@@ -328,7 +328,7 @@ and `DEFAULT_USER_ID`, `DEFAULT_USER_NAME`, `DEFAULT_USER_EMAIL` no longer exist
 switches of the removed features (files, planning, skills, activity, documents, entities, code artifacts) are gone
 too. `FORGETFUL_SERVER`, `FORGETFUL_TOKEN` and `FORGETFUL_SCOPES` became `AXMEM_SERVER`, `AXMEM_TOKEN` and
 `AXMEM_SCOPES`. The server names every removed setting it finds in the environment or a dotenv file at start (names are
-matched without regard to case). A `FORGETFUL_SCOPES` that `AXMEM_SCOPES` does not replace is the one that stops the
+matched without regard to case). The settings file of the old configuration directory (`~/.config/forgetful/.env` on Linux, the directory the platform gives the old name elsewhere) and `docker/.env` of the working directory are not read at all any more; when one exists, the start logs one warning that names the file and the settings in it (never their values) and says which files are read now (`~/.config/axmem/.env` and the settings file of the working directory). The old file is left as it was: move what you still need into the new one, under the names this version uses. A `FORGETFUL_SCOPES` that `AXMEM_SCOPES` does not replace is the one that stops the
 start of the server and of the CLI in local mode (`--local`, or no `--server` and no `AXMEM_SERVER`): it used to limit the tools, and `AXMEM_SCOPES` defaults to `*`, so the instance would allow every tool without
 a word. Set `AXMEM_SCOPES` to the old value, or to `*` to allow every tool on purpose. The SQL databases are gone and nothing
 is migrated in place, and `axmem import` reads only the `axmem-export` JSON lines format that `axmem export` writes, which
@@ -565,6 +565,13 @@ one later does not make memories that were stored under the old limit unreadable
 - **Note**: Increase if you have larger context windows; decrease for smaller models. A REST search request can lower the budget with `token_context_threshold` but never exceed this value
 - **Example**: `MEMORY_TOKEN_BUDGET=8000`
 
+### `TIKTOKEN_LOAD_TIMEOUT_SECONDS`
+- **Default**: `30`
+- **Description**: Seconds the start-up waits for the tiktoken encoding that counts the tokens of a query result. The server (and every command that builds the runtime in process) loads it before it reports ready, so the first query never waits for it. tiktoken fetches its data from the network on first use, and a host that drops the packets of outbound connections would otherwise leave that first query waiting for the operating system's connect timeout (minutes)
+- **Behavior**: When the encoding is not loaded in time, or cannot be loaded, the process exits with code 1 and one line, `Error: the token counter cannot start: the tiktoken encoding of the token counter cannot be loaded (...)`, that names `TIKTOKEN_CACHE_DIR` and the command that fills it. A host whose `TIKTOKEN_CACHE_DIR` already holds the data loads it from disk and opens no connection
+- **Note**: `TIKTOKEN_CACHE_DIR` is read by tiktoken from the process environment, never from a settings file; the offline setup is in [GPU models](gpu-models.md#pre-seeding-an-offline-host)
+- **Example**: `TIKTOKEN_LOAD_TIMEOUT_SECONDS=30`
+
 ### `MEMORY_MAX_MEMORIES`
 - **Default**: `20`
 - **Description**: Maximum number of memories returned per query
@@ -796,7 +803,7 @@ ENFORCE_ENV_OVERWRITE=true
 
 **Note**: These settings only apply when `EMBEDDING_PROVIDER=Ollama`
 
-> Ollama uses native async via the `ollama` Python SDK. No API key required (Ollama runs locally). The SDK is a core dependency, installed with the server; the `ollama` extra of the package is redundant.
+> Ollama uses native async via the `ollama` Python SDK. No API key required (Ollama runs locally). The SDK is a core dependency, installed with the server; the package has no optional extras.
 
 #### `OLLAMA_BASE_URL`
 - **Default**: `http://localhost:11434`
@@ -1038,6 +1045,7 @@ DENSE_SEARCH_CANDIDATES=100
 
 ### Qdrant Connection Issues
 - The server refuses to start with `Error: Qdrant at <url> cannot be reached or did not report its version` when no node answers: check `QDRANT_URL` and that the node runs. Qdrant answers its version request without a key, so a wrong or missing API key is found by the first real request and ends the start (and `re-embed`, `backup`, `export` and the other operator commands) with `Error: Qdrant refused the request (HTTP 401): check QDRANT_API_KEY` (HTTP 403 the same). The checks `serve` makes before it binds anything (the scope ceiling parses, the embedder and the reranker build, Qdrant answers and holds the layout the settings describe) all end as one `Error: <cause>` line with exit code 1, never as a traceback. A node that does not answer while another one does is logged (`A Qdrant node did not answer; going on with the others`) and skipped, so a cluster that lost a node still starts; every node that answers must still be version 1.19.0 or later
+- `The settings file <path> of an earlier version is not read any more, so its N setting(s) do not apply (...)` at start: `~/.config/forgetful/.env` or `docker/.env` exists and is no longer read; move the settings you still need into `~/.config/axmem/.env` (or the settings file of the working directory), under the names this version uses
 - `Settings of an earlier version are ignored (...)` at start: the environment or a dotenv file still names a setting of the SQL store, the OAuth providers, `DEFAULT_USER_*`, the FastEmbed and ONNX providers, a removed feature, or `FORGETFUL_SCOPES`, `FORGETFUL_SERVER` or `FORGETFUL_TOKEN`. Axmem reads none of them; the warning names each one and what replaces it (an old `FORGETFUL_SCOPES` without `AXMEM_SCOPES` stops the start instead, see above). Data held in a SQL database is not read or migrated
 - `Qdrant <version> at <url> is too old: version 1.19.0 or later is required`: upgrade the node
 - `Qdrant collection <name> does not match the settings`: the shard, replica or vector layout of the existing collection differs from `QDRANT_*` or `EMBEDDING_DIMENSIONS`; see above
@@ -1049,6 +1057,8 @@ DENSE_SEARCH_CANDIDATES=100
 
 ### Embedder or Reranker Does Not Start
 - The server refuses to start with `Error: the embedder cannot start: <cause>` when `EMBEDDING_PROVIDER=TensorRT` cannot run, and with `Error: the reranker cannot start: <cause>` when `RERANKING_PROVIDER=TensorRT` cannot: no NVIDIA GPU visible to CUDA, TensorRT or CUDA Python libraries missing, driver too old, model files unavailable, an engine build failure, or (embedder only) an `EMBEDDING_DIMENSIONS` that differs from the model's width
+- The server refuses to start with `Error: the token counter cannot start: <cause>` when the tiktoken encoding is not in `TIKTOKEN_CACHE_DIR` and cannot be downloaded within `TIKTOKEN_LOAD_TIMEOUT_SECONDS` (the cause names the setting and the command that pre-loads the data once, see [Model files and offline hosts](gpu-models.md#pre-seeding-an-offline-host))
+- A start or a command ends with `Error: <service> ...` when a service other than Qdrant refuses it: the message names the service that was called (the embeddings gateway, the rerank service, the token introspection endpoint, Ollama, Google, OpenAI or Azure OpenAI) and the cause (a rejected key, a missing model, a refused connection), never the URL or the key; a failure of the web server's lifespan is reported the same way, with exit code 1 and no traceback
 - There is no CPU fallback. Fix the host (see [GPU models](gpu-models.md)), or choose another `EMBEDDING_PROVIDER` and set `RERANKING_PROVIDER=HTTP` or `RERANKING_ENABLED=false`
 
 ### Search Performance

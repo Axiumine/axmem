@@ -26,6 +26,7 @@ axmem --version
 ```
 
 Axmem is not published to PyPI yet, so `uvx axmem` and `pip install axmem` do not work until a release exists.
+A built wheel (`uv build`) or a pip install needs the NVIDIA index for the TensorRT packages: `uv tool install --extra-index-url https://pypi.nvidia.com dist/axmem-*.whl` or the same flag with `pip install` (the README, section Installing the package, lists every way).
 `axmem` is the only console script.
 
 ## Choose a mode

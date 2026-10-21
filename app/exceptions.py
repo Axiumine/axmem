@@ -21,7 +21,16 @@ class InvalidStateTransitionError(Exception):
     """Raised when a state machine transition is not allowed"""
 
 
-class EmbeddingUnavailableError(RuntimeError):
+class ModelUnavailableError(RuntimeError):
+    """A model (an embedder or a reranker, local or remote) cannot serve this call or the next ones, so asking again,
+    one text after another, would only repeat the refusal.
+
+    The base of the errors that say so, whichever model raised them: ``EmbeddingUnavailableError`` for a provider
+    of embeddings, ``TensorRTUnavailableError`` for a local engine, which the embedder and the reranker share.
+    """
+
+
+class EmbeddingUnavailableError(ModelUnavailableError):
     """The embeddings provider cannot serve this call or the next ones (a refusal for budget, model or credentials,
     a failure that outlasted its retries, or a reply of the wrong shape), so asking again text by text would repeat it."""
 
@@ -30,11 +39,14 @@ class TensorRTError(RuntimeError):
     """A local TensorRT model (the embedder or the reranker) failed; the message names the cause."""
 
 
-class TensorRTUnavailableError(TensorRTError, EmbeddingUnavailableError):
+class TensorRTUnavailableError(TensorRTError, ModelUnavailableError):
     """A local TensorRT engine can serve no call any more: it was closed, or a CUDA error it cannot recover from
     (an illegal address, a hardware fault) made it refuse all work until the process restarts.
 
-    It is an ``EmbeddingUnavailableError`` too, so that a re-embedding does not ask the engine again text by text.
+    The embedder and the reranker run on the same engine class, so this is neither an embedding nor a rerank
+    error: it is a ``ModelUnavailableError``, which is what a re-embedding stops on (it does not ask the engine
+    again text by text). It is deliberately not an ``EmbeddingUnavailableError``, because a closed reranker raises
+    it too and ``operator_failure`` would call that an embeddings provider.
     """
 
 
@@ -60,3 +72,8 @@ class ClusterInconsistentError(RuntimeError):
 
 class OperatorCommandError(RuntimeError):
     """An operator command (backup, restore, export or import) cannot finish; the message says why and what to check."""
+
+
+class TokenizerUnavailableError(RuntimeError):
+    """The tiktoken encoding of the token counter cannot be loaded (its data is not on this host and cannot be
+    fetched in time), so the server refuses to start instead of stalling the first query; the message says how to fix it."""

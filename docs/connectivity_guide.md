@@ -399,7 +399,7 @@ Local mode uses the same Qdrant and settings as a locally launched server
 ### Without installing it
 
 `uv tool install axmem` (and `uvx axmem`) need a PyPI release, which does not exist yet; `uv tool install .` from a
-clone installs the checkout, as above. To exercise the CLI without installing, run the console script through the
+clone installs the checkout, as above (a built wheel or a pip install needs `--extra-index-url https://pypi.nvidia.com`, see [Installing the package](../README.md#installing-the-package)). To exercise the CLI without installing, run the console script through the
 project venv - edits apply immediately:
 
 ```bash

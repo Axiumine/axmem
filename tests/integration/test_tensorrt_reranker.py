@@ -12,8 +12,14 @@ import pytest
 from cuda.bindings import runtime as cudart
 from pydantic import ValidationError
 
+from app.bootstrap import operator_failure
 from app.config.settings import Settings, settings
-from app.exceptions import TensorRTError
+from app.exceptions import (
+    EmbeddingUnavailableError,
+    ModelUnavailableError,
+    TensorRTError,
+    TensorRTUnavailableError,
+)
 from app.repositories.embeddings import tensorrt_reranker as tensorrt_reranker_module
 from app.repositories.embeddings.tensorrt_common import ensure_finite
 from app.repositories.embeddings.tensorrt_reranker import (
@@ -242,8 +248,15 @@ def test_a_cuda_error_makes_the_adapter_refuse_further_work(tensorrt_reranker):
 
         with pytest.raises(TensorRTError, match="cudaErrorInvalidValue"):
             adapter._engine.verify()  # the guard every score() ends with
-        with pytest.raises(TensorRTError, match="unusable after an earlier failure"):
+        with pytest.raises(TensorRTError, match="unusable after an earlier failure") as refused:
             adapter.score(QUERY, DOCUMENTS)
+        # the reranker's engine raises the error the embedder's does: neither is an embeddings provider
+        assert isinstance(refused.value, TensorRTUnavailableError)
+        assert isinstance(refused.value, ModelUnavailableError)
+        assert not isinstance(refused.value, EmbeddingUnavailableError)
+        line = operator_failure(refused.value)
+        assert line is not None
+        assert "embeddings provider" not in line
     finally:
         adapter.close()
         adapter.close()  # closing twice is harmless

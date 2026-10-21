@@ -29,6 +29,8 @@ from app.version import get_version
 # Platform-specific default paths
 _default_data_dir = Path(user_data_dir("axmem", ensure_exists=False))
 _default_config_dir = Path(user_config_dir("axmem", ensure_exists=False))
+# The settings file of the user, and the only one besides the one in the working directory that Axmem reads
+USER_CONFIG_FILE = _default_config_dir / ".env"
 
 
 # Accepted values of the enumerated settings; the first entry is the default. Matching is
@@ -104,6 +106,9 @@ class Settings(BaseSettings):
     # CORS Configuration (HTTP transport only)
     CORS_ENABLED: bool = False
     CORS_ORIGINS: list[str] = ["*"]
+    # Whether a browser may send credentials (cookies, HTTP authentication) with a cross-origin call. Axmem reads a
+    # bearer token from a header, which needs none, so it is off; on, it needs named origins (see the validator)
+    CORS_ALLOW_CREDENTIALS: bool = False
     # Host names besides localhost and loopback addresses that a server running AUTH_MODE=none answers to
     # (for example host.docker.internal, for a client in a container on this machine). See loopback_guard.
     AXMEM_ALLOWED_HOSTS: list[str] = []
@@ -188,6 +193,9 @@ class Settings(BaseSettings):
     MEMORY_LINKS_MAX_PER_REQUEST: int = Field(default=50, ge=1)        # Memories one link request may name
     MEMORY_TOKEN_BUDGET: int = 8000         # token budget for retrieved memories (to protect context window)
     MEMORY_MAX_MEMORIES: int = 20           # maximum number of memories that can be retrieved from a query
+    # Seconds the start-up waits for the tiktoken encoding of the token counter (its data is fetched on first use unless
+    # TIKTOKEN_CACHE_DIR, a variable of the process environment, holds it); the server refuses to start after that
+    TIKTOKEN_LOAD_TIMEOUT_SECONDS: float = Field(default=30.0, gt=0, allow_inf_nan=False)
     MEMORY_NUM_AUTO_LINK: int = 3           # number of memories to automatically link
     MEMORY_SIMILARITY_THRESHOLD: float = 0.7  # minimum cosine similarity for auto-links
     OBSOLETE_WARNING_ENABLED: bool = True  # create_memory warns when content matches superseded memories
@@ -288,6 +296,16 @@ class Settings(BaseSettings):
         return value
 
     @model_validator(mode="after")
+    def _validate_cors_credentials_need_named_origins(self) -> Settings:
+        # A "*" answers every web page; credentials on top would let any page act with the visitor's cookies
+        if self.CORS_ALLOW_CREDENTIALS and "*" in self.CORS_ORIGINS:
+            raise ValueError(
+                "CORS_ALLOW_CREDENTIALS=true needs CORS_ORIGINS to name the origins it trusts: a '*' answers every web "
+                "page, and credentials are never sent to every page. Name the origins, or set CORS_ALLOW_CREDENTIALS=false",
+            )
+        return self
+
+    @model_validator(mode="after")
     def _validate_write_consistency(self) -> Settings:
         if self.QDRANT_WRITE_CONSISTENCY_FACTOR > self.QDRANT_REPLICATION_FACTOR:
             raise ValueError("QDRANT_WRITE_CONSISTENCY_FACTOR cannot exceed QDRANT_REPLICATION_FACTOR")
@@ -371,7 +389,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=[
             ".env",  # Local override
-            str(_default_config_dir / ".env"),  # User config
+            str(USER_CONFIG_FILE),  # User config
         ],
         env_file_encoding="utf-8",
         extra="ignore",

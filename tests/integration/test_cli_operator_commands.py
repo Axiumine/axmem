@@ -28,10 +28,16 @@ from tests.relayout_support import stop_after_removing_the_old_links
 @pytest.fixture(autouse=True)
 def logging_calls(monkeypatch, tmp_path_factory):
     """Record what the commands ask of the logging set-up, so a test run installs no handlers and no exit hook."""
-    tmp_path_factory.getbasetemp()  # pytest registers the clean-up of its temp directory at exit, the first time it is asked
+    tmp_path_factory.getbasetemp()  # also made for the session by ``base_temp_made_first`` of tests/conftest.py
     configured, registered = [], []
+
+    def register(func, *args, **kwargs):
+        """``atexit.register`` records the function; the arguments of someone else's registration cannot break it."""
+        registered.append(func)
+        return func
+
     monkeypatch.setattr(logging_config, "configure_logging", lambda **kwargs: configured.append(kwargs))
-    monkeypatch.setattr(atexit, "register", registered.append)
+    monkeypatch.setattr(atexit, "register", register)
     return configured, registered
 
 

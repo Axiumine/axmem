@@ -56,6 +56,7 @@ static gates only (below). The suites that run the real TensorRT models and a re
 (the suites end the run, they never skip), when a tool a gate needs is missing, or when the pushed commit is not the
 checked-out one (check the branch out and push it). Commit before you push: the gates test the working tree. The details
 and the tests that prove them are in [docs/quality-gates.md](quality-gates.md#the-pre-push-hook-is-the-gpu-gate).
+
 The Qodana token (`QODANA_TOKEN`) lives in your git-ignored dotenv file (see `.env.example` for the key
 name), never in a tracked file. Python 3.14 is the only supported version (`.python-version`).
 
@@ -299,7 +300,8 @@ only the checks that need neither; the rest runs in the `pre-push` hook (see
    (`tests/architecture/`), then run ruff. The TensorRT libraries are left out of its environment
    (`--no-install-package tensorrt-cu13-libs`).
 2. `smoke-test` (hosted runner, after `lint`): build the wheel, install the locked dependencies without the TensorRT
-   libraries and the wheel on top, and check that `axmem --help` works.
+   libraries and the wheel on top, check that `axmem --help` works, and resolve the wheel's metadata with the NVIDIA index that the
+   README documents for pip and `uv tool install` (the three TensorRT packages must come from that index).
 
 A push to a branch with an open pull request starts a push run and a pull request run; a newer run cancels an older one
 of the same workflow and ref. The Windows leg was removed because the TensorRT reranker is Linux-only.

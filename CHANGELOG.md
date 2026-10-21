@@ -657,6 +657,40 @@ Fixes found by reviewing the feature cuts (no upstream counterpart: the code the
   and a public key reach the verifier, which refuses to start; `docs/gpu-models.md` sets `TIKTOKEN_CACHE_DIR` in the
   process environment, since tiktoken reads only that and a line in a settings file never reaches it. The mutation
   sandbox copies `.env.example`, which `tests/integration/test_reference_docs.py` parses.
+- **Start-up, tokenizer:** the tiktoken encoding is loaded before the server serves (`preload_token_counter`, in a
+  daemon thread that `TIKTOKEN_LOAD_TIMEOUT_SECONDS` bounds, 30 seconds by default) instead of on the first query. A host
+  with the data in `TIKTOKEN_CACHE_DIR` starts with no network; a host that drops packets, or has no cache, ends the start
+  with the one line `Error: the token counter cannot start: ...`, which names `TIKTOKEN_CACHE_DIR` and the command that
+  pre-loads the data, where the first query used to wait out the connect timeout and then fall back to an estimate.
+- **Wheel install:** a wheel names the three pinned TensorRT packages without an index, because `[tool.uv.sources]` is not
+  part of a built wheel, and the PyPI projects of those names are placeholders that fetch the 3.8 GB of libraries from
+  NVIDIA's index while they build. The README (Installing the package) lists the commands that work for `uv tool install`
+  and pip from a checkout, a Git URL and a built wheel (`--extra-index-url https://pypi.nvidia.com`); the smoke test of
+  CI resolves the built wheel with that flag and checks that the packages come from NVIDIA's index; a test keeps the
+  documented commands in step with `pyproject.toml`. The redundant `ollama` optional extra (the SDK is a dependency) is
+  removed from the package and from `uv.lock`.
+- **Old configuration directory:** the settings file of the directory the old name used (`~/.config/forgetful/.env` on
+  Linux) and `docker/.env` are no longer read, and the start now says so when one exists, naming the file and the
+  settings in it (never a value) and the files that are read now; the file is left as it was.
+- **CORS:** `Access-Control-Allow-Credentials: true` was sent whatever `CORS_ORIGINS` said, and the default is `["*"]`,
+  so any web page could make credentialed calls and read the answers. Credentials are now off, and
+  `CORS_ALLOW_CREDENTIALS=true` (refused together with `*` in `CORS_ORIGINS`) sends them to the named origins only.
+- **Tool catalogue:** `link_memories` returns `{"linked_memory_ids": [...]}` (the targets that were newly linked) and
+  `mark_memory_obsolete` and `unobsolete_memory` return `{"success": true}` and raise on every failure; the catalogue
+  said "List of memory IDs" and "Boolean", and `execute_axmem_tool` callers that trusted it looked for a value that was
+  never there. A test runs the three tools through the registry and compares the answers with the catalogue text.
+- **Operator errors:** an SDK or HTTP error of a service other than Qdrant was named for Qdrant, or for the embeddings
+  provider whatever failed. It now says which service failed (the embeddings gateway, the rerank service, the token
+  introspection endpoint, Ollama, Google, OpenAI or Azure OpenAI, by the settings and the request that failed) without a
+  URL or a key, and a failure that the web server's lifespan meets (Qdrant or a provider failing between the start-up
+  check and the lifespan) ends as `Error: <cause>` with exit code 1 instead of the traceback of the lifespan. A closed
+  TensorRT reranker or embedder raises `TensorRTUnavailableError`, which is no longer an `EmbeddingUnavailableError`
+  (both are a `ModelUnavailableError`), so the reranker is not reported as the embeddings provider; `rebuild_embeddings`
+  still stops at either.
+- **Tests:** `tests/integration/test_cli_operator_commands.py` errored when run on its own (the fixture that records
+  `atexit.register` met pytest's registration of its temp-directory clean-up); pytest's base temp directory is now made
+  at the start of the session, and every file of `tests/integration` that touches logging, `atexit`, the environment
+  or the CLI passes on its own.
 
 ### Security
 

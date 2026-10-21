@@ -228,7 +228,8 @@ async def test_an_origin_named_in_cors_origins_passes_the_guard_of_the_credentia
         )
 
     assert named.status_code == 200
-    assert named.headers["access-control-allow-origin"] == "https://app.example"
+    assert named.headers["access-control-allow-origin"] == "*"  # the "*" answers everyone; it carries no credentials
+    assert "access-control-allow-credentials" not in named.headers
     assert other.status_code == 403
 
 

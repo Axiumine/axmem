@@ -33,6 +33,8 @@ The CUDA 13 runtime (`cuda-python`) and TensorRT (`tensorrt-cu13`, `tensorrt-cu1
 (`https://pypi.nvidia.com`, declared in `pyproject.toml`), because the PyPI projects of the same
 names are placeholders. `tensorrt-cu13-libs` is a download of about 3.8 GB.
 
+`uv sync`, `uv tool install .` and uv's install from a Git URL read that index from `pyproject.toml`. A built wheel cannot carry it: its metadata names the three packages with their pins and no index, so a wheel installed with pip or `uv tool install` needs `--extra-index-url https://pypi.nvidia.com`, which resolves all three to NVIDIA's files (the README lists the commands in [Installing the package](../README.md#installing-the-package)). Without the flag the PyPI placeholders are taken and build by fetching the same files, which needs `pypi.nvidia.com` during the install.
+
 Only the driver belongs to the host. A driver older than R580 fails at start with the cause
 `driver`; no visible GPU (including `CUDA_VISIBLE_DEVICES=-1`) fails with `no-gpu`.
 
@@ -232,8 +234,8 @@ RERANKING_ENGINE_CACHE_DIR=/opt/models/tensorrt
 ```
 
 Memory queries also use tiktoken's token-counting data, which has a separate cache
-(`TIKTOKEN_CACHE_DIR`, read by tiktoken itself; `HF_HUB_OFFLINE` does not cover it). Without it, queries still
-work but budget tokens with an approximate character-based estimate. Populate it while the network is
+(`TIKTOKEN_CACHE_DIR`, read by tiktoken itself; `HF_HUB_OFFLINE` does not cover it). The server loads that data
+before it reports ready, and refuses to start when it cannot (see below). Populate it while the network is
 available and keep it on persistent storage, with the variable set to the same directory for the pre-load and
 for the server. tiktoken reads the variable from the process environment only, and Axmem never copies a value
 from a settings file (the dotenv file next to the checkout or the one in the user settings directory) into the
@@ -247,17 +249,26 @@ TIKTOKEN_CACHE_DIR=/opt/models/tiktoken \
 TIKTOKEN_CACHE_DIR=/opt/models/tiktoken HF_HUB_OFFLINE=1 AUTH_MODE=none uv run --no-sync main.py serve
 ```
 
-Do this before the first query on any host whose outbound traffic is dropped rather than refused (a firewall
-that discards packets, a network namespace without a route). tiktoken downloads its data with a request that
-has no timeout of its own, so the first query then waits for the operating system's connect timeout (about
-two minutes on Linux defaults) before the estimate takes over, and every query that arrives meanwhile waits
-behind it, because the data is loaded once under a lock. A host that refuses the connection falls back at once.
+A host whose `TIKTOKEN_CACHE_DIR` holds the data starts with no network: the encoding is read from disk and no
+connection is opened. A host that does not have the data has to download it, and tiktoken's download has no timeout
+of its own, so on a host whose outbound traffic is dropped rather than refused (a firewall that discards packets, a
+network namespace without a route) it would wait for the operating system's connect timeout (about two minutes on
+Linux defaults). The start-up therefore bounds the wait with `TIKTOKEN_LOAD_TIMEOUT_SECONDS` (default 30) and, when
+the data does not load in that time or the download fails, ends with exit code 1 and one line that names
+`TIKTOKEN_CACHE_DIR` and the pre-load command above:
+
+```text
+Error: the token counter cannot start: the tiktoken encoding of the token counter cannot be loaded (no answer within 30 seconds, ...
+```
+
+This applies to `serve` and to the commands that run the tools in process (`axmem memory ...`, `axmem call ...` without
+`AXMEM_SERVER`), which build the same runtime.
 
 Fully offline operation also needs a locally reachable Qdrant and authentication service, as
 applicable. The embeddings provider and the reranker are local in the default setup, so with the model
 files and the tiktoken data on disk the server makes no call to any other host. Without the tiktoken
-data the first query tries to download it, and falls back to the estimate when that fails (at once when the
-connection is refused, after the operating system's connect timeout when the packets are dropped, see above).
+data the server tries to download it while it starts and refuses to start when that fails or takes longer than
+`TIKTOKEN_LOAD_TIMEOUT_SECONDS` (see above).
 
 ### Verifying the files
 

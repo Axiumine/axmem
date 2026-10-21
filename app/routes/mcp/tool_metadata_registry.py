@@ -480,7 +480,7 @@ def register_memory_tools_metadata(
                     "required": True,
                 },
             ],
-            "returns": "List of memory IDs that were successfully linked",
+            "returns": "Dict with linked_memory_ids: the target memory IDs that were newly linked (a target that does not exist for the tenant, the source itself and a link that exists already are skipped)",
             "examples": [
                 'execute_axmem_tool("link_memories", {"memory_id": "018f2c3e-0000-7000-8000-000000000042", "related_ids": ["018f2c3e-0000-7000-8000-000000000010", "018f2c3e-0000-7000-8000-000000000015"]})',
                 'execute_axmem_tool("link_memories", {"source_id": "018f2c3e-0000-7000-8000-000000000042", "target_id": "018f2c3e-0000-7000-8000-000000000057"})',
@@ -584,7 +584,7 @@ def register_memory_tools_metadata(
                     "example": "018f2c3e-0000-7000-8000-000000000100",
                 },
             ],
-            "returns": "Boolean indicating success",
+            "returns": 'Dict {"success": true} once the memory is marked obsolete; a memory that is not found, is already obsolete or would be superseded by itself is an error, never false',
             "examples": [
                 'execute_axmem_tool("mark_memory_obsolete", {"memory_id": "018f2c3e-0000-7000-8000-000000000042", "reason": "Outdated approach", "superseded_by": "018f2c3e-0000-7000-8000-000000000100"})',
             ],
@@ -609,7 +609,7 @@ def register_memory_tools_metadata(
                     "required": True,
                 },
             ],
-            "returns": "Boolean indicating success",
+            "returns": 'Dict {"success": true} once the memory is active again; a memory that is not found or is not obsolete is an error, never false',
             "examples": [
                 'execute_axmem_tool("unobsolete_memory", {"memory_id": "018f2c3e-0000-7000-8000-000000000042"})',
             ],

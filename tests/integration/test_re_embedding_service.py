@@ -11,7 +11,7 @@ from uuid import uuid4
 import pytest
 
 from app.config.settings import settings
-from app.exceptions import EmbeddingUnavailableError
+from app.exceptions import EmbeddingUnavailableError, TensorRTUnavailableError
 from app.models.memory_models import MemoryCreate, MemoryUpdate
 from app.protocols.memory_protocol import ValidationResult
 from app.services import re_embedding_service as service_module
@@ -422,9 +422,16 @@ async def test_rebuild_targeted_records_embedding_failures(shared_repo, embeddin
     assert sorted(result.rebuilt_ids + [failed_id]) == sorted(memory.id for memory in memories)
 
 
-async def test_rebuild_targeted_does_not_retry_one_by_one_when_the_provider_is_unavailable(shared_repo, embedding_spy):
+@pytest.mark.parametrize(
+    "unavailable",
+    [EmbeddingUnavailableError("budget exceeded"), TensorRTUnavailableError("the TensorRT engine is closed")],
+    ids=["remote-provider", "local-engine"],
+)
+async def test_rebuild_targeted_does_not_retry_one_by_one_when_the_provider_is_unavailable(
+    shared_repo, embedding_spy, unavailable,
+):
     user_id, memories = await _seed(shared_repo, 3)
-    embedding_spy.generate_embeddings.side_effect = EmbeddingUnavailableError("budget exceeded")
+    embedding_spy.generate_embeddings.side_effect = unavailable
 
     result = await ReEmbeddingService(shared_repo, embedding_spy, batch_size=20).rebuild_targeted(user_id=user_id)
 

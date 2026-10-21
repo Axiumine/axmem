@@ -12,6 +12,8 @@ from app.config.settings import settings
 from app.repositories.embeddings import embedding_adapter
 
 PROVIDERS = ("Azure", "Google", "OpenAI", "Ollama")
+# What an error answer says; a test that must not see it in an operator's line looks for this text
+ERROR_TEXT = "provider-side-text sk-leaked-key"
 
 AZURE_FIELDS = {
     "AZURE_API_KEY": "test-key",
@@ -21,10 +23,15 @@ AZURE_FIELDS = {
 
 
 class FakeEmbeddingProvider:
-    """The far end of an embeddings provider: ``vector`` is what every request is answered with."""
+    """The far end of an embeddings provider: ``vector`` is what every request is answered with.
 
-    def __init__(self, vector: list[float]):
+    A ``status`` other than 200 answers every request with that error instead, in a body that all four client
+    libraries accept as a provider's error, so a test sees the exception each SDK really raises.
+    """
+
+    def __init__(self, vector: list[float], status: int = 200):
         self.vector = vector
+        self.status = status
         self.requests: list[tuple[str, dict]] = []
         provider = self
 
@@ -33,8 +40,14 @@ class FakeEmbeddingProvider:
                 body = self.rfile.read(int(self.headers.get("Content-Length", 0)))
                 provider.requests.append((self.path, json.loads(body)))
                 answer = provider.answer(self.path.split("?")[0])
-                payload = json.dumps(answer or {"error": "unknown path"}).encode()  # NaN stays a bare NaN literal
-                self.send_response(200 if answer else 404)
+                if provider.status != 200:
+                    error = {"code": provider.status, "message": ERROR_TEXT, "status": "REFUSED", "type": "error"}
+                    payload = json.dumps({"error": error}).encode()
+                    code = provider.status
+                else:
+                    payload = json.dumps(answer or {"error": "unknown path"}).encode()  # NaN stays a bare NaN literal
+                    code = 200 if answer else 404
+                self.send_response(code)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(payload)))
                 self.end_headers()
