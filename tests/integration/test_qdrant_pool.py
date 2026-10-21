@@ -6,6 +6,7 @@ on a reset connection or a 5xx answer); everything that does not need a fault ru
 import logging
 from typing import Any
 
+import httpx
 import pytest
 from qdrant_client.http.exceptions import ResponseHandlingException, UnexpectedResponse
 
@@ -243,3 +244,34 @@ async def test_the_schema_reads_move_past_a_node_that_does_not_answer():
 
         assert await schema.live_generation() == "p_memories_gen1"
         assert await schema.live_exists() is True
+
+
+async def test_a_snapshot_is_taken_under_its_own_long_timeout_and_waits_for_the_node(isolated_stack, monkeypatch):
+    """The ordinary request timeout would give up on a large collection while the node goes on and keeps the snapshot."""
+    pool = isolated_stack.pool
+    live = await isolated_stack.schema.live_generation()
+    timeouts: list[float | None] = []
+    http = pool.http
+
+    def recording(url, timeout=None):
+        timeouts.append(timeout)
+        return http(url, timeout)
+
+    monkeypatch.setattr(pool, "http", recording)
+
+    name = await pool.create_snapshot(0, live)
+
+    assert name.startswith(live)
+    assert timeouts == [client_module.SNAPSHOT_TIMEOUT_SECONDS]
+    assert client_module.SNAPSHOT_TIMEOUT_SECONDS > pool._timeout
+    names = [snapshot.name for snapshot in await pool.clients[0].list_snapshots(live)]
+    assert name in names  # "wait=true": the snapshot is complete when the call returns
+    await pool.delete_snapshot(0, live, name)
+    assert name not in [snapshot.name for snapshot in await pool.clients[0].list_snapshots(live)]
+
+
+async def test_a_snapshot_of_a_collection_that_does_not_exist_is_refused_by_the_node(isolated_stack):
+    with pytest.raises(httpx.HTTPStatusError) as refused:
+        await isolated_stack.pool.create_snapshot(0, "no_such_collection")
+
+    assert refused.value.response.status_code == 404

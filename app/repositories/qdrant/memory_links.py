@@ -16,6 +16,7 @@ from app.repositories.qdrant.schema import LINK_VECTOR
 from app.repositories.qdrant.store import (
     TOKEN_KEY,
     NewPoint,
+    Point,
     Scope,
     Where,
     equals,
@@ -24,8 +25,14 @@ from app.repositories.qdrant.store import (
 
 logger = logging.getLogger(__name__)
 
-# Linked memories are read in one request; a memory with more links than this keeps its most important ones
-MAX_LINK_CANDIDATES = 1000
+# How many linked memories are looked up in one request. A memory with more links than this is read in several
+# requests (the importance of every linked memory, a number each), so the ones it returns are its most important ones
+LINK_CHUNK = 1000
+
+
+def _importance_first(point: Point) -> tuple[int, str]:
+    """Sort key: most important first, the id as the tie-breaker so the order is the same every time."""
+    return -int(point.payload["importance"]), str(point.id)
 
 
 class QdrantMemoryLinkMixin(QdrantMemoryBase):
@@ -50,20 +57,32 @@ class QdrantMemoryLinkMixin(QdrantMemoryBase):
         """
         scope = Scope.of(user_id)
         excluded = set(exclude_ids or ()) | {memory_id}
-        neighbours = [
-            other for other in (await self._linked_ids(scope, [memory_id]))[memory_id] if other not in excluded
-        ][:MAX_LINK_CANDIDATES]
+        neighbours = [other for other in (await self._linked_ids(scope, [memory_id]))[memory_id] if other not in excluded]
         if not neighbours:
             return []
 
         where = Where().also(equals("is_obsolete", False))
         if project:
             where = where.also(equals("project", project))
-        points = await self.store.scroll(
-            scope, self.memories, where.also(has_ids(neighbours)), limit=len(neighbours),
-        )
-        wanted = sorted(points, key=lambda point: (-int(point.payload["importance"]), str(point.id)))
-        return await self._memories(scope, wanted[:max_links])
+        return await self._memories(scope, await self._most_important(scope, where, neighbours, max_links))
+
+    async def _most_important(self, scope: Scope, where: Where, neighbours: list[UUID], count: int) -> list[Point]:
+        """The ``count`` most important memories among ``neighbours`` that satisfy ``where``, most important first.
+
+        Up to ``LINK_CHUNK`` neighbours are read in one request, with their payload. More are read in chunks, a
+        number per memory, keeping the best ``count`` seen so far, and only those are read in full at the end.
+        """
+        chunks = [neighbours[start:start + LINK_CHUNK] for start in range(0, len(neighbours), LINK_CHUNK)]
+        whole = len(chunks) == 1
+        best: list[Point] = []
+        for chunk in chunks:
+            found = await self.store.scroll(
+                scope, self.memories, where.also(has_ids(chunk)), limit=len(chunk), with_payload=True if whole else ["importance"],
+            )
+            best = sorted(best + found, key=_importance_first)[:count]
+        if whole or not best:
+            return best
+        return sorted(await self.store.get(scope, self.memories, [point.id for point in best]), key=_importance_first)
 
     async def create_links_batch(self, user_id: UUID, source_id: UUID, target_ids: list[UUID]) -> list[UUID]:
         """Create links from one memory to many others
@@ -104,8 +123,8 @@ class QdrantMemoryLinkMixin(QdrantMemoryBase):
         """The distinct targets, in the order given, that exist for the tenant; none unless the source exists too."""
         wanted = [target for target in dict.fromkeys(target_ids) if target != source_id]
         # A majority of the replicas answers: the source was usually written a moment ago, through another node
-        owned = {point.id for point in await self.store.get(
-            scope, self.memories, [source_id, *wanted], with_payload=False, quorum=True,
+        owned = {point.id for point in await self.store.get_agreed(
+            scope, self.memories, [source_id, *wanted], with_payload=False,
         )}
         if source_id not in owned:
             return []
@@ -119,7 +138,7 @@ class QdrantMemoryLinkMixin(QdrantMemoryBase):
         """
         scope = Scope.of(user_id)
         identifier = link_id(user_id, source_id, target_id)
-        existed = bool(await self.store.get(scope, self.links, [identifier], with_payload=False))
+        existed = bool(await self.store.get(scope, self.links, [identifier], with_payload=False, quorum=True))
         if existed:
             await self.store.delete(scope, self.links, [identifier])
         logger.info("Memory link removed", extra={

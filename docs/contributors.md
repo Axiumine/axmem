@@ -206,11 +206,14 @@ suite. Four modules protect the storage design and are worth reading first:
   the acting tenant's condition, every query must be by vector, and every write must stamp the tenant or select by it. A new
   protocol method fails the test until it has a scenario. The detector is tested against a repository that forgets the tenant.
 - `test_qdrant_cas.py`: overlapping writers never lose one another's change, a toggle several writers race for has one winner, and a
-  write whose answer is lost takes effect once. The detector is tested against a check-then-write updater that must be reported
-  as losing changes.
+  write whose answer is lost takes effect once, a write that was overtaken is still counted as applied (and one overtaken beyond
+  the claim history reports an unknown outcome), and an edit that straddles a re-embedding switch is made again on the new
+  generation. The detector is tested against a check-then-write updater that must be reported as losing changes.
+- `test_qdrant_read_consistency.py`: the reads that decide a write or copy data away ask a majority of the replicas, and replicas that disagree about a memory are awaited, then answered with a conflict (never "missing").
 - `test_qdrant_store.py`: the scopes, create-if-absent, the guarded writes and the read-back of claim tokens.
-- `test_qdrant_schema.py` and `test_qdrant_pool.py`: the collection layout checks that stop a start, the generations and the live
-  alias, the failover between nodes and the retry of ambiguous failures.
+- `test_qdrant_schema.py` and `test_qdrant_pool.py`: the collection layout and embedder checks that stop a start, the generations
+  and the live alias, the failover between nodes and the retry of ambiguous failures. `test_qdrant_links_rebuild.py` stops the move
+  of the links collection to a new layout at each of its steps and finishes it.
 
 ### End-to-End Tests
 
@@ -237,7 +240,8 @@ while iterating and the whole directory before pushing.
 **Location**: `tests/cluster/` (marker `cluster`; the default `pytest` options exclude them with `-m "not cluster"`)
 
 **Purpose**: Test the concurrency design on a real three-node Qdrant cluster: replication factor 3, write consistency factor 2,
-strong write ordering, an API key, internal authentication between the nodes
+strong write ordering, an API key, internal authentication between the nodes. The backup and restore round trip also runs
+with replication factors 2 and 1, where a node's snapshot holds only some of the shards
 
 **Run locally**:
 ```bash

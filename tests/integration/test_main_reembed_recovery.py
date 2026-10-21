@@ -82,7 +82,7 @@ async def test_stop_request_cancels_the_run_once():
 
 
 def test_success_report_names_the_new_and_the_previous_collection(capsys):
-    result = SimpleNamespace(total_processed=3, generation="live_new", previous_generation="live_old")
+    result = SimpleNamespace(total_processed=3, generation="live_new", previous_generation="live_old", links_rebuilt=False)
 
     main._print_reembed_success(result)
 
@@ -90,6 +90,25 @@ def test_success_report_names_the_new_and_the_previous_collection(capsys):
     assert "Successfully re-embedded 3 memories" in out
     assert "The live collection is now live_new" in out
     assert "live_old still holds the old vectors" in out
+    assert "links collection was rebuilt" not in out
+
+
+def test_success_report_says_when_the_links_were_rebuilt_in_the_new_layout(capsys):
+    result = SimpleNamespace(total_processed=3, generation="live_new", previous_generation="live_old", links_rebuilt=True)
+
+    main._print_reembed_success(result)
+
+    assert "The links collection was rebuilt in the configured layout" in capsys.readouterr().out
+
+
+def test_the_configuration_report_shows_the_layout_the_new_collection_gets(monkeypatch, capsys):
+    monkeypatch.setattr(main.settings, "QDRANT_SHARD_NUMBER", 6)
+    monkeypatch.setattr(main.settings, "QDRANT_REPLICATION_FACTOR", 2)
+    monkeypatch.setattr(main.settings, "QDRANT_WRITE_CONSISTENCY_FACTOR", 2)
+
+    main._print_reembed_configuration(5)
+
+    assert "Layout of the new collection: 6 shards, replication factor 2, write consistency factor 2" in capsys.readouterr().out
 
 
 def test_progress_bar_reports_the_share_done(capsys):
@@ -189,13 +208,13 @@ def test_validation_report_shows_each_check(capsys):
 class _Schema:
     def __init__(self, live):
         self.live = live
-        self.checked_width = None
+        self.replacing = None
 
     async def live_exists(self):
         return self.live
 
-    async def ensure(self, check_width):
-        self.checked_width = check_width
+    async def ensure(self, replacing):
+        self.replacing = replacing
 
 
 class _Repository:
@@ -233,7 +252,7 @@ async def test_failed_validation_exits_with_status_1_and_keeps_the_live_collecti
     assert exit_info.value.code == 1
     assert "Validation FAILED! The new collection was discarded; the live collection was not changed." in out
     assert "The live collection is now" not in out
-    assert schema.checked_width is False  # the old collection may hold vectors of another width
+    assert schema.replacing is True  # the old collection may hold vectors of another width, embedder or layout
 
 
 async def test_result_that_passes_validation_is_reported_as_a_success(monkeypatch, capsys):

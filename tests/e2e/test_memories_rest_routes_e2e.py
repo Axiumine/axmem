@@ -197,7 +197,7 @@ class TestObsoleteStateValidation:
         user_id = await _default_user_id(qdrant_app)
 
         with pytest.raises(InvalidStateTransitionError, match="already obsolete"):
-            await repo.mark_obsolete(user_id, memory_id, "second reason")
+            await repo.mark_obsolete(user_id, UUID(memory_id), "second reason")
 
         remaining = (await http_client.get(f"{API}/{memory_id}")).json()
         assert remaining["obsolete_reason"] == "first reason"

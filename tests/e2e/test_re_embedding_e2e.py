@@ -152,7 +152,7 @@ async def test_re_embed_recovers_from_vectors_of_another_width(
     try:
         with pytest.raises(Exception, match="vectors are 8 wide but 384 are configured"):
             await stack.schema.ensure()
-        await stack.schema.ensure(check_width=False)
+        await stack.schema.ensure(replacing=True)
         repo = stack.memory_repository(embedding_adapter)
         progress = []
         result = await ReEmbeddingService(repo, embedding_adapter, batch_size=2).re_embed_all(
@@ -176,6 +176,53 @@ async def test_re_embed_recovers_from_vectors_of_another_width(
         assert old.id in {memory.id for memory, _ in matches}
     finally:
         await stack.close()
+
+
+@pytest.mark.asyncio
+async def test_re_embed_moves_the_memories_and_the_links_to_the_layout_of_the_settings(
+    isolated_qdrant, embedding_adapter, monkeypatch,
+):
+    """A collection keeps the layout it was made with; re-embedding is how the layout settings are changed afterwards."""
+    stack = QdrantStack.from_settings()
+    try:
+        await stack.schema.ensure()
+        repo = stack.memory_repository(embedding_adapter)
+        user_id, memories = await _create_test_memories(repo, count=3)
+        await repo.create_links_batch(user_id, memories[0].id, [memories[1].id, memories[2].id])
+        monkeypatch.setattr(settings, "QDRANT_SHARD_NUMBER", 2)
+        with pytest.raises(Exception, match="shard_number is 1 but QDRANT_SHARD_NUMBER is 2"):
+            await stack.schema.ensure()
+        await stack.schema.ensure(replacing=True)
+
+        result = await ReEmbeddingService(repo, embedding_adapter).re_embed_all()
+
+        assert result.validation.all_passed
+        assert result.links_rebuilt
+        await stack.schema.ensure()  # the server starts now
+        client = stack.pool.clients[0]
+        for collection in (await stack.schema.live_generation(), stack.schema.names.links):
+            assert (await client.get_collection(collection)).config.params.shard_number == 2
+        linked = (await repo.get_memory_by_id(user_id, memories[0].id)).linked_memory_ids
+        assert set(linked) == {memories[1].id, memories[2].id}
+        assert await repo.create_links_batch(user_id, memories[1].id, [memories[2].id]) == [memories[2].id]
+        assert (await repo.create_memory(user_id, MemoryCreate.model_validate(memories[0].model_dump()))).id != memories[0].id
+        names = [collection.name for collection in (await client.get_collections()).collections]
+        assert [name for name in names if name.endswith("_relayout")] == []
+    finally:
+        await stack.close()
+
+
+@pytest.mark.asyncio
+async def test_re_embed_with_the_layout_unchanged_leaves_the_links_collection_alone(repo, embedding_adapter, isolated_stack):
+    user_id, memories = await _create_test_memories(repo, count=2)
+    await repo.create_links_batch(user_id, memories[0].id, [memories[1].id])
+    links = isolated_stack.schema.names.links
+    created = (await isolated_stack.pool.clients[0].get_collection(links)).config.params.model_dump()
+
+    result = await ReEmbeddingService(repo, embedding_adapter).re_embed_all()
+
+    assert not result.links_rebuilt
+    assert (await isolated_stack.pool.clients[0].get_collection(links)).config.params.model_dump() == created
 
 
 @pytest.mark.asyncio

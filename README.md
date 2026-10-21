@@ -174,8 +174,9 @@ Run it under your service manager of choice (for example a systemd unit whose `W
 
 Axmem keeps everything in Qdrant, in two collections: `<prefix>_memories` (an alias onto the live generation of the
 memories and their vectors) and `<prefix>_links`. `QDRANT_COLLECTION_PREFIX` defaults to `axmem`. The collections are
-created at start; an existing collection whose layout differs from the settings stops the server with an explanation
-and is never changed silently.
+created at start; an existing collection whose layout differs from the settings, or whose vectors another embedder
+made, stops the server with an explanation and is never changed silently (`axmem re-embed` moves the data to a new
+layout or embedder).
 
 **One node** is the default (`QDRANT_URL=http://127.0.0.1:6333`). Give the node an API key (`QDRANT__SERVICE__API_KEY`)
 and put the same value in `QDRANT_API_KEY`; it is a secret and is never logged. The key admits every tenant of the
@@ -192,8 +193,9 @@ its own and reports any node whose points differ; it only reports, repair is the
 (`axmem export`, restored with `axmem import`) is the second line: it holds the memories and links without
 vectors, and an import computes the vectors again with the configured model, so it also moves memories between
 embedding models and between Qdrant versions. On a cluster a snapshot is per node and per shard: stop the writers,
-check that the nodes agree (`axmem qdrant-check`), snapshot every node, and restore on one node with the snapshot
-as the source of truth, then check for leftover partial replicas. Aliases are not part of a snapshot. Details:
+check that the nodes agree (`axmem qdrant-check`), snapshot every node, and restore every node's file on the node it
+came from (`QDRANT_URL` lists the same nodes in the same order; a node's snapshot holds only the shards it stores), then
+check for leftover partial replicas. Aliases are not part of a snapshot. Details:
 [Configuration Guide](docs/configuration.md#qdrant-configuration).
 
 ### Authentication and tenants

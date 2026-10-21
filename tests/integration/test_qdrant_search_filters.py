@@ -12,6 +12,7 @@ from uuid import uuid4
 import pytest
 
 from app.models.memory_models import MemoryCreate
+from app.repositories.qdrant import memory_links as links_module
 from app.repositories.qdrant.store import QdrantStore
 
 TOPIC = "Rotating the signing keys of the payment gateway every ninety days"
@@ -91,6 +92,54 @@ async def test_linked_memories_come_back_most_important_first_and_are_capped(mem
     assert [memory.importance for memory in linked] == [9, 8, 6]
 
 
+@pytest.mark.parametrize("chunk", [2, 3, 10])
+async def test_the_most_important_linked_memories_are_returned_however_many_lookups_it_takes(memory_repository, monkeypatch, chunk):
+    """A memory with more links than one lookup holds still returns its most important neighbours, not the first ones found."""
+    monkeypatch.setattr(links_module, "LINK_CHUNK", chunk)
+    tenant = uuid4()
+    importances = (3, 9, 6, 1, 8, 2, 7, 5, 4)
+    neighbours = [
+        await memory_repository.create_memory(tenant, memory_about_the_topic(f"Neighbour {importance}", importance))
+        for importance in importances
+    ]
+    hub = await linked_hub(memory_repository, tenant, neighbours)
+
+    linked = await memory_repository.get_linked_memories(tenant, hub.id, project=None, max_links=4)
+
+    assert [memory.importance for memory in linked] == [9, 8, 7, 6]
+    assert {memory.id for memory in linked} == {neighbour.id for neighbour in neighbours if neighbour.importance >= 6}
+    assert all(memory.linked_memory_ids for memory in linked)
+
+
+async def test_linked_memories_over_several_lookups_leave_out_the_obsolete_and_the_excluded(memory_repository, monkeypatch):
+    monkeypatch.setattr(links_module, "LINK_CHUNK", 2)
+    tenant = uuid4()
+    neighbours = [
+        await memory_repository.create_memory(tenant, memory_about_the_topic(f"Neighbour {importance}", importance))
+        for importance in (9, 8, 7, 6, 5)
+    ]
+    hub = await linked_hub(memory_repository, tenant, neighbours)
+    await memory_repository.mark_obsolete(tenant, neighbours[0].id, "superseded")
+
+    linked = await memory_repository.get_linked_memories(
+        tenant, hub.id, project=None, max_links=2, exclude_ids=[neighbours[1].id],
+    )
+
+    assert [memory.importance for memory in linked] == [7, 6]
+
+
+async def test_linked_memories_none_of_which_qualifies_come_back_empty_over_several_lookups(memory_repository, monkeypatch):
+    monkeypatch.setattr(links_module, "LINK_CHUNK", 2)
+    tenant = uuid4()
+    neighbours = [
+        await memory_repository.create_memory(tenant, memory_about_the_topic(f"Neighbour {number}", 5, project="search"))
+        for number in range(5)
+    ]
+    hub = await linked_hub(memory_repository, tenant, neighbours)
+
+    assert await memory_repository.get_linked_memories(tenant, hub.id, project="billing") == []
+
+
 async def test_linked_memories_can_be_kept_to_a_project(memory_repository):
     tenant = uuid4()
     same = await memory_repository.create_memory(tenant, memory_about_the_topic("Same project", 5, project="billing"))
@@ -128,6 +177,10 @@ class ReadRecorder:
     async def get(self, scope, collection, ids, **kwargs):
         self.reads.append((collection, kwargs.get("quorum", False)))
         return await self.store.get(scope, collection, ids, **kwargs)
+
+    async def get_agreed(self, scope, collection, ids, **kwargs):
+        self.reads.append((collection, True))  # a majority read, repeated while the replicas disagree
+        return await self.store.get_agreed(scope, collection, ids, **kwargs)
 
     def __getattr__(self, name):
         return getattr(self.store, name)

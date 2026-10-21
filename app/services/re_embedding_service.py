@@ -35,6 +35,8 @@ class ReEmbedResult:
     generation: str | None = None
     # The generation that served before; it keeps the old vectors until it is deleted
     previous_generation: str | None = None
+    # Whether the stored links had to be rebuilt in the layout the settings describe
+    links_rebuilt: bool = False
 
 
 @dataclass
@@ -103,7 +105,7 @@ class ReEmbeddingService:
                     break
             validation = await self.memory_repository.validate_generation(target)
         except BaseException:
-            await self.memory_repository.discard_generation(target)
+            await self._discard_keeping_the_cause(target)
             raise
         if not validation.all_passed:
             logger.error("Validation failed", extra={
@@ -111,7 +113,7 @@ class ReEmbeddingService:
                 "dimensions_ok": validation.dimensions_ok,
                 "search_ok": validation.search_ok,
             })
-            await self.memory_repository.discard_generation(target)
+            await self._discard_keeping_the_cause(target)
             return ReEmbedResult(total_processed=processed, total_memories=total, validation=validation)
 
         self.switch_started = target
@@ -119,6 +121,7 @@ class ReEmbeddingService:
         for _ in range(MAX_CATCH_UP_PASSES):
             if await self._copy_all(source, target) == 0:
                 break
+        links_rebuilt = await self.memory_repository.rebuild_links()
         logger.info("Validation passed and generation activated", extra={"generation": target})
         return ReEmbedResult(
             total_processed=processed,
@@ -126,7 +129,16 @@ class ReEmbeddingService:
             validation=validation,
             generation=target,
             previous_generation=source,
+            links_rebuilt=links_rebuilt,
         )
+
+    async def _discard_keeping_the_cause(self, generation: str) -> None:
+        """Delete the unfinished generation of a run that failed, without letting a failure to delete replace the cause
+        (the error being raised, or the validation report being returned)."""
+        try:
+            await self.memory_repository.discard_generation(generation)
+        except Exception:
+            logger.exception("The unfinished generation could not be deleted", extra={"generation": generation})
 
     async def _copy_all(
         self,

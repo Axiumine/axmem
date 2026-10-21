@@ -11,6 +11,7 @@ Every write goes through ``_write``, which fixes the options the verified cluste
 ``wait=True`` (the response says nothing about whether a conditional write won, so the caller has to
 read the point back), strong write ordering, and an explicit ``update_mode`` for every upsert.
 """
+import asyncio
 import logging
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterable, Sequence
 from dataclasses import dataclass
@@ -22,6 +23,7 @@ from qdrant_client import AsyncQdrantClient
 from qdrant_client import models as qm
 
 from app.config.settings import settings
+from app.exceptions import ConflictError, OutcomeUnknownError
 from app.repositories.qdrant.client import NodePool
 
 logger = logging.getLogger(__name__)
@@ -31,6 +33,14 @@ T = TypeVar("T")
 TENANT_KEY = "tenant_id"
 VERSION_KEY = "version"
 TOKEN_KEY = "op_token"  # noqa: S105  # nosec B105 - the name of the payload field that holds the claim token of a write, not a credential
+HISTORY_KEY = "op_history"
+# How many earlier claim tokens a point keeps next to its own: the writes that can land between a conditional write
+# and its read-back without making the outcome of that write unknowable
+CLAIM_HISTORY = 16
+# How often a majority read is repeated for a point that the replicas hold in different versions at that moment, and the
+# wait before the first repeat (doubled each time): writes that are in flight land within a few hundred milliseconds
+AGREEMENT_ATTEMPTS = 4
+AGREEMENT_WAIT_SECONDS = 0.05
 
 
 @dataclass(frozen=True)
@@ -120,6 +130,38 @@ def scoped(scope: Scope, where: Where | None = None) -> qm.Filter:
     return qm.Filter(must=must or None, must_not=list(where.must_not) or None, should=list(where.should) or None)
 
 
+def claim_fields(current: dict[str, Any] | None, token: str) -> dict[str, Any]:
+    """The claim fields of a write that follows the state ``current`` (None for a first write): its token, and the
+    tokens of the writes before it, newest first, as many as ``CLAIM_HISTORY`` allows.
+
+    ``current`` must be the payload at the version the write is conditional on: no other write can have moved the
+    point on from that version, so these are exactly the tokens the point holds when the write lands.
+    """
+    earlier = [] if current is None else [current.get(TOKEN_KEY), *(current.get(HISTORY_KEY) or ())]
+    return {TOKEN_KEY: token, HISTORY_KEY: earlier[:CLAIM_HISTORY]}
+
+
+def write_landed(payload: dict[str, Any], *, from_version: int, token: str) -> bool | None:
+    """Whether the write that moved a point on from ``from_version`` carried ``token``, according to what the point says now.
+
+    Each write is conditional on the version it read, so only one write can ever move a point from one version to the
+    next, and the token stored for version ``from_version + 1`` names it, however many writes came after. A point
+    holds its own token and ``CLAIM_HISTORY`` earlier ones, newest first: the n-th of them belongs to version
+    ``version - n``. Returns None when that token has been pushed out of the history (more than ``CLAIM_HISTORY``
+    writes landed since), which means the outcome cannot be told.
+    """
+    distance = int(payload[VERSION_KEY]) - (from_version + 1)
+    if distance < 0:
+        return False  # the point has not got that far: the write did not apply
+    history = payload.get(HISTORY_KEY) or []
+    tokens = [payload.get(TOKEN_KEY), *history]
+    if distance < len(tokens):
+        return tokens[distance] == token
+    # A history that is not full holds every write since the point's record began, so a version before that is a write
+    # the record never saw (a copy of a newer point replaced it); a full one has dropped the token
+    return None if len(history) >= CLAIM_HISTORY else False
+
+
 def _point(record: Any) -> Point:
     return Point(
         id=UUID(str(record.id)),
@@ -206,6 +248,43 @@ class QdrantStore:
             quorum=quorum,
         )
 
+    async def get_agreed(
+        self,
+        scope: Scope,
+        collection: str,
+        ids: Sequence[UUID],
+        *,
+        with_payload: bool | list[str] = True,
+        with_vectors: bool = False,
+    ) -> list[Point]:
+        """The points among ``ids`` that exist, as a majority of the replicas hold them.
+
+        A majority read returns a point only when the replicas it asks hold the same version of it, so a point that is
+        being rewritten at that moment is missing from the answer although it exists. A point that the majority read
+        does not return and that a plain read finds is that case: the read is repeated, waiting a little longer each
+        time, and gives up with ``ConflictError`` when the replicas never agree. A point no read finds does not exist.
+
+        Raises:
+            ConflictError: If the replicas kept holding different versions of a point
+        """
+        wanted = list(dict.fromkeys(ids))
+        wait = AGREEMENT_WAIT_SECONDS
+        for attempt in range(AGREEMENT_ATTEMPTS):
+            found = await self.get(
+                scope, collection, wanted, with_payload=with_payload, with_vectors=with_vectors, quorum=True,
+            )
+            agreed = {point.id for point in found}
+            missing = [point_id for point_id in wanted if point_id not in agreed]
+            if not missing or not await self.get(scope, collection, missing, with_payload=False):
+                return found
+            if attempt + 1 < AGREEMENT_ATTEMPTS:
+                await asyncio.sleep(wait)
+                wait *= 2
+        raise ConflictError(
+            f"The replicas of {collection} kept holding different versions of {', '.join(map(str, missing))}; "
+            "nothing was changed, try again",
+        )
+
     async def iterate(
         self,
         scope: Scope,
@@ -215,13 +294,14 @@ class QdrantStore:
         batch: int = 256,
         with_payload: bool | list[str] = True,
         with_vectors: bool = False,
+        quorum: bool = False,
     ) -> AsyncIterator[Point]:
-        """Every point matching the filter, by ascending id, ``batch`` at a time."""
+        """Every point matching the filter, by ascending id, ``batch`` at a time (``quorum``: each page from a majority)."""
         start: UUID | None = None
         while True:
             points = await self.scroll(
                 scope, collection, where, limit=batch + 1, start_from=start,
-                with_payload=with_payload, with_vectors=with_vectors,
+                with_payload=with_payload, with_vectors=with_vectors, quorum=quorum,
             )
             for point in points[:batch]:
                 yield point
@@ -383,19 +463,31 @@ class QdrantStore:
 
         await self._write(call)
 
-    async def tokens(self, scope: Scope, collection: str, ids: Sequence[UUID]) -> dict[UUID, str | None]:
-        """The claim token of each point among ``ids``, read from a majority of the replicas.
+    async def landed(
+        self, scope: Scope, collection: str, point_id: UUID, *, from_version: int, token: str,
+    ) -> bool:
+        """Whether the conditional write guarded on ``from_version`` that carried ``token`` is the one that applied.
 
-        This is how a writer learns whether its conditional write won. A point that cannot be read back is
-        logged as suspect, because a replica may hold a different state than the others.
+        The response of a conditional write does not say, so this reads the point back from a majority of the replicas
+        and looks for the token in the claim history, which later writes extend and do not overwrite.
+
+        Raises:
+            OutcomeUnknownError: If more than ``CLAIM_HISTORY`` writes landed since, so the token is gone
         """
-        points = await self.get(scope, collection, ids, with_payload=[TOKEN_KEY], quorum=True)
-        found = {point.id: point.payload.get(TOKEN_KEY) for point in points}
-        for point_id in ids:
-            if point_id not in found:
-                logger.warning(
-                    "A point could not be read back after a write; it is suspect until the nodes agree",
-                    extra={"point_id": str(point_id), "collection": collection},
-                )
-        return found
-
+        points = await self.get(
+            scope, collection, [point_id], with_payload=[VERSION_KEY, TOKEN_KEY, HISTORY_KEY], quorum=True,
+        )
+        if not points:
+            logger.warning(
+                "A point could not be read back after a write; it is suspect until the nodes agree",
+                extra={"point_id": str(point_id), "collection": collection},
+            )
+            return False
+        outcome = write_landed(points[0].payload, from_version=from_version, token=token)
+        if outcome is None:
+            raise OutcomeUnknownError(
+                f"The outcome of a write to {point_id} cannot be told: more than {CLAIM_HISTORY} other writes landed "
+                "before it was read back. It may or may not have been applied; read it again and repeat the change "
+                "if it is missing",
+            )
+        return outcome

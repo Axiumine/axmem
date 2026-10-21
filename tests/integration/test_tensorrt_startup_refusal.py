@@ -15,6 +15,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.qdrant_support import drop_prefix, unique_prefix
+
 ROOT = Path(__file__).resolve().parents[2]
 
 # Make a package undiscoverable the way a missing library is: importing it raises ImportError.
@@ -135,20 +137,53 @@ def test_serve_without_importable_tensorrt_libraries_exits_with_the_cause_of_the
     {"RERANKING_PROVIDER": "HTTP", "RERANKING_URL": "http://127.0.0.1:9/v1/rerank"},
 ], ids=["reranking-off", "http-reranker"])
 def test_without_the_local_models_no_gpu_is_needed(qdrant_server, reranking):
-    """Another embeddings provider and no local reranker: the program starts on a machine with no GPU at all."""
-    server, prefix = qdrant_server
-    result = run_program(
-        code=HIDE_AND_RUN.format(hidden={*TENSORRT_HIDDEN, "cuda"}, argv=["tools", "list"]),
-        EMBEDDING_PROVIDER="Ollama",
-        CUDA_VISIBLE_DEVICES="-1",
-        **reranking,
-        QDRANT_URL=server.url,
-        QDRANT_API_KEY=server.api_key,
-        QDRANT_COLLECTION_PREFIX=prefix,
-    )
+    """Another embeddings provider and no local reranker: the program starts on a machine with no GPU at all.
+
+    The collections are the test's own: the shared ones hold vectors of the TensorRT embedder, and a start on
+    another embedder is refused there (see ``test_a_start_on_another_embedder_than_the_stored_one_is_refused``).
+    """
+    server, _ = qdrant_server
+    prefix = unique_prefix()
+    try:
+        result = run_program(
+            code=HIDE_AND_RUN.format(hidden={*TENSORRT_HIDDEN, "cuda"}, argv=["tools", "list"]),
+            EMBEDDING_PROVIDER="Ollama",
+            CUDA_VISIBLE_DEVICES="-1",
+            **reranking,
+            QDRANT_URL=server.url,
+            QDRANT_API_KEY=server.api_key,
+            QDRANT_COLLECTION_PREFIX=prefix,
+        )
+    finally:
+        drop_prefix(server.url, server.api_key, prefix)
 
     assert result.returncode == 0
     assert "total_count" in result.stdout
+
+
+def test_a_start_on_another_embedder_than_the_stored_one_is_refused(qdrant_server):
+    """Same width, other model: the stored vectors cannot be compared with new ones, so the program says so and stops."""
+    server, _ = qdrant_server
+    prefix = unique_prefix()
+    settings = {
+        "EMBEDDING_PROVIDER": "Ollama",
+        "RERANKING_ENABLED": "false",
+        "QDRANT_URL": server.url,
+        "QDRANT_API_KEY": server.api_key,
+        "QDRANT_COLLECTION_PREFIX": prefix,
+    }
+    try:
+        first = run_program(argv=["tools", "list"], EMBEDDING_MODEL="first-model", **settings)
+        second = run_program(argv=["tools", "list"], EMBEDDING_MODEL="second-model", **settings)
+    finally:
+        drop_prefix(server.url, server.api_key, prefix)
+
+    assert first.returncode == 0, first.stderr
+    assert second.returncode == 1
+    assert "model first-model" in second.stderr + second.stdout
+    assert "model second-model" in second.stderr + second.stdout
+    assert "axmem re-embed" in second.stderr + second.stdout
+    assert "Traceback" not in second.stderr
 
 
 def test_serve_shows_what_the_engine_cache_did_while_the_models_started(qdrant_server, tensorrt_embedder, tmp_path):

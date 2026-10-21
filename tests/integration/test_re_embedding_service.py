@@ -5,6 +5,7 @@ spies (``embedding_spy``), through which the provider faults are injected. The f
 the live generation, so it runs on collections of its own (``isolated_stack``); the tenant-scoped rebuild
 works on the shared ones.
 """
+import logging
 from uuid import uuid4
 
 import pytest
@@ -13,6 +14,7 @@ from app.config.settings import settings
 from app.exceptions import EmbeddingUnavailableError
 from app.models.memory_models import MemoryCreate, MemoryUpdate
 from app.protocols.memory_protocol import ValidationResult
+from app.services import re_embedding_service as service_module
 from app.services.re_embedding_service import MAX_CATCH_UP_PASSES, ReEmbeddingService
 from tests.embedding_doubles import failing_on
 
@@ -224,6 +226,68 @@ async def test_failed_validation_discards_the_new_generation(isolated_repo, isol
     assert result.generation is None
     assert await isolated_repo.live_generation() == live
     assert await _generations(isolated_stack) == [live]
+
+
+async def test_a_generation_that_cannot_be_deleted_does_not_hide_why_the_run_failed(isolated_repo, embedding_spy, monkeypatch, caplog):
+    await _seed(isolated_repo, 1)
+    service = ReEmbeddingService(isolated_repo, embedding_spy)
+
+    async def copy_all(*_args, **_kwargs):
+        raise RuntimeError("provider down")
+
+    async def discard(_generation):
+        raise ConnectionError("node gone")
+
+    monkeypatch.setattr(service, "_copy_all", copy_all)
+    monkeypatch.setattr(isolated_repo, "discard_generation", discard)
+    caplog.set_level(logging.ERROR, logger=service_module.logger.name)
+
+    with pytest.raises(RuntimeError, match="provider down"):
+        await service.re_embed_all()
+
+    assert [record for record in caplog.records if "could not be deleted" in record.getMessage()]
+
+
+async def test_a_generation_that_cannot_be_deleted_does_not_hide_the_failed_validation(isolated_repo, embedding_spy, monkeypatch):
+    await _seed(isolated_repo, 1)
+
+    async def failing_validation(generation):
+        return ValidationResult(count_ok=False, dimensions_ok=True, search_ok=True)
+
+    async def discard(_generation):
+        raise ConnectionError("node gone")
+
+    monkeypatch.setattr(isolated_repo, "validate_generation", failing_validation)
+    monkeypatch.setattr(isolated_repo, "discard_generation", discard)
+
+    result = await ReEmbeddingService(isolated_repo, embedding_spy).re_embed_all()
+
+    assert not result.validation.count_ok
+    assert result.generation is None
+
+
+async def test_the_links_are_rebuilt_after_the_switch_and_the_result_says_so(isolated_repo, embedding_spy, monkeypatch):
+    await _seed(isolated_repo, 1)
+    calls: list[str] = []
+    activate, rebuild = isolated_repo.activate_generation, isolated_repo.rebuild_links
+
+    async def tracked_activate(generation):
+        calls.append("activate")
+        await activate(generation)
+
+    async def tracked_rebuild():
+        calls.append("rebuild")
+        return await rebuild()
+
+    monkeypatch.setattr(isolated_repo, "activate_generation", tracked_activate)
+    monkeypatch.setattr(isolated_repo, "rebuild_links", tracked_rebuild)
+
+    unchanged = await ReEmbeddingService(isolated_repo, embedding_spy).re_embed_all()
+    monkeypatch.setattr(settings, "QDRANT_SHARD_NUMBER", 2)
+    moved = await ReEmbeddingService(isolated_repo, embedding_spy).re_embed_all()
+
+    assert calls == ["activate", "rebuild", "activate", "rebuild"]
+    assert (unchanged.links_rebuilt, moved.links_rebuilt) == (False, True)
 
 
 async def test_catching_up_with_edits_is_bounded_when_writers_never_stop(isolated_repo, embedding_spy, monkeypatch):

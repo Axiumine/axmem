@@ -437,8 +437,9 @@ Fixes found by reviewing the feature cuts (no upstream counterpart: the code the
   links and logs a warning that names the memory id (`rebuild_embeddings` for that id links it).
 - **Backup, export and import:** `restore` reads the manifest as untrusted input and, before it uploads anything,
   refuses one that is not valid, that names a file other than a `node<N>-memories|links.snapshot` of the set, or a
-  collection that is not this deployment's (`<prefix>_links`, `<prefix>_memories_<generation>`), or that lacks the
-  memories or the links snapshot of node 1; snapshots are checksummed in chunks. `export` writes its `.partial` file
+  collection that is not this deployment's (`<prefix>_links`, `<prefix>_memories_<generation>`), or that does not hold
+  exactly one memories and one links snapshot for each configured node (see the review of the storage layer below);
+  snapshots are checksummed in chunks. `export` writes its `.partial` file
   through a descriptor it created itself (a stale file or a link at that name is removed, not followed), so a link planted in a
   shared directory no longer redirects the export onto another file. `import` skips and counts a line that is not
   UTF-8, is nested too deeply, holds a number of thousands of digits, has an id or a version of the wrong type, no
@@ -453,6 +454,65 @@ Fixes found by reviewing the feature cuts (no upstream counterpart: the code the
   in the log. It is masked again, up to 4096 characters; one with a space, or longer, is still not masked. A `GATEWAY_URL`
   with an empty `?` or `#` (which the check for a query or a fragment let through, and the path was appended after the
   marker) is refused at start-up.
+
+- **Review of the storage layer:**
+  - **`restore` on a cluster:** it uploaded only the first node's snapshot, so with a replication factor below the number
+    of nodes (where a node stores only some of the shards) it brought back part of the data, silently. It now checks
+    that the manifest holds one memories and one links snapshot for each node of `QDRANT_URL` and no other node (the
+    manifest records each file's node URL; the file name must be `node<N>-<role>.snapshot` for its own node and the
+    memories snapshots must be of one generation), verifies every checksum, uploads each file to the node it came from
+    under a one hour timeout, waits after each file until every replica of that collection is `Active` again (up to 10 minutes;
+    uploading the next node's file while replicas recover left every replica of a shard `Dead` in two of four repeated
+    restores at replication factor 2; a replica still not `Active` after 90 seconds, which Qdrant sometimes leaves in
+    `ManualRecovery` after a restore into an emptied cluster, gets its file uploaded once more, which activates it), and
+    makes the generation live after the last file. A backup of other nodes, or of the same
+    addresses in another order, is refused before anything is uploaded. The cluster tests restore for replication factors 3, 2 and 1.
+    `backup` deletes the snapshot from its node whatever happens to the download (a failed download left a snapshot as
+    large as the node's shards behind each time; one that cannot be deleted is named in the log), and takes the snapshot
+    under the same long timeout instead of the ordinary request timeout, which gave up on a large collection while the
+    node went on and kept the snapshot unnamed.
+  - **`re-embed` and the layout settings:** a changed `QDRANT_SHARD_NUMBER`, `QDRANT_REPLICATION_FACTOR` or
+    `QDRANT_WRITE_CONSISTENCY_FACTOR` stopped the server with a message that told the operator to "create a new
+    collection", which `re-embed` could not do (it refused to open the old collection with the same message, and left the
+    links collection in the old layout). `re-embed` now opens the old collections whatever their layout, prints the layout
+    the new one gets, fills the new generation in it, and rebuilds the links collection in that layout through a staging
+    copy that is removed at the end; nothing is removed before the copy holds every link, and a run that stopped half
+    way is finished by running it again. `ensure(check_width=False)` became `ensure(replacing=True)`, which tolerates the
+    layout, the width and the embedder that are about to be replaced and nothing else. The start-up message names
+    `axmem re-embed`.
+  - **Another embedder of the same width:** a provider, model, precision (`EMBEDDING_TF32`) or gateway backend that
+    produced vectors of the same width passed the start-up check, and queries were then embedded in another vector
+    space than the stored vectors. Every new memory generation records the embedder that fills it (collection metadata
+    `axmem_embedder`, kept in snapshots), and the server refuses to start on a mismatch with a message that names both
+    and `axmem re-embed`. A collection that recorded nothing is taken to be the configured embedder's and records it,
+    with a warning.
+  - **Edits that were overtaken:** a write that landed and was then overtaken by two more writes before the writer read it
+    back was reported as lost and replayed over the newer state (the point kept only the latest claim token). Each point
+    now keeps the tokens of its 16 earlier versions (`op_history`, a payload field written from now on; points without it
+    work), the read-back finds its token by version, and a write that more than 16 writes overtook is answered with
+    `OutcomeUnknownError` (409, "the outcome cannot be told ... read it again and repeat the change if it is missing")
+    instead of being replayed or reported as lost.
+  - **An edit that straddled a re-embedding switch:** `update_memory` read the memory from the live alias and wrote
+    through the alias again, so a switch of the alias between the two wrote a vector of the old model into the new
+    generation. An attempt now works on one generation from its read to its read-back and, when the alias moved
+    meanwhile, is made again on the live one.
+  - **Reads that decide a write or copy data away** ask a majority of the replicas: the memory an edit or an obsolete
+    mark works on, the superseding memory, the existence checks of unlink, `get_memory_by_id`, `export`, `import`, and the
+    scans and checks of the re-embedding copy (a stale replica could report a memory missing, apply an edit to an old
+    copy, or leave a newer memory out of an export or of the new generation). Qdrant returns a point from such a read
+    only while the replicas it asks hold the same version of it, so a memory that other writers are rewriting at that
+    moment can be missing from the answer: the reads that decide a write or answer for one memory (the memory an edit
+    or an obsolete mark works on, the superseding memory, the targets of a link, `get_memory_by_id`) repeat it a few
+    times and, when the replicas never agree, fail with `ConflictError` (409, nothing changed) instead of reporting the
+    memory missing or skipping a link. The cluster test of overlapping edits found it.
+  - **Smaller:** moving the alias and creating it are repeated after a lost answer without failing on the alias that
+    had moved (one request, checked first); a generation that cannot be discarded is retried, and a failed discard no
+    longer replaces the error that ended the run (or the validation report). `qdrant-check` says when nodes could not be
+    read (`N of M nodes could not be read, so the nodes were not compared in full`) and no longer words that as a
+    disagreement of the points it could not compare. `get_linked_memories` returned the most important of only the first
+    1000 neighbours of a memory; it now ranks every neighbour (their importance is read in chunks of 1000) before it takes
+    the most important `max_links`. The checksum of a snapshot was already computed in chunks at this revision, and a test
+    now pins it.
 
 - **Tests, CI and hooks:** the Qdrant preflight of the suites pulls `qdrant/qdrant:v1.19.2` when the image is not local (a
   clean or pruned runner, or a bumped version) and still ends the run with exit code 2 and the cause when Docker or the

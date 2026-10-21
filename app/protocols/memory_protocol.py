@@ -309,6 +309,11 @@ class MemoryRepository(Protocol):
         """Delete a generation that was never activated."""
         ...
 
+    async def rebuild_links(self) -> bool:
+        """Give the stored links the layout the settings describe (shards, replicas, write consistency); return
+        whether they had to be rebuilt. A run that stopped half way is finished by running it again."""
+        ...
+
     async def validate_generation(self, generation: str) -> ValidationResult:
         """Check the memory count, the vector width and a similarity search of a generation."""
         ...

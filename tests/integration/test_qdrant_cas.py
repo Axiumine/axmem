@@ -8,6 +8,11 @@ the two properties that make that safe:
 - a write whose acknowledgement is lost, and is therefore repeated with the same claim token, takes effect
   once (the repeated request finds its own token on the point and reports success; it does not apply twice).
 
+- a write that landed and was then overtaken by later writes before its writer could read it back is still
+  counted as applied (each point keeps the claim tokens of its latest versions), so the writer does not replay its
+  change over the newer state; and when more writes landed than a point remembers, the writer is told that the
+  outcome is unknown instead of being told that it lost.
+
 The race detector is tested too: a deliberately naive writer that reads, merges on the client and writes
 without a condition has to be reported as losing changes by the very check the real repository passes.
 """
@@ -18,11 +23,15 @@ import pytest
 from qdrant_client import models as qm
 from qdrant_client.http.exceptions import ResponseHandlingException
 
-from app.exceptions import ConflictError, InvalidStateTransitionError
+from app.exceptions import (
+    ConflictError,
+    InvalidStateTransitionError,
+    OutcomeUnknownError,
+)
 from app.models.memory_models import Memory, MemoryCreate, MemoryUpdate
 from app.repositories.qdrant import client as client_module
 from app.repositories.qdrant.memory_base import MAX_CAS_ATTEMPTS
-from app.repositories.qdrant.store import VERSION_KEY, Scope
+from app.repositories.qdrant.store import CLAIM_HISTORY, VERSION_KEY, Scope
 
 WRITERS = 8
 
@@ -109,7 +118,8 @@ async def test_overlapping_updates_never_lose_one_another(repo, monkeypatch):
     stored = await repo.get_memory_by_id(tenant, memory.id)
     assert len(applied) >= 1
     assert lost_changes(stored, applied) == []
-    assert await stored_version(repo, tenant, memory.id) >= 1 + len(applied)
+    # Every writer that was told it succeeded moved the version on exactly once: none replayed an applied change
+    assert await stored_version(repo, tenant, memory.id) == 1 + len(applied)
 
 
 async def test_the_detector_reports_the_changes_a_check_then_write_updater_loses(repo, monkeypatch):
@@ -176,6 +186,97 @@ async def test_a_toggle_whose_write_never_lands_is_a_conflict_after_the_bounded_
 
     assert len(attempts) == MAX_CAS_ATTEMPTS
     assert (await repo.get_memory_by_id(tenant, memory.id)).is_obsolete == (toggle == "restore_obsolete")
+
+
+# ---- writes overtaken before their read-back ---------------------------------------------------------
+
+
+def after_the_write_lands_run(monkeypatch, store, other_writers):
+    """Run ``other_writers`` once, between the first conditional write of the test and the read-back of its outcome."""
+    original = store.landed
+    ran = False
+
+    async def landed(*args, **kwargs):
+        nonlocal ran
+        if not ran:
+            ran = True
+            await other_writers()
+        return await original(*args, **kwargs)
+
+    monkeypatch.setattr(store, "landed", landed)
+
+
+async def test_a_toggle_overtaken_by_the_opposite_toggle_is_not_replayed(repo, monkeypatch):
+    """A marks the memory obsolete; before A reads its write back, B restores it. A must not mark it obsolete again."""
+    tenant = uuid4()
+    memory = await repo.create_memory(tenant, a_memory())
+
+    async def restore() -> None:
+        assert await repo.restore_obsolete(tenant, memory.id) is True
+
+    after_the_write_lands_run(monkeypatch, repo.store, restore)
+
+    assert await repo.mark_obsolete(tenant, memory.id, "superseded") is True
+
+    stored = await repo.get_memory_by_id(tenant, memory.id)
+    assert not stored.is_obsolete  # B's restore came last and stands
+    assert await stored_version(repo, tenant, memory.id) == 3  # one version per toggle, no replay
+
+
+async def test_an_update_overtaken_by_an_update_of_the_same_field_does_not_overwrite_it(repo, monkeypatch):
+    tenant = uuid4()
+    memory = await repo.create_memory(tenant, a_memory())
+
+    async def other_writer() -> None:
+        await repo.update_memory(tenant, memory.id, MemoryUpdate(title="Second writer's title"))
+
+    after_the_write_lands_run(monkeypatch, repo.store, other_writer)
+
+    first = await repo.update_memory(tenant, memory.id, MemoryUpdate(title="First writer's title"))
+
+    assert first.title == "First writer's title"  # what the first writer wrote, as it was told
+    stored = await repo.get_memory_by_id(tenant, memory.id)
+    assert stored.title == "Second writer's title"  # the later write stands; the first was not replayed over it
+    assert await stored_version(repo, tenant, memory.id) == 3
+
+
+async def test_a_write_overtaken_by_more_writes_than_a_point_remembers_has_an_unknown_outcome(repo, monkeypatch):
+    tenant = uuid4()
+    memory = await repo.create_memory(tenant, a_memory())
+
+    async def a_crowd_of_writers() -> None:
+        for importance in range(CLAIM_HISTORY + 1):
+            await repo.update_memory(tenant, memory.id, MemoryUpdate(importance=1 + importance % 9))
+
+    after_the_write_lands_run(monkeypatch, repo.store, a_crowd_of_writers)
+
+    with pytest.raises(OutcomeUnknownError, match="may or may not have been applied") as raised:
+        await repo.update_memory(tenant, memory.id, MemoryUpdate(title="Landed, then buried"))
+
+    assert isinstance(raised.value, ConflictError)  # REST answers 409, MCP shows the message
+    stored = await repo.get_memory_by_id(tenant, memory.id)
+    assert stored.title == "Landed, then buried"  # it did apply: the error says only that the writer cannot tell
+
+
+async def test_writers_of_the_same_field_and_togglers_move_the_version_once_per_reported_success(repo, monkeypatch):
+    tenant = uuid4()
+    memory = await repo.create_memory(tenant, a_memory())
+    hold_writers_until_all_have_read(monkeypatch, repo.store, "replace", WRITERS)
+
+    changes = [{"title": f"Writer {index}"} for index in range(WRITERS)]
+    outcomes = await asyncio.gather(
+        *(repo.update_memory(tenant, memory.id, MemoryUpdate(**change)) for change in changes),
+        return_exceptions=True,
+    )
+    toggles = await asyncio.gather(
+        *(repo.mark_obsolete(tenant, memory.id, f"reason {index}") for index in range(WRITERS)),
+        return_exceptions=True,
+    )
+
+    successes = [outcome for outcome in outcomes if isinstance(outcome, Memory)]
+    assert all(isinstance(outcome, Memory | ConflictError) for outcome in outcomes), outcomes
+    assert [toggle for toggle in toggles if toggle is True] == [True]
+    assert await stored_version(repo, tenant, memory.id) == 1 + len(successes) + 1
 
 
 # ---- lost acknowledgements ---------------------------------------------------------------------------
@@ -275,3 +376,39 @@ async def test_a_write_that_keeps_failing_is_raised_after_the_attempts(repo, mon
     assert lossy.writes == 2
     lossy.behaviours.clear()
     assert (await repo.get_memory_by_id(tenant, memory.id)).title == "Original title"
+
+
+# ---- an edit that straddles a re-embedding switch --------------------------------------------------------------------
+
+
+async def test_an_edit_that_straddles_the_switch_of_the_live_generation_is_made_again_on_the_new_one(
+    isolated_stack, tensorrt_embedder, monkeypatch,
+):
+    """The vector read from the old generation must not be written into the new one (another model's vector space)."""
+    repo = isolated_stack.memory_repository(tensorrt_embedder)
+    tenant = uuid4()
+    memory = await repo.create_memory(tenant, a_memory())
+    old_generation = await repo.live_generation()
+    new_generation = await repo.create_generation()
+    new_vector = await tensorrt_embedder.generate_embedding(text="the memory as another model sees it")
+    [stored], _ = await repo.outdated_in(old_generation, new_generation, 10, None)
+    await repo.copy_into(new_generation, [(stored, new_vector)])
+    switched = []
+    replace = repo.store.replace
+
+    async def switching_before_the_first_write(*args, **kwargs):
+        if not switched:
+            switched.append(new_generation)
+            await repo.activate_generation(new_generation)  # a re-embedding completes between the read and the write
+        return await replace(*args, **kwargs)
+
+    monkeypatch.setattr(repo.store, "replace", switching_before_the_first_write)
+
+    updated = await repo.update_memory(tenant, memory.id, MemoryUpdate(importance=9))  # the text is not embedded again
+
+    assert updated.importance == 9
+    [live] = await repo.store.get(Scope.of(tenant), repo.memories, [memory.id], with_vectors=True)
+    assert live.payload["importance"] == 9
+    assert live.vector == pytest.approx(new_vector)  # the vector of the generation that serves, not the old one's
+    assert int(live.payload[VERSION_KEY]) == 2
+    assert (await repo.get_memory_by_id(tenant, memory.id)).importance == 9

@@ -21,6 +21,7 @@
     "keywords": "list",
     "obsolete_reason": "NoneType",
     "obsoleted_at": "NoneType",
+    "op_history": "list",
     "op_token": "str",
     "project": "list",
     "source_files": "NoneType",

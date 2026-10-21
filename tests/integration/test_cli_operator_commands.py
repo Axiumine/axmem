@@ -152,13 +152,7 @@ async def test_check_of_one_node_reports_its_points_and_agreement(seeded, capsys
     assert "The nodes agree." in out
 
 
-@pytest.mark.parametrize("divergent_count", [2, operator_commands.REPORT_LIMIT + 3])
-async def test_check_lists_the_differing_points_up_to_a_limit_and_exits_1(monkeypatch, capsys, divergent_count):
-    report = ConsistencyReport(
-        nodes=[NodeReport(url="http://a", points=5), NodeReport(url="http://b", error="TimeoutError")],
-        divergent=[f"collection:{index}" for index in range(divergent_count)],
-    )
-
+def report_of(monkeypatch, report: ConsistencyReport) -> None:
     class Service:
         async def check(self):
             return report
@@ -168,6 +162,14 @@ async def test_check_lists_the_differing_points_up_to_a_limit_and_exits_1(monkey
 
     monkeypatch.setattr(operator_commands, "_with_service", with_service)
 
+
+@pytest.mark.parametrize("divergent_count", [2, operator_commands.REPORT_LIMIT + 3])
+async def test_check_lists_the_differing_points_up_to_a_limit_and_exits_1(monkeypatch, capsys, divergent_count):
+    report_of(monkeypatch, ConsistencyReport(
+        nodes=[NodeReport(url="http://a", points=5), NodeReport(url="http://b", error="TimeoutError")],
+        divergent=[f"collection:{index}" for index in range(divergent_count)],
+    ))
+
     assert await operator_commands.check() == 1
 
     out = capsys.readouterr().out
@@ -176,7 +178,38 @@ async def test_check_lists_the_differing_points_up_to_a_limit_and_exits_1(monkey
     assert "http://b: unreadable (TimeoutError)" in out
     assert out.count("  differs: ") == min(divergent_count, operator_commands.REPORT_LIMIT)
     assert (f"and {hidden} more" in out) == (hidden > 0)
-    assert f"do not agree on {divergent_count} points" in out
+    assert f"The nodes that answered do not agree on {divergent_count} points." in out
+    assert "1 of 2 nodes could not be read" in out
+    assert out.rstrip().endswith("Nothing was changed.")
+
+
+async def test_check_of_nodes_that_all_answer_but_differ_does_not_blame_a_node(monkeypatch, capsys):
+    report_of(monkeypatch, ConsistencyReport(
+        nodes=[NodeReport(url="http://a", points=5), NodeReport(url="http://b", points=4)],
+        divergent=["collection:one"],
+    ))
+
+    assert await operator_commands.check() == 1
+
+    out = capsys.readouterr().out
+    assert "  differs: collection:one" in out
+    assert "The nodes that answered do not agree on 1 points." in out
+    assert "could not be read" not in out
+
+
+async def test_check_with_an_unreadable_node_and_nothing_to_compare_says_so_and_does_not_report_a_disagreement(monkeypatch, capsys):
+    report_of(monkeypatch, ConsistencyReport(
+        nodes=[NodeReport(url="http://a", points=5), NodeReport(url="http://b", error="ConnectError")],
+    ))
+
+    assert await operator_commands.check() == 1
+
+    out = capsys.readouterr().out
+    assert "http://b: unreadable (ConnectError)" in out
+    assert "1 of 2 nodes could not be read, so the nodes were not compared in full: start them and run the check again." in out
+    assert "do not agree" not in out
+    assert "differs" not in out
+    assert out.rstrip().endswith("Nothing was changed.")
 
 
 @pytest.mark.parametrize(

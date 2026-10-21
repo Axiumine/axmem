@@ -86,7 +86,7 @@ class QdrantArchiveAdapter:
                 out.write(_line({
                     "kind": "header", "format": FORMAT, "version": FORMAT_VERSION, "created": stamp(datetime.now(UTC)),
                 }))
-                async for point in self.store.iterate(SYSTEM, live):
+                async for point in self.store.iterate(SYSTEM, live, quorum=True):
                     stored = memory_from_point(point)
                     out.write(_line({
                         "kind": "memory",
@@ -96,7 +96,7 @@ class QdrantArchiveAdapter:
                     }))
                     tenants.add(point.payload[TENANT_KEY])
                     summary.memories += 1
-                async for link in self.store.iterate(SYSTEM, self.names.links):
+                async for link in self.store.iterate(SYSTEM, self.names.links, quorum=True):
                     out.write(_line({
                         "kind": "link",
                         "tenant_id": link.payload[TENANT_KEY],
@@ -210,7 +210,11 @@ class QdrantArchiveAdapter:
         """Embed and create the memories of ``batch`` that the live collection does not hold; return how many were created."""
         if not batch:
             return 0
-        present = {point.id for point in await self.store.get(SYSTEM, self.names.live, [s.memory.id for s in batch], with_payload=False)}
+        present = {
+            point.id for point in await self.store.get(
+                SYSTEM, self.names.live, [s.memory.id for s in batch], with_payload=False, quorum=True,
+            )
+        }
         fresh = [stored for stored in batch if stored.memory.id not in present]
         if not fresh:
             return 0
@@ -226,13 +230,13 @@ class QdrantArchiveAdapter:
         now = datetime.now(UTC)
         for tenant, first, second in links:
             scope = Scope.of(tenant)
-            ends = await self.store.get(scope, self.names.live, [first, second], with_payload=False)
+            ends = await self.store.get(scope, self.names.live, [first, second], with_payload=False, quorum=True)
             if len(ends) != len({first, second}) or first == second:
                 summary.skipped += 1
                 continue
             payload = link_payload(tenant, first, second, token=new_token(), now=now)
             point = NewPoint(link_id(tenant, first, second), LINK_VECTOR, payload)
-            existing = await self.store.get(scope, self.names.links, [point.id], with_payload=False)
+            existing = await self.store.get(scope, self.names.links, [point.id], with_payload=False, quorum=True)
             await self.store.insert(scope, self.names.links, [point])
             created += 0 if existing else 1
         return created

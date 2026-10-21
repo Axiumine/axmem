@@ -53,7 +53,8 @@ class QdrantMemoryReadMixin(QdrantMemoryBase):
             NotFoundError: If the memory does not exist for this tenant
         """
         scope = Scope.of(user_id)
-        points = await self.store.get(scope, self.memories, [memory_id])
+        # A majority of the replicas answers, so that a memory written a moment ago through another node is not reported missing
+        points = await self.store.get_agreed(scope, self.memories, [memory_id])
         if not points:
             raise NotFoundError(f"Memory with id {memory_id} not found")
         return (await self._memories(scope, points))[0]

@@ -2,7 +2,7 @@
 
 When you switch embedding providers or models (e.g., from the default `TensorRT` provider to OpenAI, or from `bge-small-en-v1.5` to `text-embedding-3-small`), existing memory embeddings become incompatible. Different providers produce vectors with different dimensions and semantic spaces, so a search query embedded with the new provider won't match memories embedded with the old one.
 
-The default provider, `TensorRT`, embeds on the NVIDIA GPU of the machine that runs Axmem with `BAAI/bge-small-en-v1.5` (384 dimensions). Axmem refuses to start when `EMBEDDING_DIMENSIONS` is not the width the model produces, and the message points here. Moving to another provider, or to a model of another width, is done with the steps below.
+The default provider, `TensorRT`, embeds on the NVIDIA GPU of the machine that runs Axmem with `BAAI/bge-small-en-v1.5` (384 dimensions). Axmem refuses to start when `EMBEDDING_DIMENSIONS` is not the width the model produces, and when the settings describe another embedder than the one that made the stored vectors (every memory collection records the provider, model, width, precision and gateway backend it was filled with). The messages point here. Moving to another provider, or to a model of another width, is done with the steps below.
 
 Axmem includes a built-in CLI tool to handle this migration safely.
 
@@ -20,7 +20,9 @@ You need to run a re-embedding migration whenever you change any of these settin
 | `EMBEDDING_TF32` | `false` -> `true` (TensorRT only; TF32 changes the vectors slightly) |
 | `GATEWAY_BACKEND`, `GATEWAY_MODEL` | another backend or model behind the same gateway |
 
-If you only change non-embedding settings (Qdrant, auth, reranking, etc.), no re-embedding is needed.
+The same run also moves the data to a new Qdrant layout: after you change `QDRANT_SHARD_NUMBER`, `QDRANT_REPLICATION_FACTOR` or `QDRANT_WRITE_CONSISTENCY_FACTOR` (a collection keeps the layout it was made with, and the server refuses to start on a mismatch), `axmem re-embed` creates the new memory collection in the layout the settings describe and rebuilds the links collection in it (see Step 3). Stop the server first.
+
+If you only change non-embedding settings (auth, reranking, etc.), no re-embedding is needed.
 
 ---
 
@@ -110,13 +112,15 @@ server can keep serving searches from the old vectors while it runs (stop it any
 
 ### Step 1: Validate Configuration
 
-Displays the target provider, model, dimensions, Qdrant URLs with the collection prefix, and batch size. Confirms
-the settings are what you intend before proceeding.
+Displays the target provider, model, dimensions, Qdrant URLs with the collection prefix, the layout the new collection
+gets (shards, replication factor, write consistency factor) and the batch size. Confirms the settings are what you
+intend before proceeding.
 
 ### Step 2: Open Qdrant
 
-Connects to Qdrant, checks the collections (without insisting on the configured width, since the point is to replace
-vectors of another width) and counts the memories to process.
+Connects to Qdrant, checks the collections (without insisting on the configured width, embedder or layout, since the
+point is to replace vectors of another width or embedder and collections of another layout) and counts the memories to
+process.
 
 ```
 [2/4] Opening Qdrant...
@@ -162,6 +166,16 @@ Runs three automated checks on the new collection:
 ```
 
 Only when all three pass does the live name move to the new collection. The previous collection is kept untouched.
+
+When the links collection is not in the layout of the settings, it is rebuilt after the switch (the report says
+`The links collection was rebuilt in the configured layout`). A collection keeps the layout it was created with and
+cannot be renamed, so the links are copied to a staging collection (`<prefix>_links_relayout`) in the new layout, the
+old links collection is removed, a new one is created in its place and filled from the staging copy, and the staging
+copy is removed. The old collection is removed only after the staged copy holds every link, and the staged copy only
+after the new collection does; if either copy is short the run stops with `Rebuilding the links stopped: ...` and
+removes nothing. A run that was stopped half way (power loss, `kill -9`) is finished by running `axmem re-embed` again.
+Nothing else may write links meanwhile, which is another reason to stop the server first. The previous memory
+collection keeps the old layout, and the previous links are not kept.
 
 ---
 
@@ -219,7 +233,8 @@ vectors. Point the live name back to it with the Qdrant API (alias `<prefix>_mem
 [Qdrant Configuration](./configuration.md#qdrant-configuration)), or restore a snapshot made with
 `axmem backup` before the migration. Set the embedding settings back to what that collection was built with
 before you start the server again, since startup refuses a collection whose width differs from
-`EMBEDDING_DIMENSIONS`.
+`EMBEDDING_DIMENSIONS`, that another embedder made, or whose layout differs from the `QDRANT_*` settings (the links
+collection is not kept by a re-embed that changes the layout, so going back to the old layout takes another re-embed).
 
 ### Cleanup
 
@@ -248,6 +263,10 @@ axmem --re-embed --batch-size 50
 ```
 
 The first start downloads the model files once into `EMBEDDING_MODEL_DIR` and builds the engine (a few seconds); see [GPU models](./gpu-models.md) and [offline hosts](./gpu-models.md#model-files-and-offline-hosts). If the GPU, the TensorRT libraries or the model files are missing, `--re-embed` stops before anything is created in Qdrant with `Error: the embedder cannot start: ...`.
+
+### Another embedder of the same width at start-up
+
+A provider, model, precision (`EMBEDDING_TF32`) or gateway backend that produces the same width passes the width check, but its vectors are not comparable with the stored ones, so queries would match nothing useful. The server refuses to start with `Qdrant collection <name> holds vectors made with <the recorded embedder>, but the settings describe <the configured one>`. Set the embedding settings back, or run `axmem re-embed`. A collection created before the record existed is taken to be the configured embedder's and records it, with a warning in the log.
 
 ### Wrong width at start-up
 

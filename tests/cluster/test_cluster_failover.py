@@ -98,7 +98,9 @@ async def test_start_up_and_the_check_go_on_while_a_node_is_gone(nodes_come_back
     await cluster_stack.schema.ensure()  # a restart with one node down must not be refused
 
     assert await operator_commands.check() == 1  # the check reports the silent node instead of failing before it
-    assert f"{nodes_come_back.urls[victim]}: unreadable" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert f"{nodes_come_back.urls[victim]}: unreadable" in out
+    assert f"1 of {len(nodes_come_back.urls)} nodes could not be read, so the nodes were not compared in full" in out
 
 
 async def test_creating_memories_through_the_service_finds_what_it_just_wrote(repo):

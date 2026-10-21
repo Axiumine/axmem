@@ -1,8 +1,9 @@
 """Memory creation, updates and obsolescence for the Qdrant memory repository.
 
 Edits and obsolete toggles are compare-and-set writes. The version a writer read is part of the write
-itself, so a writer that lost a race changes nothing and Qdrant does not say so: it reads the claim token
-of its write back and, when the token is not its own, starts again from the new state.
+itself, so a writer that lost a race changes nothing and Qdrant does not say so: it reads the point back and
+looks for the claim token of its write among the tokens the point keeps (later writes add theirs and do not
+erase it). When the token is not there it starts again from the new state.
 """
 import logging
 import uuid
@@ -27,12 +28,12 @@ from app.repositories.qdrant.payloads import (
     stamp,
 )
 from app.repositories.qdrant.store import (
-    TOKEN_KEY,
     VERSION_KEY,
     NewPoint,
     Point,
     Scope,
     Where,
+    claim_fields,
     equals,
 )
 from app.utils.embedding_helpers import build_embedding_text
@@ -75,35 +76,52 @@ class QdrantMemoryWriteMixin(QdrantMemoryReadMixin):
         Raises:
             NotFoundError: If the memory does not exist for this tenant
             ConflictError: If concurrent changes kept the write from being applied
+            OutcomeUnknownError: If so many writes landed after this one that it cannot be told whether it applied
         """
         scope = Scope.of(user_id)
         changes = updated_memory.model_dump(exclude_unset=True)
         embedded: dict[str, list[float]] = {}
         for attempt in range(1, MAX_CAS_ATTEMPTS + 1):
-            current = await self._current(scope, memory_id, with_vectors=True)
-            payload = edited_payload(current.payload, changes, token=new_token(), now=datetime.now(UTC))
-            before = build_embedding_text(memory_data=memory_from_point(current))
-            after = build_embedding_text(memory_data=memory_from_point(Point(memory_id, payload)))
-            vector = cast(list[float], current.vector)  # read with_vectors=True
-            if after != before:
-                if after not in embedded:
-                    embedded[after] = await self._generate_embeddings(after)
-                vector = embedded[after]
-
-            await self.store.replace(
-                scope,
-                self.memories,
-                NewPoint(memory_id, vector, payload),
-                expected_version=int(current.payload[VERSION_KEY]),
-            )
-            if await self._won(scope, memory_id, payload[TOKEN_KEY]):
-                return (await self._memories(scope, [Point(memory_id, payload)]))[0]
+            memory = await self._try_update(scope, memory_id, changes, embedded)
+            if memory is not None:
+                return memory
             logger.info("memory changed while it was being updated, trying again", extra={
                 "memory_id": str(memory_id),
                 "user_id": str(user_id),
                 "attempt": attempt,
             })
         raise _conflict(memory_id)
+
+    async def _try_update(
+        self, scope: Scope, memory_id: UUID, changes: dict[str, Any], embedded: dict[str, list[float]],
+    ) -> Memory | None:
+        """One attempt: read the memory, write the change conditional on its version, confirm that it applied.
+
+        An attempt works on one generation of the memory collection from start to end, because it writes back the
+        vector it read unless the text changed, and a vector read from one generation must not be written into
+        another (a re-embedding moves the live alias to a generation with vectors of a different model). When the
+        alias moved during the attempt, the write went to a generation that is no longer live and is not confirmed:
+        the next attempt makes the change again on the live one. None means the attempt did not apply.
+        """
+        generation = await self.schema.live_generation()
+        current = await self._current(scope, memory_id, generation=generation, with_vectors=True)
+        version = int(current.payload[VERSION_KEY])
+        token = new_token()
+        payload = edited_payload(current.payload, changes, token=token, now=datetime.now(UTC))
+        before = build_embedding_text(memory_data=memory_from_point(current))
+        after = build_embedding_text(memory_data=memory_from_point(Point(memory_id, payload)))
+        vector = cast(list[float], current.vector)  # read with_vectors=True
+        if after != before:
+            if after not in embedded:
+                embedded[after] = await self._generate_embeddings(after)
+            vector = embedded[after]
+
+        await self.store.replace(scope, generation, NewPoint(memory_id, vector, payload), expected_version=version)
+        if not await self.store.landed(scope, generation, memory_id, from_version=version, token=token):
+            return None
+        if await self.schema.live_generation() != generation:
+            return None
+        return (await self._memories(scope, [Point(memory_id, payload)]))[0]
 
     async def mark_obsolete(
         self,
@@ -121,7 +139,7 @@ class QdrantMemoryWriteMixin(QdrantMemoryReadMixin):
             ConflictError: If concurrent changes kept the write from being applied
         """
         scope = Scope.of(user_id)
-        if superseded_by is not None and not await self.store.get(
+        if superseded_by is not None and not await self.store.get_agreed(
             scope, self.memories, [superseded_by], with_payload=False,
         ):
             raise AssociationNotFoundError(f"Superseding memory {superseded_by} not found")
@@ -163,19 +181,18 @@ class QdrantMemoryWriteMixin(QdrantMemoryReadMixin):
                 scope,
                 self.memories,
                 memory_id,
-                {**changes(now), "updated_at": stamp(now), VERSION_KEY: version + 1, TOKEN_KEY: token},
+                {**changes(now), "updated_at": stamp(now), VERSION_KEY: version + 1, **claim_fields(current.payload, token)},
                 expected=Where().also(equals(VERSION_KEY, version), equals("is_obsolete", was_obsolete)),
             )
-            if await self._won(scope, memory_id, token):
+            if await self.store.landed(scope, self.memories, memory_id, from_version=version, token=token):
                 return True
         raise _conflict(memory_id)
 
-    async def _current(self, scope: Scope, memory_id: UUID, with_vectors: bool = False) -> Point:
-        points = await self.store.get(scope, self.memories, [memory_id], with_vectors=with_vectors)
+    async def _current(
+        self, scope: Scope, memory_id: UUID, *, generation: str | None = None, with_vectors: bool = False,
+    ) -> Point:
+        """The memory as a majority of the replicas hold it (a write is decided on this), in ``generation`` or the live one."""
+        points = await self.store.get_agreed(scope, generation or self.memories, [memory_id], with_vectors=with_vectors)
         if not points:
             raise NotFoundError(f"Memory {memory_id} not found")
         return points[0]
-
-    async def _won(self, scope: Scope, memory_id: UUID, token: str) -> bool:
-        """Whether the conditional write that carried ``token`` is the one stored: the response never says."""
-        return (await self.store.tokens(scope, self.memories, [memory_id])).get(memory_id) == token

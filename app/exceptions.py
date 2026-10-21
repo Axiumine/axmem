@@ -12,6 +12,11 @@ class ConflictError(Exception):
     """Raised when a concurrent change keeps the write from being applied (the caller may retry)"""
 
 
+class OutcomeUnknownError(ConflictError):
+    """A conditional write was overtaken by so many later writes that no record of it is left, so nobody can tell
+    whether it was applied. The caller must read the object again before repeating the change."""
+
+
 class InvalidStateTransitionError(Exception):
     """Raised when a state machine transition is not allowed"""
 

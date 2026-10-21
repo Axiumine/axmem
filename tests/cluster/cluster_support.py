@@ -64,8 +64,10 @@ def replica_states(cluster: QdrantCluster, collection: str) -> list[str]:
     return [str(item["state"]) for item in reply["local_shards"] + reply["remote_shards"]]
 
 
-def wait_for_active_replicas(cluster: QdrantCluster, collection: str, timeout: float = HEAL_TIMEOUT_SECONDS) -> None:
-    """Block until the cluster is formed and all NODES x shards replicas of ``collection`` are Active."""
+def wait_for_active_replicas(
+    cluster: QdrantCluster, collection: str, timeout: float = HEAL_TIMEOUT_SECONDS, replicas: int = NODES * NODES,
+) -> None:
+    """Block until the cluster is formed and all ``replicas`` replicas of ``collection`` (shards x replication factor) are Active."""
     deadline = time.monotonic() + timeout
     states: list[str] = []
     cluster.wait_formed(timeout)
@@ -74,7 +76,7 @@ def wait_for_active_replicas(cluster: QdrantCluster, collection: str, timeout: f
             states = replica_states(cluster, collection)
         except (httpx.HTTPError, KeyError, ValueError):
             states = []
-        if states and set(states) == {"Active"} and len(states) == NODES * NODES:
+        if states and set(states) == {"Active"} and len(states) == replicas:
             return
         time.sleep(1)
     raise RuntimeError(f"the replicas of {collection} did not all become Active: {states}")

@@ -94,7 +94,7 @@ class TestEmptyStore:
         use_new_dimensions(monkeypatch)
         stack = QdrantStack.from_settings()
         try:
-            await stack.schema.ensure(check_width=False)
+            await stack.schema.ensure(replacing=True)
             memories = stack.memory_repository(embedder)
             assert await live_width(stack) == OLD_DIMS  # start-up keeps it
 
@@ -121,6 +121,32 @@ class TestEmptyStore:
         stack = QdrantStack.from_settings()
         try:
             assert await live_width(stack) == NEW_DIMS
+        finally:
+            await stack.close()
+
+
+class TestLayoutChange:
+    async def test_cli_moves_the_memories_and_the_links_to_the_layout_of_the_settings(
+        self, isolated_qdrant, monkeypatch, quiet_cli, capsys, embedder,
+    ):
+        stack, memories = await open_stack(embedder)
+        user_id = uuid4()
+        first, second = [await memories.create_memory(user_id, new_memory(title)) for title in ("first", "second")]
+        await memories.create_links_batch(user_id, first.id, [second.id])
+        await stack.close()
+        monkeypatch.setattr(settings, "QDRANT_SHARD_NUMBER", 2)
+
+        await main._run_reembed(argparse.Namespace(batch_size=5, dry_run=False))
+
+        out = capsys.readouterr().out
+        assert "Layout of the new collection: 2 shards, replication factor 1, write consistency factor 1" in out
+        assert "The links collection was rebuilt in the configured layout" in out
+        stack = QdrantStack.from_settings()
+        try:
+            await stack.schema.ensure()  # the server starts on the new layout
+            memories = stack.memory_repository(embedder)
+            assert (await memories.get_memory_by_id(user_id, first.id)).linked_memory_ids == [second.id]
+            assert (await stack.pool.clients[0].get_collection(stack.schema.names.links)).config.params.shard_number == 2
         finally:
             await stack.close()
 

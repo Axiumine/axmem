@@ -191,6 +191,10 @@ def _print_reembed_configuration(batch_size):
     print(f"  Provider: {settings.EMBEDDING_PROVIDER} ({model_display})")
     print(f"  Dimensions: {settings.EMBEDDING_DIMENSIONS}")
     print(f"  Qdrant: {', '.join(settings.qdrant_urls)} (collections {settings.QDRANT_COLLECTION_PREFIX}_*)")
+    print(
+        f"  Layout of the new collection: {settings.QDRANT_SHARD_NUMBER} shards, replication factor "
+        f"{settings.QDRANT_REPLICATION_FACTOR}, write consistency factor {settings.QDRANT_WRITE_CONSISTENCY_FACTOR}",
+    )
     print(f"  Batch size: {batch_size}")
 
 
@@ -237,6 +241,8 @@ def _print_validation(result):
 def _print_reembed_success(result):
     print(f"\n  Successfully re-embedded {result.total_processed} memories")
     print(f"  The live collection is now {result.generation}")
+    if result.links_rebuilt:
+        print(f"  The links collection was rebuilt in the configured layout ({settings.QDRANT_COLLECTION_PREFIX}_links)")
     print(f"  The previous collection {result.previous_generation} still holds the old vectors;")
     print("  delete it with the Qdrant API when satisfied with the results.")
 
@@ -287,8 +293,8 @@ async def _reembed(stack, embeddings_adapter, args):
         return
 
     print("\n[2/4] Opening Qdrant...")
-    # The live collection may hold vectors of the old width: replacing it is what this command is for
-    await stack.schema.ensure(check_width=False)
+    # The live collection may hold vectors of another width or embedder, in another layout: replacing it is what this command is for
+    await stack.schema.ensure(replacing=True)
     _print_counts(await repository.count_all_memories())
 
     service = ReEmbeddingService(

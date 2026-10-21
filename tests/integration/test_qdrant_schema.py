@@ -4,19 +4,25 @@ Each test works on collections of its own (``isolated_qdrant``), on the real nod
 client. Nothing here is simulated; a mismatch is made by creating the collection the way an earlier
 configuration would have.
 """
+import logging
+
 import pytest
 from qdrant_client import models as qm
 from qdrant_client.http.exceptions import UnexpectedResponse
 
 from app.config.settings import settings
 from app.exceptions import QdrantStartupError
+from app.repositories.qdrant import client as client_module
+from app.repositories.qdrant import schema as schema_module
 from app.repositories.qdrant.client import NodePool
 from app.repositories.qdrant.schema import (
+    EMBEDDER_KEY,
     LINK_INDEXES,
     LINK_VECTOR,
     MEMORY_INDEXES,
     CollectionNames,
     QdrantSchema,
+    embedder_identity,
 )
 from tests.qdrant_support import drop_prefix
 
@@ -110,17 +116,48 @@ async def test_a_write_consistency_factor_that_differs_stops_the_start(schema, m
         await schema.ensure()
 
     assert "write_consistency_factor is 1 but QDRANT_WRITE_CONSISTENCY_FACTOR is 2" in str(raised.value)
-    assert "change the settings back or create a new collection" in str(raised.value)
+    assert "change the settings back, or run `axmem re-embed`" in str(raised.value)
 
 
-async def test_vectors_of_another_width_stop_the_start_unless_the_width_is_not_checked(schema, pool):
+async def test_vectors_of_another_width_stop_the_start_unless_the_collection_is_being_replaced(schema, pool):
     await schema.ensure()
     narrower = QdrantSchema(pool, schema.names, dimensions=8)
 
     with pytest.raises(QdrantStartupError, match=r"vectors are 384 wide but 8 are configured"):
         await narrower.ensure()
 
-    await narrower.ensure(check_width=False)
+    await narrower.ensure(replacing=True)
+
+
+@pytest.mark.parametrize(
+    ("setting", "value"),
+    [("QDRANT_SHARD_NUMBER", 2), ("QDRANT_REPLICATION_FACTOR", 2)],
+)
+async def test_a_collection_that_is_being_replaced_may_differ_in_layout_from_the_settings(
+    schema, monkeypatch, setting, value,
+):
+    """Re-embedding is how a layout is changed, so its start-up check must let the old layout through."""
+    await schema.ensure()
+    monkeypatch.setattr(settings, setting, value)
+    with pytest.raises(QdrantStartupError, match="does not match the settings"):
+        await schema.ensure()
+
+    live = await schema.live_generation()
+
+    await schema.ensure(replacing=True)
+
+    assert await schema.live_generation() == live
+    assert await schema.links_layout_differs()
+
+
+async def test_a_collection_that_is_being_replaced_is_still_checked_for_what_re_embedding_does_not_change(schema, pool):
+    await schema.ensure()
+    client = pool.clients[0]
+    await client.delete_payload_index(schema.names.links, "a", wait=True)
+    await client.create_payload_index(schema.names.links, "a", field_schema=qm.PayloadSchemaType.INTEGER, wait=True)
+
+    with pytest.raises(QdrantStartupError, match="the payload index of a is integer but keyword is required"):
+        await schema.ensure(replacing=True)
 
 
 async def test_a_collection_that_has_the_name_of_the_live_alias_stops_the_start(schema, pool):
@@ -251,3 +288,193 @@ async def test_ensure_repeats_a_step_that_failed_ambiguously_and_leaves_one_gene
     generations = [name for name in names if name.startswith(f"{schema.names.live}_")]
     assert generations == [await schema.live_generation()]
     assert set(await fields_indexed(pool, generations[0])) == set(MEMORY_INDEXES)
+
+
+# ---- which embedder made the vectors ----------------------------------------------------------------------------------
+
+
+async def recorded_embedder(pool, collection):
+    return (await pool.clients[0].get_collection(collection)).config.metadata[EMBEDDER_KEY]
+
+
+@pytest.mark.parametrize(
+    ("changes", "identity"),
+    [
+        (
+            {"EMBEDDING_PROVIDER": "TensorRT", "EMBEDDING_TF32": False},
+            {"provider": "TensorRT", "model": "BAAI/bge-small-en-v1.5", "dimensions": 384, "precision": "fp32"},
+        ),
+        (
+            {"EMBEDDING_PROVIDER": "TensorRT", "EMBEDDING_TF32": True},
+            {"provider": "TensorRT", "model": "BAAI/bge-small-en-v1.5", "dimensions": 384, "precision": "tf32"},
+        ),
+        (
+            {"EMBEDDING_PROVIDER": "gateway", "GATEWAY_BACKEND": "infinity", "GATEWAY_MODEL": "bge"},
+            {"provider": "gateway", "model": "BAAI/bge-small-en-v1.5", "dimensions": 384, "gateway": "infinity/bge"},
+        ),
+        (
+            {"EMBEDDING_PROVIDER": "ollama"},
+            {"provider": "Ollama", "model": "BAAI/bge-small-en-v1.5", "dimensions": 384},
+        ),
+    ],
+)
+def test_the_identity_of_an_embedder_names_what_makes_its_vectors_incomparable(monkeypatch, changes, identity):
+    monkeypatch.setattr(settings, "EMBEDDING_MODEL", "BAAI/bge-small-en-v1.5")
+    for name, value in changes.items():
+        monkeypatch.setattr(settings, name, value)
+
+    assert embedder_identity(384) == identity
+
+
+async def test_a_new_memory_collection_records_the_embedder_that_fills_it(schema, pool):
+    await schema.ensure()
+
+    assert await recorded_embedder(pool, await schema.live_generation()) == embedder_identity(settings.EMBEDDING_DIMENSIONS)
+    spare = await schema.create_generation()
+    assert await recorded_embedder(pool, spare) == embedder_identity(settings.EMBEDDING_DIMENSIONS)
+
+
+@pytest.mark.parametrize(
+    ("setting", "value", "recorded"),
+    [
+        ("EMBEDDING_MODEL", "another/model-of-the-same-width", "model BAAI/bge-small-en-v1.5"),
+        ("EMBEDDING_TF32", True, "precision fp32"),
+        ("EMBEDDING_PROVIDER", "Ollama", "provider TensorRT"),
+    ],
+)
+async def test_an_embedder_other_than_the_one_that_made_the_vectors_stops_the_start_although_the_width_is_the_same(
+    schema, monkeypatch, setting, value, recorded,
+):
+    await schema.ensure()
+    monkeypatch.setattr(settings, setting, value)
+
+    with pytest.raises(QdrantStartupError, match="holds vectors made with") as raised:
+        await schema.ensure()
+
+    assert recorded in str(raised.value)
+    assert "Run `axmem re-embed`" in str(raised.value)
+
+
+async def test_a_collection_that_is_being_replaced_may_hold_the_vectors_of_another_embedder(schema, pool, monkeypatch):
+    await schema.ensure()
+    live = await schema.live_generation()
+    monkeypatch.setattr(settings, "EMBEDDING_MODEL", "another/model-of-the-same-width")
+
+    await schema.ensure(replacing=True)
+
+    assert await schema.live_generation() == live
+    assert (await recorded_embedder(pool, live))["model"] == "BAAI/bge-small-en-v1.5"
+
+
+async def test_a_memory_collection_that_recorded_no_embedder_takes_the_configured_one_and_says_so(schema, pool, caplog):
+    client = pool.clients[0]
+    legacy = schema.names.new_generation()
+    await client.create_collection(legacy, vectors_config=qm.VectorParams(size=settings.EMBEDDING_DIMENSIONS, distance=qm.Distance.COSINE))
+    await schema.make_live(legacy)
+    caplog.set_level(logging.WARNING, logger=schema_module.logger.name)
+
+    await schema.ensure()
+
+    assert await recorded_embedder(pool, legacy) == embedder_identity(settings.EMBEDDING_DIMENSIONS)
+    assert [record for record in caplog.records if "did not record which embedder" in record.getMessage()]
+    caplog.clear()
+    await schema.ensure()
+    assert not [record for record in caplog.records if "did not record which embedder" in record.getMessage()]
+
+
+async def test_a_record_of_the_embedder_that_cannot_be_read_is_a_mismatch(schema, pool):
+    await schema.ensure()
+    await pool.clients[0].update_collection(await schema.live_generation(), metadata={EMBEDDER_KEY: "garbage"})
+
+    with pytest.raises(QdrantStartupError, match="holds vectors made with an unreadable record"):
+        await schema.ensure()
+
+
+# ---- an answer lost on the way back does not fail the repeat -----------------------------------------------------------
+
+
+@pytest.fixture
+def lost_answers(monkeypatch, pool):
+    """Make the first call of a client method do its work and then fail the way a consensus timeout does."""
+    monkeypatch.setattr(client_module, "RETRY_BACKOFF_SECONDS", 0)
+
+    def lose_the_first_answer(method: str) -> list[str]:
+        real = getattr(pool.clients[0], method)
+        calls: list[str] = []
+
+        async def lossy(*args, **kwargs):
+            calls.append(method)
+            result = await real(*args, **kwargs)
+            if len(calls) == 1:
+                raise UnexpectedResponse(500, "reason", b"consensus timeout", None)
+            return result
+
+        monkeypatch.setattr(pool.clients[0], method, lossy)
+        return calls
+
+    return lose_the_first_answer
+
+
+async def test_moving_the_alias_repeats_after_an_answer_was_lost_and_leaves_it_where_it_was_moved(schema, lost_answers):
+    await schema.ensure()
+    spare = await schema.create_generation()
+    calls = lost_answers("update_collection_aliases")
+
+    await schema.activate(spare)
+
+    assert await schema.live_generation() == spare
+    assert calls == ["update_collection_aliases"]  # the repeat found the alias moved and asked for nothing more
+
+
+async def test_creating_the_alias_repeats_after_an_answer_was_lost(schema, pool, lost_answers):
+    await schema.ensure()
+    first = await schema.live_generation()
+    await pool.clients[0].update_collection_aliases(
+        change_aliases_operations=[qm.DeleteAliasOperation(delete_alias=qm.DeleteAlias(alias_name=schema.names.live))],
+    )
+    calls = lost_answers("update_collection_aliases")
+
+    await schema.make_live(first)
+
+    assert await schema.live_generation() == first
+    assert calls == ["update_collection_aliases"]
+
+
+async def test_discarding_a_collection_repeats_after_an_answer_was_lost_and_a_missing_one_is_not_an_error(
+    schema, pool, lost_answers,
+):
+    await schema.ensure()
+    spare = await schema.create_generation()
+    calls = lost_answers("delete_collection")
+
+    await schema.discard(spare)
+
+    assert not await pool.clients[0].collection_exists(spare)
+    assert len(calls) == 2  # the repeat found it gone, which is what was asked for
+    await schema.discard(spare)
+
+
+async def test_a_links_collection_of_another_layout_is_reported_and_one_that_is_missing_is_not(schema, monkeypatch):
+    assert not await schema.links_layout_differs()
+    await schema.ensure()
+    assert not await schema.links_layout_differs()
+    monkeypatch.setattr(settings, "QDRANT_SHARD_NUMBER", 2)
+
+    assert await schema.links_layout_differs()
+
+
+async def test_a_collection_of_the_links_shape_is_created_in_the_layout_of_the_settings_or_checked_when_it_exists(
+    schema, pool, monkeypatch,
+):
+    await schema.ensure()
+    monkeypatch.setattr(settings, "QDRANT_SHARD_NUMBER", 2)
+    name = f"{schema.names.links}_relayout"
+    assert not await schema.exists(name)
+
+    await schema.create_links_collection(name)
+    await schema.create_links_collection(name)
+
+    info = await pool.clients[0].get_collection(name)
+    assert info.config.params.shard_number == 2
+    assert set(await fields_indexed(pool, name)) == set(LINK_INDEXES)
+    assert await schema.exists(name)

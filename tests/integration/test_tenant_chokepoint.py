@@ -24,6 +24,7 @@ from uuid import UUID, uuid4
 import pytest
 from qdrant_client import models as qm
 
+from app.config.settings import settings
 from app.exceptions import ConflictError, NotFoundError
 from app.models.memory_models import Memory, MemoryCreate, MemoryUpdate
 from app.protocols.memory_protocol import MemoryRepository
@@ -278,6 +279,12 @@ async def operator_scenarios(world: World) -> dict[str, Any]:
         spare = await repo.create_generation()
         await repo.discard_generation(spare)
 
+    async def rebuild_links() -> bool:
+        """A layout change, so that the links are really copied (twice) and the writes can be inspected."""
+        with pytest.MonkeyPatch.context() as patch:
+            patch.setattr(settings, "QDRANT_SHARD_NUMBER", 2)
+            return await repo.rebuild_links()
+
     return {
         "count_all_memories": repo.count_all_memories,
         "live_generation": repo.live_generation,
@@ -287,6 +294,7 @@ async def operator_scenarios(world: World) -> dict[str, Any]:
         "validate_generation": lambda: repo.validate_generation(state["target"]),
         "activate_generation": lambda: repo.activate_generation(state["target"]),
         "discard_generation": discard_generation,
+        "rebuild_links": rebuild_links,
     }
 
 
@@ -305,8 +313,6 @@ def operator_method_names() -> set[str]:
 @pytest.fixture
 async def world(isolated_stack, tensorrt_embedder, monkeypatch):
     """Two tenants with memories and a link each, on collections of this test alone."""
-    from app.config.settings import settings
-
     monkeypatch.setattr(settings, "MEMORY_NUM_AUTO_LINK", 0)
     repo = isolated_stack.memory_repository(tensorrt_embedder)
     me, other = uuid4(), uuid4()
@@ -334,7 +340,7 @@ def recording(world):
 def test_the_operator_operations_are_the_methods_without_a_tenant():
     assert operator_method_names() == {
         "count_all_memories", "live_generation", "create_generation", "outdated_in", "copy_into",
-        "activate_generation", "discard_generation", "validate_generation",
+        "activate_generation", "discard_generation", "validate_generation", "rebuild_links",
     }
 
 

@@ -13,7 +13,13 @@ from uuid import UUID
 
 from app.models.memory_models import Memory, MemoryCreate
 from app.protocols.memory_protocol import StoredMemory
-from app.repositories.qdrant.store import TENANT_KEY, TOKEN_KEY, VERSION_KEY, Point
+from app.repositories.qdrant.store import (
+    TENANT_KEY,
+    TOKEN_KEY,
+    VERSION_KEY,
+    Point,
+    claim_fields,
+)
 
 # Names a deterministic link id under: the same two memories of one tenant always give the same link point
 LINK_NAMESPACE = UUID("b2c0f3d4-7a15-5c8e-8f21-3e6a9d1c4b70")
@@ -54,7 +60,7 @@ def memory_payload(tenant_id: UUID, data: MemoryCreate, *, token: str, now: date
             "created_at": stamp(now),
             "updated_at": stamp(now),
             VERSION_KEY: 1,
-            TOKEN_KEY: token,
+            **claim_fields(None, token),
         },
     )
     return payload
@@ -75,7 +81,7 @@ def payload_of(stored: StoredMemory, *, token: str) -> dict[str, Any]:
             "created_at": stamp(memory.created_at),
             "updated_at": stamp(memory.updated_at),
             VERSION_KEY: stored.version,
-            TOKEN_KEY: token,
+            **claim_fields(None, token),
         },
     )
     return payload
@@ -91,13 +97,13 @@ def edited_payload(current: dict[str, Any], changes: dict[str, Any], *, token: s
         payload[name] = _scope_list(value) if name == "project" else value
     payload["updated_at"] = stamp(now)
     payload[VERSION_KEY] = int(current[VERSION_KEY]) + 1
-    payload[TOKEN_KEY] = token
+    payload.update(claim_fields(current, token))
     return payload
 
 
 def refreshed_payload(current: dict[str, Any], *, token: str) -> dict[str, Any]:
     """The payload after a new embedding was computed for it: one version higher, nothing else changed."""
-    return {**current, VERSION_KEY: int(current[VERSION_KEY]) + 1, TOKEN_KEY: token}
+    return {**current, VERSION_KEY: int(current[VERSION_KEY]) + 1, **claim_fields(current, token)}
 
 
 def _reason_of(stored: Any) -> str | None:

@@ -59,7 +59,10 @@ async def backup(*, force: bool = False) -> int:
         print(f"Backup saved: {result.directory}")
         for file in result.files:
             print(f"  {file.name}")
-        print("Each node's snapshot holds only that node's shards; keep the set together and restore it as one.")
+        print(
+            "Each node's snapshot holds only that node's shards; keep the set together. A restore puts every file back on "
+            "the node it came from, so QDRANT_URL must list the same nodes in the same order then.",
+        )
         return 0
 
     return await _with_service(run)
@@ -113,11 +116,19 @@ async def check() -> int:
         if report.consistent:
             print("The nodes agree.")
             return 0
-        for point in report.divergent[:REPORT_LIMIT]:
-            print(f"  differs: {point}")
-        if len(report.divergent) > REPORT_LIMIT:
-            print(f"  ... and {len(report.divergent) - REPORT_LIMIT} more")
-        print(f"The nodes do not agree on {len(report.divergent)} points. Nothing was changed.")
+        unreadable = sum(1 for node in report.nodes if node.error)
+        if unreadable:
+            print(
+                f"{unreadable} of {len(report.nodes)} nodes could not be read, so the nodes were not compared in full: "
+                "start them and run the check again.",
+            )
+        if report.divergent:
+            for point in report.divergent[:REPORT_LIMIT]:
+                print(f"  differs: {point}")
+            if len(report.divergent) > REPORT_LIMIT:
+                print(f"  ... and {len(report.divergent) - REPORT_LIMIT} more")
+            print(f"The nodes that answered do not agree on {len(report.divergent)} points.")
+        print("Nothing was changed.")
         return 1
 
     return await _with_service(run)

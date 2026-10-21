@@ -11,8 +11,11 @@ from uuid import UUID, uuid4
 import pytest
 
 from app.config.settings import settings
+from app.exceptions import OutcomeUnknownError
 from app.repositories.qdrant import store as store_module
 from app.repositories.qdrant.store import (
+    CLAIM_HISTORY,
+    HISTORY_KEY,
     SYSTEM,
     TENANT_KEY,
     TOKEN_KEY,
@@ -23,9 +26,11 @@ from app.repositories.qdrant.store import (
     any_of,
     at_least,
     below,
+    claim_fields,
     equals,
     scoped,
     since,
+    write_landed,
 )
 
 WIDTH = 384
@@ -218,17 +223,101 @@ async def test_delete_removes_only_the_points_of_the_scope(store, collection):
 # ---- claim tokens --------------------------------------------------------------------------------------
 
 
-async def test_tokens_report_the_claim_of_each_point_and_warn_about_one_that_cannot_be_read(store, collection, caplog):
+def history_of(*tokens: str) -> dict:
+    """The claim fields of a point whose newest token is the first one given and whose version is the number of tokens."""
+    return {VERSION_KEY: len(tokens), TOKEN_KEY: tokens[0], HISTORY_KEY: list(tokens[1:])}
+
+
+def test_a_write_that_took_the_next_version_is_found_by_its_token_however_many_writes_followed():
+    # versions 1..4 were written by a, b, c, d (d is the newest): b moved the point from version 1 to 2
+    payload = history_of("d", "c", "b", "a")
+
+    assert write_landed(payload, from_version=1, token="b") is True
+    assert write_landed(payload, from_version=1, token="c") is False  # c took version 3, another transition
+    assert write_landed(payload, from_version=3, token="d") is True
+    assert write_landed(payload, from_version=3, token="x") is False
+
+
+def test_a_write_that_has_not_been_applied_is_not_found():
+    assert write_landed(history_of("b", "a"), from_version=2, token="c") is False  # the point is still at version 2
+    assert write_landed(history_of("b", "a"), from_version=5, token="c") is False  # or even behind the write
+
+
+def test_a_point_that_began_after_the_version_of_a_write_did_not_apply_that_write():
+    """A copy of a newer point (re-embedding) starts a record at its version, with nothing before it."""
+    copied = {VERSION_KEY: 7, TOKEN_KEY: "copy", HISTORY_KEY: []}
+
+    assert write_landed(copied, from_version=3, token="late writer") is False
+    assert write_landed(copied, from_version=6, token="copy") is True
+    assert write_landed({VERSION_KEY: 7, TOKEN_KEY: "copy"}, from_version=3, token="x") is False  # no history stored
+
+
+def test_a_write_pushed_out_of_a_full_history_cannot_be_told():
+    newest = CLAIM_HISTORY + 5  # the version of the point; its token is t<version>, and it holds the CLAIM_HISTORY before it
+    payload = {
+        VERSION_KEY: newest,
+        TOKEN_KEY: f"t{newest}",
+        HISTORY_KEY: [f"t{version}" for version in range(newest - 1, newest - 1 - CLAIM_HISTORY, -1)],
+    }
+    oldest_kept = newest - CLAIM_HISTORY  # the version of the oldest token the point still holds
+
+    assert write_landed(payload, from_version=oldest_kept - 1, token=f"t{oldest_kept}") is True
+    assert write_landed(payload, from_version=oldest_kept - 2, token="anything") is None
+
+
+def test_a_history_never_holds_more_than_the_limit_and_lists_the_newest_token_first():
+    fields = claim_fields(None, "first")
+    assert fields == {TOKEN_KEY: "first", HISTORY_KEY: []}
+
+    payload = {VERSION_KEY: 1, **fields}
+    for index in range(CLAIM_HISTORY + 5):
+        payload = {**payload, VERSION_KEY: payload[VERSION_KEY] + 1, **claim_fields(payload, f"w{index}")}
+
+    assert payload[TOKEN_KEY] == f"w{CLAIM_HISTORY + 4}"
+    assert payload[HISTORY_KEY][0] == f"w{CLAIM_HISTORY + 3}"
+    assert len(payload[HISTORY_KEY]) == CLAIM_HISTORY
+    assert claim_fields({TOKEN_KEY: "t", HISTORY_KEY: None}, "n") == {TOKEN_KEY: "n", HISTORY_KEY: ["t"]}
+
+
+async def test_landed_finds_the_token_of_a_write_that_later_writes_overtook(store, collection):
     tenant = uuid4()
     scope = Scope.of(tenant)
-    held = point(tenant, 0, claim="claim-1")
+    original = point(tenant, 0, claim="t1", **{HISTORY_KEY: []})
+    await store.insert(scope, collection, [original])
+    # Two writers each move the point on from the version they read; the second one is the newest
+    await store.patch(
+        scope, collection, original.id, {VERSION_KEY: 2, **claim_fields(original.payload, "t2")},
+        Where().also(equals(VERSION_KEY, 1)),
+    )
+    second = {**original.payload, VERSION_KEY: 2, **claim_fields(original.payload, "t2")}
+    await store.patch(
+        scope, collection, original.id, {VERSION_KEY: 3, **claim_fields(second, "t3")}, Where().also(equals(VERSION_KEY, 2)),
+    )
+
+    assert await store.landed(scope, collection, original.id, from_version=1, token="t2") is True
+    assert await store.landed(scope, collection, original.id, from_version=2, token="t3") is True
+    assert await store.landed(scope, collection, original.id, from_version=1, token="t3") is False
+    assert await store.landed(scope, collection, original.id, from_version=3, token="t4") is False
+
+
+async def test_landed_says_the_outcome_is_unknown_when_the_history_has_been_overrun(store, collection):
+    tenant = uuid4()
+    scope = Scope.of(tenant)
+    crowded = point(tenant, 0, version=40, claim="newest", **{HISTORY_KEY: [f"h{index}" for index in range(CLAIM_HISTORY)]})
+    await store.insert(scope, collection, [crowded])
+
+    with pytest.raises(OutcomeUnknownError, match=f"more than {CLAIM_HISTORY} other writes"):
+        await store.landed(scope, collection, crowded.id, from_version=3, token="old")
+    assert await store.landed(scope, collection, crowded.id, from_version=40 - CLAIM_HISTORY - 1, token="h15") is True
+
+
+async def test_landed_warns_about_a_point_that_cannot_be_read_back_and_counts_the_write_as_lost(store, collection, caplog):
+    tenant = uuid4()
     missing = uuid4()
-    await store.insert(scope, collection, [held])
     caplog.set_level(logging.WARNING, logger=store_module.logger.name)
 
-    tokens = await store.tokens(scope, collection, [held.id, missing])
+    assert await store.landed(Scope.of(tenant), collection, missing, from_version=1, token="t") is False
 
-    assert tokens == {held.id: "claim-1"}
     [warning] = [record for record in caplog.records if "could not be read back" in record.getMessage()]
     assert warning.point_id == str(missing)
 

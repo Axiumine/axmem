@@ -10,6 +10,7 @@ import logging
 from uuid import UUID
 
 from app.config.settings import settings
+from app.exceptions import OperatorCommandError
 from app.protocols.memory_protocol import (
     EmbeddingWrites,
     StoredMemory,
@@ -22,6 +23,7 @@ from app.repositories.qdrant.payloads import (
     refreshed_payload,
     stored_from_point,
 )
+from app.repositories.qdrant.schema import LINK_VECTOR
 from app.repositories.qdrant.store import (
     SYSTEM,
     TOKEN_KEY,
@@ -35,6 +37,9 @@ from app.repositories.qdrant.store import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Links written to the new links collection in one request while it is rebuilt
+LINK_COPY_BATCH = 256
 
 
 def _targeted_filter(memory_ids: list[UUID] | None, project: str | None) -> Where:
@@ -79,9 +84,11 @@ class QdrantMemoryReembeddingMixin(QdrantMemoryBase):
 
         The second value is the id to continue from, or None when the scan reached the end of ``source``.
         """
-        scanned = await self.store.scroll(SYSTEM, source, limit=limit + 1, start_from=start)
+        scanned = await self.store.scroll(SYSTEM, source, limit=limit + 1, start_from=start, quorum=True)
         batch, following = scanned[:limit], scanned[limit:]
-        present = await self.store.get(SYSTEM, target, [point.id for point in batch], with_payload=[VERSION_KEY])
+        present = await self.store.get(
+            SYSTEM, target, [point.id for point in batch], with_payload=[VERSION_KEY], quorum=True,
+        )
         held = {point.id: int(point.payload[VERSION_KEY]) for point in present}
         outdated = [
             stored_from_point(point) for point in batch
@@ -97,7 +104,7 @@ class QdrantMemoryReembeddingMixin(QdrantMemoryBase):
         version is left alone.
         """
         present = await self.store.get(
-            SYSTEM, target, [stored.memory.id for stored, _ in items], with_payload=[VERSION_KEY],
+            SYSTEM, target, [stored.memory.id for stored, _ in items], with_payload=[VERSION_KEY], quorum=True,
         )
         held = {point.id: int(point.payload[VERSION_KEY]) for point in present}
         token = new_token()
@@ -132,6 +139,56 @@ class QdrantMemoryReembeddingMixin(QdrantMemoryBase):
             with_payload=[TOKEN_KEY], quorum=True,
         )
         return sum(1 for point in after if point.payload.get(TOKEN_KEY) == token)
+
+    async def rebuild_links(self) -> bool:
+        """Give the links collection the layout the settings describe; return whether it had to be rebuilt.
+
+        A collection keeps the shard count, replication factor and write consistency factor it was created with, so
+        the links follow a new layout the way the memories do, by moving into a collection made with it. A collection
+        cannot be renamed, so the links pass through a staging collection: copied there (in the new layout), the
+        old collection removed, a new one made in its place, and copied back. Each step checks what exists first and the
+        copies leave existing points alone, so a run that stopped half way is finished by running this again. The old
+        collection is removed only after the staged copy holds every link, and the staged copy only after the
+        new collection does. Nothing else may write links meanwhile (the re-embedding runs with the server stopped).
+        """
+        links, staging = self.links, f"{self.links}_relayout"
+        staged = await self.schema.exists(staging)
+        differs = await self.schema.links_layout_differs()
+        if not staged and not differs:
+            return False
+        if differs:
+            # The links collection is still whole: stage a fresh copy in the new layout, then remove the old collection
+            if staged:
+                await self.schema.discard(staging)
+            await self.schema.create_links_collection(staging)
+            await self._copy_links(links, staging)
+            await self._require_links(staging, links)
+            await self.schema.discard(links)
+        # The staged copy holds every link: make the collection in the new layout and fill it
+        await self.schema.create_links_collection(links)
+        await self._copy_links(staging, links)
+        await self._require_links(links, staging)
+        await self.schema.discard(staging)
+        logger.info("Rebuilt the links collection in the configured layout", extra={"collection": links})
+        return True
+
+    async def _copy_links(self, source: str, target: str) -> None:
+        batch: list[NewPoint] = []
+        async for point in self.store.iterate(SYSTEM, source, quorum=True):
+            batch.append(NewPoint(point.id, LINK_VECTOR, point.payload))
+            if len(batch) >= LINK_COPY_BATCH:
+                await self.store.insert(SYSTEM, target, batch)
+                batch = []
+        await self.store.insert(SYSTEM, target, batch)
+
+    async def _require_links(self, copy: str, original: str) -> None:
+        """Refuse to go on, and so to remove ``original``, unless ``copy`` holds at least as many links."""
+        held, expected = await self.store.count(SYSTEM, copy), await self.store.count(SYSTEM, original)
+        if held < expected:
+            raise OperatorCommandError(
+                f"Rebuilding the links stopped: {copy} holds {held} links but {original} holds {expected}. "
+                f"Nothing was removed; check Qdrant and run `axmem re-embed` again",
+            )
 
     async def validate_generation(self, generation: str) -> ValidationResult:
         """Check the memory count, the vector width and a similarity search of a generation (against the live one)."""
@@ -197,7 +254,7 @@ class QdrantMemoryReembeddingMixin(QdrantMemoryBase):
         scope = Scope.of(user_id)
         current = {
             point.id: point for point in await self.store.get(
-                scope, self.memories, [memory_id for memory_id, _ in updates],
+                scope, self.memories, [memory_id for memory_id, _ in updates], quorum=True,
             )
         }
         result = EmbeddingWrites(written=[], failed=[])
@@ -217,8 +274,7 @@ class QdrantMemoryReembeddingMixin(QdrantMemoryBase):
     async def _refresh(self, scope: Scope, point: Point, vector: list[float]) -> bool:
         """Replace one memory's vector with a write guarded on the version read; True when that write is the stored one."""
         token = new_token()
+        version = int(point.payload[VERSION_KEY])
         payload = refreshed_payload(point.payload, token=token)
-        await self.store.replace(
-            scope, self.memories, NewPoint(point.id, vector, payload), expected_version=int(point.payload[VERSION_KEY]),
-        )
-        return (await self.store.tokens(scope, self.memories, [point.id])).get(point.id) == token
+        await self.store.replace(scope, self.memories, NewPoint(point.id, vector, payload), expected_version=version)
+        return await self.store.landed(scope, self.memories, point.id, from_version=version, token=token)

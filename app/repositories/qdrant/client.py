@@ -10,12 +10,11 @@ import logging
 import math
 import warnings
 from collections.abc import Awaitable, Callable
-from typing import TypeVar, cast
+from typing import TypeVar
 from urllib.parse import urlsplit
 
 import httpx
 from qdrant_client import AsyncQdrantClient
-from qdrant_client import models as qm
 from qdrant_client.http.exceptions import ResponseHandlingException, UnexpectedResponse
 
 from app.config.settings import settings
@@ -27,6 +26,10 @@ T = TypeVar("T")
 
 # Seconds waited before the first retry of an ambiguous failure; each later retry waits one more multiple.
 RETRY_BACKOFF_SECONDS = 1.0
+
+# Seconds a node may take to build a snapshot of a collection. The call waits for every local shard to be written out,
+# so the timeout of an ordinary request would give up on a large collection while the node goes on and keeps the snapshot.
+SNAPSHOT_TIMEOUT_SECONDS = 3600.0
 
 # The oldest server this service supports: submit-time resolution of conditional writes and the
 # WAL replay fix arrived in 1.19.0, and update_mode in 1.17.0 (docs/configuration.md).
@@ -156,10 +159,10 @@ class NodePool:
                 )
         raise failure
 
-    def http(self, url: str) -> httpx.AsyncClient:
+    def http(self, url: str, timeout: float | None = None) -> httpx.AsyncClient:
         """A plain HTTP client for the Qdrant endpoints the Python client does not wrap (server info, snapshots)."""
         headers = {"api-key": self._api_key} if self._api_key else {}
-        return httpx.AsyncClient(base_url=url, headers=headers, timeout=self._timeout)
+        return httpx.AsyncClient(base_url=url, headers=headers, timeout=self._timeout if timeout is None else timeout)
 
     async def _version_of(self, url: str) -> str:
         """The version a node reports.
@@ -220,9 +223,16 @@ class NodePool:
                 )
 
     async def create_snapshot(self, index: int, collection: str) -> str:
-        """Take a snapshot of ``collection`` on node ``index`` (its local shards); return the snapshot's name."""
-        description = cast(qm.SnapshotDescription, await self.clients[index].create_snapshot(collection, wait=True))
-        return description.name
+        """Take a snapshot of ``collection`` on node ``index`` (its local shards); return the snapshot's name.
+
+        The request waits for the node to finish, under its own long timeout (``SNAPSHOT_TIMEOUT_SECONDS``): the Python
+        client takes no timeout per call, and a request that gave up early would leave the snapshot on the node unnamed.
+        """
+        timeout = max(self._timeout, SNAPSHOT_TIMEOUT_SECONDS)
+        async with self.http(self.urls[index], timeout=timeout) as http:
+            response = await http.post(f"/collections/{collection}/snapshots", params={"wait": "true"})
+            response.raise_for_status()
+            return str(response.json()["result"]["name"])
 
     async def delete_snapshot(self, index: int, collection: str, snapshot: str) -> None:
         await self.clients[index].delete_snapshot(collection, snapshot, wait=True)
