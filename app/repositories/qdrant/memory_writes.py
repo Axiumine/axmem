@@ -54,7 +54,12 @@ class QdrantMemoryWriteMixin(QdrantMemoryReadMixin):
         """Create a new memory
 
         The id is a time-ordered UUID generated here. The point is created with ``insert_only``, so a
-        repeated request (after a timeout) cannot overwrite what the first one stored.
+        repeated request (after a timeout) cannot overwrite what the first one stored. The point goes into the live
+        generation by name, after the check that it holds vectors of this server's embedder; when the alias moves
+        during the write, the point is written into the new live generation too.
+
+        Raises:
+            EmbedderChangedError: If ``axmem re-embed`` switched the memories to another embedder while the server ran
         """
         scope = Scope.of(user_id)
         vector = await self._generate_embeddings(build_embedding_text(memory_data=memory))
@@ -63,8 +68,15 @@ class QdrantMemoryWriteMixin(QdrantMemoryReadMixin):
             vector=vector,
             payload=memory_payload(user_id, memory, token=new_token(), now=datetime.now(UTC)),
         )
-        await self.store.insert(scope, self.memories, [point])
-        return memory_from_point(Point(point.id, point.payload))
+        generation = await self.schema.writable_generation()
+        while True:
+            await self.store.insert(scope, generation, [point])
+            live = await self.schema.writable_generation()
+            if live == generation:
+                return memory_from_point(Point(point.id, point.payload))
+            # The alias moved while the point was written, so it went to a generation that is no longer live (and a copy
+            # of the memories may have passed it by). Write it again into the live one; insert-only leaves a copy as it is
+            generation = live
 
     async def update_memory(self, user_id: UUID, memory_id: UUID, updated_memory: MemoryUpdate) -> Memory:
         """Apply the changes to a memory as one conditional write of the whole point.
@@ -77,6 +89,7 @@ class QdrantMemoryWriteMixin(QdrantMemoryReadMixin):
             NotFoundError: If the memory does not exist for this tenant
             ConflictError: If concurrent changes kept the write from being applied
             OutcomeUnknownError: If so many writes landed after this one that it cannot be told whether it applied
+            EmbedderChangedError: If ``axmem re-embed`` switched the memories to another embedder while the server ran
         """
         scope = Scope.of(user_id)
         changes = updated_memory.model_dump(exclude_unset=True)
@@ -103,7 +116,7 @@ class QdrantMemoryWriteMixin(QdrantMemoryReadMixin):
         alias moved during the attempt, the write went to a generation that is no longer live and is not confirmed:
         the next attempt makes the change again on the live one. None means the attempt did not apply.
         """
-        generation = await self.schema.live_generation()
+        generation = await self.schema.writable_generation()
         current = await self._current(scope, memory_id, generation=generation, with_vectors=True)
         version = int(current.payload[VERSION_KEY])
         token = new_token()

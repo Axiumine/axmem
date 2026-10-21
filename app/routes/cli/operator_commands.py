@@ -94,6 +94,13 @@ async def export_memories(path: Path) -> int:
     async def run(service) -> int:
         summary = await service.export_memories(path)
         print(f"Exported {summary.memories} memories and {summary.links} links of {summary.tenants} tenants to {path}")
+        if summary.changed_during_export:
+            print(
+                f"Warning: writers changed the data while the export ran. Qdrant holds {summary.memories_at_end} memories "
+                f"and {summary.links_at_end} links now, the file holds {summary.memories} and {summary.links}: memories "
+                "created meanwhile may be missing from it. Stop the writers and export again for an exact copy.",
+                file=sys.stderr,
+            )
         return 0
 
     return await _with_service(run, links_whole=True)

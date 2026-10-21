@@ -8,6 +8,7 @@ import itertools
 import json
 import logging
 import math
+import time
 import warnings
 from collections.abc import Awaitable, Callable
 from typing import TypeVar
@@ -30,6 +31,12 @@ RETRY_BACKOFF_SECONDS = 1.0
 # Seconds a node may take to build a snapshot of a collection. The call waits for every local shard to be written out,
 # so the timeout of an ordinary request would give up on a large collection while the node goes on and keeps the snapshot.
 SNAPSHOT_TIMEOUT_SECONDS = 3600.0
+
+# After a snapshot request that gave up without an answer, how long the pool keeps looking for the snapshot the node may
+# still be finishing (to delete it), and how often it looks. The node goes on after the client has given up, and a
+# snapshot is only listed once it is complete.
+SNAPSHOT_CLEANUP_SECONDS = 300.0
+SNAPSHOT_CLEANUP_POLL_SECONDS = 2.0
 
 # The oldest server this service supports: submit-time resolution of conditional writes and the
 # WAL replay fix arrived in 1.19.0, and update_mode in 1.17.0 (docs/configuration.md).
@@ -223,12 +230,82 @@ class NodePool:
 
         The request waits for the node to finish, under its own long timeout (``SNAPSHOT_TIMEOUT_SECONDS``): the Python
         client takes no timeout per call, and a request that gave up early would leave the snapshot on the node unnamed.
+        A request can still fail after the node has made, or while it is still making, the snapshot (a timeout beyond
+        the bound, a connection that dropped, an answer without a name). The snapshots of the collection are listed
+        before the request, and after a failure the ones that were not there are deleted (``_remove_new_snapshots``),
+        so a failed backup leaves nothing on the node. This assumes nobody else takes a snapshot of the same
+        collection on the same node at the same time.
         """
+        before = await self._snapshot_names_or_none(index, collection)
         timeout = max(self._timeout, SNAPSHOT_TIMEOUT_SECONDS)
-        async with self.http(self.urls[index], timeout=timeout) as http:
-            response = await http.post(f"/collections/{collection}/snapshots", params={"wait": "true"})
-            response.raise_for_status()
-            return str(response.json()["result"]["name"])
+        try:
+            async with self.http(self.urls[index], timeout=timeout) as http:
+                response = await http.post(f"/collections/{collection}/snapshots", params={"wait": "true"})
+                response.raise_for_status()
+                return str(response.json()["result"]["name"])
+        except BaseException as exc:
+            # A transport failure leaves the node working: it may finish the snapshot after we looked, so look for a while
+            await self._remove_new_snapshots(index, collection, before, patient=isinstance(exc, httpx.TransportError))
+            raise
+
+    async def _snapshot_names(self, index: int, collection: str) -> set[str]:
+        return {snapshot.name for snapshot in await self.clients[index].list_snapshots(collection)}
+
+    async def _snapshot_names_or_none(self, index: int, collection: str) -> set[str] | None:
+        """The snapshots ``collection`` has on node ``index``, or None when the node will not list them (the request that follows says why)."""
+        try:
+            return await self._snapshot_names(index, collection)
+        except Exception:  # noqa: BLE001 - a node that cannot list its snapshots fails the request that follows with its own error
+            logger.warning(
+                "The snapshots of a collection could not be listed before taking one, so a failed snapshot cannot be cleaned up",
+                extra={"node": self.urls[index], "collection": collection},
+            )
+            return None
+
+    async def _remove_new_snapshots(
+        self, index: int, collection: str, before: set[str] | None, *, patient: bool,
+    ) -> None:
+        """Delete the snapshots of ``collection`` on node ``index`` that were not there ``before`` the request failed.
+
+        ``patient`` keeps looking for ``SNAPSHOT_CLEANUP_SECONDS`` when none has appeared, because the node may still be
+        making one. Nothing here raises: the failure that brought us here is the one that surfaces.
+        """
+        if before is None:
+            return
+        node = self.urls[index]
+        deadline = time.monotonic() + (SNAPSHOT_CLEANUP_SECONDS if patient else 0.0)
+        while True:
+            try:
+                new = sorted(await self._snapshot_names(index, collection) - before)
+            except Exception:  # noqa: BLE001 - the original failure is what the caller must see
+                logger.warning(
+                    "The snapshots of a collection could not be listed after a failed snapshot; delete any that the node "
+                    "made with the Qdrant API", extra={"node": node, "collection": collection, "before": sorted(before)},
+                )
+                return
+            for name in new:
+                try:
+                    await self.delete_snapshot(index, collection, name)
+                    logger.warning(
+                        "Deleted the snapshot a failed request left on the node",
+                        extra={"node": node, "collection": collection, "snapshot": name},
+                    )
+                except Exception:  # noqa: BLE001 - one that cannot be deleted is named, the others are still tried
+                    logger.exception(
+                        "A snapshot left by a failed request could not be deleted; delete it with the Qdrant API",
+                        extra={"node": node, "collection": collection, "snapshot": name},
+                    )
+            if new:
+                return
+            if time.monotonic() >= deadline:
+                break
+            await asyncio.sleep(SNAPSHOT_CLEANUP_POLL_SECONDS)
+        if patient:
+            logger.warning(
+                "The node may still be making a snapshot that this request gave up on; when it finishes it stays on the "
+                "node unnamed. List the snapshots of the collection with the Qdrant API and delete the one that "
+                "'before' does not name", extra={"node": node, "collection": collection, "before": sorted(before)},
+            )
 
     async def delete_snapshot(self, index: int, collection: str, snapshot: str) -> None:
         await self.clients[index].delete_snapshot(collection, snapshot, wait=True)

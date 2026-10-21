@@ -560,7 +560,8 @@ Fixes found by reviewing the feature cuts (no upstream counterpart: the code the
     rebuild without its comparison), and an engine loaded before the cache failed to store it or to prune its siblings
     is released.
   - **A closed engine, or one that met a CUDA error it cannot recover from, raises `TensorRTUnavailableError`**, a
-    `TensorRTError` that is also an `EmbeddingUnavailableError` (so does the check that finds the error after a call that returned, and
+    `TensorRTError` that is also a `ModelUnavailableError` (not an `EmbeddingUnavailableError`, see Operator errors
+    below; so does the check that finds the error after a call that returned, and
     so does the call that first meets the error: it used to raise the plain `TensorRTError` of its own failure, and only
     the calls after it were refused, so the batch that met the error was still retried memory by memory; the failure of
     that call stays in the exception chain), so a targeted rebuild records the batch as failed at once instead of
@@ -600,8 +601,8 @@ Fixes found by reviewing the feature cuts (no upstream counterpart: the code the
   defaults of `MEMORY_TOKEN_BUDGET`, `MEMORY_KEYWORDS_MAX_COUNT`, `MEMORY_KEYWORD_MAX_LENGTH` and `TOKEN_CACHE_*` are
   pinned; a schema test no longer leaves a collection behind; the tenant id derivation is pinned by tests; the trivy
   image is pinned (`aquasec/trivy:0.75.0`); the wheel smoke test installs the dependencies from `uv.lock` (NVIDIA's
-  index for TensorRT, without `tensorrt-cu13-libs`) and the wheel on top, instead of resolving the PyPI placeholders of
-  the TensorRT packages. `pytest`, `pytest-asyncio` and `requests` (test-only) moved from the runtime dependencies to the
+  index for TensorRT, without `tensorrt-cu13-libs`) and the wheel on top, instead of resolving the two PyPI placeholders of
+  the TensorRT packages (`tensorrt-cu13`, `tensorrt-cu13-libs`). `pytest`, `pytest-asyncio` and `requests` (test-only) moved from the runtime dependencies to the
   `dev` group and the unused `fastapi` pin was removed, so an installed Axmem no longer pins them (`requests` still arrives through the SDKs that need it).
 - **CI runs only what needs no GPU and no Docker; the pre-push hook is the GPU gate:** the earlier CI moved the test,
   snapshot, coverage, memory and mutation jobs to a self-hosted GPU runner behind a guard against pull requests from
@@ -659,13 +660,17 @@ Fixes found by reviewing the feature cuts (no upstream counterpart: the code the
   sandbox copies `.env.example`, which `tests/integration/test_reference_docs.py` parses.
 - **Start-up, tokenizer:** the tiktoken encoding is loaded before the server serves (`preload_token_counter`, in a
   daemon thread that `TIKTOKEN_LOAD_TIMEOUT_SECONDS` bounds, 30 seconds by default) instead of on the first query. A host
-  with the data in `TIKTOKEN_CACHE_DIR` starts with no network; a host that drops packets, or has no cache, ends the start
-  with the one line `Error: the token counter cannot start: ...`, which names `TIKTOKEN_CACHE_DIR` and the command that
-  pre-loads the data, where the first query used to wait out the connect timeout and then fall back to an estimate.
+  with the data in `TIKTOKEN_CACHE_DIR` starts with no network; a host that has no cache and cannot download the data
+  within the limit (it drops packets, or has no network) ends the start with one line, which names `TIKTOKEN_CACHE_DIR`
+  and the command that pre-loads the data: `Error: the token counter cannot start: ...` for `serve`, and
+  `Error: the tiktoken encoding of the token counter cannot be loaded (...)` for the commands that run the tools in
+  process (`axmem memory`, `axmem call`, `axmem tools`), where the first query used to wait out the connect timeout and
+  then fall back to an estimate. A host without a cache but with a working network downloads the data and starts.
 - **Wheel install:** a wheel names the three pinned TensorRT packages without an index, because `[tool.uv.sources]` is not
-  part of a built wheel, and the PyPI projects of those names are placeholders that fetch the 3.8 GB of libraries from
-  NVIDIA's index while they build. The README (Installing the package) lists the commands that work for `uv tool install`
-  and pip from a checkout, a Git URL and a built wheel (`--extra-index-url https://pypi.nvidia.com`); the smoke test of
+  part of a built wheel, and on PyPI `tensorrt-cu13` and `tensorrt-cu13-libs` are placeholders that fetch the 3.8 GB of
+  libraries from NVIDIA's index while they build (`tensorrt-cu13-bindings` is a real wheel there). The README (Installing
+  the package) lists the commands that work for `uv tool install` and pip from a checkout, a Git URL and a built wheel
+  (`--extra-index-url https://pypi.nvidia.com`); the smoke test of
   CI resolves the built wheel with that flag and checks that the packages come from NVIDIA's index; a test keeps the
   documented commands in step with `pyproject.toml`. The redundant `ollama` optional extra (the SDK is a dependency) is
   removed from the package and from `uv.lock`.
@@ -711,10 +716,63 @@ Fixes found by reviewing the feature cuts (no upstream counterpart: the code the
     error surfaces, that every stream and buffer that was made was released exactly once, that the secondary failures
     are one log line, and that the GPU memory of the process (read through `gpu_memory()`) is back to where it was; a
     loop of five starts, failed warm-ups and closes of a real embedder and of a real reranker shows no growth.
-- **Tests:** `tests/integration/test_cli_operator_commands.py` errored when run on its own (the fixture that records
-  `atexit.register` met pytest's registration of its temp-directory clean-up); pytest's base temp directory is now made
-  at the start of the session, and every file of `tests/integration` that touches logging, `atexit`, the environment
-  or the CLI passes on its own.
+- **Tests:** pytest's base temp directory is made at the start of the session (a session fixture of `tests/conftest.py`),
+  so that no test that records or replaces `atexit.register` can meet pytest's own registration of the clean-up of that
+  directory (it passes five arguments), and the recorder of `tests/integration/test_cli_operator_commands.py` accepts
+  the arguments of any registration. This is hardening: that file already made the directory first in its own fixture.
+- **Documentation, corrected after a review of the runtime commit:** a closed TensorRT engine is a `ModelUnavailableError`
+  and no longer an `EmbeddingUnavailableError` in the earlier notes too; on PyPI only `tensorrt-cu13` and
+  `tensorrt-cu13-libs` are placeholders (`tensorrt-cu13-bindings` is a real wheel); `axmem memory`, `axmem call` and
+  `axmem tools` print the tokenizer refusal without the prefix that `serve` adds (a test runs the command). The tests of
+  the GPU-gate paragraphs of the README and `docs/contributors.md` (paragraphs of their own) and of the Quality row of
+  `docs/changes-from-forgetful.md` (it no longer says that hosted CI runs every check), which the runtime commit left
+  uncommitted, are committed with this one.
+- **Cluster scale** (found by running the scans, the snapshots and the restore against writers and against clusters of
+  other sizes; the cluster tests are the proof):
+  - **Scans are complete or they fail.** A quorum read that asks for the content of a page leaves out a point whose
+    replicas are not all at the same version at that moment. Beside eight writers rewriting 600 memories on three
+    nodes (3 shards, replication factor 3, write consistency factor 2) such a scan missed a memory in about one round
+    in three (and with one shard it once lost a whole page of 100); a read of the ids alone never did. `export`,
+    `import`, the copy of `re-embed` (`outdated_in`, `copy_into`) and `qdrant-check`'s counts could therefore write a file or
+    a generation without a memory that existed. Every page is now listed by id with a plain read (`QdrantStore.page`)
+    and the listed memories are fetched with the repeating quorum read (`get_agreed`, which now asks again only for
+    the ids still missing); a memory the replicas never agree about ends the scan with a `ConflictError` (one `Error:`
+    line on the command line, 409 over REST) instead of being left out. `import` and the copy checked their
+    "already there" reads with a plain quorum read and now use `get_agreed` too. `export` counts the memories before it
+    starts and refuses to write a file with fewer than the collection held then (memories are never deleted, so it
+    would have lost one), and prints a `Warning:` on stderr when the counts at its end differ from the file's (writers
+    created memories meanwhile). With writers running a scan is still a moving picture, which
+    [docs/configuration.md](docs/configuration.md) now says; an exact copy needs the writers stopped. The cluster tests
+    (`tests/cluster/test_cluster_scans.py`) hold the omission (a detector shows the old scan loses memories), 25 rounds of a complete scan, an
+    export, the copy of a `re-embed` and the per-node counts of `qdrant-check` beside writers; 17 of the 21 new
+    single-node tests (`tests/integration/test_qdrant_complete_scans.py`, replicas that disagree injected between the
+    pool and the client) fail without the change.
+  - **A failed snapshot request leaves no snapshot behind.** A request that gave up after the 3600 seconds the client
+    waits (or whose connection dropped, or whose answer carried no name) left the snapshot the node went on to make
+    on the node, unnamed, as large as its shards. `NodePool.create_snapshot` lists the snapshots of the collection
+    before the request, and after any failure deletes the ones that were not there; after a timeout or a dropped
+    connection it looks for up to 5 minutes more, because the node goes on, and says in the log which snapshots existed
+    before when none shows up in that time. The listing, the deletion and the wait never replace the error the backup
+    ends with. Tests: `tests/integration/test_qdrant_snapshot_cleanup.py` against an in-process stand-in for the snapshot
+    routes of a Qdrant node (`tests/qdrant_fake_node.py`).
+  - **The number a re-embed reports is the number it wrote.** `_replace_older` counted the memories carrying its own claim
+    token after the write, so a write that another writer overtook (the memory is then newer than the copy, which is
+    fine) was not counted, and the report could name fewer memories than the copy had processed. `copy_into` now reads back
+    what it wrote and counts a memory when the new generation holds it at the version written or a newer one; a write
+    that did not take effect is not counted. The cluster test with writers asserts the total (60 of 60; it was 58 before).
+  - **A server that keeps running cannot write vectors of the old embedder into the new generation.** `ensure` checks the
+    embedder of the live generation when a process starts; a server left running while `axmem re-embed` moved the alias to a
+    generation of another model went on writing old-model vectors into it. `QdrantSchema.writable_generation` now checks the
+    record of the live generation the first time this process sees it, and create, edit, targeted rebuild and import
+    (which write by that generation's name) raise `EmbedderChangedError` (a `ConflictError`: 409, and the text is shown over MCP)
+    and write nothing when it is not this process's embedder; a create that straddles a switch to a generation of the same embedder
+    is written again into the new one. Reads are not affected. The procedure stays: stop every server before `re-embed`
+    ([docs/embedding_migration.md](docs/embedding_migration.md), which also records that a run with writers across the
+    switch lost an acknowledged edit in the cluster test, because the catch-up copy goes by version number and the two generations can
+    hold different histories of a memory). Tests: `tests/integration/test_qdrant_embedder_switch.py`.
+  - **Clusters of other sizes and a restore into another cluster are tested** (`tests/cluster/test_cluster_backup_restore_other_clusters.py`,
+    `start_cluster(nodes=...)` in `tests/qdrant_support.py`): see the results in
+    [docs/changes-from-forgetful.md](docs/changes-from-forgetful.md#facts-to-re-verify).
 
 ### Security
 

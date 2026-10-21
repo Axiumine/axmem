@@ -25,6 +25,13 @@ from tests.backup_restore_cases import seed_memories
 class Scroll:
     collection: str
     consistency: Any
+    with_payload: Any = True
+    with_vectors: bool = False
+
+    @property
+    def reads_content(self) -> bool:
+        """Whether the scroll returns what a caller keeps (a payload or a vector), and not only the ids of the points."""
+        return self.with_payload is not False or self.with_vectors
 
 
 class ScrollRecorder:
@@ -35,7 +42,9 @@ class ScrollRecorder:
         self._scrolls = scrolls
 
     async def scroll(self, collection_name: str, *args: Any, **kwargs: Any) -> Any:
-        self._scrolls.append(Scroll(collection_name, kwargs.get("consistency")))
+        self._scrolls.append(Scroll(
+            collection_name, kwargs.get("consistency"), kwargs.get("with_payload", True), kwargs.get("with_vectors", False),
+        ))
         return await self._client.scroll(collection_name, *args, **kwargs)
 
     def __getattr__(self, name: str) -> Any:
@@ -64,6 +73,14 @@ async def world(isolated_stack, tensorrt_embedder):
     pool = isolated_stack.pool
     pool.clients = [ScrollRecorder(client, scrolls) for client in pool.clients]
     return isolated_stack, repo, tenant, memory, other, scrolls
+
+
+def assert_content_from_a_majority(scrolls: list[Scroll], *, since: int = 0, at_least: int = 1) -> None:
+    """Every scroll that reads content asked a majority; the scans list the ids of a page with a plain read that carries none."""
+    reading = [scroll for scroll in scrolls[since:] if scroll.reads_content]
+    assert len(reading) >= at_least
+    assert [scroll for scroll in reading if scroll.consistency != qm.ReadConsistencyType.QUORUM] == []
+    assert [scroll for scroll in scrolls[since:] if not scroll.reads_content and scroll.consistency is not None] == []
 
 
 def assert_majority(scrolls: list[Scroll], *, since: int = 0, at_least: int = 1, only: Callable[[Scroll], bool] = lambda _: True) -> None:
@@ -130,7 +147,9 @@ async def test_an_export_reads_every_page_of_the_memories_and_the_links_from_a_m
     await adapter.export_memories(tmp_path / "export.jsonl")
 
     assert {role(isolated_stack, scroll) for scroll in scrolls} == {"memories", "links"}
-    assert_majority(scrolls, at_least=2)
+    assert_content_from_a_majority(scrolls, at_least=2)
+    # Each page is listed first, by a plain read of the ids: a majority read alone leaves out what is being rewritten
+    assert [scroll for scroll in scrolls if not scroll.reads_content]
 
 
 async def test_an_import_decides_what_is_new_from_a_majority_of_the_replicas(isolated_stack, tensorrt_embedder, tmp_path):
@@ -159,7 +178,7 @@ async def test_the_re_embedding_reads_what_it_copies_and_what_it_checks_from_a_m
     copied = await repo.copy_into(target, [(stored, vector) for stored in outdated])
 
     assert copied == len(outdated) == 2
-    assert_majority(scrolls, since=mark, at_least=3)
+    assert_content_from_a_majority(scrolls, since=mark, at_least=3)
     assert {scroll.collection for scroll in scrolls[mark:]} == {source, target}
 
 

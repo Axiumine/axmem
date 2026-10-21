@@ -1,4 +1,4 @@
-"""Real Qdrant servers for the tests: a throwaway single node, and a throwaway three-node cluster.
+"""Real Qdrant servers for the tests: a throwaway single node, and throwaway clusters (three nodes, or as many as asked).
 
 Nothing is simulated. The suites talk to ``qdrant/qdrant`` (the version the service requires and the gates
 pin) started through Docker with an API key, on random loopback ports, and removed at the end. A run that
@@ -133,19 +133,23 @@ def stop(container: str | None) -> None:
         _docker("rm", "-f", "-v", container, check=False)
 
 
-# ---- three-node cluster ---------------------------------------------------------------------------
+# ---- clusters -------------------------------------------------------------------------------------
 
-NODES = 3
+NODES = 3  # the size of the cluster the cluster suites share; ``start_cluster(nodes=...)`` starts another size
 
 
 @dataclass
 class QdrantCluster:
-    """A three-node cluster: containers, their loopback REST URLs and the network that joins them."""
+    """A cluster: containers, their loopback REST URLs and the network that joins them."""
 
     network: str
     containers: list[str]
     urls: list[str]
     api_key: str
+
+    @property
+    def nodes(self) -> int:
+        return len(self.containers)
 
     def stop_node(self, index: int) -> None:
         _docker("stop", "-t", "1", self.containers[index])
@@ -177,12 +181,12 @@ class QdrantCluster:
     def a_follower(self) -> int:
         """Index of a node that is not the strong-ordering leader: one that can go without stopping writes."""
         leader = self.strong_leader()
-        return next(index for index in range(NODES) if index != leader)
+        return next(index for index in range(self.nodes) if index != leader)
 
     def wait_formed(self, timeout: float = READY_TIMEOUT_SECONDS) -> None:
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
-            if all(self.peers_of(i) == NODES for i in range(NODES)):
+            if all(self.peers_of(i) == self.nodes for i in range(self.nodes)):
                 return
             time.sleep(0.5)
         raise RuntimeError("the Qdrant cluster did not form")
@@ -195,16 +199,19 @@ def free_loopback_port() -> int:
         return probe.getsockname()[1]
 
 
-def start_cluster() -> QdrantCluster:
-    """Start three nodes that form one cluster with internal authentication, ``QDRANT__SERVICE__API_KEY`` set.
+def start_cluster(nodes: int = NODES, *, in_memory: bool = False) -> QdrantCluster:
+    """Start ``nodes`` nodes that form one cluster with internal authentication, ``QDRANT__SERVICE__API_KEY`` set.
 
     The containers are not started with ``--rm`` (a stopped node has to be started again with its data) and their
     REST ports are fixed; ``stop_cluster`` removes them, and the ``axmem-test`` label finds any a killed run left.
+    ``in_memory`` keeps the data of every node in memory (``--tmpfs``), as the single node does: payload-index creation
+    fsyncs, and on a busy disk that costs minutes per test. Such a cluster cannot stop a node and start it again,
+    because the data goes with the container's stop; the suites that only restore into it or read it use this.
     """
     tag = uuid.uuid4().hex[:6]
     network = f"axmem-net-{tag}"
     _docker("network", "create", network)
-    containers = [f"axmem-q{tag}-{i + 1}" for i in range(NODES)]
+    containers = [f"axmem-q{tag}-{i + 1}" for i in range(nodes)]
     urls: list[str] = []
     try:
         for index, name in enumerate(containers):
@@ -213,8 +220,9 @@ def start_cluster() -> QdrantCluster:
                 command = ["./qdrant", "--bootstrap", f"http://{containers[0]}:6335", "--uri", f"http://{name}:6335"]
             port = free_loopback_port()
             urls.append(f"http://127.0.0.1:{port}")
+            memory = ["--tmpfs", "/qdrant/storage", "--tmpfs", "/qdrant/snapshots"] if in_memory else []
             _docker(
-                "run", "-d", "--name", name, "--label", LABEL, "--network", network,
+                "run", "-d", "--name", name, "--label", LABEL, "--network", network, *memory,
                 "-e", "QDRANT__CLUSTER__ENABLED=true",
                 "-e", f"QDRANT__SERVICE__API_KEY={API_KEY}",
                 "-e", "QDRANT__SERVICE__ENFORCE_INTERNAL_AUTH=true",

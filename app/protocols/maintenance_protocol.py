@@ -14,11 +14,22 @@ class BackupResult:
 
 @dataclass
 class ArchiveSummary:
-    """What an export wrote or an import read: memories (with the tenants they belong to) and links."""
+    """What an export wrote or an import read: memories (with the tenants they belong to) and links.
+
+    ``memories_at_end`` and ``links_at_end`` are for an export: how many the collections held when it ended (None for
+    an import). They differ from ``memories`` and ``links`` when writers changed the data while the export ran.
+    """
     memories: int = 0
     links: int = 0
     skipped: int = 0
     tenants: int = 0
+    memories_at_end: int | None = None
+    links_at_end: int | None = None
+
+    @property
+    def changed_during_export(self) -> bool:
+        """Whether the collections held other numbers of memories or links than the export wrote when it ended."""
+        return (self.memories_at_end, self.links_at_end) not in ((None, None), (self.memories, self.links))
 
 
 @dataclass

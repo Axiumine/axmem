@@ -26,7 +26,6 @@ from app.repositories.qdrant.payloads import (
 from app.repositories.qdrant.schema import LINK_VECTOR
 from app.repositories.qdrant.store import (
     SYSTEM,
-    TOKEN_KEY,
     VERSION_KEY,
     NewPoint,
     Point,
@@ -82,63 +81,65 @@ class QdrantMemoryReembeddingMixin(QdrantMemoryBase):
     ) -> tuple[list[StoredMemory], UUID | None]:
         """Scan up to ``limit`` memories of ``source`` from the id ``start``; return those ``target`` lacks or holds an older version of.
 
-        The second value is the id to continue from, or None when the scan reached the end of ``source``.
+        The second value is the id to continue from, or None when the scan reached the end of ``source``. The page is
+        complete (``QdrantStore.page``): a memory that is being rewritten is awaited and never left out, and if the
+        replicas will not agree about one the scan raises ``ConflictError``.
         """
-        scanned = await self.store.scroll(SYSTEM, source, limit=limit + 1, start_from=start, quorum=True)
-        batch, following = scanned[:limit], scanned[limit:]
-        present = await self.store.get(
-            SYSTEM, target, [point.id for point in batch], with_payload=[VERSION_KEY], quorum=True,
-        )
+        batch, following = await self.store.page(SYSTEM, source, limit=limit, start_from=start, quorum=True)
+        present = await self.store.get_agreed(SYSTEM, target, [point.id for point in batch], with_payload=[VERSION_KEY])
         held = {point.id: int(point.payload[VERSION_KEY]) for point in present}
         outdated = [
             stored_from_point(point) for point in batch
             if held.get(point.id, 0) < int(point.payload[VERSION_KEY])
         ]
-        return outdated, following[0].id if following else None
+        return outdated, following
 
     async def copy_into(self, target: str, items: list[tuple[StoredMemory, list[float]]]) -> int:
-        """Write the memories with their new embeddings into ``target``; return how many were written.
+        """Write the memories with their new embeddings into ``target``; return how many of them ``target`` holds afterwards.
 
         Versions start at 1, so "held at version 0" means "absent". A memory that is absent is created; one
         held at an older version is replaced by a write guarded on that; one held at the same or a newer
-        version is left alone.
+        version is left alone. The answer to a conditional write does not say whether it applied, so the memories
+        written are read back and counted when ``target`` holds them at the version written or a newer one: a write
+        that another writer overtook still counts, because the memory is at least as new as the copy, and one that
+        did not take effect does not.
         """
-        present = await self.store.get(
-            SYSTEM, target, [stored.memory.id for stored, _ in items], with_payload=[VERSION_KEY], quorum=True,
+        present = await self.store.get_agreed(
+            SYSTEM, target, [stored.memory.id for stored, _ in items], with_payload=[VERSION_KEY],
         )
         held = {point.id: int(point.payload[VERSION_KEY]) for point in present}
         token = new_token()
-        created = await self._create_absent(target, items, held, token)
-        return created + await self._replace_older(target, items, held, token)
+        written = await self._create_absent(target, items, held, token) + await self._replace_older(target, items, held, token)
+        if not written:
+            return 0
+        after = await self.store.get_agreed(
+            SYSTEM, target, [stored.memory.id for stored in written], with_payload=[VERSION_KEY],
+        )
+        now = {point.id: int(point.payload[VERSION_KEY]) for point in after}
+        return sum(1 for stored in written if now.get(stored.memory.id, 0) >= stored.version)
 
     async def _create_absent(
         self, target: str, items: list[tuple[StoredMemory, list[float]]], held: dict[UUID, int], token: str,
-    ) -> int:
-        points = [
-            NewPoint(stored.memory.id, vector, payload_of(stored, token=token))
-            for stored, vector in items if stored.memory.id not in held
-        ]
-        await self.store.insert(SYSTEM, target, points)
-        return len(points)
+    ) -> list[StoredMemory]:
+        """Create the memories ``target`` does not hold; return the ones a write was sent for."""
+        absent = [(stored, vector) for stored, vector in items if stored.memory.id not in held]
+        await self.store.insert(
+            SYSTEM, target, [NewPoint(stored.memory.id, vector, payload_of(stored, token=token)) for stored, vector in absent],
+        )
+        return [stored for stored, _ in absent]
 
     async def _replace_older(
         self, target: str, items: list[tuple[StoredMemory, list[float]]], held: dict[UUID, int], token: str,
-    ) -> int:
-        replaced = 0
+    ) -> list[StoredMemory]:
+        """Replace the memories ``target`` holds at an older version; return the ones a write was sent for."""
+        replaced: list[StoredMemory] = []
         for stored, vector in items:
             if held.get(stored.memory.id, stored.version) >= stored.version:
                 continue
             point = NewPoint(stored.memory.id, vector, payload_of(stored, token=token))
             await self.store.replace(SYSTEM, target, point, older_than=stored.version)
-            replaced += 1
-        if not replaced:
-            return 0
-        # The response does not say whether a guarded replace applied: count the ones carrying our token
-        after = await self.store.get(
-            SYSTEM, target, [stored.memory.id for stored, _ in items if stored.memory.id in held],
-            with_payload=[TOKEN_KEY], quorum=True,
-        )
-        return sum(1 for point in after if point.payload.get(TOKEN_KEY) == token)
+            replaced.append(stored)
+        return replaced
 
     async def rebuild_links(self, *, unfinished_only: bool = False) -> bool:
         """Give the links collection the layout the settings describe; return whether it had to be rebuilt.
@@ -252,12 +253,14 @@ class QdrantMemoryReembeddingMixin(QdrantMemoryBase):
         """Write new embeddings for active memories of the tenant, each only while the memory is at the version read.
 
         The write replaces the whole point, vector and payload, and raises the version by one, so an edit
-        that read the old vector before this write cannot store it again over the new one.
+        that read the old vector before this write cannot store it again over the new one. Nothing is written, and
+        ``EmbedderChangedError`` is raised, when the live generation holds vectors of another embedder than this process's.
         """
         scope = Scope.of(user_id)
+        generation = await self.schema.writable_generation()
         current = {
             point.id: point for point in await self.store.get(
-                scope, self.memories, [memory_id for memory_id, _ in updates], quorum=True,
+                scope, generation, [memory_id for memory_id, _ in updates], quorum=True,
             )
         }
         result = EmbeddingWrites(written=[], failed=[])
@@ -267,17 +270,17 @@ class QdrantMemoryReembeddingMixin(QdrantMemoryBase):
             if point is None or point.payload["is_obsolete"] or point.payload[VERSION_KEY] != version:
                 continue
             try:
-                if await self._refresh(scope, point, vector):
+                if await self._refresh(scope, generation, point, vector):
                     result.written.append(memory_id)
             except Exception:  # noqa: BLE001 - one memory that cannot be written must not stop the others
                 logger.exception("embedding write failed", extra={"memory_id": str(memory_id), "user_id": str(user_id)})
                 result.failed.append(memory_id)
         return result
 
-    async def _refresh(self, scope: Scope, point: Point, vector: list[float]) -> bool:
+    async def _refresh(self, scope: Scope, generation: str, point: Point, vector: list[float]) -> bool:
         """Replace one memory's vector with a write guarded on the version read; True when that write is the stored one."""
         token = new_token()
         version = int(point.payload[VERSION_KEY])
         payload = refreshed_payload(point.payload, token=token)
-        await self.store.replace(scope, self.memories, NewPoint(point.id, vector, payload), expected_version=version)
-        return await self.store.landed(scope, self.memories, point.id, from_version=version, token=token)
+        await self.store.replace(scope, generation, NewPoint(point.id, vector, payload), expected_version=version)
+        return await self.store.landed(scope, generation, point.id, from_version=version, token=token)

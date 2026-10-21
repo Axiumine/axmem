@@ -17,6 +17,12 @@ class OutcomeUnknownError(ConflictError):
     whether it was applied. The caller must read the object again before repeating the change."""
 
 
+class EmbedderChangedError(ConflictError):
+    """The live memory collection now holds vectors of another embedder than the one this process embeds with, so a write
+    is refused: the new vector (or the vector read from the collection) would not match the others. Repeating the request
+    does not help; the server has to be restarted with the settings of the embedder that made the collection."""
+
+
 class InvalidStateTransitionError(Exception):
     """Raised when a state machine transition is not allowed"""
 

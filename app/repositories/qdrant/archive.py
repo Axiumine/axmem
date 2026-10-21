@@ -16,6 +16,7 @@ from uuid import UUID
 
 from pydantic import ValidationError
 
+from app.exceptions import OperatorCommandError
 from app.models.memory_models import Memory
 from app.protocols.embedding_protocol import EmbeddingsAdapter
 from app.protocols.maintenance_protocol import ArchiveSummary
@@ -73,9 +74,19 @@ class QdrantArchiveAdapter:
         """Write every memory and link to ``path``.
 
         The file is built next to its target and renamed when complete, so a failed export leaves no half
-        file. Writers that run during an export may or may not be included; stop them for an exact copy.
+        file. The scans are complete (``QdrantStore.iterate`` with ``quorum``): a memory that is being rewritten while
+        the export reads it is waited for and written in a version the replicas held then, and if the replicas
+        never agree about one the export fails instead of leaving it out. Memories and links that other writers
+        create or remove while the export runs may or may not be included, so the collections are counted before and
+        after: an export with fewer memories than existed when it started is refused (memories are never deleted, so
+        it would have lost one), and one whose counts differ from the collections' at the end says so in the
+        summary (``memories_at_end``, ``links_at_end``). Stop the writers for an exact copy.
+
+        Raises:
+            OperatorCommandError: If the file would hold fewer memories than the collection held when the export began
         """
         live = await self.schema.live_generation()  # a clear error, not a raw 404, when the collections do not exist
+        held_at_start = await self.store.count(SYSTEM, live)
         summary = ArchiveSummary()
         tenants: set[str] = set()
         partial = path.with_name(path.name + ".partial")
@@ -104,11 +115,18 @@ class QdrantArchiveAdapter:
                         "b": link.payload["b"],
                     }))
                     summary.links += 1
+            if summary.memories < held_at_start:
+                raise OperatorCommandError(
+                    f"The export would hold {summary.memories} memories but {live} held {held_at_start} when it began, "
+                    "so it would be missing some. Nothing was written; run the export again, with the writers stopped",
+                )
             partial.replace(path)
         except BaseException:
             partial.unlink(missing_ok=True)
             raise
         summary.tenants = len(tenants)
+        summary.memories_at_end = await self.store.count(SYSTEM, live)
+        summary.links_at_end = await self.store.count(SYSTEM, self.names.links)
         logger.info("Exported memories", extra={"memories": summary.memories, "links": summary.links, "export_path": str(path)})
         return summary
 
@@ -210,9 +228,10 @@ class QdrantArchiveAdapter:
         """Embed and create the memories of ``batch`` that the live collection does not hold; return how many were created."""
         if not batch:
             return 0
+        generation = await self.schema.writable_generation()
         present = {
-            point.id for point in await self.store.get(
-                SYSTEM, self.names.live, [s.memory.id for s in batch], with_payload=False, quorum=True,
+            point.id for point in await self.store.get_agreed(
+                SYSTEM, generation, [s.memory.id for s in batch], with_payload=False,
             )
         }
         fresh = [stored for stored in batch if stored.memory.id not in present]
@@ -221,7 +240,7 @@ class QdrantArchiveAdapter:
         vectors = await self._embedder().generate_embeddings([build_embedding_text(s.memory) for s in fresh])
         token = new_token()
         points = [NewPoint(s.memory.id, vector, payload_of(s, token=token)) for s, vector in zip(fresh, vectors, strict=True)]
-        await self.store.insert(SYSTEM, self.names.live, points)
+        await self.store.insert(SYSTEM, await self.schema.writable_generation(), points)
         return len(points)
 
     async def _store_links(self, links: Iterable[tuple[UUID, UUID, UUID]], summary: ArchiveSummary) -> int:
@@ -230,13 +249,13 @@ class QdrantArchiveAdapter:
         now = datetime.now(UTC)
         for tenant, first, second in links:
             scope = Scope.of(tenant)
-            ends = await self.store.get(scope, self.names.live, [first, second], with_payload=False, quorum=True)
+            ends = await self.store.get_agreed(scope, self.names.live, [first, second], with_payload=False)
             if len(ends) != len({first, second}) or first == second:
                 summary.skipped += 1
                 continue
             payload = link_payload(tenant, first, second, token=new_token(), now=now)
             point = NewPoint(link_id(tenant, first, second), LINK_VECTOR, payload)
-            existing = await self.store.get(scope, self.names.links, [point.id], with_payload=False, quorum=True)
+            existing = await self.store.get_agreed(scope, self.names.links, [point.id], with_payload=False)
             await self.store.insert(scope, self.names.links, [point])
             created += 0 if existing else 1
         return created

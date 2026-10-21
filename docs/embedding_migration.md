@@ -107,8 +107,13 @@ Output:
 
 ## What Happens During Migration
 
-The tool follows a 4-step process. Nothing in the live collection is changed until the last moment, so the
-server can keep serving searches from the old vectors while it runs (stop it anyway if you can, see the tips).
+The tool follows a 4-step process. Nothing in the live collection is changed until the last moment, so a server that
+is still running keeps serving searches from the old vectors while it runs. **Stop every server, and every command
+that writes (`import`, a targeted rebuild), before you start, and start them again only after it has finished.**
+The copy is made by version number, and a write that a running server makes during the switch can be lost (an edit
+that was acknowledged and then overwritten by the catch-up copy of an older state, seen in the cluster tests with
+writers running across the switch). A server that is still running when the alias moves refuses its writes from then
+on (see [A server that keeps running](#a-server-that-keeps-running)).
 
 ### Step 1: Validate Configuration
 
@@ -145,11 +150,21 @@ Every write into the new collection is conditional on the memory's version, so a
 runs is never overwritten with an older text. Edits made meanwhile are picked up by further scans of the old
 collection and once more after the switch.
 
+The scans are complete or the run fails. On a cluster a read that asks a majority of the replicas for a memory that
+another writer is rewriting at that moment can leave it out of the answer; the copy therefore lists the ids of each
+page with a plain read, which never leaves one out, and fetches the memories themselves with a read that waits until
+the replicas agree. When they never agree the run stops with `Error: ...` (a `ConflictError` naming the memory), the new
+collection is discarded and the live one is untouched; run it again with the writers stopped. The copy of a page reads
+back what it wrote: a memory counts as written when the new collection holds it at the version written or a newer one
+(another writer's newer version counts, a write that did not take effect does not).
+
 ### Step 4: Validate and Switch
 
 Runs three automated checks on the new collection:
 
-1. **Count check** - Verifies every memory, including obsolete memories, has an embedding
+1. **Count check** - Verifies every memory, including obsolete memories, has an embedding (the report names the
+   memories counted when the run began and the memories the first pass wrote into the new collection, each counted
+   once and only after it was read back; the check itself compares the number of points of the two collections)
 2. **Dimension check** - Samples embeddings and confirms correct dimension count
 3. **Search check** - Tests vector retrieval, including when all memories are obsolete
 
@@ -187,6 +202,33 @@ of the run (it then goes on as any `re-embed` does: it embeds every memory again
 switches to it, which takes as long as the first run; stop it with Ctrl+C after the links are back if all you wanted was
 the links, and the new generation is discarded). `axmem restore` removes the staging collection, because the snapshot is
 the source of truth for the links.
+
+---
+
+## A server that keeps running
+
+A server checks which embedder made the vectors of the live collection when it starts, and refuses to start when it
+is not its own. A server that was started before `axmem re-embed` switched the alias to a generation of another
+embedder (another provider, model, width, precision or gateway backend) would otherwise go on writing vectors of the
+old model into the new generation, where nothing compares them with the others. Every write that carries a vector
+(creating a memory, editing one, a targeted rebuild, `import`) therefore looks at the embedder the live generation
+records, the first time it sees a generation, and writes nothing when it is not the one this process embeds with:
+
+```
+The memory collection axmem_memories_20261020t101500ab12 now holds vectors made with provider TensorRT, model ...,
+but this server embeds with provider TensorRT, model ...: `axmem re-embed` switched the memories to another embedder
+while the server was running. Nothing was written. Restart the server with the settings of the new embedder (and stop
+every server before the next `axmem re-embed`)
+```
+
+REST answers 409 with that text and MCP shows it as a tool error. Reads keep working. The cure is to restart the
+server with the new settings (the settings file of the host and the environment of the service must describe the
+embedder that `re-embed` used). The check is a guard against a forgotten server, not a reason to leave one running: a
+server that was started with the same embedder as the new generation (a `re-embed` that only changed the layout) keeps
+writing, into the new generation, and a write that straddles the switch is written again into the new generation.
+It does not repair the case the cluster tests found with writers running across the switch (an edit acknowledged on the
+old generation that the catch-up copy of an older state of the memory then overwrote), which is why the servers are
+stopped first.
 
 ---
 
@@ -409,7 +451,8 @@ are readable by their owner only.
 - **Use a conservative batch size** (10-20) for cloud providers to avoid rate limits
 - **Use a larger batch size** (50-100) for local providers (TensorRT, Ollama) for faster processing, and for the `gateway` provider, which sends a batch as a single request
 - **Don't delete the previous collection immediately** - verify search quality first by querying a few memories
-- **Stop the server** before running re-embed, so the switch of the live collection happens while nothing is writing
+- **Stop every server** before running re-embed, and start them after it has finished: the switch of the live collection
+  must happen while nothing is writing (see [A server that keeps running](#a-server-that-keeps-running))
 - The migration processes all users' memories in a single run (it's a global operation)
 
 ---

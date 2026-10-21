@@ -37,6 +37,7 @@ class RecordingPool:
         self.replica_states: list[list[str]] = []  # what the next polls report; the last one is repeated, then all Active
         self.report_status = 200
         self.stuck_until_uploads = 0  # a replica stays in ManualRecovery until this many uploads were made
+        self.refusal: dict = {"json": {"status": {"error": "bad snapshot"}}}  # the body of a refused upload
 
     def http(self, url: str, timeout: float | None = None) -> httpx.AsyncClient:
         def answer(request: httpx.Request) -> httpx.Response:
@@ -53,7 +54,7 @@ class RecordingPool:
             self.requests.append((url, request.url.path, dict(request.url.params), timeout))
             if len(self.uploads) <= self.accepted:
                 return httpx.Response(200, json={"result": True})
-            return httpx.Response(self.status, json={"status": {"error": "bad snapshot"}})
+            return httpx.Response(self.status, **self.refusal)
 
         return httpx.AsyncClient(base_url=url, transport=httpx.MockTransport(answer))
 
@@ -116,10 +117,40 @@ async def test_a_snapshot_that_qdrant_refuses_is_reported_by_name_and_status(tmp
     pool = RecordingPool()
     backup = _backup(tmp_path, {"files": [_entry("memories", MEMORIES), _entry("links", NAMES.links)]})
 
-    with pytest.raises(OperatorCommandError, match=r"Qdrant refused the snapshot node1-memories\.snapshot: HTTP 400"):
+    with pytest.raises(OperatorCommandError, match=r"Qdrant refused the snapshot node1-memories\.snapshot: HTTP 400 \(bad snapshot\)$"):
         await _adapter(pool).restore_backup(backup)
 
     assert pool.uploads == [f"/collections/{MEMORIES}/snapshots/upload"]
+
+
+@pytest.mark.parametrize(
+    "refusal",
+    [
+        {"content": b"<html>bad gateway</html>"},  # not JSON
+        {"json": {"status": {}}},  # no error in it
+        {"json": ["not", "an", "object"]},  # not the shape Qdrant answers in
+        {"json": {"status": {"error": ""}}},  # nothing said
+    ],
+    ids=["not-json", "no-error", "not-an-object", "empty-error"],
+)
+async def test_a_refusal_without_a_readable_reason_is_reported_by_name_and_status_only(tmp_path, refusal):
+    pool = RecordingPool(status=502)
+    pool.refusal = refusal
+    backup = _backup(tmp_path, {"files": [_entry("memories", MEMORIES), _entry("links", NAMES.links)]})
+
+    with pytest.raises(OperatorCommandError, match=r"Qdrant refused the snapshot node1-memories\.snapshot: HTTP 502$"):
+        await _adapter(pool).restore_backup(backup)
+
+
+async def test_the_reason_qdrant_gives_for_a_refusal_is_cut_to_a_line(tmp_path):
+    pool = RecordingPool(status=500)
+    pool.refusal = {"json": {"status": {"error": "x" * 5000}}}
+    backup = _backup(tmp_path, {"files": [_entry("memories", MEMORIES), _entry("links", NAMES.links)]})
+
+    with pytest.raises(OperatorCommandError) as raised:
+        await _adapter(pool).restore_backup(backup)
+
+    assert str(raised.value).endswith(f"HTTP 500 ({'x' * 300})")
 
 
 @pytest.mark.parametrize(
@@ -181,7 +212,7 @@ async def test_a_refusal_after_some_files_were_restored_says_how_many_and_that_t
     backup = _backup(tmp_path, {"files": _entries(2)}, nodes=2)
     schema = RecordingSchema(pool)
 
-    with pytest.raises(OperatorCommandError, match=r"snapshot node2-links\.snapshot: HTTP 503. 3 of 4 files were already restored: .*run the restore again"):
+    with pytest.raises(OperatorCommandError, match=r"snapshot node2-links\.snapshot: HTTP 503 \(bad snapshot\)\. 3 of 4 files were already restored: .*run the restore again"):
         await QdrantBackupAdapter(pool, schema=schema).restore_backup(backup)
 
     assert schema.made_live == []  # the collection does not go live on a half restore

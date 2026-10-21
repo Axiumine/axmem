@@ -1,15 +1,18 @@
 """Helpers the cluster tests share: building memories, waiting for the nodes to agree, and the races themselves."""
 import asyncio
+import random
 import time
+from collections import Counter
 from uuid import UUID
 
 import httpx
 
-from app.models.memory_models import MemoryCreate
+from app.exceptions import ConflictError
+from app.models.memory_models import MemoryCreate, MemoryUpdate
 from app.repositories.qdrant.inspector import QdrantClusterInspector
 from app.repositories.qdrant.memory_repository import QdrantStack
 from app.repositories.qdrant.store import VERSION_KEY, Scope
-from tests.qdrant_support import NODES, QdrantCluster
+from tests.qdrant_support import QdrantCluster
 
 AGREE_TIMEOUT_SECONDS = 120
 HEAL_TIMEOUT_SECONDS = 180
@@ -65,9 +68,13 @@ def replica_states(cluster: QdrantCluster, collection: str) -> list[str]:
 
 
 def wait_for_active_replicas(
-    cluster: QdrantCluster, collection: str, timeout: float = HEAL_TIMEOUT_SECONDS, replicas: int = NODES * NODES,
+    cluster: QdrantCluster, collection: str, timeout: float = HEAL_TIMEOUT_SECONDS, replicas: int | None = None,
 ) -> None:
-    """Block until the cluster is formed and all ``replicas`` replicas of ``collection`` (shards x replication factor) are Active."""
+    """Block until the cluster is formed and all ``replicas`` replicas of ``collection`` (shards x replication factor) are Active.
+
+    The default is the documented profile of the suites: a shard and a replica on every node.
+    """
+    replicas = replicas if replicas is not None else cluster.nodes * cluster.nodes
     deadline = time.monotonic() + timeout
     states: list[str] = []
     cluster.wait_formed(timeout)
@@ -80,3 +87,19 @@ def wait_for_active_replicas(
             return
         time.sleep(1)
     raise RuntimeError(f"the replicas of {collection} did not all become Active: {states}")
+
+
+async def rewrite_memories(repo, tenant: UUID, ids: list[UUID], stop: asyncio.Event, acked: Counter, seed: int) -> None:
+    """Rewrite random memories among ``ids`` until ``stop`` is set, counting the updates the writer was told succeeded.
+
+    An update writes the whole point and moves its version on by one, so the replicas of a point are in different
+    versions for the moments between the writes landing on them: what a majority scan trips over.
+    """
+    chance = random.Random(seed)
+    while not stop.is_set():
+        memory_id = chance.choice(ids)
+        try:
+            await repo.update_memory(tenant, memory_id, MemoryUpdate(importance=chance.randint(1, 10)))
+        except ConflictError:
+            continue  # lost every attempt, and was told so
+        acked[memory_id] += 1

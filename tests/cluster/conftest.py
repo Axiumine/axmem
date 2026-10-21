@@ -13,7 +13,6 @@ from pydantic import SecretStr
 from app.config.settings import settings
 from tests.gpu_preflight import require_gpu
 from tests.qdrant_support import (
-    NODES,
     QdrantCluster,
     drop_prefix,
     require_docker,
@@ -51,8 +50,8 @@ def point_settings_at_the_cluster(monkeypatch, cluster: QdrantCluster, prefix: s
     monkeypatch.setattr(settings, "QDRANT_URL", ",".join(cluster.urls))
     monkeypatch.setattr(settings, "QDRANT_API_KEY", SecretStr(cluster.api_key))
     monkeypatch.setattr(settings, "QDRANT_COLLECTION_PREFIX", prefix)
-    monkeypatch.setattr(settings, "QDRANT_SHARD_NUMBER", NODES)
-    monkeypatch.setattr(settings, "QDRANT_REPLICATION_FACTOR", NODES)
+    monkeypatch.setattr(settings, "QDRANT_SHARD_NUMBER", cluster.nodes)
+    monkeypatch.setattr(settings, "QDRANT_REPLICATION_FACTOR", cluster.nodes)
     monkeypatch.setattr(settings, "QDRANT_WRITE_CONSISTENCY_FACTOR", 2)
     monkeypatch.setattr(settings, "QDRANT_TIMEOUT_SECONDS", 120)  # creating a collection with eight indexes on three nodes is slow
     monkeypatch.setattr(settings, "QDRANT_WRITE_ATTEMPTS", 10)  # a busy host answers consensus operations with a timeout

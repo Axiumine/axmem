@@ -75,8 +75,8 @@ jobs:
       - name: Build wheel
         run: uv build
 
-      # The wheel names the TensorRT packages without an index, and the PyPI projects of those names are placeholders that
-      # fetch the 3.8 GB of libraries when installed. The dependencies come from uv.lock instead, as in every other job
+      # The wheel names the TensorRT packages without an index, and on PyPI `tensorrt-cu13` and `tensorrt-cu13-libs` are
+      # placeholders that fetch the 3.8 GB of libraries when installed. The dependencies come from uv.lock instead, as in every other job
       # (NVIDIA's index for the TensorRT packages), without the libraries: `axmem --help` never loads them.
       - name: Install the locked dependencies
         run: uv sync --locked --no-dev --no-install-project --no-install-package tensorrt-cu13-libs

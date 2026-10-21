@@ -92,12 +92,14 @@ same operations.
   `http://127.0.0.1:6333`), `QDRANT_API_KEY`, and `QDRANT_COLLECTION_PREFIX` to keep several deployments apart.
 - Operator commands against the configured Qdrant: `axmem backup`, `axmem restore <dir> --yes` (stop the
   server first; every node's file goes back to the node it came from, so `QDRANT_URL` must list the same nodes
-  in the same order), `axmem export <file>`, `axmem import <file>`, `axmem qdrant-check` (compares the
+  in the same order), `axmem export <file>` (complete or it fails; refuses when writers made it miss memories and warns when
+  the data changed meanwhile: stop the writers for an exact copy), `axmem import <file>`, `axmem qdrant-check` (compares the
   nodes of a cluster; a node it cannot read is reported as such, not as a disagreement).
 - Memory ids are UUIDs: `axmem memory get <uuid>`; a number is refused.
 - After changing embedding provider, model, precision or the `QDRANT_SHARD_NUMBER`,
   `QDRANT_REPLICATION_FACTOR` or `QDRANT_WRITE_CONSISTENCY_FACTOR` layout (the server refuses to start on
-  either mismatch): stop the server, `axmem re-embed --dry-run` to preview, then `axmem re-embed` (batch size
+  either mismatch): stop every server (one left running refuses writes with a 409 once the alias has moved to another
+  embedder, and must be restarted), `axmem re-embed --dry-run` to preview, then `axmem re-embed` (batch size
   tunable via `--batch-size`); it also rebuilds the links collection in the new layout. If a run was stopped while it moved
   the links, `serve`, `import`, `backup` and `export` refuse and name `<prefix>_links_relayout`: run `axmem re-embed` again, which copies
   the links back before it embeds anything.

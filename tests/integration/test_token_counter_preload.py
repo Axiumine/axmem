@@ -20,9 +20,11 @@ import tiktoken
 import tiktoken.load
 
 import main
+from app import bootstrap
 from app.bootstrap import build_runtime, load_token_counter
 from app.config.settings import settings
 from app.exceptions import TokenizerUnavailableError
+from app.routes.cli.parser import _run_tool_command, build_parser
 from app.utils import token_counter as token_counter_module
 from app.utils.token_counter import TokenCounter, preload_token_counter
 
@@ -187,6 +189,27 @@ def test_serve_refuses_one_line_before_it_builds_any_model(empty_cache, hanging_
     assert error.startswith("Error: the token counter cannot start: the tiktoken encoding of the token counter cannot be loaded")
     assert "TIKTOKEN_CACHE_DIR" in error
     assert "Traceback" not in error
+
+
+async def test_a_command_that_runs_in_process_prints_the_cause_without_the_prefix_of_serve(
+    empty_cache, hanging_download, monkeypatch, capsys,
+):
+    """``axmem memory``, ``axmem call`` and ``axmem tools`` build the runtime themselves and print the cause as it is."""
+    monkeypatch.setattr(settings, "TIKTOKEN_LOAD_TIMEOUT_SECONDS", 0.3)
+    monkeypatch.setattr(bootstrap, "get_embedding_adapter", lambda: pytest.fail("the embedder was built first"))
+    monkeypatch.setattr(bootstrap, "get_reranker_adapter", lambda: pytest.fail("the reranker was built first"))
+
+    code = await _run_tool_command(build_parser().parse_args(["tools", "list", "--local"]))
+
+    captured = capsys.readouterr()
+    refusals = [line for line in captured.err.splitlines() if line.startswith("Error:")]
+    assert code == 1
+    assert len(refusals) == 1
+    assert refusals[0].startswith("Error: the tiktoken encoding of the token counter cannot be loaded")
+    assert "cannot start" not in refusals[0]  # only `serve` names the check that refused
+    assert "TIKTOKEN_CACHE_DIR" in refusals[0]
+    assert "Traceback" not in captured.err
+    assert captured.out == ""
 
 
 def test_a_hung_download_does_not_keep_the_process_from_ending(tmp_path):

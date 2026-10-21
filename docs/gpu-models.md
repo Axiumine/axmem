@@ -30,10 +30,11 @@ plan with (see [GPU memory](#gpu-memory)).
 
 The CUDA 13 runtime (`cuda-python`) and TensorRT (`tensorrt-cu13`, `tensorrt-cu13-bindings`,
 `tensorrt-cu13-libs`) are locked in `uv.lock`. They come from the NVIDIA package index
-(`https://pypi.nvidia.com`, declared in `pyproject.toml`), because the PyPI projects of the same
-names are placeholders. `tensorrt-cu13-libs` is a download of about 3.8 GB.
+(`https://pypi.nvidia.com`, declared in `pyproject.toml`), because on PyPI `tensorrt-cu13` and
+`tensorrt-cu13-libs` are placeholders (source packages that fetch the real files from that index while they build);
+only `tensorrt-cu13-bindings` is a real wheel there. `tensorrt-cu13-libs` is a download of about 3.8 GB.
 
-`uv sync`, `uv tool install .` and uv's install from a Git URL read that index from `pyproject.toml`. A built wheel cannot carry it: its metadata names the three packages with their pins and no index, so a wheel installed with pip or `uv tool install` needs `--extra-index-url https://pypi.nvidia.com`, which resolves all three to NVIDIA's files (the README lists the commands in [Installing the package](../README.md#installing-the-package)). Without the flag the PyPI placeholders are taken and build by fetching the same files, which needs `pypi.nvidia.com` during the install.
+`uv sync`, `uv tool install .` and uv's install from a Git URL read that index from `pyproject.toml`. A built wheel cannot carry it: its metadata names the three packages with their pins and no index, so a wheel installed with pip or `uv tool install` needs `--extra-index-url https://pypi.nvidia.com`, which resolves all three to NVIDIA's files (the README lists the commands in [Installing the package](../README.md#installing-the-package)). Without the flag the installer takes the two PyPI placeholders (`tensorrt-cu13`, `tensorrt-cu13-libs`), which build by fetching the NVIDIA files, so the install needs `pypi.nvidia.com` to be reachable.
 
 Only the driver belongs to the host. A driver older than R580 fails at start with the cause
 `driver`; no visible GPU (including `CUDA_VISIBLE_DEVICES=-1`) fails with `no-gpu`.
@@ -255,14 +256,20 @@ of its own, so on a host whose outbound traffic is dropped rather than refused (
 network namespace without a route) it would wait for the operating system's connect timeout (about two minutes on
 Linux defaults). The start-up therefore bounds the wait with `TIKTOKEN_LOAD_TIMEOUT_SECONDS` (default 30) and, when
 the data does not load in that time or the download fails, ends with exit code 1 and one line that names
-`TIKTOKEN_CACHE_DIR` and the pre-load command above:
+`TIKTOKEN_CACHE_DIR` and the pre-load command above. `serve` puts the name of the check in front of the cause:
 
 ```text
 Error: the token counter cannot start: the tiktoken encoding of the token counter cannot be loaded (no answer within 30 seconds, ...
 ```
 
-This applies to `serve` and to the commands that run the tools in process (`axmem memory ...`, `axmem call ...` without
-`AXMEM_SERVER`), which build the same runtime.
+The commands that run the tools in process (`axmem memory ...`, `axmem call ...` or `axmem tools ...` without
+`AXMEM_SERVER`) build the same runtime and refuse alike, with the same cause and no prefix:
+
+```text
+Error: the tiktoken encoding of the token counter cannot be loaded (no answer within 30 seconds, ...
+```
+
+A host without the data but with a working network downloads it within the limit and starts.
 
 Fully offline operation also needs a locally reachable Qdrant and authentication service, as
 applicable. The embeddings provider and the reranker are local in the default setup, so with the model

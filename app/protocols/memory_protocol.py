@@ -289,15 +289,17 @@ class MemoryRepository(Protocol):
     ) -> tuple[list[StoredMemory], UUID | None]:
         """Scan up to `limit` memories of `source` from the id `start`; return those `target` lacks or holds an older version of.
 
-        The second value is the id to continue from, or None when the scan reached the end of `source`.
+        The second value is the id to continue from, or None when the scan reached the end of `source`. A scan is complete
+        or it fails: a memory that is being rewritten is waited for, never left out.
         """
         ...
 
     async def copy_into(self, target: str, items: list[tuple[StoredMemory, list[float]]]) -> int:
-        """Write the memories with their new embeddings into `target`; return how many were written.
+        """Write the memories with their new embeddings into `target`; return how many of them `target` holds afterwards.
 
         A memory `target` does not have is created, one it has at an older version is replaced, and one it
-        has at the same or a newer version is left alone, so a copy can never overwrite a newer edit.
+        has at the same or a newer version is left alone, so a copy can never overwrite a newer edit. The count is
+        read back from `target`: a memory counts when it is there at the version written or a newer one.
         """
         ...
 

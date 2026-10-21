@@ -75,10 +75,12 @@ async def lose_the_collections(stack, live: str) -> None:
     assert not await stack.schema.live_exists()
 
 
-async def assert_as_backed_up(cluster, stack, repo, tenant, memories, wanted, extra, replication: int) -> None:
+async def assert_as_backed_up(
+    cluster, stack, repo, tenant, memories, wanted, extra, replication: int, shards: int = SHARDS,
+) -> None:
     live = await stack.schema.live_generation()
     for collection in (live, stack.schema.names.links):
-        wait_for_active_replicas(cluster, collection, SETTLE_SECONDS, replicas=SHARDS * replication)
+        wait_for_active_replicas(cluster, collection, SETTLE_SECONDS, replicas=shards * replication)
     restored = await stored(repo, tenant, memories)
     assert restored == wanted
     with pytest.raises(NotFoundError):

@@ -230,18 +230,23 @@ class QdrantStore:
         collection: str,
         ids: Sequence[UUID],
         *,
+        where: Where | None = None,
         with_payload: bool | list[str] = True,
         with_vectors: bool = False,
         quorum: bool = False,
     ) -> list[Point]:
-        """The points among ``ids`` that exist and that ``scope`` may see, in no particular order."""
+        """The points among ``ids`` that exist, that ``scope`` may see and that match ``where``, in no particular order.
+
+        With ``quorum`` a point is missing from the answer while the replicas asked hold it in different versions,
+        although it exists: a read that must not miss a point uses ``get_agreed``.
+        """
         wanted = list(dict.fromkeys(ids))
         if not wanted:
             return []
         return await self.scroll(
             scope,
             collection,
-            Where().also(has_ids(wanted)),
+            (where or Where()).also(has_ids(wanted)),
             limit=len(wanted),
             with_payload=with_payload,
             with_vectors=with_vectors,
@@ -254,30 +259,33 @@ class QdrantStore:
         collection: str,
         ids: Sequence[UUID],
         *,
+        where: Where | None = None,
         with_payload: bool | list[str] = True,
         with_vectors: bool = False,
     ) -> list[Point]:
-        """The points among ``ids`` that exist, as a majority of the replicas hold them.
+        """The points among ``ids`` that exist and match ``where``, as a majority of the replicas hold them, in the order of ``ids``.
 
         A majority read returns a point only when the replicas it asks hold the same version of it, so a point that is
         being rewritten at that moment is missing from the answer although it exists. A point that the majority read
-        does not return and that a plain read finds is that case: the read is repeated, waiting a little longer each
-        time, and gives up with ``ConflictError`` when the replicas never agree. A point no read finds does not exist.
+        does not return and that a plain read finds is that case: only those points are asked for again, waiting a
+        little longer each time, and the read gives up with ``ConflictError`` when the replicas never agree about them.
+        A point no read finds does not exist.
 
         Raises:
             ConflictError: If the replicas kept holding different versions of a point
         """
         wanted = list(dict.fromkeys(ids))
+        agreed: dict[UUID, Point] = {}
         missing = wanted
         wait = AGREEMENT_WAIT_SECONDS
         for attempt in range(AGREEMENT_ATTEMPTS):
-            found = await self.get(
-                scope, collection, wanted, with_payload=with_payload, with_vectors=with_vectors, quorum=True,
-            )
-            agreed = {point.id for point in found}
-            missing = [point_id for point_id in wanted if point_id not in agreed]
-            if not missing or not await self.get(scope, collection, missing, with_payload=False):
-                return found
+            for point in await self.get(
+                scope, collection, missing, where=where, with_payload=with_payload, with_vectors=with_vectors, quorum=True,
+            ):
+                agreed[point.id] = point
+            missing = [point_id for point_id in missing if point_id not in agreed]
+            if not missing or not await self.get(scope, collection, missing, where=where, with_payload=False):
+                return [agreed[point_id] for point_id in wanted if point_id in agreed]
             if attempt + 1 < AGREEMENT_ATTEMPTS:
                 await asyncio.sleep(wait)
                 wait *= 2
@@ -285,6 +293,40 @@ class QdrantStore:
             f"The replicas of {collection} kept holding different versions of {', '.join(map(str, missing))}; "
             "nothing was changed, try again",
         )
+
+    async def page(
+        self,
+        scope: Scope,
+        collection: str,
+        where: Where | None = None,
+        *,
+        limit: int,
+        start_from: UUID | None = None,
+        with_payload: bool | list[str] = True,
+        with_vectors: bool = False,
+        quorum: bool = False,
+    ) -> tuple[list[Point], UUID | None]:
+        """Up to ``limit`` points matching the filter by ascending id from ``start_from`` (inclusive), and the id to continue from.
+
+        The second value is None when the scan reached the end. With ``quorum`` the page is complete: the ids come from
+        a plain read, which answers from one replica and drops nothing, and the points themselves from a majority of
+        the replicas, waiting for the ones the majority read left out (``get_agreed``). A majority scan alone omits
+        the points that are being rewritten, and a page that was cut short looks like the end of the scan.
+        """
+        if not quorum:
+            scanned = await self.scroll(
+                scope, collection, where, limit=limit + 1, start_from=start_from,
+                with_payload=with_payload, with_vectors=with_vectors,
+            )
+            return scanned[:limit], scanned[limit].id if len(scanned) > limit else None
+        census = await self.scroll(
+            scope, collection, where, limit=limit + 1, start_from=start_from, with_payload=False,
+        )
+        listed = [point.id for point in census[:limit]]
+        points = await self.get_agreed(
+            scope, collection, listed, where=where, with_payload=with_payload, with_vectors=with_vectors,
+        )
+        return points, census[limit].id if len(census) > limit else None
 
     async def iterate(
         self,
@@ -297,18 +339,23 @@ class QdrantStore:
         with_vectors: bool = False,
         quorum: bool = False,
     ) -> AsyncIterator[Point]:
-        """Every point matching the filter, by ascending id, ``batch`` at a time (``quorum``: each page from a majority)."""
+        """Every point matching the filter, by ascending id, ``batch`` at a time.
+
+        With ``quorum`` each point comes from a majority of the replicas and the scan is complete (see ``page``): every
+        point that exists throughout the scan is returned once, and a scan that cannot be complete raises
+        ``ConflictError`` instead of leaving a point out. A point created or deleted while the scan runs may or may not
+        be returned, and one that is rewritten comes out in a version the replicas held during the scan.
+        """
         start: UUID | None = None
         while True:
-            points = await self.scroll(
-                scope, collection, where, limit=batch + 1, start_from=start,
+            points, start = await self.page(
+                scope, collection, where, limit=batch, start_from=start,
                 with_payload=with_payload, with_vectors=with_vectors, quorum=quorum,
             )
-            for point in points[:batch]:
+            for point in points:
                 yield point
-            if len(points) <= batch:
+            if start is None:
                 return
-            start = points[batch].id
 
     async def count(self, scope: Scope, collection: str, where: Where | None = None) -> int:
         flt = scoped(scope, where)

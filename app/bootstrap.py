@@ -27,6 +27,7 @@ from app.config.settings import (
 )
 from app.exceptions import (
     ClusterInconsistentError,
+    ConflictError,
     EmbeddingUnavailableError,
     OperatorCommandError,
     QdrantStartupError,
@@ -208,7 +209,7 @@ def operator_failure(exc: BaseException) -> str | None:
         (
             (
                 TensorRTError, QdrantStartupError, ClusterInconsistentError, OperatorCommandError,
-                TokenizerUnavailableError,
+                TokenizerUnavailableError, ConflictError,
             ),
             str,
         ),

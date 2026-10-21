@@ -245,7 +245,9 @@ class QdrantBackupAdapter:
                     files={"snapshot": (snapshot.name, handle, "application/octet-stream")},
                 )
         if response.status_code >= httpx.codes.BAD_REQUEST:
-            raise OperatorCommandError(f"Qdrant refused the snapshot {snapshot.name}: HTTP {response.status_code}")
+            raise OperatorCommandError(
+                f"Qdrant refused the snapshot {snapshot.name}: HTTP {response.status_code}{_reason_of(response)}",
+            )
 
 
     async def _restore_file(self, snapshot: Path, collection: str, index: int) -> None:
@@ -299,6 +301,15 @@ class QdrantBackupAdapter:
                 if time.monotonic() >= deadline:
                     return ", ".join(states) or "none reported"
                 await asyncio.sleep(REPLICA_POLL_SECONDS)
+
+
+def _reason_of(response: httpx.Response) -> str:
+    """What Qdrant said was wrong, as `` (<error>)`` for the message of a refusal, or nothing when it said nothing readable."""
+    try:
+        error = response.json()["status"]["error"]
+    except (ValueError, KeyError, TypeError):
+        return ""
+    return f" ({str(error)[:300]})" if error else ""
 
 
 def _manifest_files(manifest_path: Path) -> list[Any]:

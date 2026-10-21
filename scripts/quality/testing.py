@@ -18,6 +18,9 @@ from .core import (
 
 CODE_PREFIXES = ("app/", "tests/", "main.py", "scripts/", "test_harness/")
 PYTEST = ["-q", "-p", "no:cacheprovider"]
+# The cluster suite starts real Qdrant nodes (three, four, and a second three) and waits for replicas to settle; it
+# outgrew the half hour every other gate gets
+E2E_QDRANT_TIMEOUT_SECONDS = 10800
 
 
 def check_tests(argv: list[str], **kwargs) -> tuple[bool, str]:
@@ -59,6 +62,7 @@ def gate_e2e_qdrant(_ctx: Ctx) -> tuple[bool, str]:
     return check_tests(
         [*venv_tool("pytest"), "tests/cluster", "-m", "cluster", *PYTEST,
          "--cov", "--cov-branch", "--cov-append", "--cov-report=", "--cov-fail-under=0"],
+        timeout=E2E_QDRANT_TIMEOUT_SECONDS,
     )
 
 

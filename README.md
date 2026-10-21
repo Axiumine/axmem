@@ -143,7 +143,7 @@ and the TensorRT reranker. The `/health` route answers without a token once both
 
 ### Installing the package
 
-Axmem is installed from a checkout, a Git URL or a built wheel. The package pins three TensorRT packages (`tensorrt-cu13`, `tensorrt-cu13-bindings`, `tensorrt-cu13-libs`), and a wheel cannot say where they live: NVIDIA's index (`https://pypi.nvidia.com`) holds the real files, and the PyPI projects of the same names are placeholders that fetch the 3.8 GB of libraries from that index while they are built. `--extra-index-url` points the install at the real files (no other package of Axmem is on that index, so everything else still comes from PyPI):
+Axmem is installed from a checkout, a Git URL or a built wheel. The package pins three TensorRT packages (`tensorrt-cu13`, `tensorrt-cu13-bindings`, `tensorrt-cu13-libs`), and a wheel cannot say where they live: NVIDIA's index (`https://pypi.nvidia.com`) holds the real files of all three. On PyPI, `tensorrt-cu13` and `tensorrt-cu13-libs` are placeholders (source packages that fetch the 3.8 GB of libraries from that index while they are built); only `tensorrt-cu13-bindings` is a real wheel there. `--extra-index-url` points the install at NVIDIA's files (no other package of Axmem is on that index, so everything else still comes from PyPI):
 
 | Install from | Command |
 |---|---|
@@ -153,7 +153,7 @@ Axmem is installed from a checkout, a Git URL or a built wheel. The package pins
 | a built wheel, with pip | `pip install --extra-index-url https://pypi.nvidia.com dist/axmem-*.whl` |
 | a Git URL, with pip | `pip install --extra-index-url https://pypi.nvidia.com "git+https://github.com/Axiumine/axmem"` |
 
-The environment needs Python 3.14. Once a release is on PyPI, the same flag applies (`uv tool install --extra-index-url https://pypi.nvidia.com axmem`); without it the placeholders still install, but only while `pypi.nvidia.com` is reachable during the install.
+The environment needs Python 3.14. Once a release is on PyPI, the same flag applies (`uv tool install --extra-index-url https://pypi.nvidia.com axmem`); without it the two placeholders still install, but only while `pypi.nvidia.com` is reachable during the install.
 
 ### Option 2: Native setup for a shared server
 

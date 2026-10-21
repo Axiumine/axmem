@@ -17,7 +17,7 @@ from qdrant_client import models as qm
 from qdrant_client.http.exceptions import ResponseHandlingException, UnexpectedResponse
 
 from app.config.settings import EMBEDDING_PROVIDERS, canonical_choice, settings
-from app.exceptions import QdrantStartupError
+from app.exceptions import EmbedderChangedError, QdrantStartupError
 from app.repositories.qdrant.client import NodePool, describe_request_failure
 
 logger = logging.getLogger(__name__)
@@ -126,6 +126,8 @@ class QdrantSchema:
         self.pool = pool
         self.names = names or CollectionNames(settings.QDRANT_COLLECTION_PREFIX)
         self.dimensions = dimensions or settings.EMBEDDING_DIMENSIONS
+        # The generation whose recorded embedder was found to be this process's, so a write asks Qdrant once per generation
+        self._confirmed: str | None = None
 
     # ---- start-up ---------------------------------------------------------------------------------
 
@@ -220,7 +222,7 @@ class QdrantSchema:
         taken to be the configured one and records it now.
         """
         wanted = embedder_identity(self.dimensions)
-        recorded = ((await client.get_collection(generation)).config.metadata or {}).get(EMBEDDER_KEY)
+        recorded = await self._recorded_embedder(client, generation)
         if recorded is None:
             await client.update_collection(generation, metadata={EMBEDDER_KEY: wanted})
             logger.warning(
@@ -247,6 +249,33 @@ class QdrantSchema:
         if generation is None:
             raise QdrantStartupError(f"The alias {self.names.live} does not exist yet; start the server once to create it")
         return generation
+
+    async def writable_generation(self) -> str:
+        """Name of the live generation, once it is known to hold vectors of the embedder this process embeds with.
+
+        ``ensure`` checks the embedder when a process starts. A server that keeps running while ``axmem re-embed`` moves
+        the alias to a generation of another embedder would otherwise go on writing vectors of the old model into it, and
+        the stored vectors of two models cannot be compared. The write paths ask for the generation here, which looks at
+        the record of a generation once, the first time it is live for this process, and raises ``EmbedderChangedError``
+        when it names another embedder. A generation that records none is taken to be the configured one, as in ``ensure``.
+        """
+        generation = await self.live_generation()
+        if generation != self._confirmed:
+            recorded = await self._read(lambda client: self._recorded_embedder(client, generation))
+            wanted = embedder_identity(self.dimensions)
+            if recorded is not None and recorded != wanted:
+                raise EmbedderChangedError(
+                    f"The memory collection {generation} now holds vectors made with {_describe_identity(recorded)}, but this "
+                    f"server embeds with {_describe_identity(wanted)}: `axmem re-embed` switched the memories to another "
+                    "embedder while the server was running. Nothing was written. Restart the server with the settings of the "
+                    "new embedder (and stop every server before the next `axmem re-embed`)",
+                )
+            self._confirmed = generation
+        return generation
+
+    @staticmethod
+    async def _recorded_embedder(client: AsyncQdrantClient, generation: str) -> Any:
+        return ((await client.get_collection(generation)).config.metadata or {}).get(EMBEDDER_KEY)
 
     async def live_exists(self) -> bool:
         return await self._read(lambda client: self._generation_behind(client, self.names.live)) is not None

@@ -87,8 +87,8 @@ unreachable or the pull fails, ends with exit code 2 and the cause, it never ski
 Setting `AXMEM_TEST_QDRANT_URL` (and `AXMEM_TEST_QDRANT_API_KEY`) points the integration and end-to-end suites at a server that
 already runs, for example a Qdrant you started yourself; the tests then keep to collections of their own under a
 unique prefix and delete them afterwards. The single node keeps its data in memory (`--tmpfs`), because payload-index creation fsyncs and a slow Docker storage driver turned
-each test's setup into seconds; the cluster nodes use the container disk, since their tests stop and start nodes with their data.
-The cluster suite always starts its own three nodes. These gates do not report `SKIP` without a GPU or without Docker:
+each test's setup into seconds; the nodes of the shared cluster use the container disk, since their tests stop and start nodes with their data (the four-node and the second cluster of the restore tests keep theirs in memory, since no test there stops a node).
+The cluster suite always starts its own nodes: three for the shared cluster, and a four-node cluster and a second three-node cluster for the restore tests of `tests/cluster/test_cluster_backup_restore_other_clusters.py`. These gates do not report `SKIP` without a GPU or without Docker: The `e2e-qdrant` gate gets 3 hours instead of the 30 every other gate gets (`E2E_QDRANT_TIMEOUT_SECONDS` in `scripts/quality/testing.py`), because the suite starts three clusters and waits for their replicas.
 they fail. See
 [GPU models](gpu-models.md) for the host requirements. The static gates (ruff, imports, bandit, semgrep,
 vulture, radon, mypy, pylint) and `tests/architecture` need no GPU.
@@ -118,7 +118,7 @@ name, split across jobs (`stage ci` runs the same set in one go on a developer m
 | `quality.yml` job `static` | ruff, imports, bandit, semgrep (with `p/python p/security-audit` added), vulture, radon-cc, radon-mi, mypy, pylint |
 | `quality.yml` job `trivy` | `trivy`, with the pinned release binary downloaded and checked against its SHA-256 (no Docker image) |
 | `ci.yml` job `lint` | `tests/architecture` (the import contracts, the rule proofs and the rules of these workflow files) and ruff |
-| `ci.yml` job `smoke-test` | wheel build smoke test: the locked dependencies (`uv sync --locked --no-dev --no-install-project`), then the wheel on top (`uv pip install --no-deps`), then `axmem --help` from another directory; a second step resolves the wheel's own metadata, where the TensorRT packages have no index and PyPI only holds placeholders, with the `--extra-index-url https://pypi.nvidia.com` that the README documents (`uv pip compile`, nothing is downloaded) and checks that the three packages come from NVIDIA's index, the libraries as a wheel |
+| `ci.yml` job `smoke-test` | wheel build smoke test: the locked dependencies (`uv sync --locked --no-dev --no-install-project`), then the wheel on top (`uv pip install --no-deps`), then `axmem --help` from another directory; a second step resolves the wheel's own metadata, where the TensorRT packages have no index and PyPI holds placeholders for two of them, with the `--extra-index-url https://pypi.nvidia.com` that the README documents (`uv pip compile`, nothing is downloaded) and checks that the three packages come from NVIDIA's index, the libraries as a wheel |
 | `publish.yml` job `publish` | builds the package and publishes it to PyPI when a release is published |
 
 Every `uv sync` of these workflows uses `--locked` and leaves out `tensorrt-cu13-libs` (`--no-install-package tensorrt-cu13-libs`), the
@@ -175,7 +175,7 @@ and without Docker and check that each ends the run.
 | `snapshots` | syrupy snapshot tests (`-m snapshot`): CLI argument tree, settings defaults, Qdrant collection layout and payload types, MCP meta-tool signatures and tool catalogue, HTTP route table | `tests/integration/test_snapshots.py`, `tests/e2e/test_snapshots_e2e.py` |
 | `tests-fast` | `tests/architecture` and `tests/integration`, stopping at the first failure | `pytest.ini` |
 | `tests` | architecture + integration + end-to-end on one Qdrant node with branch coverage (erases previous coverage data first) | `[tool.coverage.*]` |
-| `e2e-qdrant` | `tests/cluster` (`-m cluster`) against a real three-node Qdrant cluster (replication factor 3, write consistency 2, strong ordering, API key and internal authentication), appending to the coverage data (fails without a GPU or without Docker) | `tests/cluster/conftest.py`, `tests/qdrant_support.py` |
+| `e2e-qdrant` | `tests/cluster` (`-m cluster`) against a real three-node Qdrant cluster (replication factor 3, write consistency 2, strong ordering, API key and internal authentication; the restore tests also start a four-node and a second three-node cluster), appending to the coverage data (fails without a GPU or without Docker) | `tests/cluster/conftest.py`, `tests/qdrant_support.py` |
 | `coverage` | combined **100 %** line and branch coverage of `app` and `main.py`, from the single-node and cluster runs together | `[tool.coverage.report]` |
 | `memray` | memory budgets (`@pytest.mark.limit_memory`) via pytest-memray, run as `pytest tests/e2e -m memory --memray` (Linux/macOS only) | `tests/e2e/test_memory_budget_e2e.py` |
 | `trivy` | HIGH/CRITICAL vulnerabilities (fixed ones), secrets and misconfigurations (`fs` scan); the binary named by `TRIVY_BIN` or on `PATH`, else the pinned Docker image; fails when neither is available | `trivy.yaml`, `.trivyignore` |
