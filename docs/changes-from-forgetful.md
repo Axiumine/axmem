@@ -2,7 +2,7 @@
 
 Axmem is maintained by Axiumine. It is derived from [Forgetful](https://github.com/ScottRBK/forgetful) by
 Scott Raisbeck (MIT), forked at upstream commit `6d0199ed` (2026-10-18), and keeps its licence notice in
-[LICENCE.md](../LICENCE.md). This page records every deliberate difference and the reason for it.
+[LICENSE-FORGETFUL-MIT.md](../LICENSE-FORGETFUL-MIT.md). This page records every deliberate difference and the reason for it.
 [CHANGELOG.md](../CHANGELOG.md) lists the same changes by section. Both are updated in the commit that changes
 the behaviour (see the rule in [AGENTS.md](../AGENTS.md)).
 
@@ -37,6 +37,7 @@ cross-encoder reranking.
 | Area | Change | Why | Status |
 |---|---|---|---|
 | Identity | Renamed to Axmem under Axiumine; README rewritten, Forgetful credited, MIT notice kept | A separate product with its own direction | Done (`b121d350`) |
+| License | MIT to AGPL-3.0-only; Forgetful's MIT notice kept unchanged in `LICENSE-FORGETFUL-MIT.md`; the licenses of the default models and of the NVIDIA libraries are listed in [gpu-models.md](gpu-models.md#licenses-of-the-models-and-libraries) | Axmem runs as a network service, and AGPL section 13 keeps a modified, hosted version open to its users. The MIT License of Forgetful allows the derived work to be released under the AGPL while its notice stays; the models and the NVIDIA libraries are fetched by the user and are not shipped | Done |
 | Rename | Package, console script, CLI, environment variables (`AXMEM_SERVER`, `AXMEM_TOKEN`, `AXMEM_SCOPES`), config and data directories, MCP server name, the three meta-tools (`discover_axmem_tools`, `how_to_use_axmem_tool`, `execute_axmem_tool`), skills, semgrep rule ids, harness names, docs and snapshots all say `axmem`; the old names are not read; the upstream-authored `org_knowledge_proposal.md` and the upstream plugin section of the connectivity guide are removed; the architecture image of the upstream project is replaced by a Mermaid diagram | A product that shares a name with its upstream cannot be installed beside it, and a client config, an environment or a log line would not say which of the two it meant | Done (the commit titled "rename forgetful to axmem") |
 | Python | 3.14 only; `compat` gate removed; ruff target py314 | One supported version removes the matrix and a redundant gate | Done (`1eea81a5`, `c78d3f98`) |
 | Quality | Gate orchestrator, Git hooks, 100 % branch coverage threshold (proposed upstream as #163) | One orchestrator runs every check the same way by hand and in the Git hooks; hosted CI runs only its static gates, and the pre-push hook runs the rest | Done |

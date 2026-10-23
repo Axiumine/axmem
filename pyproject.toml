@@ -4,11 +4,11 @@ dynamic = ["version"]
 description = "MCP Server for AI Agent Memory - persistent, semantically-searchable memory for AI agents"
 readme = "README.md"
 requires-python = ">=3.14"
-license = {text = "MIT"}
+license = "AGPL-3.0-only AND MIT"
+license-files = ["LICENSE", "LICENSE-FORGETFUL-MIT.md"]
 authors = [{name = "Scott", email = "scott@example.com"}]
 classifiers = [
     "Programming Language :: Python :: 3.14",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: POSIX :: Linux",
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
@@ -99,7 +99,7 @@ version-file = "app/_version.py"
 packages = ["app", "main.py"]
 
 [tool.hatch.build.targets.sdist]
-include = ["app", "main.py", "README.md", "LICENSE"]
+include = ["app", "main.py", "README.md", "LICENSE", "LICENSE-FORGETFUL-MIT.md"]
 
 [tool.importlinter]
 root_package = "app"

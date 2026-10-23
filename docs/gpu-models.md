@@ -336,3 +336,23 @@ The message is printed as `Error: the embedder cannot start: <message>` or
 table but does not print its name. The server does this before it
 binds a port, the embedder first; the `axmem` CLI in local mode and `axmem --re-embed`
 report the same error.
+
+## Licenses of the models and libraries
+
+Axmem's code is released under the AGPL-3.0 (see the [README](../README.md#license)). The models and the NVIDIA
+libraries below are not part of that release: the repository and the wheel hold none of them, and each is fetched by the
+person who installs or starts Axmem, under its own license. Checked on 2026-10-23, at the revisions Axmem pins.
+
+| Component | Fetched from | License | Note |
+|---|---|---|---|
+| Embedder `BAAI/bge-small-en-v1.5` (`onnx/model.onnx`, `tokenizer.json`) | Hugging Face, pinned revision | MIT (model card) | The `Xenova/bge-small-en-v1.5` copy declares no license of its own and names the BAAI model as its base |
+| Reranker `Xenova/ms-marco-MiniLM-L-12-v2` (`onnx/model.onnx`, `tokenizer.json`) | Hugging Face, pinned revision | None declared; the model it converts, `cross-encoder/ms-marco-MiniLM-L12-v2`, declares Apache-2.0 | Trained on MS MARCO, whose terms limit it to non-commercial research (see below) |
+| TensorRT (`tensorrt-cu13`, `tensorrt-cu13-bindings`, `tensorrt-cu13-libs`) | NVIDIA package index | Proprietary (NVIDIA) | Installed by `uv sync`; an image or wheel of your own that contains them needs NVIDIA's terms |
+| `cuda-python` | Installed by `uv sync` | Apache-2.0 | |
+| tiktoken | PyPI (code); OpenAI's public storage (the `cl100k_base` vocabulary, at first use) | MIT (code) | The vocabulary is fetched at run time and is not in this repository |
+
+The default reranker is the one to look at before commercial use. Its model card says Apache-2.0, but it was trained on
+MS MARCO, and Microsoft's terms for that dataset say it is "intended for non-commercial research purposes only". The
+model card does not settle whether that carries over to the weights. If it matters to you, set
+`RERANKING_ENABLED=false`, use `RERANKING_PROVIDER=HTTP` with a service you are licensed to use, or choose another
+`RERANKING_MODEL` whose license you have checked. The AGPL does not decide this: it covers Axmem's code only.

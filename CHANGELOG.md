@@ -96,6 +96,13 @@ without the mark, with the commit that landed it, in the commit that lands it.
 
 ### Changed
 
+- **License:** Axmem is released under the GNU Affero General Public License, version 3 (`AGPL-3.0-only`), no longer under
+  the MIT License. The MIT License of Forgetful (Copyright (c) 2025 Scott Raisbeck) allows this; its notice moved unchanged
+  to `LICENSE-FORGETFUL-MIT.md` (it was `LICENCE.md`) and the AGPL text is in `LICENSE`. `pyproject.toml` declares
+  `AGPL-3.0-only AND MIT` (PEP 639) with both files as `license-files`, and the sdist include list now names a `LICENSE` that
+  exists (it named a file that did not). The models and the NVIDIA libraries are fetched by the user and are not part of the
+  release; [docs/gpu-models.md](docs/gpu-models.md) lists their licenses, including that the default reranker was trained on
+  MS MARCO, whose terms say non-commercial research only.
 - Project renamed to Axmem under the Axiumine organisation; README rewritten, Forgetful credited, MIT notice
   kept (`b121d350`). The package, CLI and environment variables were renamed afterwards, see the rename entry below.
 - Python 3.14 is the only supported version: `requires-python`, classifiers, tool targets, CI, Dockerfiles and Nix
@@ -199,7 +206,7 @@ without the mark, with the commit that landed it, in the commit that lands it.
     names (`SERVICE_NAME`, `SERVICE_DESCRIPTION`, the `AXMEM_*` settings, the CLI program name, the meta-tool names and
     the example values).
   - Docs: README, `architecture.md`, `docs/`, `skills/` and the environment reference use the new names. The word
-    Forgetful stays only in the README attribution, `LICENCE.md`, this history, `docs/changes-from-forgetful.md` (and
+    Forgetful stays only in the README attribution, `LICENSE-FORGETFUL-MIT.md`, this history, `docs/changes-from-forgetful.md` (and
     links to it). The architecture image of the upstream project is replaced by a Mermaid diagram in the README
     (the two `Forgetful Architecture` images are deleted). `AGENTS.md`
     describes the Qdrant test suites instead of the SQLite and PostgreSQL ones, and its GitNexus section no

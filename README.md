@@ -2,7 +2,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/python-3.14-blue" alt="Python 3.14">
-  <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
+  <img src="https://img.shields.io/badge/license-AGPL--3.0-blue" alt="License: AGPL-3.0">
   <img src="https://img.shields.io/badge/MCP-server-purple" alt="MCP">
   <a href="https://github.com/jlowin/fastmcp">
     <img src="https://img.shields.io/badge/FastMCP-powered-orange" alt="FastMCP">
@@ -486,8 +486,14 @@ Before changing code, read the [architecture overview](architecture.md).
 
 ## License
 
-Axmem is released under the MIT License - see [LICENCE.md](LICENCE.md).
+Axmem is released under the [GNU Affero General Public License, version 3](LICENSE) (`AGPL-3.0-only`). If you
+modify Axmem and let others use it over a network, section 13 of the license requires you to offer those users the
+source code of your modified version.
 
-It is derived from [Forgetful](https://github.com/ScottRBK/forgetful), Copyright (c) 2025 Scott Raisbeck,
-also released under the MIT License. The original copyright and permission notice is kept unchanged in
-[LICENCE.md](LICENCE.md), as the license requires.
+It is derived from [Forgetful](https://github.com/ScottRBK/forgetful), Copyright (c) 2025 Scott Raisbeck, which is
+released under the MIT License. The original copyright and permission notice is kept unchanged in
+[LICENSE-FORGETFUL-MIT.md](LICENSE-FORGETFUL-MIT.md), as that license requires; the MIT License allows the derived
+work to be released under the AGPL.
+
+The models and the NVIDIA libraries that Axmem uses are not part of this release and have licenses of their own: see
+[Licenses of the models and libraries](docs/gpu-models.md#licenses-of-the-models-and-libraries).
