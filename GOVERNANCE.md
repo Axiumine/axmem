@@ -7,7 +7,7 @@ do what, and what happens if the lead maintainer is not available. The people ar
 ## Roles
 
 * **Lead maintainer** (owner). Decides what goes into the project and what does not, reviews and
-  merges changes, makes releases (see [docs/contributors.md](docs/contributors.md#creating-a-release)),
+  merges changes, makes releases (see [docs/release.md](docs/release.md)),
   triages security reports (see [CONTRIBUTING.md](CONTRIBUTING.md#ways-to-contribute)) and answers issues.
 * **Co-owner and successor.** Has the same access to the GitHub organization and repository as the lead
   maintainer (access to the PyPI project is added separately). Keeps the project running if the lead

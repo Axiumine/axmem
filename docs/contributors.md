@@ -325,18 +325,18 @@ here: they need the GPU, Docker or a token and run in the `pre-push` hook. See [
 
 ### `publish.yml` - PyPI Publication
 
-**Triggers**: A published GitHub release
+**Triggers**: `workflow_dispatch` on a release tag `v<version>`, which `scripts/release-pypi.sh` starts after its guard; a
+GitHub release made by hand starts nothing
 
-**Purpose**: Build the package and publish it to PyPI
+**Purpose**: Verify the files that `release.yml` signed (digests, cosign identity, the release guard, `dist-check`), then,
+after the reviewers of the environment `pypi` approve, publish them to PyPI by trusted publishing. It builds nothing and
+holds no token.
 
 ---
 
 ## Creating a Release
 
-1. Commit your changes to `main` branch
-2. Create and push a version tag:
-   ```bash
-   git tag v0.1.0
-   git push origin v0.1.0
-   ```
-3. Publish a GitHub release for the tag; `publish.yml` then builds the package and publishes it to PyPI
+There is one route, and it is a script: `scripts/release-pypi.sh <version>` builds, tags and signs the version, dispatches
+`publish.yml` and checks what PyPI serves. Do not tag by hand and do not publish a GitHub release by hand: a hand-made
+release publishes nothing, and a tag pushed by hand starts `release.yml` without the release commit and the manifest that it
+needs. The setup, the steps and what to do when one stops are in [Releasing Axmem](release.md).

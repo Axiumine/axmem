@@ -27,7 +27,12 @@ GPU_OR_DOCKER_WORDS = re.compile(
     r"docker|nvidia-smi|tests/(integration|e2e|cluster)|\bpytest\b.*\s-m\s+(cluster|memory|snapshot)|--memray|mutmut|MUTATION|qodana",
     re.IGNORECASE,
 )
-JOBS_OF = {"ci.yml": {"lint", "smoke-test"}, "quality.yml": {"static", "trivy"}, "publish.yml": {"publish"}}
+JOBS_OF = {
+    "ci.yml": {"lint", "smoke-test"},
+    "quality.yml": {"static", "trivy"},
+    "publish.yml": {"verify", "publish"},
+    "release.yml": {"sign-artefacts", "provenance-artefacts"},
+}
 
 
 def _load(path):
@@ -41,11 +46,20 @@ def _jobs():
 
 
 def _steps():
-    return [(workflow, name, step) for workflow, name, job in _jobs() for step in job["steps"]]
+    return [(workflow, name, step) for workflow, name, job in _jobs() for step in job.get("steps", [])]
 
 
-CHECKED = [path for path in WORKFLOWS if {"push", "pull_request"} & set(_load(path)["triggers"])]
+def _runs_on_a_branch_or_a_pull_request(path):
+    triggers = _load(path)["triggers"]
+    return "pull_request" in triggers or "branches" in (triggers.get("push") or {})
+
+
+# The workflows that check the code of a branch or of a pull request; release.yml runs on a release tag only.
+CHECKED = [path for path in WORKFLOWS if _runs_on_a_branch_or_a_pull_request(path)]
+# A job of a reusable workflow (`uses`) has no runner and no steps of its own.
+RUNNING = [(workflow, name, job) for workflow, name, job in _jobs() if "uses" not in job]
 JOB_IDS = [f"{workflow}:{name}" for workflow, name, _ in _jobs()]
+RUNNING_IDS = [f"{workflow}:{name}" for workflow, name, _ in RUNNING]
 STEP_IDS = [f"{workflow}:{name}:{number}" for number, (workflow, name, _) in enumerate(_steps())]
 INSTALLS = [(workflow, name, step) for workflow, name, step in _steps() if "uv sync" in step.get("run", "")]
 INSTALL_IDS = [f"{workflow}:{name}" for workflow, name, _ in INSTALLS]
@@ -69,7 +83,7 @@ def test_the_jobs_of_the_removed_gpu_workflow_and_suites_are_gone():
     assert names.isdisjoint({"test", "e2e", "snapshots", "coverage", "memory", "qodana", "mutation"})
 
 
-@pytest.mark.parametrize(("workflow", "name", "job"), _jobs(), ids=JOB_IDS)
+@pytest.mark.parametrize(("workflow", "name", "job"), RUNNING, ids=RUNNING_IDS)
 def test_every_job_runs_on_a_hosted_runner(workflow, name, job):
     runner = job["runs-on"]
 
@@ -181,12 +195,22 @@ def test_the_smoke_test_runs_the_package_gate_once_the_environment_that_it_runs_
     )
 
 
-def test_the_publish_workflow_checks_the_files_it_uploads_between_the_build_and_the_upload():
-    names = _step_names("publish.yml", "publish")
+def test_the_publish_workflow_proves_the_files_it_uploads_before_the_job_that_uploads_them_and_uploads_last():
+    names = _step_names("publish.yml", "verify")
+    order = [
+        "Download the signed release files",
+        "Verify the digests against the manifest",
+        "Verify the signatures against release.yml at the tag",
+        "Run the release guard on the tag commit",
+        "Check what the package holds",
+        "Summarise what will be published",
+    ]
 
-    assert names.index("Build package") < names.index("Check what the package holds") < names.index("Publish to PyPI")
-    assert _step("publish.yml", "publish", "Check what the package holds")["run"] == (
-        "uv run --no-project --python 3.14 python -m scripts.quality dist-check dist"
+    assert [names.index(name) for name in order] == sorted(names.index(name) for name in order)
+    assert _step_names("publish.yml", "publish")[-1] == "Publish to PyPI"
+    assert _load(WORKFLOWS_DIR / "publish.yml")["jobs"]["publish"]["needs"] == "verify"
+    assert _step("publish.yml", "verify", "Check what the package holds")["run"] == (
+        "python3 -m scripts.quality dist-check dist"
     )
 
 
@@ -227,3 +251,12 @@ def test_the_trivy_job_installs_the_version_that_the_gate_pins_and_hands_the_gat
     assert re.fullmatch(r"[0-9a-f]{64}", job["env"]["TRIVY_SHA256"])
     assert "sha256sum --check" in script
     assert 'TRIVY_BIN=$RUNNER_TEMP/trivy/trivy" >> "$GITHUB_ENV"' in script  # without it the gate runs a Docker image
+
+
+PINNED_ACTION = re.compile(r"[\w.-]+/[\w./-]+@[0-9a-f]{40}")
+
+
+@pytest.mark.parametrize(("workflow", "name", "step"), [row for row in _steps() if "uses" in row[2]], ids=lambda row: str(row)[:40])
+def test_every_action_of_every_workflow_is_a_commit_not_a_tag_that_can_move(workflow, name, step):
+    """The green status of ci.yml and quality.yml is a condition of the release guard, and a tag run restores their caches."""
+    assert PINNED_ACTION.fullmatch(step["uses"]), f"{workflow}: {step['uses']} is not pinned to a 40-hex commit"

@@ -30,6 +30,21 @@ without the mark, with the commit that landed it, in the commit that lands it.
   license metadata or license files that differ from `pyproject.toml`. It runs in `pre-commit` (when a staged file goes into
   the package), in `pre-push`, in the `ci` stage and in the `smoke-test` job of `ci.yml`; `publish.yml` runs `dist-check` on
   the files it uploads, before the upload.
+- Release to PyPI: `scripts/release-pypi.sh <version>` builds, tests, tags and signs a version, and dispatches the upload
+  last, after `scripts/release/guard.py` has proved that the release commit is pushed and green in CI, the tag is on the
+  remote, the `release.yml` run signed the files (cosign, keyless, one `.sigstore.json` bundle each, SLSA-3 provenance) and
+  the signed files to publish are byte for byte the `release-digests.json` committed in the release commit. The release tag
+  is a plain `v<version>`. The upload is made by `publish.yml` on `workflow_dispatch` on that tag, by trusted publishing in
+  the GitHub environment `pypi` (tag rule `v*.*.*`, required reviewers, no admin bypass): it verifies the signed files
+  again, leaves out the files PyPI lists already with the same sha256 (a half upload is finished with the missing file
+  alone; one listed with other bytes fails the run), then uploads the rest. `release.yml` runs on the push of the tag only.
+  Every action in every workflow is pinned to a commit. The script reads PyPI's public JSON until PyPI serves the manifest's bytes. No credential
+  exists in the flow and no key of the local environment file is read. A re-run resumes from git, GitHub and PyPI. Before
+  a release starts, an integrity check requires every version already on PyPI to have a pushed tag and a signed release, or
+  to be named in `release-superseded.json`. The version comes from the tag (hatch-vcs) and each build pins it; the build
+  backend (`hatchling`, `hatch-vcs`) is pinned to exact versions so that the local build and the rebuild of `release.yml`
+  produce the same bytes. `check-package.sh` runs the package gate, `twine check`, `check-wheel-contents` and a
+  clean-environment smoke test. See [docs/release.md](docs/release.md).
 - `commit-msg` hook (`95c1e5f1`): `[🤖 ]<type>(<scope>): <subject>`, subject up to 150 characters, body up to 10
   lines, AI Co-Authored-By trailers and "Generated with" lines rejected, `SKIP=commit-msg` to bypass, with tests.
 - `denylist-check` hook script: `pre-commit`, `commit-msg` and `pre-push` refuse staged changes, messages and

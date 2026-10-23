@@ -1,0 +1,209 @@
+#!/usr/bin/env python3
+"""Fake ``curl`` for PyPI: the JSON of the project ``axmem`` and the files behind its links.
+
+The release script reads PyPI with GET and nothing else, so this fake pins the exact argv: the options it knows are
+``-s -S -L -f`` (alone or joined), ``--globoff`` (required: a brace or a bracket in a URL is not expanded into several
+downloads), ``--proto =https`` and ``--proto-redir =https`` (both required), ``--connect-timeout``,
+``--max-time``, ``-o`` and ``-w``, and one URL. A method other than GET, a body, a header, a credential, a ``--config``,
+another host, a missing ``--proto`` or ``--proto-redir`` is refused with exit 2 and a line in the event log
+(``curl-refused <reason>``; ``curl-upload <url>`` besides when the call tried to send something). Every request that gets
+that far logs ``curl <url>`` (and appends the URL to ``curl.log``).
+
+It serves ``https://pypi.org/pypi/axmem/json`` in the real shape, built from the files in the fake PyPI
+(``$FAKE_STATE/pypi``, or ``$FAKE_PYPI``): ``info.name``, ``info.version`` and ``releases`` (version to a list of
+``{filename, digests: {sha256}, url, yanked}``; ``url`` is ``https://files.pythonhosted.org/packages/<filename>``), and
+the bytes of each file at that URL. A project that holds no file answers 404 (the real answer for a project that does not
+exist), and so does a file it does not hold. Any other path on the two hosts is refused: per-version JSON and ``/simple``
+are not what the release reads.
+
+Knobs (``config.json``, or ``gh.json`` for the light fakes):
+
+* ``cdn_lag N``: the first N reads of the JSON after a publication (see the fake ``gh``, ``publish_effect``) list the
+  project as it was before it, without the files that publication put there.
+* ``hide_files [name, ...]``: files the JSON never lists although the file host serves them.
+* ``appears_on_read {name: N}``: the JSON lists the file from its Nth read on (the first read of a run is number 1), not
+  before: a version that reaches PyPI while the release is under way.
+* ``json_raw``: what the JSON read answers instead of the real document, one entry per read (the last repeats; a bare
+  value is one entry): ``null`` is the real document, a string is the body of a 200 answer (garbage, a maintenance page,
+  the JSON of another project), an integer is that status with an empty body (503), ``{"code": 502, "body": "..."}`` both.
+* ``downloads``: ``missing`` (the file host answers 404 for every file) or ``other`` (it serves the bytes with ``tampered``
+  appended).
+* ``digest_lie``: ``true`` or a list of file names; the JSON gives them a sha256 that is not the file's.
+* ``yanked``: ``true`` or a list of file names; the JSON marks them ``"yanked": true``.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+import sys
+from pathlib import Path
+from urllib.parse import urlsplit
+
+import _state
+
+args = sys.argv[1:]
+conf = _state.config()
+pypi = _state.PYPI_DIR
+LONG_FLAGS = ("--silent", "--show-error", "--location", "--fail", "--globoff")
+SENDING = ("-X", "--request", "-T", "--upload-file", "-F", "--form", "-d", "--data", "--data-binary", "--data-raw")
+url, out, write_out, fail, proto, redir, globoff = "", "", "", False, "", "", False
+refused = ""
+sends = False
+position = 0
+while position < len(args):
+    word = args[position]
+    value = args[position + 1] if position + 1 < len(args) else ""
+    if word in ("-o", "--output"):
+        out = value
+        position += 1
+    elif word in ("-w", "--write-out"):
+        write_out = value
+        position += 1
+    elif word == "--proto":
+        proto = value
+        position += 1
+    elif word == "--proto-redir":
+        redir = value
+        position += 1
+    elif word in ("--connect-timeout", "--max-time"):
+        position += 1
+    elif word in LONG_FLAGS:
+        fail = fail or word == "--fail"
+        globoff = globoff or word == "--globoff"
+    elif word in SENDING:
+        sends = True
+        refused = refused or f"{word} sends something: PyPI is read with GET only"
+        position += 1
+    elif word.startswith("-") and not word.startswith("--") and len(word) > 1 and set(word[1:]) <= set("sSLf"):
+        fail = fail or "f" in word
+    elif word.startswith("-"):
+        refused = refused or f"{word} is not an option of a plain GET (no credential, header or config)"
+        position += 1 if word in ("-u", "--user", "-H", "--header", "-K", "--config") else 0
+    elif url:
+        refused = refused or f"a second URL: {word}"
+    else:
+        url = word
+    position += 1
+
+_state.log("curl", url)
+with (_state.STATE / "curl.log").open("a", encoding="utf-8") as handle:
+    handle.write(f"{url}\n")
+parts = urlsplit(url)
+if not refused and (proto, redir) != ("=https", "=https"):
+    refused = f"--proto =https and --proto-redir =https are required (got {proto!r} and {redir!r})"
+if not refused and not globoff:
+    refused = "--globoff is required: a URL is fetched as it is, never expanded"
+if not refused and (parts.scheme != "https" or "@" in parts.netloc or parts.port is not None):
+    refused = f"not a plain https URL: {url}"
+if not refused and parts.hostname not in (_state.PYPI_HOST, _state.FILES_HOST):
+    refused = f"host {parts.hostname} is not {_state.PYPI_HOST} or {_state.FILES_HOST}"
+if refused:
+    if sends:
+        _state.log("curl-upload", url)
+    _state.log("curl-refused", refused)
+    print(f"fake curl: {refused}", file=sys.stderr)
+    sys.exit(2)
+
+
+def answer(code: int, body: bytes = b"") -> None:
+    """Print the answer as curl would: the body to ``-o`` (not for a failing ``--fail``), ``-w`` after it."""
+    if code < 400 or not fail:
+        if out:
+            Path(out).write_bytes(body)
+        else:
+            sys.stdout.buffer.write(body)
+    if write_out:
+        sys.stdout.write(write_out.replace("%{http_code}", str(code)))
+    if code >= 400 and fail:
+        print(f"curl: (22) The requested URL returned error: {code}", file=sys.stderr)
+        sys.exit(22)
+    sys.exit(0)
+
+
+def listed(knob: str, name: str) -> bool:
+    """True when the knob ``knob`` is ``true`` or names ``name``."""
+    wanted = conf.get(knob, [])
+    return wanted is True or name in wanted
+
+
+def version_of(name: str) -> str:
+    """The version in a file name of the package (``axmem-1.2.3-py3-none-any.whl``, ``axmem-1.2.3.tar.gz``)."""
+    found = re.fullmatch(rf"{_state.PACKAGE}-(.+?)(?:-py3-none-any\.whl|\.tar\.gz)", name)
+    return found.group(1) if found else name
+
+
+def lagging() -> list[str]:
+    """The names a lagging CDN has not got yet: the files of the last publication, for the first ``cdn_lag`` reads after it."""
+    published = _state.STATE / "published"
+    if published.exists() and conf.get("cdn_lag") and _state.step("lag", [True] * conf["cdn_lag"] + [False]):
+        return list(json.loads(published.read_text(encoding="utf-8")))
+    return []
+
+
+def late() -> list[str]:
+    """The names that the JSON does not list yet at this read (``appears_on_read``); counts one read per call."""
+    wanted = conf.get("appears_on_read", {})
+    if not wanted:
+        return []
+    read = _state.step("json_reads", list(range(1, 1000)))
+    return [name for name, first in wanted.items() if read < first]
+
+
+def served() -> list[Path]:
+    """The files of the fake PyPI that its JSON lists: not the hidden ones, nor the ones a lagging CDN has not got yet."""
+    files = sorted(path for path in pypi.glob("*") if path.is_file()) if pypi.exists() else []
+    hidden = [*conf.get("hide_files", []), *lagging(), *late()]
+    return [path for path in files if path.name not in hidden]
+
+
+def document() -> bytes:
+    """The JSON of the project as PyPI prints it for the files in the fake PyPI."""
+    releases: dict[str, list[dict[str, object]]] = {}
+    for path in served():
+        digest = "0" * 64 if listed("digest_lie", path.name) else _state.sha256(path)
+        releases.setdefault(version_of(path.name), []).append(
+            {
+                "filename": path.name,
+                "digests": {"sha256": digest},
+                "url": f"https://{_state.FILES_HOST}/packages/{path.name}",
+                "yanked": listed("yanked", path.name),
+                "packagetype": "bdist_wheel" if path.suffix == ".whl" else "sdist",
+            },
+        )
+    newest = max(releases, default="")
+    info = {"name": _state.PACKAGE, "version": newest}
+    return json.dumps({"info": info, "releases": releases, "urls": [], "vulnerabilities": []}).encode()
+
+
+def project_json() -> None:
+    """Answer a read of the project JSON: the planted entry of ``json_raw`` for this read, else the real document."""
+    planted = conf.get("json_raw")
+    entry = None if planted is None else _state.step("json", planted if isinstance(planted, list) else [planted])
+    if isinstance(entry, str):
+        answer(200, entry.encode())
+    elif isinstance(entry, int) and not isinstance(entry, bool):
+        answer(entry)
+    elif isinstance(entry, dict):
+        answer(int(entry.get("code", 200)), str(entry.get("body", "")).encode())
+    body = document()
+    answer(200, body) if json.loads(body)["releases"] else answer(404)
+
+
+def download() -> None:
+    """Answer a read of a file at ``/packages/<name>``."""
+    name = parts.path.removeprefix("/packages/")
+    path = pypi / name
+    if conf.get("downloads") == "missing" or "/" in name or not path.is_file():
+        answer(404)
+    answer(200, path.read_bytes() + (b"tampered" if conf.get("downloads") == "other" else b""))
+
+
+if parts.hostname == _state.PYPI_HOST and parts.path == f"/pypi/{_state.PACKAGE}/json":
+    project_json()
+elif parts.hostname == _state.FILES_HOST and parts.path.startswith("/packages/"):
+    download()
+else:
+    _state.log("curl-refused", f"no such path on {parts.hostname}: {parts.path}")
+    print(f"fake curl: the release reads only /pypi/{_state.PACKAGE}/json and /packages/<file>", file=sys.stderr)
+    sys.exit(2)

@@ -86,7 +86,8 @@ Issues = "https://github.com/Axiumine/axmem/issues"
 axmem = "main:cli"
 
 [build-system]
-requires = ["hatchling", "hatch-vcs"]
+# Exact versions: the build of the release commit here and the rebuild of release.yml must produce the same bytes.
+requires = ["hatchling==1.32.4", "hatch-vcs==0.5.0"]
 build-backend = "hatchling.build"
 
 [tool.hatch.version]
@@ -345,6 +346,9 @@ pytest_add_cli_args = [
     "--ignore=tests/integration/test_harness_walkthrough.py",
     "--ignore=tests/integration/test_main_lifespan_and_routes.py",
     "--ignore=tests/integration/test_quality_runner.py",
+    # The release scripts tests run the scripts of a copy of scripts/ in scratch repositories and read git metadata
+    # that the sandbox does not hold; they do not test app/, which is what mutmut mutates.
+    "--ignore-glob=tests/integration/test_release_*.py",
     "--ignore=tests/integration/test_startup_config_wiring.py",
     "--ignore=tests/integration/test_tensorrt_startup_refusal.py",
 ]

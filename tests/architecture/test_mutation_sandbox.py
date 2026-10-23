@@ -23,13 +23,12 @@ WORKFLOWS = sorted((ROOT / ".github" / "workflows").glob("*.yml"))
 
 
 def _selected_test_files():
-    ignored = {
-        ROOT / argument.removeprefix("--ignore=")
-        for argument in CONFIG["pytest_add_cli_args"] if argument.startswith("--ignore=")
-    }
+    arguments = CONFIG["pytest_add_cli_args"]
+    ignored = {ROOT / argument.removeprefix("--ignore=") for argument in arguments if argument.startswith("--ignore=")}
+    ignored_globs = [argument.removeprefix("--ignore-glob=") for argument in arguments if argument.startswith("--ignore-glob=")]
     for selection in CONFIG["pytest_add_cli_args_test_selection"]:
         for path in sorted((ROOT / selection).rglob("test_*.py")):
-            if path not in ignored:
+            if path not in ignored and not any(path.match(pattern) for pattern in ignored_globs):
                 yield path
 
 

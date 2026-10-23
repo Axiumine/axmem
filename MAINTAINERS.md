@@ -9,5 +9,5 @@ organization, and, from the first release, the PyPI project `axmem`).
 | Co-owner and successor | [@vivi7](https://github.com/vivi7) | Owner of the `Axiumine` organization, admin of the repository |
 
 Both accounts use two-factor authentication, which the organization requires. Access to the PyPI project is held by the
-lead maintainer; the release process is in [docs/contributors.md](docs/contributors.md#creating-a-release). The roles and
+lead maintainer; the release process is in [docs/release.md](docs/release.md). The roles and
 how decisions are made are in [GOVERNANCE.md](GOVERNANCE.md).

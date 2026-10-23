@@ -1,0 +1,21 @@
+#!/bin/sh
+# Fake ssh: the transport of the remote URL git@github.com:Axiumine/axmem.git in a scratch repository.
+#
+# The release script reads the GitHub repository (Axiumine/axmem) from the remote's URL, so the scratch repository's remote
+# has the URL of a GitHub repository, and git is pointed at this program (GIT_SSH, GIT_SSH_VARIANT=simple: it is called as
+# `ssh <host> <command>`). It serves only that repository, from the bare repository in $FAKE_STATE/origin.git, and refuses
+# every other host, repository and command, so a script that reached for another remote fails instead of finding one.
+host="$1"
+command="$2"
+if [ "$host" != "git@github.com" ]; then
+  echo "fake ssh: unexpected host $host" >&2
+  exit 2
+fi
+case "$command" in
+  "git-upload-pack 'Axiumine/axmem.git'") exec git upload-pack "$FAKE_STATE/origin.git" ;;
+  "git-receive-pack 'Axiumine/axmem.git'") exec git receive-pack "$FAKE_STATE/origin.git" ;;
+  *)
+    echo "fake ssh: unexpected command $command" >&2
+    exit 2
+    ;;
+esac

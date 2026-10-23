@@ -1,0 +1,286 @@
+#!/usr/bin/env python3
+"""Fake ``gh``: CI runs, release.yml and publish.yml runs, release assets and bundles, the GitHub settings, as the test's config scripts them.
+
+Config keys (``config.json`` in the state directory): ``ci_base`` / ``ci_release`` (states of the CI runs of the
+starting commit and of the release commit, played one call at a time), ``ci_raw`` (rows that replace the CI runs of
+the release commit), ``release_runs`` (states of the ``release.yml`` run of the release's own tag),
+``release_runs_rerun`` (the same after ``gh run rerun`` of a run that is not a ``publish.yml`` run, default green),
+``release_raw`` (rows that replace the ``release.yml`` runs; ``@tag`` in a row is the first tag at the commit),
+``signed_tags`` (tags of old releases that are whole: tag to artefact names), ``assets`` (``no_release``,
+``missing_bundle``, ``empty_bundle``, ``starter_bundle``, ``draft``, ``foreign_bundle``, ``garbage_bundle``,
+``other_attached`` (the wheel on the release is not the manifest's bytes)),
+``release_bytes`` (``other``: ``release download`` serves the wheel and the sdist with ``tampered`` appended, so they are
+not the manifest's bytes), ``release_extra`` (names of files that ``release download`` writes besides the ones asked for),
+``gh_fail_from`` (every call from the n-th fails), ``gh_fail_on`` (kind to n: that kind of call fails from its
+n-th), ``gh_hooks`` (shell commands run before the n-th call, or before the n-th call of a kind, to change the world
+while the script waits). The kinds are ``ci``, ``release-runs``, ``release-view``, ``release-download`` and the ones of
+``_publish.py``: ``publish-runs``, ``publish-dispatch``, ``publish-view``, ``publish-log``, ``publish-rerun``, ``api``.
+
+Tags are plain ``v<version>``. The runs of ``release.yml`` (the push of the tag) and of ``publish.yml`` (the dispatch)
+are kept apart: ``run list --workflow release.yml`` answers the first, ``--workflow publish.yml`` the second, any other
+workflow is an error. ``gh workflow run``, ``run view``, ``run rerun`` and ``gh api`` (the settings that make a
+repository publish-ready) are answered by ``_publish.py``, which documents the keys ``publish_runs``, ``publish_effect``,
+``publish_existing``, ``publish_hidden_lists``, ``publish_row``, ``publish_successor``, ``publish_rerun``, ``run_log``,
+``publish_ready`` and ``publish_ready_patch``. ``release download`` takes ``--repo/-R``, ``--dir/-D`` and any number of
+``--pattern/-p``; the wheel and the sdist it serves are the bytes of ``_state.artefact_bytes`` (the very files the fake
+``uv build`` wrote), the bundles sign the digests of the manifest committed at the tag.
+"""
+
+from __future__ import annotations
+
+import base64
+import fnmatch
+import hashlib
+import json
+import subprocess
+import sys
+from pathlib import Path
+from typing import Any
+
+import _publish
+import _state
+
+args = sys.argv[1:]
+conf = _state.config()
+origin = str(_state.STATE / "origin.git")
+calls = _state.step("gh-calls", list(range(10_000)))
+for hook in conf.get("gh_hooks", []):
+    if hook.get("at") == calls:
+        subprocess.run(hook["cmd"], shell=True, check=False)  # noqa: S602 - a command of the test itself
+if "gh_fail_from" in conf and calls >= conf["gh_fail_from"]:
+    print("HTTP 502: bad gateway", file=sys.stderr)
+    sys.exit(1)
+
+
+def require_repository() -> None:
+    """Every call names the repository the remote's URL names (``-R``): the script reads it from there."""
+    if value("-R", "--repo") != _state.GITHUB_REPO:
+        print(f"fake gh: expected -R {_state.GITHUB_REPO}, got {value('-R', '--repo')!r}", file=sys.stderr)
+        sys.exit(2)
+
+
+def fail_kind(kind: str) -> None:
+    """Run the hooks of this call of its kind, then fail from the n-th call of the kind on if the test asked for it."""
+    count = _state.step(f"gh-kind-{kind}", list(range(10_000))) + 1
+    for hook in conf.get("gh_hooks", []):
+        if hook.get("on") == kind and hook["nth"] == count:
+            subprocess.run(hook["cmd"], shell=True, check=False)  # noqa: S602 - a command of the test itself
+    if kind in conf.get("gh_fail_on", {}) and count >= conf["gh_fail_on"][kind]:
+        print("HTTP 502: bad gateway", file=sys.stderr)
+        sys.exit(1)
+
+
+def value(*flags: str) -> str:
+    """The value after the first of ``flags`` that the call has (``-R`` and ``--repo`` are the same flag)."""
+    for flag in flags:
+        if flag in args:
+            return args[args.index(flag) + 1]
+    return ""
+
+
+def values(*flags: str) -> list[str]:
+    """Every value given to ``flags`` (``--pattern`` may be repeated)."""
+    return [args[i + 1] for i, word in enumerate(args) if word in flags and i + 1 < len(args)]
+
+
+def origin_git(*words: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(  # noqa: S603, S607
+        ["git", "--git-dir", origin, *words], capture_output=True, text=True, check=False
+    )
+
+
+def emit(rows: list[dict[str, Any]]) -> None:
+    fields = value("--json").split(",")
+    print(json.dumps([{key: row[key] for key in fields if key in row} for row in rows]))
+
+
+def run_row(kind: str, state: str, sha: str, head: str) -> dict[str, Any]:
+    body = {
+        "green": {"status": "completed", "conclusion": "success"},
+        "red": {"status": "completed", "conclusion": "failure"},
+        "pending": {"status": "in_progress", "conclusion": ""},
+    }[state]
+    return {
+        "workflowName": "Release" if kind == "release" else "CI",
+        "name": "Release" if kind == "release" else "CI",
+        "url": f"https://github.example/run/{kind}-{sha[:8]}",
+        "event": "push",
+        "headSha": sha,
+        "headBranch": head,
+        "createdAt": "2026-01-01T00:00:00Z",
+        "databaseId": 1,
+        **body,
+    }
+
+
+def raw_release_rows(sha: str, first: str) -> list[dict[str, Any]]:
+    """The rows the scenario plants (``@tag`` is the first tag at the commit), with the push event and the commit filled in."""
+    base = {"event": "push", "headSha": sha, "url": "https://github.example/run/raw"}
+    raw = [{k: (first if v == "@tag" else v) for k, v in {**base, **row}.items()} for row in conf["release_raw"]]
+    _state.log("gh", "release raw")
+    return raw
+
+
+def own_run_state(tags: list[str]) -> str:
+    """The state of the run the push of the release's own tag started; an old, signed tag has a green one."""
+    if all(tag in conf.get("signed_tags", {}) for tag in tags):
+        return ""
+    if (_state.STATE / "rerun").exists():
+        return str(_state.step("release_runs_rerun", conf.get("release_runs_rerun", ["green"])))
+    return str(_state.step("release_runs", conf.get("release_runs", ["green"])))
+
+
+def release_rows(sha: str) -> list[dict[str, Any]]:
+    signed = conf.get("signed_tags", {})
+    tags = origin_git("tag", "--points-at", sha).stdout.split()
+    if "release_raw" in conf:
+        return raw_release_rows(sha, tags[0] if tags else "")
+    own = own_run_state(tags)
+    _state.log("gh", f"release {own or ('green' if tags else 'none')}")
+    states = {tag: "green" if tag in signed else own for tag in tags}
+    return [run_row("release", state, sha, tag) for tag, state in states.items() if state != "none"]
+
+
+def ci_rows(sha: str) -> list[dict[str, Any]]:
+    base = (_state.STATE / "base.sha").read_text(encoding="utf-8").strip()
+    if sha == base:
+        state = _state.step("ci_base", conf.get("ci_base", ["green"]))
+        _state.log("gh", f"ci-head {state}")
+    elif origin_git("merge-base", "--is-ancestor", sha, "refs/heads/main").returncode == 0:
+        if "ci_raw" in conf:
+            _state.log("gh", "ci raw")
+            return list(conf["ci_raw"])
+        state = _state.step("ci_release", conf.get("ci_release", ["green"]))
+        _state.log("gh", f"ci {state}")
+    else:
+        _state.log("gh", "ci none")
+        return []
+    return [] if state == "none" else [run_row("ci", state, sha, "main")]
+
+
+def run_list() -> None:
+    sha, workflow = value("--commit"), value("--workflow")
+    if workflow not in ("", "release.yml"):
+        print(f"fake gh: no workflow named {workflow!r} is listed here", file=sys.stderr)
+        sys.exit(2)
+    fail_kind("release-runs" if workflow else "ci")
+    emit(release_rows(sha) if workflow else ci_rows(sha))
+
+
+def manifest_digests(tag: str) -> dict[str, str]:
+    done = origin_git("show", f"{tag}:release-digests.json")
+    try:
+        return {entry["name"]: entry["sha256"] for entry in json.loads(done.stdout)["artifacts"]}
+    except (ValueError, LookupError, TypeError):
+        return {}
+
+
+def bundle_assets(name: str, mode: str | None, whole: bool) -> list[dict[str, Any]]:
+    """The Sigstore bundle of an artefact as the scenario's ``assets`` mode leaves it (the wheel is the one it spoils)."""
+    bundle = {"name": f"{name}.sigstore.json", "size": 2000, "state": "uploaded"}
+    if whole or not name.endswith(".whl"):
+        return [bundle]
+    if mode == "empty_bundle":
+        return [{**bundle, "size": 0}]
+    if mode == "starter_bundle":
+        return [{**bundle, "size": 0, "state": "starter"}]
+    return [] if mode == "missing_bundle" else [bundle]
+
+
+def release_names(tag: str, mode: str | None) -> list[str]:
+    """The artefacts of the release of ``tag``: an old signed one's, else the ones its manifest lists; no release stops."""
+    signed = conf.get("signed_tags", {})
+    pushed = origin_git("rev-parse", "-q", "--verify", f"refs/tags/{tag}").returncode == 0
+    if tag in signed:
+        return list(signed[tag])
+    if pushed and mode != "no_release":
+        return list(manifest_digests(tag))
+    print("release not found", file=sys.stderr)
+    sys.exit(1)
+
+
+def release_assets(tag: str) -> list[dict[str, Any]]:
+    mode = conf.get("assets")
+    assets: list[dict[str, Any]] = []
+    for name in release_names(tag, mode):
+        digest = "0" * 64 if mode == "other_attached" and name.endswith(".whl") else known_digest(tag, name, "")
+        assets.append({"name": name, "size": 1000, "state": "uploaded", **({"digest": f"sha256:{digest}"} if digest else {})})
+        assets += bundle_assets(name, mode, tag in conf.get("signed_tags", {}))
+    assets.append({"name": f"{_state.PACKAGE}-artefacts.intoto.jsonl", "size": 3000, "state": "uploaded"})
+    return assets
+
+
+def release_view(tag: str) -> None:
+    fail_kind("release-view")
+    _state.log("gh", f"release-view {tag}")
+    draft = conf.get("assets") == "draft" and tag not in conf.get("signed_tags", {})
+    print(json.dumps({"isDraft": draft, "assets": release_assets(tag)}))
+
+
+def known_digest(tag: str, artefact: str, unknown: str = "0" * 64) -> str:
+    if artefact in manifest_digests(tag):
+        return manifest_digests(tag)[artefact]
+    path = _state.PYPI_DIR / artefact
+    return _state.sha256(path) if path.is_file() else unknown
+
+
+def bundle_text(tag: str, artefact: str) -> str:
+    mode = conf.get("assets")
+    if mode == "garbage_bundle" and artefact.endswith(".whl"):
+        return "this is not a bundle\n"
+    digest = "0" * 64 if mode == "foreign_bundle" else known_digest(tag, artefact)
+    signed = {"algorithm": "SHA2_256", "digest": base64.b64encode(bytes.fromhex(digest)).decode()}
+    return json.dumps({"mediaType": "bundle", "messageSignature": {"messageDigest": signed}})
+
+
+def release_file(tag: str, name: str) -> bytes:
+    """The bytes of an artefact of the release of ``tag``: an old signed release's are the ones on the fake PyPI."""
+    held = _state.PYPI_DIR / name
+    if tag in conf.get("signed_tags", {}) and held.is_file():
+        return held.read_bytes()
+    return _state.artefact_bytes(name)
+
+
+def release_artefacts(tag: str) -> dict[str, bytes]:
+    """The wheel and the sdist of the release of ``tag`` (what a publication uploads), name to bytes."""
+    return {name: release_file(tag, name) for name in release_names(tag, None)}
+
+
+def write_asset(tag: str, name: str, target: Path) -> None:
+    """One file of the release as ``gh release download`` writes it into ``target``."""
+    if name.endswith(".sigstore.json"):
+        (target / name).write_text(bundle_text(tag, name.removesuffix(".sigstore.json")))
+    elif name.endswith(".intoto.jsonl"):
+        (target / name).write_text("{}\n")
+    else:
+        other = b"tampered" if conf.get("release_bytes") == "other" else b""
+        (target / name).write_bytes(release_file(tag, name) + other)
+
+
+def release_download(tag: str) -> None:
+    fail_kind("release-download")
+    _state.log("gh", f"release-download {tag}")
+    target = Path(value("-D", "--dir") or ".")
+    patterns = values("-p", "--pattern")
+    names = [a["name"] for a in release_assets(tag) if any(fnmatch.fnmatch(a["name"], p) for p in patterns)]
+    if not names:
+        print("no assets match the file pattern", file=sys.stderr)
+        sys.exit(1)
+    for name in names:
+        write_asset(tag, name, target)
+    for extra in conf.get("release_extra", []):
+        (target / extra).write_bytes(b"a file the manifest does not list\n")
+
+
+if _publish.handle(args, origin_git, fail_kind, release_artefacts, _state.GITHUB_REPO):
+    sys.exit(0)
+require_repository()
+if args[:2] == ["run", "list"]:
+    run_list()
+elif args[:2] == ["release", "view"]:
+    release_view(args[2])
+elif args[:2] == ["release", "download"]:
+    release_download(args[2])
+else:
+    print(f"fake gh: unexpected call {args}", file=sys.stderr)
+    sys.exit(2)

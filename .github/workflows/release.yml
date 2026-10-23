@@ -1,0 +1,208 @@
+name: Release
+
+# Signs the files that scripts/release-pypi.sh gives to PyPI, and attests them. It runs on the push of a plain release tag
+# (v<version>, the tag the script pushes) and on nothing else: a run started by hand would sign again and replace the
+# bundles of the push run with ones that publish.yml refuses. It uploads nothing to any index:
+# publish.yml, which the script dispatches on the same tag once the signing here has succeeded, is the only workflow that
+# does. A tag without the release-digests.json of the script is refused: the bytes PyPI will serve could not be proven to
+# be the bytes signed here. See docs/release.md.
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+env:
+  # cosign v3 signs a blob as a Sigstore bundle (`.sigstore.json`): one file carrying signature + Fulcio chain + Rekor
+  # inclusion proof, readable by any sigstore-* verifier rather than cosign alone. It also carries the fix for
+  # GHSA-fx35-mq7g-6g98 (CVSS 7.4): before v2.6.5 / v3.1.3, `verify-blob` on a *legacy* JSON bundle accepted a bare
+  # public key in the `cert` field and bypassed --certificate-identity / --certificate-oidc-issuer while still
+  # printing `Verified OK`. The protobuf bundle is not affected, so moving the version and the format is one change.
+  # cosign-installer v3.x cannot install cosign v3, hence @v4 at the step.
+  COSIGN_VERSION: v3.1.3
+  # Declared pin for the generator ref below: a reusable-workflow `uses:` cannot read `env`, so the two are held
+  # together by a test (tests/architecture/test_workflows.py), not by interpolation.
+  SLSA_GENERATOR_VERSION: v2.1.0
+
+permissions:
+  contents: read
+
+# A release is never cancelled by a newer run: one tag, one signing run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  sign-artefacts:
+    name: Sign wheels + sdist (cosign keyless)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write
+      id-token: write
+    outputs:
+      subjects-b64: ${{ steps.subjects.outputs.value }}
+    steps:
+      # A fully qualified ref: a bare name is resolved branch first, so a branch called like the tag would be built.
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: refs/tags/${{ github.ref_name }}
+          persist-credentials: false
+
+      - name: Check the checkout is the commit of the tag
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "$(git rev-parse "refs/tags/${TAG_NAME}^{commit}")" ]] \
+            || { echo "::error::HEAD is not the commit of refs/tags/${TAG_NAME}"; exit 1; }
+          if [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
+            [[ "$(git rev-parse HEAD)" == "$GITHUB_SHA" ]] \
+              || { echo "::error::HEAD is not the commit that the push of ${TAG_NAME} started"; exit 1; }
+          fi
+
+      # No cache: a tag run restores what a run of main wrote, and this job signs.
+      - name: Install uv
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+        with:
+          enable-cache: false
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.14"
+
+      # The epoch and the version come from the release manifest, NOT from this commit: the artifact that gets
+      # published is the one release-pypi.sh built, and reproducing it byte for byte means reusing the clock and the
+      # version that build pinned. The tagged commit's timestamp is a different number. The manifest must also name
+      # this very tag, so a second tag on a release commit signs nothing; nothing reaches the step outputs unchecked.
+      - name: Resolve SOURCE_DATE_EPOCH and the version from the release manifest
+        id: manifest
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [[ ! -f release-digests.json ]]; then
+            echo "::error::release-digests.json is missing on this tag: it was not cut by scripts/release-pypi.sh, so the bytes PyPI will serve cannot be proven equal to the bytes signed here. Re-cut the release through the script."
+            exit 1
+          fi
+          epoch=$(python3 -c 'import json; print(json.load(open("release-digests.json"))["source_date_epoch"])')
+          version=$(python3 -c 'import json; print(json.load(open("release-digests.json"))["version"])')
+          manifest_tag=$(python3 -c 'import json; print(json.load(open("release-digests.json"))["tag"])')
+          part='(0|[1-9][0-9]*)'
+          [[ "$epoch" =~ ^[0-9]+$ ]] \
+            || { echo "::error::the epoch of release-digests.json is not a number of seconds"; exit 1; }
+          [[ "$version" =~ ^${part}\.${part}\.${part}((a|b|rc)${part})?(\.post${part})?(\.dev${part})?$ ]] \
+            || { echo "::error::the version of release-digests.json is not a release version"; exit 1; }
+          [[ "$manifest_tag" == "$TAG_NAME" && "v${version}" == "$TAG_NAME" ]] \
+            || { echo "::error::release-digests.json names another release than the tag ${TAG_NAME}: it was cut for ${manifest_tag}"; exit 1; }
+          echo "Reproducing the build of ${version} at SOURCE_DATE_EPOCH=${epoch}"
+          echo "epoch=${epoch}" >> "$GITHUB_OUTPUT"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Build wheel + sdist
+        env:
+          SOURCE_DATE_EPOCH: ${{ steps.manifest.outputs.epoch }}
+          SETUPTOOLS_SCM_PRETEND_VERSION: ${{ steps.manifest.outputs.version }}
+        run: uv build
+
+      # The gate. Everything below signs and attests; none of it is worth anything unless these are the bytes that
+      # release-pypi.sh built and that PyPI will serve.
+      - name: Verify the rebuild matches the release manifest
+        run: |
+          set -euo pipefail
+          python3 -m scripts.release.digests verify \
+            --manifest release-digests.json \
+            --dist dist
+
+      # What is signed is Axmem's source and nothing else: no model weights, engines or NVIDIA libraries.
+      - name: Check what the package holds
+        run: python3 -m scripts.quality dist-check dist
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: ${{ env.COSIGN_VERSION }}
+
+      - name: Sign artefacts (keyless, Fulcio OIDC, Rekor log)
+        env:
+          COSIGN_YES: "true"
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          artefacts=(dist/*.whl dist/*.tar.gz)
+          if [[ ${#artefacts[@]} -eq 0 ]]; then
+            echo "::error::no build artefacts found under dist/"
+            exit 1
+          fi
+          # One Sigstore bundle per artefact. cosign v3 ignores --output-signature / --output-certificate, so the old
+          # .sig + .crt + .cosign.bundle trio is gone by design, not by omission.
+          for f in "${artefacts[@]}"; do
+            echo "Signing ${f}"
+            cosign sign-blob \
+              --yes \
+              --bundle "${f}.sigstore.json" \
+              "${f}"
+          done
+
+      - name: Self-verify signatures (round-trip)
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          for f in dist/*.whl dist/*.tar.gz; do
+            echo "Verifying ${f}"
+            cosign verify-blob \
+              --bundle "${f}.sigstore.json" \
+              --certificate-identity "https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml@refs/tags/${TAG_NAME}" \
+              --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+              "${f}"
+          done
+
+      - name: Attach artefacts + signatures to release
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: |
+            dist/*.whl
+            dist/*.tar.gz
+            dist/*.sigstore.json
+          fail_on_unmatched_files: true
+
+      - name: Compute SLSA provenance subjects (sha256 + name, base64)
+        id: subjects
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          artefacts=(dist/*.whl dist/*.tar.gz)
+          if [[ ${#artefacts[@]} -eq 0 ]]; then
+            echo "::error::no artefacts to attest"
+            exit 1
+          fi
+          # produce `<sha256>  <basename>` lines, then base64 (single line)
+          lines=""
+          for f in "${artefacts[@]}"; do
+            sum=$(sha256sum "${f}" | awk '{print $1}')
+            lines+="${sum}  $(basename "${f}")"$'\n'
+          done
+          b64=$(printf '%s' "${lines}" | base64 -w0)
+          echo "value=${b64}" >> "$GITHUB_OUTPUT"
+
+  provenance-artefacts:
+    name: SLSA-3 provenance for wheels + sdist
+    needs: sign-artefacts
+    permissions:
+      id-token: write
+      contents: write
+      actions: read
+    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.1.0
+    with:
+      base64-subjects: ${{ needs.sign-artefacts.outputs.subjects-b64 }}
+      provenance-name: axmem-artefacts.intoto.jsonl
+      upload-assets: true
+      upload-tag-name: ${{ github.ref_name }}
+      # Authorises the repo name into the public Rekor log, which a private repository needs so that the generator does
+      # not halt; the keyless cosign signing above already exposes it. Harmless on a public repository.
+      private-repository: true

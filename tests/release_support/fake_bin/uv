@@ -1,0 +1,110 @@
+#!/usr/bin/env python3
+"""Fake ``uv``: a deterministic build and the preflight gate; a publish is refused.
+
+``build`` does what uv does: it writes ``dist/.gitignore``, one byte ``*``, beside the wheel and the sdist, on every
+build (``build_marker`` in the scenario turns it into something else, or nothing, to prove the guard). It refuses to
+run without ``SETUPTOOLS_SCM_PRETEND_VERSION`` and ``SOURCE_DATE_EPOCH``: a release pins both on every build, and the
+version of the files is the pinned one, never one read from a file of the repository (the release writes none), unless the
+scenario's ``build_version`` names another one (a build that does not honour the pin). The bytes are
+``_state.default_bytes`` of the file name, the epoch and the build's variant (``build_variants``), and the last build
+records them under ``built/`` so that the fake ``gh release download`` serves the very bytes the manifest recorded.
+
+``run`` stands for the preflight gate, ``uv run --frozen python -m scripts.quality stage ci`` in the repository root,
+and nothing else: it logs ``gate stage-ci`` and fails while the marker ``refuse-gate`` exists in the state directory.
+There is no ``lock``: a release changes no dependency, so a call of it is an unexpected call.
+
+There is no ``publish``: PyPI is given the files by the publish workflow in CI, never by this machine. A call of
+``uv publish`` exits 99 and logs ``uv publish-refused``, so a second way to put a file on an index shows up in the event
+log (``World.uv_publishes()`` must be empty).
+"""
+
+from __future__ import annotations
+
+import os
+import sys
+from pathlib import Path
+
+import _state
+
+args = sys.argv[1:]
+conf = _state.config()
+PREFLIGHT = ["run", "--frozen", "python", "-m", "scripts.quality", "stage", "ci"]
+
+
+def write_marker(out: Path, dirty: bool) -> None:
+    """What uv puts in its output directory on every build: ``.gitignore``, a regular file of the byte ``*``.
+
+    ``build_marker`` (a ``kind`` of ``file`` with its ``bytes``, ``dir``, ``symlink`` or ``absent``) replaces it from
+    build number ``build_dirty_from`` on, as ``build_extra`` adds files from then on: the first build of a release
+    is the first, the second is the rebuild the guard judges.
+    """
+    marker = conf.get("build_marker", {}) if dirty else {}
+    kind = marker.get("kind", "file")
+    path = out / ".gitignore"
+    if kind == "file":
+        path.write_bytes(marker.get("bytes", "*").encode())
+    elif kind == "dir":
+        path.mkdir()
+    elif kind == "symlink":
+        target = _state.STATE / "marker-target"
+        target.write_bytes(b"*")
+        path.symlink_to(target)
+    elif kind != "absent":
+        raise SystemExit(f"fake uv: unknown build_marker kind {kind}")
+
+
+def build() -> int:
+    ver = os.environ.get("SETUPTOOLS_SCM_PRETEND_VERSION", "")
+    epoch = os.environ.get("SOURCE_DATE_EPOCH", "")
+    if not ver or not epoch:
+        print("fake uv: a release build pins SETUPTOOLS_SCM_PRETEND_VERSION and SOURCE_DATE_EPOCH", file=sys.stderr)
+        return 2
+    variant = _state.step("build", conf.get("build_variants", ["a"]))
+    stem = f"{_state.PACKAGE}-{conf.get('build_version', ver)}"
+    out = Path("dist")
+    out.mkdir(exist_ok=True)
+    dirty = int((_state.STATE / "counters" / "build").read_text(encoding="utf-8")) >= conf.get("build_dirty_from", 1)
+    write_marker(out, dirty)
+    built = _state.STATE / "built"
+    built.mkdir(exist_ok=True)
+    for name in (f"{stem}.tar.gz", f"{stem}-py3-none-any.whl"):
+        body = _state.default_bytes(name, epoch, variant)
+        (out / name).write_bytes(body)
+        (built / name).write_bytes(body)
+    for extra in conf.get("build_extra", []) if dirty else []:
+        (out / extra).write_bytes(b"a file the manifest does not list\n")
+    _state.log("build", f"{ver} epoch={epoch} variant={variant}")
+    return 0
+
+
+def preflight() -> int:
+    """The static gates of the hosted CI: run from the repository root, once, with the lock frozen."""
+    repo = Path(os.environ.get("FAKE_REPO", "."))
+    if Path.cwd().resolve() != repo.resolve():
+        print(f"fake uv: the preflight gate runs in the repository root, not in {Path.cwd()}", file=sys.stderr)
+        return 2
+    _state.log("gate", "stage-ci")
+    if (_state.STATE / "refuse-gate").exists():
+        print("the preflight gate failed", file=sys.stderr)
+        return 1
+    return 0
+
+
+def publish() -> int:
+    """Refused: nothing on this machine uploads to an index."""
+    _state.log("uv", "publish-refused")
+    print("fake uv: publish is not available: PyPI is published to by the publish workflow only", file=sys.stderr)
+    return 99
+
+
+if args[:1] == ["--version"]:
+    print("uv 0.0.0-fake")
+elif args[:1] == ["build"]:
+    sys.exit(build())
+elif args == PREFLIGHT:
+    sys.exit(preflight())
+elif args[:1] == ["publish"]:
+    sys.exit(publish())
+else:
+    print(f"fake uv: unexpected call {args}", file=sys.stderr)
+    sys.exit(2)

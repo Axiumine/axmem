@@ -1,30 +1,262 @@
 name: Publish to PyPI
 
+# The only workflow that uploads to PyPI, and the one PyPI knows as the trusted publisher of axmem (workflow
+# publish.yml, environment pypi). It runs only when somebody dispatches it on a release tag, which
+# scripts/release-pypi.sh does after its guard: a GitHub release made by hand starts nothing here.
+# It builds nothing. Job verify (no id-token, no environment) proves the wheel and the sdist that release.yml rebuilt
+# from the committed manifest and signed: sha256 against release-digests.json, the cosign identity of release.yml at
+# the tag, the tag commit on main with CI green on it (scripts.release.guard check) and the package gate (dist-check).
+# Everything that runs in verify after the download is the standard library of the tag's own checkout (no uv, no
+# environment is synced), and the digests are checked once more in the step that takes the sums.
+# Job publish waits for the reviewers of environment pypi, who read the summary of verify, re-checks the digests, leaves
+# out the files PyPI holds already (a half upload) and uploads. PyPI does not check the ref, and a check inside this file cannot protect itself: what keeps another ref from
+# publishing is the environment (tags v*.*.* only, reviewers, no admin bypass) and the tag ruleset on v*; the command
+# python3 -m scripts.release.guard publish-ready checks both before every release (docs/release.md).
+# Every action is pinned to the commit of a release tag (the tag stays in the trailing comment), because the publish
+# job holds the id-token; tests/architecture/test_publish_workflow.py refuses any other form.
+
 on:
-  release:
-    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish (v<version>); dispatch the workflow on this same tag"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+# One publication of a ref at a time; keyed on the ref, never on the input; a run is never cancelled half way.
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  # The cosign of release.yml: tests/architecture/test_publish_workflow.py holds the two together.
+  COSIGN_VERSION: v3.1.3
 
 jobs:
-  publish:
+  verify:
     runs-on: ubuntu-latest
-    environment: pypi
+    timeout-minutes: 20
     permissions:
-      id-token: write  # Required for trusted publishing
-
+      contents: read
+      actions: read
+    outputs:
+      sums: ${{ steps.summary.outputs.sums }}
+    env:
+      TAG: ${{ inputs.tag }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Check the run is on a release tag
+        run: |
+          set -euo pipefail
+          shown="${TAG//[^A-Za-z0-9._-]/?}"
+          shown="${shown:0:64}"
+          part='(0|[1-9][0-9]*)'
+          [[ "$TAG" =~ ^v${part}\.${part}\.${part}((a|b|rc)${part})?(\.post${part})?(\.dev${part})?$ ]] \
+            || { echo "::error::'${shown}' is not a release tag (v<version>)"; exit 1; }
+          [[ "$GITHUB_REF_TYPE" == "tag" && "$GITHUB_REF" == "refs/tags/${TAG}" ]] \
+            || { echo "::error::dispatch on the tag itself: gh workflow run publish.yml --ref ${TAG} -f tag=${TAG}"; exit 1; }
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
+      # The commit this run started on, never a branch of the same name as the tag.
+      - name: Checkout the tag commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
 
-      - name: Build package
-        run: uv build
+      - name: Check the checkout is the commit of the tag
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "$GITHUB_SHA" ]] \
+            || { echo "::error::HEAD is not the commit of this run"; exit 1; }
+          [[ "$(git rev-parse "refs/tags/${TAG}^{commit}")" == "$GITHUB_SHA" ]] \
+            || { echo "::error::refs/tags/${TAG} is not the commit of this run"; exit 1; }
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.14"
+
+      # The manifest committed at the tag decides which files are published: the wheel and the sdist of axmem at this
+      # version, nothing else. Every later step reads the names from the list this step writes.
+      - name: List the files of the manifest
+        run: |
+          set -euo pipefail
+          python3 - "$TAG" <<'PY'
+          import json, sys
+          manifest = json.load(open("release-digests.json", encoding="utf-8"))
+          tag = sys.argv[1]
+          found = (manifest.get("package"), manifest.get("tag"), manifest.get("version"))
+          if found != ("axmem", tag, tag[1:]):
+              sys.exit(f"release-digests.json at {tag} names {found}, not ('axmem', '{tag}', '{tag[1:]}')")
+          PY
+          names="$(python3 -m scripts.release.guard artefacts --root .)"
+          version="${TAG#v}"
+          expected="$(printf '%s\n' "axmem-${version}-py3-none-any.whl" "axmem-${version}.tar.gz" | sort)"
+          [[ "$(sort <<<"$names")" == "$expected" ]] \
+            || { echo "::error::the manifest lists other files than the wheel and the sdist of axmem ${version}"; exit 1; }
+          printf '%s\n' "$names" >"${RUNNER_TEMP}/artefacts.txt"
+
+      - name: Download the signed release files
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir release
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir release \
+            --pattern '*.whl' --pattern '*.tar.gz' --pattern '*.sigstore.json'
+
+      - name: Verify the digests against the manifest
+        run: python3 -m scripts.release.digests verify --manifest release-digests.json --dist release
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: ${{ env.COSIGN_VERSION }}
+
+      # The identity alone names the workflow file and the tag; the other flags tie the signature to the push run of
+      # release.yml on this very commit, so a bundle from a dispatch run or from an older commit under a re-made tag
+      # name does not pass. The manifest sha256 stays the anchor.
+      - name: Verify the signatures against release.yml at the tag
+        run: |
+          set -euo pipefail
+          mapfile -t names <"${RUNNER_TEMP}/artefacts.txt"
+          for name in "${names[@]}"; do
+            echo "Verifying ${name}"
+            cosign verify-blob \
+              --bundle "release/${name}.sigstore.json" \
+              --certificate-identity "https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml@refs/tags/${TAG}" \
+              --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+              --certificate-github-workflow-repository "${GITHUB_REPOSITORY}" \
+              --certificate-github-workflow-ref "refs/tags/${TAG}" \
+              --certificate-github-workflow-sha "${GITHUB_SHA}" \
+              --certificate-github-workflow-trigger push \
+              "release/${name}"
+          done
+
+      - name: Assemble dist with the signed files and nothing else
+        run: |
+          set -euo pipefail
+          mkdir dist
+          mapfile -t names <"${RUNNER_TEMP}/artefacts.txt"
+          for name in "${names[@]}"; do
+            cp -- "release/${name}" "dist/${name}"
+          done
+          ls -l dist
+
+      # Five conditions: the tag commit is on main, CI is green on it, the tag is on the remote at it, release.yml
+      # succeeded for the tag with a bundle per file, and dist/ is byte for byte the manifest and holds nothing else.
+      - name: Run the release guard on the tag commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python3 -m scripts.release.guard check \
+            --repo "$GITHUB_REPOSITORY" --sha "$GITHUB_SHA" --tag "$TAG" \
+            --root . --remote origin --dist dist
 
       # What goes to PyPI cannot be taken back: refuse a wheel or an sdist that holds model weights, TensorRT engines or
       # NVIDIA libraries, or whose license metadata is not that of pyproject.toml. The checker needs only the standard
-      # library, so no environment is synced.
+      # library, so no environment is synced and no tool is installed.
       - name: Check what the package holds
-        run: uv run --no-project --python 3.14 python -m scripts.quality dist-check dist
+        run: python3 -m scripts.quality dist-check dist
 
+      # What the reviewers of environment pypi read before they approve; the sums travel to the next job as a job
+      # output, a channel apart from the artifact that carries the files. They are taken from dist/ right after the
+      # manifest has vouched for it once more, so what the reviewers read and the publish job re-checks is the manifest.
+      - name: Summarise what will be published
+        id: summary
+        run: |
+          set -euo pipefail
+          python3 -m scripts.release.digests verify --manifest release-digests.json --dist dist
+          sums="$(cd dist && sha256sum -- * | LC_ALL=C sort -k2)"
+          {
+            echo "### axmem ${TAG} to PyPI"
+            echo "Commit ${GITHUB_SHA}"
+            echo '```'
+            echo "$sums"
+            echo '```'
+          } >>"$GITHUB_STEP_SUMMARY"
+          {
+            echo "sums<<SUMS_END"
+            echo "$sums"
+            echo "SUMS_END"
+          } >>"$GITHUB_OUTPUT"
+
+      - name: Keep the verified files for the upload job
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: pypi
+    permissions:
+      contents: read
+      id-token: write  # trusted publishing: PyPI trades this token for a short-lived upload token
+    env:
+      SUMS: ${{ needs.verify.outputs.sums }}
+    steps:
+      # First, because the checkout cleans the workspace: only the guard's small PyPI reader below runs from it, the
+      # same standard-library code at the same commit that verify ran.
+      - name: Checkout the tag commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Download the verified files
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: dist
+          path: dist
+
+      - name: Check the files are the ones that were verified
+        run: |
+          set -euo pipefail
+          [[ -n "$SUMS" ]] || { echo "::error::the verify job passed no digests"; exit 1; }
+          printf '%s\n' "$SUMS" >"${RUNNER_TEMP}/sums.txt"
+          (cd dist && sha256sum --check --strict "${RUNNER_TEMP}/sums.txt")
+          [[ "$(find dist -type f | wc -l)" == "$(wc -l <"${RUNNER_TEMP}/sums.txt")" ]] \
+            || { echo "::error::dist holds files that the verify job did not list"; exit 1; }
+
+      # PyPI refuses a file name it has used for good, even with the same bytes, and the upload action stops at the first
+      # refusal, so after a half upload the files PyPI holds must not be sent again for the missing one to get through.
+      # The project JSON for this version is read now, and each file of dist/ that PyPI lists with the same sha256 is
+      # taken out; one it lists with other sha256 fails the run (the version is spent). Nothing left means a finished
+      # release, and the upload is skipped. A listing that lags can still hide a file that was just uploaded: the upload
+      # then fails on the name, and a run after PyPI lists it succeeds.
+      - name: Leave out the files that PyPI already holds
+        id: held
+        run: |
+          set -euo pipefail
+          python3 -c 'import sys; sys.exit(sys.version_info < (3, 12))' \
+            || { echo "::error::python3 is older than 3.12, which scripts/release needs"; exit 1; }
+          json="${RUNNER_TEMP}/pypi.json"
+          code="$(curl -sSL --globoff --proto =https --proto-redir =https --retry 3 --connect-timeout 20 --max-time 120 \
+            -o "$json" -w '%{http_code}' "https://pypi.org/pypi/axmem/json")" \
+            || { echo "::error::PyPI could not be asked what it holds"; exit 1; }
+          case "$code" in
+            2??) ;;
+            404) : >"$json" ;;
+            *) echo "::error::PyPI answered ${code} to the read of the project JSON"; exit 1 ;;
+          esac
+          python3 -m scripts.release.guard pypi-missing --json "$json" --package axmem --version "${GITHUB_REF_NAME#v}" --dist dist
+          echo "remaining=$(find dist -type f | wc -l)" >>"$GITHUB_OUTPUT"
+
+      # No skip-existing: a name PyPI holds with other bytes must fail the run, not pass it (the step above fails on it
+      # first, and the action would refuse it again). PEP 740 attestations stay on (identity publish.yml at the tag); the
+      # cosign bundles stay out of dist/.
       - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
+        if: steps.held.outputs.remaining != '0'
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
+        with:
+          packages-dir: dist
+          print-hash: true

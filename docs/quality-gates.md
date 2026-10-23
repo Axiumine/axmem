@@ -119,7 +119,8 @@ name, split across jobs (`stage ci` runs the same set in one go on a developer m
 | `quality.yml` job `trivy` | `trivy`, with the pinned release binary downloaded and checked against its SHA-256 (no Docker image) |
 | `ci.yml` job `lint` | `tests/architecture` (the import contracts, the rule proofs and the rules of these workflow files) and ruff |
 | `ci.yml` job `smoke-test` | the `package` gate on a build of the checkout, and the wheel build smoke test: the locked dependencies (`uv sync --locked --no-dev --no-install-project`), then the wheel on top (`uv pip install --no-deps`), then `axmem --help` from another directory; a second step resolves the wheel's own metadata, where the TensorRT packages have no index and PyPI holds placeholders for two of them, with the `--extra-index-url https://pypi.nvidia.com` that the README documents (`uv pip compile`, nothing is downloaded) and checks that the three packages come from NVIDIA's index, the libraries as a wheel |
-| `publish.yml` job `publish` | builds the package, runs `dist-check` on `dist/` (a package that holds model weights, engines, native libraries or other files than source is refused) and publishes it to PyPI when a release is published |
+| `publish.yml` job `verify` | on a dispatch on a `v<version>` tag: checks the signed files of the GitHub release again (digests, cosign identity of `release.yml`, the release guard) and runs `dist-check` on them (a package that holds model weights, engines, native libraries or other files than source is refused), before the job `publish` uploads them to PyPI; see [release.md](release.md) |
+| `release.yml` jobs `sign-artefacts` and `provenance-artefacts` | on a `v<version>` tag: rebuilds the package from the committed `release-digests.json`, refuses to sign unless the rebuild is byte-identical, runs `dist-check`, signs each file with cosign (keyless) and attests them (SLSA-3); started by `scripts/release-pypi.sh`, see [release.md](release.md) |
 
 Every `uv sync` of these workflows uses `--locked` and leaves out `tensorrt-cu13-libs` (`--no-install-package tensorrt-cu13-libs`), the
 3.8 GB of TensorRT libraries that no hosted check loads; `tensorrt-cu13`, `tensorrt-cu13-bindings` and `cuda-python`
@@ -232,7 +233,7 @@ allow-list in the same module names it: say why in the commit.
 `pre-commit` runs the gate when a staged file is `app/`, `main.py`, `pyproject.toml`, `README.md`, a license file or the gate
 itself (otherwise it reports `SKIP`); `pre-push` and the `ci` stage always run it. The `smoke-test` job of `ci.yml` runs it
 after the locked environment is installed, and `publish.yml` runs `python -m scripts.quality dist-check dist` on the
-files of `uv build` between the build and the upload to PyPI, which cannot be taken back. `dist-check <dir>` checks any directory
+signed files of the release before the upload to PyPI, which cannot be taken back. `dist-check <dir>` checks any directory
 that holds one wheel and one sdist, for example a package you built by hand before you upload it.
 
 ### Snapshots
