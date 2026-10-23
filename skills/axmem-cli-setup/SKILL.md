@@ -99,7 +99,7 @@ same operations.
 - After changing embedding provider, model, precision or the `QDRANT_SHARD_NUMBER`,
   `QDRANT_REPLICATION_FACTOR` or `QDRANT_WRITE_CONSISTENCY_FACTOR` layout (the server refuses to start on
   either mismatch): stop every server (one left running refuses writes with a 409 once the alias has moved to another
-  embedder, and must be restarted; a create or edit that the switch overtook says it may be in the previous generation, so look for the memory before repeating it; an import that it overtook says part of it was written, and is repeated after the restart), `axmem re-embed --dry-run` to preview, then `axmem re-embed` (batch size
+  embedder, and must be restarted; a create or edit that the switch overtook says it may be in the previous generation, so look for the memory before repeating it; an import that it overtook ends with an error that says it was written, wholly or in part, and is repeated after the restart), `axmem re-embed --dry-run` to preview, then `axmem re-embed` (batch size
   tunable via `--batch-size`); it also rebuilds the links collection in the new layout. If a run was stopped while it moved
   the links, `serve`, `import`, `backup` and `export` refuse and name `<prefix>_links_relayout`: run `axmem re-embed` again, which copies
   the links back before it embeds anything.

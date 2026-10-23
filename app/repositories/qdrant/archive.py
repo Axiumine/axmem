@@ -260,8 +260,25 @@ class QdrantArchiveAdapter:
         vectors = await self._embedder().generate_embeddings([build_embedding_text(s.memory) for s in fresh])
         token = new_token()
         points = [NewPoint(s.memory.id, vector, payload_of(s, token=token)) for s, vector in zip(fresh, vectors, strict=True)]
-        await self.store.insert(SYSTEM, await self.schema.writable_generation(written=written), points)
+        await self._insert_batch(points, written=written)
         return len(points)
+
+    async def _insert_batch(self, points: list[NewPoint], *, written: Written | None) -> None:
+        """Write ``points`` into the live generation and look at it again afterwards, like a create.
+
+        A switch to another embedder ends the import with the refusal that says the batch was written; one to a
+        generation of the same embedder has the batch written into it too (insert-only leaves a copy that a re-embed
+        made as it is).
+        """
+        target = await self.schema.writable_generation(written=written)
+        while True:
+            await self.store.insert(SYSTEM, target, points)
+            live = await self.schema.writable_generation(written=Written.IMPORT)
+            if live == target:
+                return
+            # The alias moved while the batch was written, so it went to a generation that is no longer live (and a copy
+            # of the memories may have passed it by). Write it again into the live one; insert-only leaves a copy as it is
+            target = live
 
     async def _store_links(self, links: Iterable[tuple[UUID, UUID, UUID]], summary: ArchiveSummary) -> int:
         """Create the links whose two memories exist for their tenant; the others are skipped."""

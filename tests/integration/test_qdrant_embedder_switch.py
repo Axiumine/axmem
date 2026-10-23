@@ -7,6 +7,7 @@ create or an edit the switch overtakes lands in the previous generation and says
 generation of the same embedder lets writes go on, into the new generation.
 """
 import json
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -115,32 +116,63 @@ async def test_an_import_is_refused_when_the_memories_moved_to_another_embedder(
     assert await held_by(stack, other) == 0
 
 
-async def test_an_import_that_straddles_a_switch_to_another_embedder_does_not_say_that_nothing_was_written(
-    running, tensorrt_embedder, tmp_path, monkeypatch,
-):
-    stack, repo, _tenant, _ = running
-    before = await repo.live_generation()
-    adapter = QdrantArchiveAdapter(stack.store, stack.schema, lambda: tensorrt_embedder)
+IMPORT_WAS_WRITTEN = "The import was written, wholly or in part, just before the switch"
+
+
+async def a_file_of_new_memories(adapter, tmp_path, count: int):
+    """An import file of ``count`` memories that the collection does not hold, made from the export of the fixture's one."""
     exported = tmp_path / "exported.jsonl"
     await adapter.export_memories(exported)
     header, record, *_ = exported.read_text(encoding="utf-8").splitlines()
-    copies = []
-    for _ in range(2):  # memories the collection does not hold yet: one per batch
+    lines = [header]
+    for _ in range(count):
         copy = json.loads(record)
         copy["memory"]["id"] = str(uuid4())
-        copies.append(json.dumps(copy))
+        lines.append(json.dumps(copy))
     path = tmp_path / "fresh.jsonl"
-    path.write_text("\n".join([header, *copies]) + "\n", encoding="utf-8")
-    monkeypatch.setattr(archive_module, "IMPORT_BATCH", 1)
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
+
+
+def a_switch_after_the_first_insert(stack, repo, monkeypatch, model: str | None) -> list[str]:
+    """Make the first insert of the store the one the alias moves after; the list holds the generation it moved to."""
     insert = stack.store.insert
     moved = []
 
     async def switching_after_the_first_insert(*args, **kwargs):
         await insert(*args, **kwargs)
         if not moved:
-            moved.append(await switch_to_a_generation_of(stack, repo, "another/model"))
+            moved.append(await switch_to_a_generation_of(stack, repo, model))
 
     monkeypatch.setattr(stack.store, "insert", switching_after_the_first_insert)
+    return moved
+
+
+def a_switch_before_the_second_batch(stack, repo, adapter, monkeypatch) -> list[str]:
+    """Make the alias move to another embedder's generation just before the second batch is handed to the adapter."""
+    original = adapter._store_memories
+    moved = []
+    calls = []
+
+    async def switching_between_the_batches(batch, **kwargs):
+        calls.append(len(batch))
+        if len(calls) == 2:
+            moved.append(await switch_to_a_generation_of(stack, repo, "another/model"))
+        return await original(batch, **kwargs)
+
+    monkeypatch.setattr(adapter, "_store_memories", switching_between_the_batches)
+    return moved
+
+
+async def test_an_import_that_straddles_a_switch_to_another_embedder_does_not_say_that_nothing_was_written(
+    running, tensorrt_embedder, tmp_path, monkeypatch,
+):
+    stack, repo, _tenant, _ = running
+    before = await repo.live_generation()
+    adapter = QdrantArchiveAdapter(stack.store, stack.schema, lambda: tensorrt_embedder)
+    path = await a_file_of_new_memories(adapter, tmp_path, 2)
+    monkeypatch.setattr(archive_module, "IMPORT_BATCH", 1)
+    moved = a_switch_after_the_first_insert(stack, repo, monkeypatch, "another/model")
 
     with pytest.raises(EmbedderChangedError) as refused:
         await adapter.import_memories(path)
@@ -150,8 +182,107 @@ async def test_an_import_that_straddles_a_switch_to_another_embedder_does_not_sa
     assert await held_by(stack, before) == 2  # the memory of the fixture and the first of the file
     assert await held_by(stack, moved[0]) == 0
     assert "Nothing was written" not in str(refused.value)
-    assert "Part of the import was written just before the switch" in str(refused.value)
+    assert IMPORT_WAS_WRITTEN in str(refused.value)
     assert "repeat the import after the restart" in str(refused.value)
+
+
+async def test_the_only_batch_of_an_import_that_the_switch_overtook_is_refused_too(
+    running, tensorrt_embedder, tmp_path, monkeypatch,
+):
+    stack, repo, _tenant, _ = running
+    before = await repo.live_generation()
+    adapter = QdrantArchiveAdapter(stack.store, stack.schema, lambda: tensorrt_embedder)
+    path = await a_file_of_new_memories(adapter, tmp_path, 1)
+    moved = a_switch_after_the_first_insert(stack, repo, monkeypatch, "another/model")
+
+    with pytest.raises(EmbedderChangedError) as refused:  # not a summary that reports a memory in a generation no one reads
+        await adapter.import_memories(path)
+
+    assert await held_by(stack, before) == 2
+    assert await held_by(stack, moved[0]) == 0
+    assert IMPORT_WAS_WRITTEN in str(refused.value)
+
+
+async def test_an_import_refused_at_a_later_batch_says_that_the_earlier_ones_were_written(
+    running, tensorrt_embedder, tmp_path, monkeypatch,
+):
+    stack, repo, _tenant, _ = running
+    before = await repo.live_generation()
+    adapter = QdrantArchiveAdapter(stack.store, stack.schema, lambda: tensorrt_embedder)
+    path = await a_file_of_new_memories(adapter, tmp_path, 2)
+    monkeypatch.setattr(archive_module, "IMPORT_BATCH", 1)
+    moved = a_switch_before_the_second_batch(stack, repo, adapter, monkeypatch)
+
+    with pytest.raises(EmbedderChangedError) as refused:
+        await adapter.import_memories(path)
+
+    assert await held_by(stack, before) == 2  # the memory of the fixture and the first batch
+    assert await held_by(stack, moved[0]) == 0
+    assert "Nothing was written" not in str(refused.value)
+    assert IMPORT_WAS_WRITTEN in str(refused.value)
+
+
+async def test_the_last_batch_of_an_import_that_is_refused_says_that_the_earlier_ones_were_written(
+    running, tensorrt_embedder, tmp_path, monkeypatch,
+):
+    stack, repo, _tenant, _ = running
+    before = await repo.live_generation()
+    adapter = QdrantArchiveAdapter(stack.store, stack.schema, lambda: tensorrt_embedder)
+    path = await a_file_of_new_memories(adapter, tmp_path, 3)
+    monkeypatch.setattr(archive_module, "IMPORT_BATCH", 2)  # a batch of two, then the rest
+    moved = a_switch_before_the_second_batch(stack, repo, adapter, monkeypatch)
+
+    with pytest.raises(EmbedderChangedError) as refused:
+        await adapter.import_memories(path)
+
+    assert await held_by(stack, before) == 3  # the memory of the fixture and the first batch
+    assert await held_by(stack, moved[0]) == 0
+    assert "Nothing was written" not in str(refused.value)
+    assert IMPORT_WAS_WRITTEN in str(refused.value)
+
+
+async def test_a_batch_whose_embedding_the_switch_overtook_is_refused_with_the_open_outcome(
+    running, tensorrt_embedder, tmp_path, monkeypatch,
+):
+    stack, repo, _tenant, _ = running
+    before = await repo.live_generation()
+    moved = []
+    calls = []
+
+    async def embedding_then_switching(texts):
+        calls.append(len(texts))
+        vectors = await tensorrt_embedder.generate_embeddings(texts)
+        if len(calls) == 2:  # the alias moves after the second batch passed its first look and was embedded
+            moved.append(await switch_to_a_generation_of(stack, repo, "another/model"))
+        return vectors
+
+    adapter = QdrantArchiveAdapter(
+        stack.store, stack.schema, lambda: SimpleNamespace(generate_embeddings=embedding_then_switching),
+    )
+    path = await a_file_of_new_memories(adapter, tmp_path, 2)
+    monkeypatch.setattr(archive_module, "IMPORT_BATCH", 1)
+
+    with pytest.raises(EmbedderChangedError) as refused:
+        await adapter.import_memories(path)
+
+    assert await held_by(stack, before) == 2  # the memory of the fixture and the first batch
+    assert await held_by(stack, moved[0]) == 0
+    assert "Nothing was written" not in str(refused.value)
+    assert IMPORT_WAS_WRITTEN in str(refused.value)
+
+
+async def test_an_import_batch_that_straddles_a_switch_to_the_same_embedder_is_written_into_the_new_generation_too(
+    running, tensorrt_embedder, tmp_path, monkeypatch,
+):
+    stack, repo, _tenant, _ = running
+    adapter = QdrantArchiveAdapter(stack.store, stack.schema, lambda: tensorrt_embedder)
+    path = await a_file_of_new_memories(adapter, tmp_path, 1)
+    moved = a_switch_after_the_first_insert(stack, repo, monkeypatch, None)
+
+    summary = await adapter.import_memories(path)
+
+    assert summary.memories == 1
+    assert await held_by(stack, moved[0]) == 1
 
 
 async def test_a_create_that_straddles_a_switch_to_another_embedder_is_refused_and_leaves_nothing_live(running, monkeypatch):

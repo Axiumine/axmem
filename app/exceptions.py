@@ -22,7 +22,9 @@ class EmbedderChangedError(ConflictError):
     is refused: the new vector (or the vector read from the collection) would not match the others. Repeating the request
     does not help; the server has to be restarted with the settings of the embedder that made the collection. A refusal that
     follows a write (the switch came while the memory was being stored or edited) says that the write was made into the
-    previous generation and may or may not have been carried over, so the memory is to be looked for before it is repeated."""
+    previous generation and may or may not have been carried over, so the memory is to be looked for before it is repeated.
+    One that follows a batch of an ``axmem import`` says the same of the import, which is repeated after the restart instead:
+    a memory that exists is left as it is, so nothing is stored twice."""
 
 
 class InvalidStateTransitionError(Exception):

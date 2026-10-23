@@ -87,9 +87,9 @@ _OPEN_OUTCOME = {
         "not have carried it into the new one: look for the memory before repeating the request."
     ),
     Written.IMPORT: (
-        "Part of the import was written just before the switch, into the previous collection, and `axmem re-embed` may "
-        "or may not have carried it into the new one: repeat the import after the restart, which leaves a memory that "
-        "exists as it is, so nothing is stored twice."
+        "The import was written, wholly or in part, just before the switch, into the previous collection, and `axmem "
+        "re-embed` may or may not have carried it into the new one: repeat the import after the restart, which leaves a "
+        "memory that exists as it is, so nothing is stored twice."
     ),
 }
 
