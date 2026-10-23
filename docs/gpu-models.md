@@ -28,6 +28,9 @@ plan with (see [GPU memory](#gpu-memory)).
 | Operating system | Linux (the engine cache locks with `fcntl`) |
 | Python | 3.14 |
 
+No other hardware or operating system is supported, and Axmem will not be made to run on one on request. The one exception
+is a pull request with code that works natively on macOS ([CONTRIBUTING.md](../CONTRIBUTING.md#hardware-nvidia-only)).
+
 The CUDA 13 runtime (`cuda-python`) and TensorRT (`tensorrt-cu13`, `tensorrt-cu13-bindings`,
 `tensorrt-cu13-libs`) are locked in `uv.lock`. They come from the NVIDIA package index
 (`https://pypi.nvidia.com`, declared in `pyproject.toml`), because on PyPI `tensorrt-cu13` and

@@ -1,6 +1,8 @@
 # Contributing to Axmem
 
-This guide covers testing and CI workflows for contributors.
+This guide covers testing and CI workflows for contributors. How to report a bug, send a pull request and which hardware
+Axmem supports (NVIDIA only; macOS only as a pull request of code that works natively) is in
+[CONTRIBUTING.md](../CONTRIBUTING.md).
 
 ## Architecture
 

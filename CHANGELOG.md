@@ -16,6 +16,12 @@ without the mark, with the commit that landed it, in the commit that lands it.
 - Quality gates run from one orchestrator, `scripts/quality`, used by the Git hooks and by hosted CI for its static gates: ruff, import-linter,
   bandit, semgrep, vulture, radon, mypy, pylint, syrupy snapshots, 100 % branch coverage, memray budgets, trivy,
   Qodana, mutmut and GitNexus (proposed upstream as #163).
+- `GOVERNANCE.md`, `MAINTAINERS.md` and `CODE_OF_CONDUCT.md` (Contributor Covenant 2.1), adapted from the ones of Sankey Studio
+  to Axmem: the roles and the access rules of the two maintainers, who decides, and how conduct reports are made and handled.
+- `CONTRIBUTING.md`: how to report a bug and send a pull request, the rules for code,
+  tests and commits, the license of contributions (`AGPL-3.0-only`), and the hardware policy: Axmem supports NVIDIA GPUs on
+  Linux only, requests for other devices are not taken, and a pull request with code that works natively on macOS is the one
+  way to add one.
 - `package` quality gate and `python -m scripts.quality dist-check <dir>`: the wheel and the sdist hold Axmem's source and
   nothing else, so the model weights, the TensorRT engines and the NVIDIA libraries, which are not part of the AGPL
   release, cannot reach a package. The gate builds both from the files a build picks up (tracked, and untracked that git

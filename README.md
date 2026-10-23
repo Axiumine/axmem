@@ -460,6 +460,9 @@ For all environment variables with detailed explanations, see [Configuration Gui
 
 ## Contributing
 
+See [CONTRIBUTING.md](CONTRIBUTING.md) first. Axmem runs on NVIDIA GPUs only and will not be made to run on other devices on
+request; the one exception is a pull request with code that works natively on macOS.
+
 We welcome contributions! Axmem uses integration + E2E testing on a real NVIDIA GPU (the embedder and reranker tests run the actual TensorRT engines; there is no CPU or skip path). Docker is needed to start the real Qdrant node (and the three-node cluster) the suites run against.
 
 See [Contributors Guide](docs/contributors.md) for:
