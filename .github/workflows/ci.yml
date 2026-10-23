@@ -81,6 +81,12 @@ jobs:
       - name: Install the locked dependencies
         run: uv sync --locked --no-dev --no-install-project --no-install-package tensorrt-cu13-libs
 
+      # The wheel and the sdist are Axmem's source and nothing else: the model weights, the engines and the NVIDIA
+      # libraries have licenses of their own and are fetched by the user. The gate builds both from the checkout and
+      # reads what they hold; it needs only the standard library, which the environment above provides.
+      - name: Check what the package holds
+        run: uv run --frozen --no-sync python -m scripts.quality gate package
+
       - name: Test installation and CLI works
         run: |
           WHEEL=$(ls "$PWD"/dist/*.whl)

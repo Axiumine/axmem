@@ -4,7 +4,7 @@ description: >-
   Set up an MCP client for Axmem — wire Claude Code, Cursor, Copilot, Codex, Gemini, or
   OpenCode to the server and verify the connection behaves. Covers stdio vs HTTP transport,
   auth and scopes, the three meta-tools every client sees, and delegation to subagents.
-license: MIT
+license: AGPL-3.0-only
 disable-model-invocation: true
 tags: [mcp, setup, clients, transport, auth]
 allowed-tools:

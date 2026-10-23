@@ -5,7 +5,7 @@ description: >-
   description into a cited context pack: relevant decisions, patterns, constraints, code
   pointers, and explicit gaps. Runs recall from several angles and explores the
   graph around the strongest hits.
-license: MIT
+license: AGPL-3.0-only
 disable-model-invocation: true
 tags: [context, retrieval, workflow, pre-work]
 allowed-tools:

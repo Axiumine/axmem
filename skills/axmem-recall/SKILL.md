@@ -6,7 +6,7 @@ description: >-
   re-entering a project after time away, or before proposing an approach that may already
   have history. Covers query shaping, scoping, session-start catch-up, and when to escalate
   to graph exploration.
-license: MIT
+license: AGPL-3.0-only
 tags: [memory, retrieval, search, context]
 allowed-tools:
   - mcp__axmem__discover_axmem_tools

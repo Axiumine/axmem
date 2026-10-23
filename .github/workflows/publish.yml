@@ -20,5 +20,11 @@ jobs:
       - name: Build package
         run: uv build
 
+      # What goes to PyPI cannot be taken back: refuse a wheel or an sdist that holds model weights, TensorRT engines or
+      # NVIDIA libraries, or whose license metadata is not that of pyproject.toml. The checker needs only the standard
+      # library, so no environment is synced.
+      - name: Check what the package holds
+        run: uv run --no-project --python 3.14 python -m scripts.quality dist-check dist
+
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1

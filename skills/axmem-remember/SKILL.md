@@ -5,7 +5,7 @@ description: >-
   a pattern confirmed. Use when work surfaces something future sessions will need, or the
   user asks to remember something. Decides what is worth a memory and enforces
   query-before-create.
-license: MIT
+license: AGPL-3.0-only
 tags: [memory, capture, curation, knowledge-management]
 allowed-tools:
   - mcp__axmem__discover_axmem_tools

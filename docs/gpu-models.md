@@ -341,7 +341,9 @@ report the same error.
 
 Axmem's code is released under the AGPL-3.0 (see the [README](../README.md#license)). The models and the NVIDIA
 libraries below are not part of that release: the repository and the wheel hold none of them, and each is fetched by the
-person who installs or starts Axmem, under its own license. Checked on 2026-10-23, at the revisions Axmem pins.
+person who installs or starts Axmem, under its own license. The `package` quality gate keeps it so: it refuses a wheel or
+an sdist that holds model weights, TensorRT engines, native libraries or any file that is not Python source (see
+[quality gates](quality-gates.md#package-contents)). Checked on 2026-10-23, at the revisions Axmem pins.
 
 | Component | Fetched from | License | Note |
 |---|---|---|---|

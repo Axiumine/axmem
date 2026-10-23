@@ -6,6 +6,7 @@
     uv run python -m scripts.quality gate mypy             # one gate, whole project
     uv run python -m scripts.quality gate ruff --staged    # one gate, staged files only
     uv run python -m scripts.quality install               # point core.hooksPath at .githooks
+    uv run python -m scripts.quality dist-check dist       # what a built wheel and sdist hold (see the package gate)
 
 Environment knobs:
 
@@ -28,8 +29,9 @@ import os
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
-from . import registry
+from . import package, registry
 from .core import (
     HOOKS_DIR,
     ROOT,
@@ -148,6 +150,15 @@ def uninstall_hooks() -> int:
     return 0 if code in (0, 5) else code
 
 
+def run_dist_check(dist: str) -> int:
+    problems = package.check_dist(Path(dist), package.load_layout())
+    if problems:
+        print(package.HEADER + "\n".join(problems), file=sys.stderr)
+        return 1
+    print(f"OK: {dist} holds the wheel and the sdist of Axmem's source, and nothing else")
+    return 0
+
+
 def list_everything() -> int:
     for name, (_, desc) in registry.GATES.items():
         print(f"{name:<14} {desc}{'  [opt-in]' if name in registry.OPT_IN else ''}")
@@ -172,6 +183,8 @@ def build_parser() -> argparse.ArgumentParser:
     gt.add_argument("name")
     gt.add_argument("--staged", action="store_true", help="only staged files")
     gt.add_argument("--files", nargs="+", help="only these files")
+    dc = sub.add_parser("dist-check", help="check the wheel and the sdist in a directory (what the package gate checks)")
+    dc.add_argument("dist", help="directory that holds one wheel and one sdist")
     return parser
 
 
@@ -185,5 +198,7 @@ def main(argv: list[str] | None = None) -> int:
         return uninstall_hooks()
     if args.cmd == "stage":
         return run_stage(args.stage)
+    if args.cmd == "dist-check":
+        return run_dist_check(args.dist)
     scope = "staged" if args.staged else "files" if args.files else "all"
     return run_single(args.name, scope, args.files or [])

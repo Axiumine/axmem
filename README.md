@@ -486,9 +486,11 @@ Before changing code, read the [architecture overview](architecture.md).
 
 ## License
 
-Axmem is released under the [GNU Affero General Public License, version 3](LICENSE) (`AGPL-3.0-only`). If you
-modify Axmem and let others use it over a network, section 13 of the license requires you to offer those users the
-source code of your modified version.
+Copyright (C) 2026 Giovanni Manzoni <dev@giovannimanzoni.com>
+
+Axmem is released under the [GNU Affero General Public License, version 3](LICENSE) (`AGPL-3.0-only`), the skills in
+[skills/](skills/) included. If you modify Axmem and let others use it over a network, section 13 of the license
+requires you to offer those users the source code of your modified version.
 
 It is derived from [Forgetful](https://github.com/ScottRBK/forgetful), Copyright (c) 2025 Scott Raisbeck, which is
 released under the MIT License. The original copyright and permission notice is kept unchanged in
@@ -496,4 +498,6 @@ released under the MIT License. The original copyright and permission notice is 
 work to be released under the AGPL.
 
 The models and the NVIDIA libraries that Axmem uses are not part of this release and have licenses of their own: see
-[Licenses of the models and libraries](docs/gpu-models.md#licenses-of-the-models-and-libraries).
+[Licenses of the models and libraries](docs/gpu-models.md#licenses-of-the-models-and-libraries). The wheel and the sdist
+hold Axmem's source and nothing else: the `package` quality gate, which also checks the files `publish.yml` uploads, refuses
+a build that carries model weights, TensorRT engines or NVIDIA libraries.

@@ -5,7 +5,7 @@ description: >-
   investigations, "what do we know about X", tracing how decisions connect. Use when recall
   returns fragments that trail across domains. Walks memories, their links, and project
   scopes into one synthesized picture.
-license: MIT
+license: AGPL-3.0-only
 tags: [knowledge-graph, traversal, links, investigation]
 allowed-tools:
   - mcp__axmem__discover_axmem_tools

@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.14"
 license = "AGPL-3.0-only AND MIT"
 license-files = ["LICENSE", "LICENSE-FORGETFUL-MIT.md"]
-authors = [{name = "Scott", email = "scott@example.com"}]
+authors = [{name = "Giovanni Manzoni", email = "dev@giovannimanzoni.com"}]
 classifiers = [
     "Programming Language :: Python :: 3.14",
     "Operating System :: POSIX :: Linux",
@@ -99,7 +99,7 @@ version-file = "app/_version.py"
 packages = ["app", "main.py"]
 
 [tool.hatch.build.targets.sdist]
-include = ["app", "main.py", "README.md", "LICENSE", "LICENSE-FORGETFUL-MIT.md"]
+include = ["/app", "/main.py", "/README.md", "/LICENSE", "/LICENSE-FORGETFUL-MIT.md"]
 
 [tool.importlinter]
 root_package = "app"

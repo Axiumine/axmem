@@ -5,7 +5,7 @@ description: >-
   memories from the codebase itself. Use when bringing a new repo
   under Axmem or refreshing a stale encoding. Re-encoding is an update pass:
   query-before-create makes it supersession, not duplication.
-license: MIT
+license: AGPL-3.0-only
 disable-model-invocation: true
 tags: [bootstrap, encoding, repository, knowledge-base]
 allowed-tools:

@@ -95,9 +95,9 @@ vulture, radon, mypy, pylint) and `tests/architecture` need no GPU.
 
 | Stage | Pipeline |
 |---|---|
-| `pre-commit` (staged files) | ruff, imports, bandit, semgrep, vulture, radon-cc, radon-mi → mypy, pylint → snapshots, tests-fast → gitnexus |
-| `pre-push` (whole project) | ruff, imports, bandit, semgrep, vulture, radon-cc, radon-mi, trivy → mypy, pylint → tests → e2e-qdrant → coverage → memray → qodana → mutation (opt-in) → gitnexus |
-| `ci` (the gates hosted CI runs) | ruff, imports, bandit, semgrep, vulture, radon-cc, radon-mi, trivy → mypy, pylint |
+| `pre-commit` (staged files) | ruff, imports, bandit, semgrep, vulture, radon-cc, radon-mi → mypy, pylint, package → snapshots, tests-fast → gitnexus |
+| `pre-push` (whole project) | ruff, imports, bandit, semgrep, vulture, radon-cc, radon-mi, trivy → mypy, pylint, package → tests → e2e-qdrant → coverage → memray → qodana → mutation (opt-in) → gitnexus |
+| `ci` (the gates hosted CI runs) | ruff, imports, bandit, semgrep, vulture, radon-cc, radon-mi, trivy → mypy, pylint, package |
 
 `pre-push` puts the cheap gates first (trivy needs a few seconds and the network, the suites need minutes), so a
 finding there refuses the push before the GPU suites start. `coverage` comes after `tests` and `e2e-qdrant`, whose
@@ -118,8 +118,8 @@ name, split across jobs (`stage ci` runs the same set in one go on a developer m
 | `quality.yml` job `static` | ruff, imports, bandit, semgrep (with `p/python p/security-audit` added), vulture, radon-cc, radon-mi, mypy, pylint |
 | `quality.yml` job `trivy` | `trivy`, with the pinned release binary downloaded and checked against its SHA-256 (no Docker image) |
 | `ci.yml` job `lint` | `tests/architecture` (the import contracts, the rule proofs and the rules of these workflow files) and ruff |
-| `ci.yml` job `smoke-test` | wheel build smoke test: the locked dependencies (`uv sync --locked --no-dev --no-install-project`), then the wheel on top (`uv pip install --no-deps`), then `axmem --help` from another directory; a second step resolves the wheel's own metadata, where the TensorRT packages have no index and PyPI holds placeholders for two of them, with the `--extra-index-url https://pypi.nvidia.com` that the README documents (`uv pip compile`, nothing is downloaded) and checks that the three packages come from NVIDIA's index, the libraries as a wheel |
-| `publish.yml` job `publish` | builds the package and publishes it to PyPI when a release is published |
+| `ci.yml` job `smoke-test` | the `package` gate on a build of the checkout, and the wheel build smoke test: the locked dependencies (`uv sync --locked --no-dev --no-install-project`), then the wheel on top (`uv pip install --no-deps`), then `axmem --help` from another directory; a second step resolves the wheel's own metadata, where the TensorRT packages have no index and PyPI holds placeholders for two of them, with the `--extra-index-url https://pypi.nvidia.com` that the README documents (`uv pip compile`, nothing is downloaded) and checks that the three packages come from NVIDIA's index, the libraries as a wheel |
+| `publish.yml` job `publish` | builds the package, runs `dist-check` on `dist/` (a package that holds model weights, engines, native libraries or other files than source is refused) and publishes it to PyPI when a release is published |
 
 Every `uv sync` of these workflows uses `--locked` and leaves out `tensorrt-cu13-libs` (`--no-install-package tensorrt-cu13-libs`), the
 3.8 GB of TensorRT libraries that no hosted check loads; `tensorrt-cu13`, `tensorrt-cu13-bindings` and `cuda-python`
@@ -172,6 +172,7 @@ and without Docker and check that each ends the run.
 | `radon-mi` | every file maintainability grade A (score above 19), tests included | `radon.cfg` |
 | `mypy` | type check of `app`, `main.py`, `scripts` | `[tool.mypy]` |
 | `pylint` | score at least 8/10 | `[tool.pylint]` |
+| `package` | the wheel and the sdist built from this checkout hold source only, see [Package contents](#package-contents) | `scripts/quality/package.py`, `[tool.hatch.build.targets.*]` |
 | `snapshots` | syrupy snapshot tests (`-m snapshot`): CLI argument tree, settings defaults, Qdrant collection layout and payload types, MCP meta-tool signatures and tool catalogue, HTTP route table | `tests/integration/test_snapshots.py`, `tests/e2e/test_snapshots_e2e.py` |
 | `tests-fast` | `tests/architecture` and `tests/integration`, stopping at the first failure | `pytest.ini` |
 | `tests` | architecture + integration + end-to-end on one Qdrant node with branch coverage (erases previous coverage data first) | `[tool.coverage.*]` |
@@ -202,6 +203,37 @@ and its fragments in `.coverage-data/` (ignored by Git, semgrep, trivy, Qodana a
 named `.coverage*` is written to the repository root, not even by an interrupted run. `pytest --cov` combines
 when it finishes; `tests` starts with `coverage erase`, which removes the data file and any leftover fragments.
 To merge fragments by hand, run `coverage combine --append`; to start over, delete `.coverage-data/`.
+
+### Package contents
+
+The AGPL release is Axmem's Python source. The model weights, the TensorRT engines built from them and the NVIDIA
+libraries have licenses of their own ([GPU models](gpu-models.md#licenses-of-the-models-and-libraries)): the user fetches
+them, and none of them may be in a package. The `package` gate builds the wheel and the sdist with `uv build` in a copy of the
+files a build picks up (`git ls-files --cached --others --exclude-standard`: the tracked files and the untracked ones git does
+not ignore, so a model file left in `app/` is in the copy and the repository stays free of the version file the build
+writes; `SETUPTOOLS_SCM_PRETEND_VERSION` stands in for the git history that the copy lacks), then holds both to an allow-list:
+
+- under `app/` and `main.py` only `.py` files, each at most 256 KiB, none with a NUL byte (a weights file renamed to `.py`);
+  anything else is named for what it is when its name says so (model weights: `.onnx`, `.safetensors`, `.pt`, `.bin`, `.gguf`
+  and others; a TensorRT engine: `.engine`, `.plan`, `.trt`; a native library: `.so`, `.so.N`, `.dll`, `.dylib`, `.pyd`;
+  a tokenizer or model file such as `tokenizer.json`, `vocab.txt`, `manifest.json`) and otherwise as "not Python source";
+- in the wheel, nothing outside `app/`, `main.py` and the `.dist-info` directory (`METADATA`, `WHEEL`, `RECORD`,
+  `entry_points.txt`, `licenses/*`), and `Root-Is-Purelib: true` with `-none-any` tags, so no native library can be inside;
+- in the sdist, only the top-level names that `[tool.hatch.build.targets.sdist] include` lists, plus `PKG-INFO`,
+  `pyproject.toml` and `.gitignore` that hatchling writes;
+- each artefact at most 2 MiB; the largest file of the source tree is 35 KB and the wheel is about 250 KB;
+- `License-Expression` and `License-File` in `METADATA` or `PKG-INFO` equal `license` and `license-files` of
+  `pyproject.toml`, and both license files are in the artefact.
+
+`MAX_MEMBER_BYTES` and `MAX_ARTEFACT_BYTES` in `scripts/quality/package.py` are the caps: raise one on purpose when the source
+grows, never to let a model through. A new kind of file in the package, `py.typed` for example, is refused until the
+allow-list in the same module names it: say why in the commit.
+
+`pre-commit` runs the gate when a staged file is `app/`, `main.py`, `pyproject.toml`, `README.md`, a license file or the gate
+itself (otherwise it reports `SKIP`); `pre-push` and the `ci` stage always run it. The `smoke-test` job of `ci.yml` runs it
+after the locked environment is installed, and `publish.yml` runs `python -m scripts.quality dist-check dist` on the
+files of `uv build` between the build and the upload to PyPI, which cannot be taken back. `dist-check <dir>` checks any directory
+that holds one wheel and one sdist, for example a package you built by hand before you upload it.
 
 ### Snapshots
 

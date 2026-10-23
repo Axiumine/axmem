@@ -20,7 +20,7 @@ WORKFLOWS = sorted(WORKFLOWS_DIR.glob("*.yml"))
 GATE_COMMAND = re.compile(r"scripts\.quality\s+gate\s+([\w-]+)")
 # What a workflow may ask `scripts.quality` for: the gates that run on any Linux machine, none of them on a GPU or Docker.
 HOSTED_GATES = {
-    "ruff", "imports", "bandit", "semgrep", "vulture", "radon-cc", "radon-mi", "mypy", "pylint", "trivy",
+    "ruff", "imports", "bandit", "semgrep", "vulture", "radon-cc", "radon-mi", "mypy", "pylint", "trivy", "package",
 }
 # Words of a step that only a GPU or a Docker host can act on.
 GPU_OR_DOCKER_WORDS = re.compile(
@@ -160,6 +160,34 @@ def test_the_wheel_smoke_test_waits_for_lint_and_takes_the_tensorrt_pins_from_th
     assert "uvx" not in script  # resolves the wheel's own metadata, where the TensorRT packages have no index
     assert "uv sync --locked --no-dev --no-install-project --no-install-package tensorrt-cu13-libs" in script
     assert "uv pip install --no-deps" in script
+
+
+def _step_names(workflow, job):
+    return [step.get("name") for step in _load(WORKFLOWS_DIR / workflow)["jobs"][job]["steps"]]
+
+
+def _step(workflow, job, name):
+    (step,) = [step for step in _load(WORKFLOWS_DIR / workflow)["jobs"][job]["steps"] if step.get("name") == name]
+    return step
+
+
+def test_the_smoke_test_runs_the_package_gate_once_the_environment_that_it_runs_in_is_installed():
+    names = _step_names("ci.yml", "smoke-test")
+
+    assert names.index("Install the locked dependencies") < names.index("Check what the package holds")
+    assert names.index("Build wheel") < names.index("Check what the package holds")
+    assert _step("ci.yml", "smoke-test", "Check what the package holds")["run"] == (
+        "uv run --frozen --no-sync python -m scripts.quality gate package"
+    )
+
+
+def test_the_publish_workflow_checks_the_files_it_uploads_between_the_build_and_the_upload():
+    names = _step_names("publish.yml", "publish")
+
+    assert names.index("Build package") < names.index("Check what the package holds") < names.index("Publish to PyPI")
+    assert _step("publish.yml", "publish", "Check what the package holds")["run"] == (
+        "uv run --no-project --python 3.14 python -m scripts.quality dist-check dist"
+    )
 
 
 def _smoke_test_step_and_pyproject():

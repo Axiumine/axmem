@@ -6,7 +6,7 @@ description: >-
   CI with token auth, or operating a local server (serve, Qdrant connection, auth mode,
   re-embedding, backup). Also covers the machine contract: --json output, exit codes, and
   the discovery ladder.
-license: MIT
+license: AGPL-3.0-only
 disable-model-invocation: true
 tags: [cli, setup, auth, operations, terminal]
 allowed-tools:

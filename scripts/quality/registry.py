@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 
-from . import security, static, testing
+from . import package, security, static, testing
 from .core import GateFn
 
 GATES: dict[str, tuple[GateFn, str]] = {
@@ -19,6 +19,7 @@ GATES: dict[str, tuple[GateFn, str]] = {
     "pylint": (static.gate_pylint, "pylint score >= 8/10"),
     "snapshots": (testing.gate_snapshots, "syrupy snapshot tests"),
     "tests-fast": (testing.gate_tests_fast, "architecture + integration tests"),
+    "package": (package.gate_package, "wheel and sdist hold the source only: no model weights, engines or NVIDIA libraries"),
     "gitnexus": (security.gate_gitnexus, "GitNexus change/impact analysis"),
     "tests": (testing.gate_tests, "architecture + integration + e2e on a Qdrant node, with coverage"),
     "e2e-qdrant": (testing.gate_e2e_qdrant, "three-node Qdrant cluster e2e (docker) with coverage"),
@@ -31,15 +32,15 @@ GATES: dict[str, tuple[GateFn, str]] = {
 
 _STATIC = ["ruff", "imports", "bandit", "semgrep", "vulture", "radon-cc", "radon-mi"]
 
-# What needs neither a GPU nor Docker: the static gates, trivy, and the type checks. Hosted CI runs exactly these (by
-# name, split across jobs), and `stage ci` runs them in one go on a developer machine.
-_HOSTED = [[*_STATIC, "trivy"], ["mypy", "pylint"]]
+# What needs neither a GPU nor Docker: the static gates, trivy, the type checks and the package contents. Hosted CI runs
+# exactly these (by name, split across jobs), and `stage ci` runs them in one go on a developer machine.
+_HOSTED = [[*_STATIC, "trivy"], ["mypy", "pylint", "package"]]
 
 # Gates inside a group run in parallel; groups run in order and a failed group stops the stage.
 STAGES: dict[str, list[list[str]]] = {
     "pre-commit": [
         _STATIC,
-        ["mypy", "pylint"],
+        ["mypy", "pylint", "package"],
         ["snapshots", "tests-fast"],
         ["gitnexus"],
     ],

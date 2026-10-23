@@ -8,7 +8,7 @@ import sys
 
 import pytest
 
-from scripts.quality import cli, core, registry, security, static, testing
+from scripts.quality import cli, core, package, registry, security, static, testing
 
 
 @pytest.fixture(autouse=True)
@@ -32,8 +32,13 @@ def test_required_tools_are_gated_before_push():
     assert {
         "ruff", "mypy", "pylint", "bandit", "vulture", "semgrep", "radon-cc", "radon-mi",
         "tests", "e2e-qdrant", "coverage", "memray", "trivy", "qodana",
-        "gitnexus", "mutation",
+        "gitnexus", "mutation", "package",
     } <= pre_push
+
+
+def test_the_package_that_a_build_of_this_checkout_makes_holds_the_source_only():
+    """The real build: uv builds the wheel and the sdist of the files in this checkout, and the gate reads them."""
+    assert package.gate_package(core.Ctx(stage="manual", files=None)) == (True, "")
 
 
 def test_the_trivy_image_is_pinned_to_a_version(monkeypatch, tmp_path):

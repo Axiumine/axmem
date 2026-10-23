@@ -28,7 +28,7 @@ def test_the_pre_push_pipeline_runs_the_cheap_gates_first_and_each_gate_after_th
     order = _pre_push_order()
     groups = registry.STAGES["pre-push"]
 
-    for cheap in [*STATIC_GATES, "trivy", "mypy", "pylint"]:
+    for cheap in [*STATIC_GATES, "trivy", "mypy", "pylint", "package"]:
         assert order.index(cheap) < order.index("tests"), f"{cheap} should fail the push before the long suites start"
     assert groups[0] == [*STATIC_GATES, "trivy"]
     assert order.index("tests") < order.index("e2e-qdrant") < order.index("coverage")  # coverage reads both data files
@@ -40,7 +40,7 @@ def test_the_pre_push_pipeline_runs_the_cheap_gates_first_and_each_gate_after_th
 def test_the_ci_stage_holds_the_gates_that_need_neither_a_gpu_nor_docker():
     ci = [name for group in registry.STAGES["ci"] for name in group]
 
-    assert set(ci) == {*STATIC_GATES, "trivy", "mypy", "pylint"}
+    assert set(ci) == {*STATIC_GATES, "trivy", "mypy", "pylint", "package"}
     assert not set(ci) & NEEDS_GPU_OR_DOCKER
     assert registry.STAGES["ci"] == registry.STAGES["pre-push"][:2]
 

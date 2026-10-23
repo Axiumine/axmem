@@ -16,6 +16,14 @@ without the mark, with the commit that landed it, in the commit that lands it.
 - Quality gates run from one orchestrator, `scripts/quality`, used by the Git hooks and by hosted CI for its static gates: ruff, import-linter,
   bandit, semgrep, vulture, radon, mypy, pylint, syrupy snapshots, 100 % branch coverage, memray budgets, trivy,
   Qodana, mutmut and GitNexus (proposed upstream as #163).
+- `package` quality gate and `python -m scripts.quality dist-check <dir>`: the wheel and the sdist hold Axmem's source and
+  nothing else, so the model weights, the TensorRT engines and the NVIDIA libraries, which are not part of the AGPL
+  release, cannot reach a package. The gate builds both from the files a build picks up (tracked, and untracked that git
+  does not ignore) in a copy, and refuses any file that is not Python source under `app/` or `main.py`, a native library,
+  a file above 256 KiB, a `.py` file with binary content, a package above 2 MiB, a wheel that is not pure Python, and
+  license metadata or license files that differ from `pyproject.toml`. It runs in `pre-commit` (when a staged file goes into
+  the package), in `pre-push`, in the `ci` stage and in the `smoke-test` job of `ci.yml`; `publish.yml` runs `dist-check` on
+  the files it uploads, before the upload.
 - `commit-msg` hook (`95c1e5f1`): `[🤖 ]<type>(<scope>): <subject>`, subject up to 150 characters, body up to 10
   lines, AI Co-Authored-By trailers and "Generated with" lines rejected, `SKIP=commit-msg` to bypass, with tests.
 - `denylist-check` hook script: `pre-commit`, `commit-msg` and `pre-push` refuse staged changes, messages and
@@ -102,7 +110,10 @@ without the mark, with the commit that landed it, in the commit that lands it.
   `AGPL-3.0-only AND MIT` (PEP 639) with both files as `license-files`, and the sdist include list now names a `LICENSE` that
   exists (it named a file that did not). The models and the NVIDIA libraries are fetched by the user and are not part of the
   release; [docs/gpu-models.md](docs/gpu-models.md) lists their licenses, including that the default reranker was trained on
-  MS MARCO, whose terms say non-commercial research only.
+  MS MARCO, whose terms say non-commercial research only. The skills are under the AGPL too (`license: AGPL-3.0-only`, they
+  said `MIT`), the copyright of Axmem's own code is Giovanni Manzoni's (README, `authors` in `pyproject.toml`), and the sdist
+  `include` list is anchored (`/README.md`, not `README.md`), which kept the README files of `docs/`, `skills/` and
+  `test_harness/` out of the sdist.
 - Project renamed to Axmem under the Axiumine organisation; README rewritten, Forgetful credited, MIT notice
   kept (`b121d350`). The package, CLI and environment variables were renamed afterwards, see the rename entry below.
 - Python 3.14 is the only supported version: `requires-python`, classifiers, tool targets, CI, Dockerfiles and Nix
