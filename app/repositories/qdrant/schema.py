@@ -283,7 +283,7 @@ class QdrantSchema:
         when it names another embedder. A generation that records none is taken to be the configured one, as in ``ensure``.
 
         ``written`` is for the look that follows a write into the generation that was live before (a created or edited
-        memory, or the batches of an import that came earlier): when the alias has moved to another embedder's generation
+        memory, or the batches of an import written so far, the one just written included): when the alias has moved to another embedder's generation
         by then, the write is not nothing. It was made while the previous generation was live, and the copy that
         ``axmem re-embed`` makes after the switch may carry it into the new one, so the refusal says that the outcome is
         open and what to do about it (a caller that repeated a create could store the memory twice).

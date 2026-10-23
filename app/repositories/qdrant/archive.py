@@ -158,9 +158,10 @@ class QdrantArchiveAdapter:
         Raises:
             ValueError: If the file is not an export of this format
             EmbedderChangedError: If ``axmem re-embed`` switched the memories to another embedder while the server ran.
-                Raised at the first batch, nothing was stored; raised at a later one, the earlier batches are in the
-                previous generation and may or may not have been carried over, which the text says, and the import is
-                to be repeated after the restart (what exists is left as it is)
+                Raised before the first batch is written, nothing was stored; raised after a batch was written (the
+                first included), the batches written so far are in the previous generation and may or may not have been
+                carried over, which the text says, and the import is to be repeated after the restart (what exists is
+                left as it is)
         """
         summary = ArchiveSummary()
         tenants: set[str] = set()

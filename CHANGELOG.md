@@ -790,7 +790,7 @@ Fixes found by reviewing the feature cuts (no upstream counterpart: the code the
       that the import was written, wholly or in part, that `re-embed` may or may not have carried it over, and that the
       import is repeated after the restart, which leaves a memory that exists (same id) as it is and so stores nothing
       twice; a batch that straddles a switch to a generation of the same embedder is written into the new one too. A
-      refusal at the first batch keeps saying that nothing was written. `axmem import` is a command, so the refusal ends
+      refusal before the first batch is written keeps saying that nothing was written; one after it says that the import was written. `axmem import` is a command, so the refusal ends
       it with `Error: <text>` and exit code 1, not with a 409. Tests: `tests/integration/test_qdrant_embedder_switch.py`.
     - `export` counts the collections at its end before the file is put in place, not after. A transient Qdrant error
       there used to end the command with an error although the file was in place; it now ends it like any other failure
