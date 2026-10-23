@@ -20,7 +20,9 @@ class OutcomeUnknownError(ConflictError):
 class EmbedderChangedError(ConflictError):
     """The live memory collection now holds vectors of another embedder than the one this process embeds with, so a write
     is refused: the new vector (or the vector read from the collection) would not match the others. Repeating the request
-    does not help; the server has to be restarted with the settings of the embedder that made the collection."""
+    does not help; the server has to be restarted with the settings of the embedder that made the collection. A refusal that
+    follows a write (the switch came while the memory was being stored or edited) says that the write was made into the
+    previous generation and may or may not have been carried over, so the memory is to be looked for before it is repeated."""
 
 
 class InvalidStateTransitionError(Exception):

@@ -250,7 +250,7 @@ class QdrantSchema:
             raise QdrantStartupError(f"The alias {self.names.live} does not exist yet; start the server once to create it")
         return generation
 
-    async def writable_generation(self) -> str:
+    async def writable_generation(self, *, after_write: bool = False) -> str:
         """Name of the live generation, once it is known to hold vectors of the embedder this process embeds with.
 
         ``ensure`` checks the embedder when a process starts. A server that keeps running while ``axmem re-embed`` moves
@@ -258,16 +258,26 @@ class QdrantSchema:
         the stored vectors of two models cannot be compared. The write paths ask for the generation here, which looks at
         the record of a generation once, the first time it is live for this process, and raises ``EmbedderChangedError``
         when it names another embedder. A generation that records none is taken to be the configured one, as in ``ensure``.
+
+        ``after_write`` is for the look that follows a write into the generation that was live before: when the alias has
+        moved to another embedder's generation by then, the write is not nothing. It was made while the previous generation
+        was live, and the copy that ``axmem re-embed`` makes after the switch may carry it into the new one, so the refusal
+        says that the outcome is open (a caller that repeated the request could store the memory twice).
         """
         generation = await self.live_generation()
         if generation != self._confirmed:
             recorded = await self._read(lambda client: self._recorded_embedder(client, generation))
             wanted = embedder_identity(self.dimensions)
             if recorded is not None and recorded != wanted:
+                outcome = (
+                    "The write was made just before the switch, into the previous collection, and `axmem re-embed` may or may "
+                    "not have carried it into the new one: look for the memory before repeating the request."
+                    if after_write else "Nothing was written."
+                )
                 raise EmbedderChangedError(
                     f"The memory collection {generation} now holds vectors made with {_describe_identity(recorded)}, but this "
                     f"server embeds with {_describe_identity(wanted)}: `axmem re-embed` switched the memories to another "
-                    "embedder while the server was running. Nothing was written. Restart the server with the settings of the "
+                    f"embedder while the server was running. {outcome} Restart the server with the settings of the "
                     "new embedder (and stop every server before the next `axmem re-embed`)",
                 )
             self._confirmed = generation

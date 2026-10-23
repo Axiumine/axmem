@@ -212,7 +212,8 @@ is not its own. A server that was started before `axmem re-embed` switched the a
 embedder (another provider, model, width, precision or gateway backend) would otherwise go on writing vectors of the
 old model into the new generation, where nothing compares them with the others. Every write that carries a vector
 (creating a memory, editing one, a targeted rebuild, `import`) therefore looks at the embedder the live generation
-records, the first time it sees a generation, and writes nothing when it is not the one this process embeds with:
+records, the first time it sees a generation, and writes nothing when it is not the one this process embeds with (a
+create or an edit that was already being written when the alias moved is the one exception, described below the example):
 
 ```
 The memory collection axmem_memories_20261020t101500ab12 now holds vectors made with provider TensorRT, model ...,
@@ -221,7 +222,13 @@ while the server was running. Nothing was written. Restart the server with the s
 every server before the next `axmem re-embed`)
 ```
 
-REST answers 409 with that text and MCP shows it as a tool error. Reads keep working. The cure is to restart the
+REST answers 409 with that text and MCP shows it as a tool error. Reads keep working. A write that the switch overtook
+(the alias moved while the memory was being stored or edited) did land, in the previous generation, and the catch-up copy
+of `axmem re-embed` may or may not carry it into the new one, so its text does not say that nothing was written; it says
+``The write was made just before the switch, into the previous collection, and `axmem re-embed` may or may not have carried
+it into the new one: look for the memory before repeating the request.`` Look for the memory (search it or list the
+project) before you create it or change it again, or the request may be applied twice. Repeating the request does not
+help otherwise: the cure is the restart below. The cure is to restart the
 server with the new settings (the settings file of the host and the environment of the service must describe the
 embedder that `re-embed` used). The check is a guard against a forgotten server, not a reason to leave one running: a
 server that was started with the same embedder as the new generation (a `re-embed` that only changed the layout) keeps

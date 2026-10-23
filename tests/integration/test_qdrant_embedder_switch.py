@@ -2,7 +2,8 @@
 
 ``ensure`` checks the embedder when a process starts. These tests change the live generation under a repository
 that is already running (the alias moves to a generation that records another model) and show that the write paths
-that carry an embedding (create, edit, targeted rebuild, import) change nothing, and that the same switch to a
+that carry an embedding (create, edit, targeted rebuild, import) refuse before they write and change nothing, that a
+create or an edit the switch overtakes lands in the previous generation and says so, and that the same switch to a
 generation of the same embedder lets writes go on, into the new generation.
 """
 from uuid import uuid4
@@ -114,6 +115,7 @@ async def test_an_import_is_refused_when_the_memories_moved_to_another_embedder(
 
 async def test_a_create_that_straddles_a_switch_to_another_embedder_is_refused_and_leaves_nothing_live(running, monkeypatch):
     stack, repo, tenant, _ = running
+    before = await repo.live_generation()
     insert = repo.store.insert
     moved = []
 
@@ -124,10 +126,38 @@ async def test_a_create_that_straddles_a_switch_to_another_embedder_is_refused_a
 
     monkeypatch.setattr(repo.store, "insert", switching_after_the_first_insert)
 
-    with pytest.raises(EmbedderChangedError):
+    with pytest.raises(EmbedderChangedError) as refused:
         await repo.create_memory(tenant, a_memory("Written while the switch happened"))
 
-    assert await held_by(stack, moved[0]) == 0  # the write went into the generation that stopped being live
+    assert await held_by(stack, moved[0]) == 0  # nothing went into the generation that is live now
+    # The memory is in the generation that stopped being live, so the refusal must not say that nothing was written: a
+    # re-embed can still carry it over, and a client that repeated the request would store it twice
+    assert await held_by(stack, before) == 2
+    assert "Nothing was written" not in str(refused.value)
+    assert "may or may not have carried it into the new one: look for the memory before repeating the request" in str(refused.value)
+
+
+async def test_an_edit_that_straddles_a_switch_to_another_embedder_does_not_say_that_nothing_was_written(running, monkeypatch):
+    stack, repo, tenant, first = running
+    before = await repo.live_generation()
+    replace = repo.store.replace
+    moved = []
+
+    async def switching_after_the_first_replace(*args, **kwargs):
+        await replace(*args, **kwargs)
+        if not moved:
+            moved.append(await switch_to_a_generation_of(stack, repo, "another/model"))
+
+    monkeypatch.setattr(repo.store, "replace", switching_after_the_first_replace)
+
+    with pytest.raises(EmbedderChangedError) as refused:
+        await repo.update_memory(tenant, first.id, MemoryUpdate(importance=9))
+
+    [point] = await stack.pool.clients[0].retrieve(before, [str(first.id)])
+    assert (point.payload["importance"], point.payload["version"]) == (9, 2)  # the edit is in the previous generation
+    assert await held_by(stack, moved[0]) == 0
+    assert "Nothing was written" not in str(refused.value)
+    assert "may or may not have carried it into the new one" in str(refused.value)
 
 
 async def test_writes_go_into_the_new_generation_when_the_embedder_is_the_same(running):

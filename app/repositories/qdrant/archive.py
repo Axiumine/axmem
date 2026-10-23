@@ -80,7 +80,8 @@ class QdrantArchiveAdapter:
         create or remove while the export runs may or may not be included, so the collections are counted before and
         after: an export with fewer memories than existed when it started is refused (memories are never deleted, so
         it would have lost one), and one whose counts differ from the collections' at the end says so in the
-        summary (``memories_at_end``, ``links_at_end``). Stop the writers for an exact copy.
+        summary (``memories_at_end``, ``links_at_end``; counted before the file is put in place, so that a count which
+        fails ends the export with no file). Stop the writers for an exact copy.
 
         Raises:
             OperatorCommandError: If the file would hold fewer memories than the collection held when the export began
@@ -120,13 +121,15 @@ class QdrantArchiveAdapter:
                     f"The export would hold {summary.memories} memories but {live} held {held_at_start} when it began, "
                     "so it would be missing some. Nothing was written; run the export again, with the writers stopped",
                 )
+            # Counted before the file is put in place: a failed count ends the export with no file, like any other failure,
+            # and not with an error about a file that is there
+            summary.memories_at_end = await self.store.count(SYSTEM, live)
+            summary.links_at_end = await self.store.count(SYSTEM, self.names.links)
             partial.replace(path)
         except BaseException:
             partial.unlink(missing_ok=True)
             raise
         summary.tenants = len(tenants)
-        summary.memories_at_end = await self.store.count(SYSTEM, live)
-        summary.links_at_end = await self.store.count(SYSTEM, self.names.links)
         logger.info("Exported memories", extra={"memories": summary.memories, "links": summary.links, "export_path": str(path)})
         return summary
 

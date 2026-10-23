@@ -59,7 +59,9 @@ class QdrantMemoryWriteMixin(QdrantMemoryReadMixin):
         during the write, the point is written into the new live generation too.
 
         Raises:
-            EmbedderChangedError: If ``axmem re-embed`` switched the memories to another embedder while the server ran
+            EmbedderChangedError: If ``axmem re-embed`` switched the memories to another embedder while the server ran.
+                Raised before the write, nothing was stored; raised after it (the switch came during the write), the
+                memory is in the previous generation and may or may not have been carried over, which the text says
         """
         scope = Scope.of(user_id)
         vector = await self._generate_embeddings(build_embedding_text(memory_data=memory))
@@ -71,7 +73,7 @@ class QdrantMemoryWriteMixin(QdrantMemoryReadMixin):
         generation = await self.schema.writable_generation()
         while True:
             await self.store.insert(scope, generation, [point])
-            live = await self.schema.writable_generation()
+            live = await self.schema.writable_generation(after_write=True)
             if live == generation:
                 return memory_from_point(Point(point.id, point.payload))
             # The alias moved while the point was written, so it went to a generation that is no longer live (and a copy
@@ -90,6 +92,7 @@ class QdrantMemoryWriteMixin(QdrantMemoryReadMixin):
             ConflictError: If concurrent changes kept the write from being applied
             OutcomeUnknownError: If so many writes landed after this one that it cannot be told whether it applied
             EmbedderChangedError: If ``axmem re-embed`` switched the memories to another embedder while the server ran
+                (an edit that had landed in the previous generation says that it may or may not have been carried over)
         """
         scope = Scope.of(user_id)
         changes = updated_memory.model_dump(exclude_unset=True)
@@ -114,7 +117,8 @@ class QdrantMemoryWriteMixin(QdrantMemoryReadMixin):
         vector it read unless the text changed, and a vector read from one generation must not be written into
         another (a re-embedding moves the live alias to a generation with vectors of a different model). When the
         alias moved during the attempt, the write went to a generation that is no longer live and is not confirmed:
-        the next attempt makes the change again on the live one. None means the attempt did not apply.
+        the next attempt makes the change again on the live one, unless that one holds the vectors of another embedder,
+        which ends the edit with an ``EmbedderChangedError`` that says the outcome is open. None means the attempt did not apply.
         """
         generation = await self.schema.writable_generation()
         current = await self._current(scope, memory_id, generation=generation, with_vectors=True)
@@ -132,7 +136,7 @@ class QdrantMemoryWriteMixin(QdrantMemoryReadMixin):
         await self.store.replace(scope, generation, NewPoint(memory_id, vector, payload), expected_version=version)
         if not await self.store.landed(scope, generation, memory_id, from_version=version, token=token):
             return None
-        if await self.schema.live_generation() != generation:
+        if await self.schema.writable_generation(after_write=True) != generation:
             return None
         return (await self._memories(scope, [Point(memory_id, payload)]))[0]
 

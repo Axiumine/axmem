@@ -470,8 +470,8 @@ Fixes found by reviewing the feature cuts (no upstream counterpart: the code the
     `backup` deletes the snapshot from its node whatever happens to the download (a failed download left a snapshot as
     large as the node's shards behind each time; one that cannot be deleted is named in the log), and takes the snapshot
     under the same long timeout instead of the ordinary request timeout, which gave up on a large collection while the
-    node went on and kept the snapshot unnamed (a snapshot that takes longer than that one hour is still not waited for and stays on its node
-    unnamed).
+    node went on and kept the snapshot unnamed (a snapshot that takes longer than that one hour is still not waited for; the
+    cluster-scale entry below says how it is found and deleted).
   - **`re-embed` and the layout settings:** a changed `QDRANT_SHARD_NUMBER`, `QDRANT_REPLICATION_FACTOR` or
     `QDRANT_WRITE_CONSISTENCY_FACTOR` stopped the server with a message that told the operator to "create a new
     collection", which `re-embed` could not do (it refused to open the old collection with the same message, and left the
@@ -532,7 +532,7 @@ Fixes found by reviewing the feature cuts (no upstream counterpart: the code the
     source of truth for the links. [docs/embedding_migration.md](docs/embedding_migration.md) said that a half-finished run
     left nothing to restore and now describes this state and the cost of the run that ends it.
   - **Statements that said more than the code or the tests:** a snapshot "never stays on its node" (one that cannot be
-    deleted is only named in the log, and one that takes longer than 3600 s stays unnamed), the cluster restore tests
+    deleted is only named in the log, and one that the node finishes after the 3600 s and the look for it stays on the node), the cluster restore tests
     covering replication factor 3 over an emptied Qdrant (that layout is now tested) and the embedder record "kept in
     snapshots" (no test restored one; the single-node end-to-end test and every cluster restore layout now read it back
     before `ensure()` could record it again).
@@ -733,8 +733,9 @@ Fixes found by reviewing the feature cuts (no upstream counterpart: the code the
     replicas are not all at the same version at that moment. Beside eight writers rewriting 600 memories on three
     nodes (3 shards, replication factor 3, write consistency factor 2) such a scan missed a memory in about one round
     in three (and with one shard it once lost a whole page of 100); a read of the ids alone never did. `export`,
-    `import`, the copy of `re-embed` (`outdated_in`, `copy_into`) and `qdrant-check`'s counts could therefore write a file or
-    a generation without a memory that existed. Every page is now listed by id with a plain read (`QdrantStore.page`)
+    `import` and the copy of `re-embed` (`outdated_in`, `copy_into`) could therefore write a file or
+    a generation without a memory that existed (`qdrant-check` was never affected: it reads each node on its own, not by
+    quorum, and keeps doing so; the first wording of this entry listed it by mistake). Every page is now listed by id with a plain read (`QdrantStore.page`)
     and the listed memories are fetched with the repeating quorum read (`get_agreed`, which now asks again only for
     the ids still missing); a memory the replicas never agree about ends the scan with a `ConflictError` (one `Error:`
     line on the command line, 409 over REST) instead of being left out. `import` and the copy checked their
@@ -744,10 +745,10 @@ Fixes found by reviewing the feature cuts (no upstream counterpart: the code the
     created memories meanwhile). With writers running a scan is still a moving picture, which
     [docs/configuration.md](docs/configuration.md) now says; an exact copy needs the writers stopped. The cluster tests
     (`tests/cluster/test_cluster_scans.py`) hold the omission (a detector shows the old scan loses memories), 25 rounds of a complete scan, an
-    export, the copy of a `re-embed` and the per-node counts of `qdrant-check` beside writers; 17 of the 21 new
+    export and the copy of a `re-embed` beside writers, and, as a control, `qdrant-check`'s per-node counts beside writers; 17 of the 21 new
     single-node tests (`tests/integration/test_qdrant_complete_scans.py`, replicas that disagree injected between the
     pool and the client) fail without the change.
-  - **A failed snapshot request leaves no snapshot behind.** A request that gave up after the 3600 seconds the client
+  - **A failed snapshot request deletes the snapshot it left behind.** A request that gave up after the 3600 seconds the client
     waits (or whose connection dropped, or whose answer carried no name) left the snapshot the node went on to make
     on the node, unnamed, as large as its shards. `NodePool.create_snapshot` lists the snapshots of the collection
     before the request, and after any failure deletes the ones that were not there; after a timeout or a dropped
@@ -766,10 +767,30 @@ Fixes found by reviewing the feature cuts (no upstream counterpart: the code the
     record of the live generation the first time this process sees it, and create, edit, targeted rebuild and import
     (which write by that generation's name) raise `EmbedderChangedError` (a `ConflictError`: 409, and the text is shown over MCP)
     and write nothing when it is not this process's embedder; a create that straddles a switch to a generation of the same embedder
-    is written again into the new one. Reads are not affected. The procedure stays: stop every server before `re-embed`
+    is written again into the new one. A create or an edit that the switch overtakes (the refusal comes after the write) did
+    write: the memory is in the previous generation, and the catch-up copy of `re-embed` may or may not carry it into the new one.
+    Its refusal says so (see the corrections below) instead of "Nothing was written". Reads are not affected. The procedure stays: stop every server before `re-embed`
     ([docs/embedding_migration.md](docs/embedding_migration.md), which also records that a run with writers across the
     switch lost an acknowledged edit in the cluster test, because the catch-up copy goes by version number and the two generations can
     hold different histories of a memory). Tests: `tests/integration/test_qdrant_embedder_switch.py`.
+  - **Corrections to the cluster-scale review** (found by a second review of the commit above):
+    - `qdrant-check` was listed among the scans that are now complete or end in a `ConflictError`. It never used a quorum scan
+      (it reads each node on its own, which is its purpose), so it did not change; the changelog, the changes table and
+      [docs/configuration.md](docs/configuration.md) no longer say it did.
+    - A create or an edit that landed in the previous generation just before the alias moved to another embedder's generation
+      was refused with "Nothing was written", although the memory was stored there and the catch-up copy of `re-embed` may
+      carry it over: a client that repeated the request could store it twice. `writable_generation(after_write=True)`,
+      asked after the write, words the refusal as an open outcome (look for the memory before repeating). A refusal before
+      the write keeps saying that nothing was written. Tests: `tests/integration/test_qdrant_embedder_switch.py` (the old
+      generation holds the memory, the new one nothing).
+    - `export` counts the collections at its end before the file is put in place, not after. A transient Qdrant error
+      there used to end the command with an error although the file was in place; it now ends it like any other failure
+      of the export, with no file. Test: `tests/integration/test_qdrant_complete_scans.py`.
+    - The statements that a snapshot taking longer than 3600 s stays unnamed are corrected: the node's snapshot is looked
+      for for up to 5 minutes more and deleted; only one finished after that stays on the node, and the log lists the
+      snapshots that existed before.
+    - The `ConflictError` handler of the REST routes no longer says that every conflict is to be repeated:
+      `EmbedderChangedError` needs a restart of the server.
   - **Clusters of other sizes and a restore into another cluster are tested** (`tests/cluster/test_cluster_backup_restore_other_clusters.py`,
     `start_cluster(nodes=...)` in `tests/qdrant_support.py`): see the results in
     [docs/changes-from-forgetful.md](docs/changes-from-forgetful.md#facts-to-re-verify).

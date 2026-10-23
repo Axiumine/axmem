@@ -49,7 +49,9 @@ def handle_request_errors(
 
     A ``ConflictError`` can come out of any read or write of a memory (a write that kept losing to other writers,
     replicas that kept holding different versions of a memory, a write whose outcome cannot be told), and
-    in every case the request should be repeated, so no route is left to answer it with a 500.
+    in those cases the request can be repeated (after a look at the memory when the outcome is unknown), so no route is
+    left to answer it with a 500. An ``EmbedderChangedError`` is the exception: repeating the request does not help,
+    the server has to be restarted, and its text says so.
     """
 
     @functools.wraps(handler)

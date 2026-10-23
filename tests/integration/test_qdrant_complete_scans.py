@@ -319,6 +319,26 @@ async def test_an_export_says_so_when_memories_were_created_while_it_ran(exporte
     assert summary.memories >= MEMORIES  # the new memory is in the file only if the scan reached it
 
 
+async def test_an_export_whose_final_count_fails_ends_with_no_file(exporter, tmp_path, monkeypatch):
+    stack, _repo, _tenant, _ids, _undecided, adapter = exporter
+    real_count = stack.store.count
+    calls = []
+
+    async def failing_at_the_end(*args, **kwargs):
+        calls.append(args)
+        if len(calls) > 1:
+            raise ConnectionError("Qdrant went away after the scan")
+        return await real_count(*args, **kwargs)
+
+    monkeypatch.setattr(stack.store, "count", failing_at_the_end)
+
+    with pytest.raises(ConnectionError, match="after the scan"):
+        await adapter.export_memories(tmp_path / "export.jsonl")
+
+    assert len(calls) == 2
+    assert list(tmp_path.glob("export.jsonl*")) == []  # neither the file nor its .partial: the command failed, so nothing is left
+
+
 def test_a_summary_of_an_import_never_reports_a_change_during_an_export():
     assert not ArchiveSummary(memories=3, links=1).changed_during_export
     assert not ArchiveSummary(memories=3, links=1, memories_at_end=3, links_at_end=1).changed_during_export
