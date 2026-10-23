@@ -29,7 +29,12 @@ from app.repositories.qdrant.payloads import (
     payload_of,
     stamp,
 )
-from app.repositories.qdrant.schema import LINK_VECTOR, CollectionNames, QdrantSchema
+from app.repositories.qdrant.schema import (
+    LINK_VECTOR,
+    CollectionNames,
+    QdrantSchema,
+    Written,
+)
 from app.repositories.qdrant.store import (
     SYSTEM,
     TENANT_KEY,
@@ -53,6 +58,11 @@ def _uuid(value: Any) -> UUID:
     if not isinstance(value, str):
         raise TypeError("an id must be text")
     return UUID(value)
+
+
+def _written_by(summary: ArchiveSummary) -> Written | None:
+    """What a refusal to write must own up to: the memories the import has stored so far, if any."""
+    return Written.IMPORT if summary.memories else None
 
 
 def _line(record: dict[str, Any]) -> str:
@@ -147,6 +157,10 @@ class QdrantArchiveAdapter:
 
         Raises:
             ValueError: If the file is not an export of this format
+            EmbedderChangedError: If ``axmem re-embed`` switched the memories to another embedder while the server ran.
+                Raised at the first batch, nothing was stored; raised at a later one, the earlier batches are in the
+                previous generation and may or may not have been carried over, which the text says, and the import is
+                to be repeated after the restart (what exists is left as it is)
         """
         summary = ArchiveSummary()
         tenants: set[str] = set()
@@ -171,9 +185,9 @@ class QdrantArchiveAdapter:
                 else:
                     self._skip(number, summary, "unknown record kind")
                 if len(memories) >= IMPORT_BATCH:
-                    summary.memories += await self._store_memories(memories)
+                    summary.memories += await self._store_memories(memories, written=_written_by(summary))
                     memories.clear()
-        summary.memories += await self._store_memories(memories)
+        summary.memories += await self._store_memories(memories, written=_written_by(summary))
         summary.links += await self._store_links(links, summary)
         summary.tenants = len(tenants)
         logger.info("Imported memories", extra={"memories": summary.memories, "links": summary.links, "skipped": summary.skipped})
@@ -227,11 +241,14 @@ class QdrantArchiveAdapter:
             self._skip(number, summary, "invalid link")
             return None
 
-    async def _store_memories(self, batch: list[StoredMemory]) -> int:
-        """Embed and create the memories of ``batch`` that the live collection does not hold; return how many were created."""
+    async def _store_memories(self, batch: list[StoredMemory], *, written: Written | None = None) -> int:
+        """Embed and create the memories of ``batch`` that the live collection does not hold; return how many were created.
+
+        ``written`` says what the import stored before this batch, for the refusal when the embedder changed meanwhile.
+        """
         if not batch:
             return 0
-        generation = await self.schema.writable_generation()
+        generation = await self.schema.writable_generation(written=written)
         present = {
             point.id for point in await self.store.get_agreed(
                 SYSTEM, generation, [s.memory.id for s in batch], with_payload=False,
@@ -243,7 +260,7 @@ class QdrantArchiveAdapter:
         vectors = await self._embedder().generate_embeddings([build_embedding_text(s.memory) for s in fresh])
         token = new_token()
         points = [NewPoint(s.memory.id, vector, payload_of(s, token=token)) for s, vector in zip(fresh, vectors, strict=True)]
-        await self.store.insert(SYSTEM, await self.schema.writable_generation(), points)
+        await self.store.insert(SYSTEM, await self.schema.writable_generation(written=written), points)
         return len(points)
 
     async def _store_links(self, links: Iterable[tuple[UUID, UUID, UUID]], summary: ArchiveSummary) -> int:

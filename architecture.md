@@ -241,9 +241,9 @@ one generation of the memory collection from its read to its read-back and is ma
 of the old generation is never written into the new one. Every write that carries an embedding (create, edit, targeted rebuild, import) takes its
 generation from `QdrantSchema.writable_generation`, which checks once per generation that the embedder it records is the one this process embeds with and
 raises `EmbedderChangedError` (a `ConflictError`, so 409 and shown to MCP clients) when `re-embed` moved the alias to another embedder under a running server;
-a create writes into that generation by name and again into the new one when the alias moved during the write. A write that the switch overtook asks
-`writable_generation(after_write=True)`, so that a refusal after the write says its outcome is open (the memory is in the previous generation, which the catch-up copy of `re-embed`
-may carry over) and not that nothing was written.
+a create writes into that generation by name and again into the new one when the alias moved during the write. A write that the switch overtook (a create or an edit, or a batch of an import after an earlier one)
+asks `writable_generation(written=Written.MEMORY)` or `Written.IMPORT`, so that a refusal after the write says its outcome is open (the memory is in the previous generation, which the catch-up copy of `re-embed`
+may carry over) and not that nothing was written; an import is to be repeated after the restart, since a memory that exists is left as it is.
 
 Automatic linking uses the configured neighbor limit and similarity threshold, excluding obsolete
 memories and the source memory ([memory_search.py](app/repositories/qdrant/memory_search.py)). A search by a stored memory

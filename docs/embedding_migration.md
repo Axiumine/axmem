@@ -213,7 +213,8 @@ embedder (another provider, model, width, precision or gateway backend) would ot
 old model into the new generation, where nothing compares them with the others. Every write that carries a vector
 (creating a memory, editing one, a targeted rebuild, `import`) therefore looks at the embedder the live generation
 records, the first time it sees a generation, and writes nothing when it is not the one this process embeds with (a
-create or an edit that was already being written when the alias moved is the one exception, described below the example):
+create or an edit that was already being written when the alias moved, and an import that had stored a batch before it
+moved, are the exceptions, described below the example):
 
 ```
 The memory collection axmem_memories_20261020t101500ab12 now holds vectors made with provider TensorRT, model ...,
@@ -227,8 +228,12 @@ REST answers 409 with that text and MCP shows it as a tool error. Reads keep wor
 of `axmem re-embed` may or may not carry it into the new one, so its text does not say that nothing was written; it says
 ``The write was made just before the switch, into the previous collection, and `axmem re-embed` may or may not have carried
 it into the new one: look for the memory before repeating the request.`` Look for the memory (search it or list the
-project) before you create it or change it again, or the request may be applied twice. Repeating the request does not
-help otherwise: the cure is the restart below. The cure is to restart the
+project) before you create it or change it again, or the request may be applied twice. An `import` that the switch
+overtook between two batches stored its earlier batches in the same way, so its text says ``Part of the import was
+written just before the switch, into the previous collection, and `axmem re-embed` may or may not have carried it into
+the new one: repeat the import after the restart, which leaves a memory that exists as it is, so nothing is stored
+twice.`` An import is made to be repeated: a memory that exists (same id) is left exactly as it is. Repeating the
+request does not help otherwise: the cure is the restart below. The cure is to restart the
 server with the new settings (the settings file of the host and the environment of the service must describe the
 embedder that `re-embed` used). The check is a guard against a forgotten server, not a reason to leave one running: a
 server that was started with the same embedder as the new generation (a `re-embed` that only changed the layout) keeps

@@ -27,6 +27,7 @@ from app.repositories.qdrant.payloads import (
     new_token,
     stamp,
 )
+from app.repositories.qdrant.schema import Written
 from app.repositories.qdrant.store import (
     VERSION_KEY,
     NewPoint,
@@ -73,7 +74,7 @@ class QdrantMemoryWriteMixin(QdrantMemoryReadMixin):
         generation = await self.schema.writable_generation()
         while True:
             await self.store.insert(scope, generation, [point])
-            live = await self.schema.writable_generation(after_write=True)
+            live = await self.schema.writable_generation(written=Written.MEMORY)
             if live == generation:
                 return memory_from_point(Point(point.id, point.payload))
             # The alias moved while the point was written, so it went to a generation that is no longer live (and a copy
@@ -136,7 +137,7 @@ class QdrantMemoryWriteMixin(QdrantMemoryReadMixin):
         await self.store.replace(scope, generation, NewPoint(memory_id, vector, payload), expected_version=version)
         if not await self.store.landed(scope, generation, memory_id, from_version=version, token=token):
             return None
-        if await self.schema.writable_generation(after_write=True) != generation:
+        if await self.schema.writable_generation(written=Written.MEMORY) != generation:
             return None
         return (await self._memories(scope, [Point(memory_id, payload)]))[0]
 

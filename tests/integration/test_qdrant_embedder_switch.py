@@ -6,6 +6,7 @@ that carry an embedding (create, edit, targeted rebuild, import) refuse before t
 create or an edit the switch overtakes lands in the previous generation and says so, and that the same switch to a
 generation of the same embedder lets writes go on, into the new generation.
 """
+import json
 from uuid import uuid4
 
 import pytest
@@ -13,6 +14,7 @@ from qdrant_client import models as qm
 
 from app.exceptions import ConflictError, EmbedderChangedError
 from app.models.memory_models import MemoryCreate, MemoryUpdate
+from app.repositories.qdrant import archive as archive_module
 from app.repositories.qdrant.archive import QdrantArchiveAdapter
 from app.repositories.qdrant.schema import (
     EMBEDDER_KEY,
@@ -107,10 +109,49 @@ async def test_an_import_is_refused_when_the_memories_moved_to_another_embedder(
     await adapter.export_memories(path)
     other = await switch_to_a_generation_of(stack, repo, "another/model")
 
-    with pytest.raises(EmbedderChangedError):
+    with pytest.raises(EmbedderChangedError, match="Nothing was written"):
         await adapter.import_memories(path)
 
     assert await held_by(stack, other) == 0
+
+
+async def test_an_import_that_straddles_a_switch_to_another_embedder_does_not_say_that_nothing_was_written(
+    running, tensorrt_embedder, tmp_path, monkeypatch,
+):
+    stack, repo, _tenant, _ = running
+    before = await repo.live_generation()
+    adapter = QdrantArchiveAdapter(stack.store, stack.schema, lambda: tensorrt_embedder)
+    exported = tmp_path / "exported.jsonl"
+    await adapter.export_memories(exported)
+    header, record, *_ = exported.read_text(encoding="utf-8").splitlines()
+    copies = []
+    for _ in range(2):  # memories the collection does not hold yet: one per batch
+        copy = json.loads(record)
+        copy["memory"]["id"] = str(uuid4())
+        copies.append(json.dumps(copy))
+    path = tmp_path / "fresh.jsonl"
+    path.write_text("\n".join([header, *copies]) + "\n", encoding="utf-8")
+    monkeypatch.setattr(archive_module, "IMPORT_BATCH", 1)
+    insert = stack.store.insert
+    moved = []
+
+    async def switching_after_the_first_insert(*args, **kwargs):
+        await insert(*args, **kwargs)
+        if not moved:
+            moved.append(await switch_to_a_generation_of(stack, repo, "another/model"))
+
+    monkeypatch.setattr(stack.store, "insert", switching_after_the_first_insert)
+
+    with pytest.raises(EmbedderChangedError) as refused:
+        await adapter.import_memories(path)
+
+    # The first batch is in the generation that stopped being live, so the refusal must not say that nothing was written,
+    # and it names the cure: the import is repeated after the restart and leaves what exists as it is
+    assert await held_by(stack, before) == 2  # the memory of the fixture and the first of the file
+    assert await held_by(stack, moved[0]) == 0
+    assert "Nothing was written" not in str(refused.value)
+    assert "Part of the import was written just before the switch" in str(refused.value)
+    assert "repeat the import after the restart" in str(refused.value)
 
 
 async def test_a_create_that_straddles_a_switch_to_another_embedder_is_refused_and_leaves_nothing_live(running, monkeypatch):

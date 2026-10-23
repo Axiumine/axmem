@@ -779,10 +779,16 @@ Fixes found by reviewing the feature cuts (no upstream counterpart: the code the
       [docs/configuration.md](docs/configuration.md) no longer say it did.
     - A create or an edit that landed in the previous generation just before the alias moved to another embedder's generation
       was refused with "Nothing was written", although the memory was stored there and the catch-up copy of `re-embed` may
-      carry it over: a client that repeated the request could store it twice. `writable_generation(after_write=True)`,
+      carry it over: a client that repeated the request could store it twice. `writable_generation(written=Written.MEMORY)`,
       asked after the write, words the refusal as an open outcome (look for the memory before repeating). A refusal before
       the write keeps saying that nothing was written. Tests: `tests/integration/test_qdrant_embedder_switch.py` (the old
       generation holds the memory, the new one nothing).
+    - An `import` that the alias overtook between two batches was refused with "Nothing was written" as well, although
+      its earlier batches were stored in the previous generation. `import_memories` now passes what it has stored to
+      `writable_generation(written=Written.IMPORT)`: the refusal says that part of the import was written, that
+      `re-embed` may or may not have carried it over, and that the import is repeated after the restart, which leaves a
+      memory that exists (same id) as it is and so stores nothing twice. A refusal at the first batch keeps saying that
+      nothing was written. Tests: `tests/integration/test_qdrant_embedder_switch.py`.
     - `export` counts the collections at its end before the file is put in place, not after. A transient Qdrant error
       there used to end the command with an error although the file was in place; it now ends it like any other failure
       of the export, with no file. Test: `tests/integration/test_qdrant_complete_scans.py`.

@@ -180,9 +180,9 @@ async def test_memories_are_stored_in_batches(donor, tmp_path, monkeypatch):
     stored_per_call = []
     original = adapter._store_memories
 
-    async def counting(batch):
+    async def counting(batch, **kwargs):
         stored_per_call.append(len(batch))
-        return await original(batch)
+        return await original(batch, **kwargs)
 
     monkeypatch.setattr(adapter, "_store_memories", counting)
 
