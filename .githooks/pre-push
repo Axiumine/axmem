@@ -1,7 +1,8 @@
 #!/bin/sh
 # The one place that runs the GPU, Docker and Qdrant gates (hosted CI has none of them): static gates and trivy, types,
 # the architecture, integration and end-to-end suites with 100% coverage, the Qdrant cluster suite, memory budgets,
-# Qodana, GitNexus. A failing gate, a machine without an NVIDIA GPU or a Docker daemon, and a tool that is missing all
+# Qodana, mutation testing of the app/ modules the push changes (the slowest gate, limited to 24 hours; MUTATION_TIMEOUT_S changes the cap),
+# GitNexus. A failing gate, a machine without an NVIDIA GPU or a Docker daemon, and a tool that is missing all
 # refuse the push; bypass a gate on purpose with  SKIP=qodana,trivy git push ...   (see docs/quality-gates.md)
 #
 # The gates check the working tree, so they only prove the commit being pushed when it is the checked-out HEAD. A push
@@ -33,4 +34,6 @@ fi
 if [ "$gate" -eq 0 ]; then
     exit 0
 fi
+# the remote lets a branch without an upstream be compared with that remote's main, not with the old origin/main
+export QUALITY_PUSH_REMOTE="$1"
 exec uv run --frozen python -m scripts.quality stage pre-push

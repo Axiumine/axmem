@@ -18,8 +18,8 @@ nix develop
 ```
 
 You get the locked Python environment plus `uv`, `ruff` and `pytest`, with
-`PYTHONPATH` pointed at the repo. First entry installs the pre-commit hooks
-automatically.
+`PYTHONPATH` pointed at the repo. The dev shell installs no Git hooks: the checks run from `.githooks/`
+(see [Quality gates](quality-gates.md)).
 
 Use `uv` for lock operations only (`uv add …`, `uv lock`) — never
 `uv sync`/`uv run` inside the shell; Nix owns the environment.
@@ -54,14 +54,11 @@ Hatch-vcs has no `.git` inside Nix builds, so the version defaults to
 AXMEM_VERSION=$(git describe --tags) nix build --impure .#axmem
 ```
 
-## Hooks, format, checks
+## Checks
 
-- Hooks (`nixfmt`, `deadnix`, `statix`, `ruff`, `typos`) run at commit time
-  from the dev shell: `pre-commit run --all-files`
-- `nix fmt` rewrites the tree with the same hook set
-- `nix flake check` runs the sandboxed pre-commit check (fast, hermetic)
-
-`typos` runs with its default dictionary; an allowlist would go in a `_typos.toml` at the repository root.
+The flake defines no check, formatter or hook of its own: every check of the project is a gate of
+`scripts/quality`, which the Git hooks in `.githooks/` run (see [Quality gates](quality-gates.md)). `nix fmt` and
+`nix flake check` do nothing for it.
 
 ## Tests
 

@@ -5,11 +5,23 @@ so Git hooks, CI and a developer shell execute identical commands. Tool versions
 `pyproject.toml` (`dev` dependency group, locked in `uv.lock`); semgrep, trivy and Qodana run
 isolated because their dependency trees conflict with the application pins.
 
+**Every check is a gate, and every gate runs from a hook.** A check that guards the project is a named gate in
+`scripts/quality/registry.py`, and the `pre-commit` and `pre-push` hooks reach it through `stage <name>`. None
+exists only as a command to remember, as a step of a workflow or as a line of a script that no hook runs. A new check
+is added as a gate, with its tool pinned in the `dev` group, and to a stage in the same change. The flake defines no
+check of its own (see [Nix](nix.md)): `.githooks/` is the only mechanism.
+
+Two things are not run by every hook, on purpose, and each says so when it is left out: `gitnexus` reports `SKIP` on a
+clone without a local GitNexus index or `node`, because that index is local tooling that no clone has until it builds
+one; and the checks of a release (tag shape, digests, cosign identity,
+the release guard) need a release and its signed files, so `scripts/release-pypi.sh` and the release workflows run them,
+with their code covered by the release tests that `tests` runs.
+
 **Where they run.** Hosted CI has no GPU, and the project has no self-hosted runner, so CI runs only the gates that
-need neither a GPU nor Docker (the static gates, trivy, the architecture tests, the wheel smoke test). Everything
-that runs the real TensorRT embedder and reranker or a real Qdrant (tests, the Qdrant cluster suite, coverage, memory
-budgets, Qodana, mutation) runs on the developer machine, in the `pre-push` Git hook. See
-[Where the gates run](#where-the-gates-run).
+need neither a GPU nor Docker (the static gates, trivy, the architecture tests, the package and the wheel), and it
+runs them by their gate names: it adds nothing the hooks do not run. Everything that runs the real TensorRT embedder
+and reranker or a real Qdrant (tests, the Qdrant cluster suite, coverage, memory budgets, Qodana, mutation) runs on the
+developer machine, in the `pre-push` Git hook. See [Where the gates run](#where-the-gates-run).
 
 ```bash
 uv sync --locked --all-extras --dev          # install the toolchain
@@ -19,8 +31,16 @@ uv run python -m scripts.quality gate mypy   # run one gate on the whole project
 uv run python -m scripts.quality gate ruff --staged
 uv run python -m scripts.quality gate ruff --files app/bootstrap.py main.py
 uv run python -m scripts.quality stage pre-commit   # what the pre-commit hook runs
+uv run python -m scripts.quality wheel-check dist   # the checks of the wheel gate, on a dist/ built elsewhere
 uv run python -m scripts.quality uninstall   # unset core.hooksPath
 ```
+
+The `dev` group also holds the command-line tools of the `shellcheck`, `actionlint` and `wheel` gates (`shellcheck-py`,
+`actionlint-py`, `twine`, `check-wheel-contents`), so the sync above installs them and the gates take them from the
+environment, never from a global install or from `uvx`: a hand run and the hook use the same version. Sync the project
+environment with `--all-extras --dev` and without `--no-install-package`: the hosted workflows leave out
+`tensorrt-cu13-libs` (3.8 GB that no hosted check loads), but a sync of `.venv` that does would remove the GPU libraries.
+The hooks run `uv run --frozen`, which syncs a newly pinned tool into `.venv` the first time and keeps the rest.
 
 Python 3.14 is the only supported version (`requires-python = ">=3.14"`, classifier 3.14,
 `.python-version` 3.14). The gates and the CI workflows described below all run on 3.14, and the
@@ -35,8 +55,8 @@ synced as above.
 
 | Hook | Runs | Blocks |
 |---|---|---|
-| `pre-commit` | stage `pre-commit` on the staged files | yes |
-| `pre-push` | stage `pre-push` on the whole project: the one place that runs the GPU, Docker and Qdrant gates. It gates the pushed commit only when that is the checked-out `HEAD` (the gates read the working tree), so a push of any other commit is refused and not passed unchecked; deleting a remote ref has nothing to check and goes through | yes |
+| `pre-commit` | stage `pre-commit` on the staged files, and `denylist-check` | yes |
+| `pre-push` | stage `pre-push` on the whole project, and `denylist-check`: the one place that runs the GPU, Docker and Qdrant gates. It gates the pushed commit only when that is the checked-out `HEAD` (the gates read the working tree), so a push of any other commit is refused and not passed unchecked; deleting a remote ref has nothing to check and goes through | yes |
 | `commit-msg` | commit message format: `[🤖 ]<type>(<scope>): <subject>`, types feat/fix/chore/docs/refactor/test/perf/ci/build, subject <=150 chars, body <=10 lines, no AI attribution trailers; skip once with `SKIP=commit-msg` or `--no-verify` | yes |
 | `post-commit` | refreshes the local GitNexus index in the background (needs `.gitnexus/run.cjs` and `node`) | never |
 | `denylist-check` | called by `pre-commit` (staged file names and added lines), `commit-msg` (the message) and `pre-push` (every unpushed commit); refuses any match with `.git/info/denylist` | yes |
@@ -56,8 +76,9 @@ last stage and would hide the failure of an earlier one. Added lines are matched
 `^term` anchors to the line, and a line that begins with `++` is scanned like any other (covered by
 `tests/integration/test_denylist_check_hook.py`).
 
-`commit-msg` is stage-less: it only validates the message text, so it is not run by `scripts.quality stage`
-and is not part of the pipeline below. Comment lines and the `git commit -v` scissors section are stripped
+`commit-msg` and `denylist-check` are stage-less: they read the message or the names of the commits, and the guard
+must not be bypassable with `SKIP` or `ONLY`, so neither is run by `scripts.quality stage` and neither is part of the
+pipeline below. The `shellcheck` gate lints both, and every other hook, with the shell scripts. Comment lines and the `git commit -v` scissors section are stripped
 before checking, and merge, revert and `fixup!`/`squash!`/`amend!` commits skip the format check. AI
 `Co-Authored-By` trailers and "Generated with" lines are rejected; mark AI-written commits with the `🤖`
 subject prefix instead (covered by `tests/integration/test_commit_msg_hook.py`).
@@ -66,10 +87,15 @@ subject prefix instead (covered by `tests/integration/test_commit_msg_hook.py`).
 
 Gates in the same group run in parallel; groups run left to right and the first failing group
 stops the stage (cheapest checks first). A gate whose tool or daemon is missing (trivy with neither a binary
-nor Docker, semgrep with neither `semgrep`, `uvx` nor Docker, the cluster suite without Docker, Qodana without
+nor Docker, semgrep with neither `semgrep`, `uvx` nor Docker, shellcheck, actionlint, twine or check-wheel-contents
+absent from the environment, no `uv` for the wheel gate, the cluster suite without Docker, Qodana without
 its CLI) **fails** with the cause, so a push that these gates guard cannot pass because the machine cannot run one.
-A gate reports `SKIP` only when it has nothing to look at: no staged file of its kind, GitNexus without a local
-index or `node`, mutation without a scope. `SKIP=<gate>` leaves a gate out on purpose.
+A gate reports `SKIP` only when it has nothing to look at: no staged file of its kind (no staged shell script for
+`shellcheck`, no staged workflow for `actionlint`, none that the architecture rules read for `architecture`), GitNexus without a local
+index or `node`, mutation when the push changes no `app/` module and `MUTATION_TARGETS` is not set. A gate that raises instead of returning fails, with the traceback, and the other gates of its
+group still report. `SKIP=<gate>` leaves a gate out on purpose: the stage prints a `SKIP` line for every gate that `SKIP` or `ONLY`
+left out and ends `OK (N gates left out)`, so a pipeline that was emptied does not look like a passed one.
+A name in `SKIP` or `ONLY` that is no gate, and an `ONLY` that selects no gate of the stage, end the run with exit code 2.
 
 **GPU requirement.** Every gate that runs `tests/integration`, `tests/e2e` or `tests/cluster` (`snapshots`,
 `tests-fast`, `tests`, `e2e-qdrant`, `memray`, `mutation`) needs an NVIDIA GPU with driver R580 or newer
@@ -91,22 +117,41 @@ each test's setup into seconds; the nodes of the shared cluster use the containe
 The cluster suite always starts its own nodes: three for the shared cluster, and a four-node cluster and a second three-node cluster for the restore tests of `tests/cluster/test_cluster_backup_restore_other_clusters.py`. These gates do not report `SKIP` without a GPU or without Docker: The `e2e-qdrant` gate gets 3 hours instead of the 30 every other gate gets (`E2E_QDRANT_TIMEOUT_SECONDS` in `scripts/quality/testing.py`), because the suite starts three clusters and waits for their replicas.
 they fail. See
 [GPU models](gpu-models.md) for the host requirements. The static gates (ruff, imports, bandit, semgrep,
-vulture, radon, mypy, pylint) and `tests/architecture` need no GPU.
+vulture, radon, shellcheck, actionlint, mypy, pylint), `tests/architecture`, `package` and `wheel` need no GPU.
 
 | Stage | Pipeline |
 |---|---|
-| `pre-commit` (staged files) | ruff, imports, bandit, semgrep, vulture, radon-cc, radon-mi → mypy, pylint, package → snapshots, tests-fast → gitnexus |
-| `pre-push` (whole project) | ruff, imports, bandit, semgrep, vulture, radon-cc, radon-mi, trivy → mypy, pylint, package → tests → e2e-qdrant → coverage → memray → qodana → mutation (opt-in) → gitnexus |
-| `ci` (the gates hosted CI runs) | ruff, imports, bandit, semgrep, vulture, radon-cc, radon-mi, trivy → mypy, pylint, package |
+| `pre-commit` (staged files) | ruff, imports, bandit, semgrep, vulture, radon-cc, radon-mi, shellcheck, actionlint → mypy, pylint, architecture, package → snapshots, tests-fast → gitnexus |
+| `pre-push` (whole project) | ruff, imports, bandit, semgrep, vulture, radon-cc, radon-mi, shellcheck, actionlint, trivy → mypy, pylint, architecture, package, wheel → tests → e2e-qdrant → coverage → memray → qodana → mutation → gitnexus |
+| `ci` (the gates hosted CI runs) | ruff, imports, bandit, semgrep, vulture, radon-cc, radon-mi, shellcheck, actionlint, trivy → mypy, pylint, architecture, package, wheel |
 
 `pre-push` puts the cheap gates first (trivy needs a few seconds and the network, the suites need minutes), so a
 finding there refuses the push before the GPU suites start. `coverage` comes after `tests` and `e2e-qdrant`, whose
 data it reads, and `gitnexus` last.
 
-`pre-commit` scopes ruff, bandit, semgrep, radon and pylint to the staged files. mypy, vulture,
+`wheel` is not in `pre-commit`: it installs the locked dependencies, which needs PyPI and NVIDIA's index, so a commit
+made offline must not fail on it. `package`, which is in `pre-commit`, runs `uv build`, which fetches the pinned build
+requirements (`hatchling`, `hatch-vcs`) unless the uv cache holds them: a first commit with an empty cache needs PyPI. It runs in `pre-push` and in `ci`, where the network is a given, and fails (never
+skips) without it. A commit that stages only a workflow, a hook, `pyproject.toml` or `uv.lock` still meets the
+`architecture` gate, which runs when a staged file is one that the architecture tests read (`app/`, `scripts/`,
+`tests/architecture/`, `.github/`, `.githooks/`, `test_harness/docker/`, `main.py`, `pyproject.toml`, `uv.lock`,
+`architecture.md`, `.python-version`, `flake.nix`, `tests/integration/`: `test_mutation_sandbox.py` reads the integration tests).
+`tests-fast` also runs when a staged file is one that the integration tests read besides code (`docs/`, `README.md`,
+`CHANGELOG.md`, `.env.example`, `release-superseded.json`, `.github/`), so a docs-only commit meets the reference-document
+tests at the commit and not first at the push. A commit that only deletes files is not an empty one: the removed paths count
+for the gates over the whole project (mypy, vulture, import-linter, the tests, shellcheck, actionlint), and nothing is linted
+in a file that is gone.
+
+`pre-commit` scopes ruff, bandit, semgrep, radon and pylint to the staged files, `shellcheck` and `actionlint` to the
+shell scripts and the workflows (they lint every one of them when one is staged: `-x` follows `source` into the others,
+and it takes under a second). mypy, vulture,
 import-linter and the tests always run over the whole project (a changed signature breaks unchanged
 callers) but are skipped when nothing relevant is staged. `QUALITY_FULL=1` makes `pre-commit` check the
-whole project.
+whole project. So does staging the configuration of a gate (`pyproject.toml`, `uv.lock`, `ruff.toml`, `radon.cfg`,
+`pytest.ini`, `vulture_whitelist.py`, `trivy.yaml`, `.trivyignore`, `.semgrepignore`, `.shellcheckrc`, anything under
+`.semgrep/`): a changed rule or pin can fail a file that is not staged, and a scoped gate would report `SKIP`.
+Semgrep keeps to its local rules in a scoped `pre-commit` run (the registry packs need the network) and runs the
+packs in every other run.
 
 ## Where the gates run
 
@@ -115,12 +160,19 @@ name, split across jobs (`stage ci` runs the same set in one go on a developer m
 
 | Workflow and job | What runs |
 |---|---|
-| `quality.yml` job `static` | ruff, imports, bandit, semgrep (with `p/python p/security-audit` added), vulture, radon-cc, radon-mi, mypy, pylint |
+| `quality.yml` job `static` | ruff, imports, bandit, semgrep (with `p/python p/security-audit`, the default of the gate), shellcheck, actionlint, vulture, radon-cc, radon-mi, mypy, pylint |
 | `quality.yml` job `trivy` | `trivy`, with the pinned release binary downloaded and checked against its SHA-256 (no Docker image) |
-| `ci.yml` job `lint` | `tests/architecture` (the import contracts, the rule proofs and the rules of these workflow files) and ruff |
-| `ci.yml` job `smoke-test` | the `package` gate on a build of the checkout, and the wheel build smoke test: the locked dependencies (`uv sync --locked --no-dev --no-install-project`), then the wheel on top (`uv pip install --no-deps`), then `axmem --help` from another directory; a second step resolves the wheel's own metadata, where the TensorRT packages have no index and PyPI holds placeholders for two of them, with the `--extra-index-url https://pypi.nvidia.com` that the README documents (`uv pip compile`, nothing is downloaded) and checks that the three packages come from NVIDIA's index, the libraries as a wheel |
+| `ci.yml` job `lint` | the `architecture` gate (`tests/architecture`: the import contracts, the rule proofs and the rules of these workflow files) and the `ruff` gate |
+| `ci.yml` job `smoke-test` | the `package` gate and the `wheel` gate, see [The wheel gate](#the-wheel-gate) |
 | `publish.yml` job `verify` | on a dispatch on a `v<version>` tag: checks the signed files of the GitHub release again (digests, cosign identity of `release.yml`, the release guard) and runs `dist-check` on them (a package that holds model weights, engines, native libraries or other files than source is refused), before the job `publish` uploads them to PyPI; see [release.md](release.md) |
 | `release.yml` jobs `sign-artefacts` and `provenance-artefacts` | on a `v<version>` tag: rebuilds the package from the committed `release-digests.json`, refuses to sign unless the rebuild is byte-identical, runs `dist-check`, signs each file with cosign (keyless) and attests them (SLSA-3); started by `scripts/release-pypi.sh`, see [release.md](release.md) |
+
+A workflow step calls a gate by its name (`uv run --frozen python -m scripts.quality gate <name>`) and holds no check
+of its own: a command that guards the project is a gate first. `tests/architecture/test_workflows.py` fails when a gate
+of the `ci` stage is missing from the workflows. The only other commands in `ci.yml` and `quality.yml` install a tool
+(`setup-uv`, `uv sync`, the pinned trivy binary); the checks of `release.yml` and `publish.yml` (tag shape, digests,
+cosign identity, the release guard) need a release and its signed files, so they are not hook gates, and `actionlint`
+and `shellcheck` lint those workflows too.
 
 Every `uv sync` of these workflows uses `--locked` and leaves out `tensorrt-cu13-libs` (`--no-install-package tensorrt-cu13-libs`), the
 3.8 GB of TensorRT libraries that no hosted check loads; `tensorrt-cu13`, `tensorrt-cu13-bindings` and `cuda-python`
@@ -167,23 +219,27 @@ and without Docker and check that each ends the run.
 | `ruff` | lint (existing rule set) | `ruff.toml` |
 | `imports` | layer contracts routes → services → protocols → repositories | `[tool.importlinter]` |
 | `bandit` | security lint on app/main/harness/scripts | `[tool.bandit]` |
-| `semgrep` | repo-specific rules (no `print` on the MCP stdout path, deprecated asyncio, Qdrant writes outside `store.py` or without `wait`, …); `SEMGREP_PACKS="p/python p/security-audit"` adds registry packs. Uses `semgrep` on `PATH`, else `uvx`, else the pinned Docker image; fails when none can run | `.semgrep/axmem.yml`, `.semgrepignore` |
+| `semgrep` | repo-specific rules (no `print` on the MCP stdout path, deprecated asyncio, Qdrant writes outside `store.py` or without `wait`, …) and the registry packs `p/python p/security-audit` (`SEMGREP_PACKS` in `scripts/quality/static.py`; they need the network, so a scoped `pre-commit` run keeps to the local rules; `SEMGREP_PACKS` in the environment replaces them, empty leaves them out). Uses `semgrep` on `PATH`, else `uvx`, else the pinned Docker image; fails when none can run | `.semgrep/axmem.yml`, `.semgrepignore` |
+| `shellcheck` | `shellcheck -x` with `SHELLCHECK_OPTS` emptied (`shellcheck-py`, pinned in the `dev` group) over every shell script the project holds: the files named `*.sh` and the files whose first line names `sh`, `bash`, `dash` or `ksh`, tracked or untracked and not ignored (the files of `.githooks/`, `scripts/*.sh`, `scripts/lib/*.sh`, the fake tools of `tests/release_support/fake_bin/`); fails when the binary is missing from the environment, or when the interpreter is not in a virtual environment (a system `bin/` would hold unpinned tools) | `.shellcheckrc` (it holds no option; its presence stops the search for a user-level rc file) |
+| `actionlint` | `actionlint` (`actionlint-py`, pinned in the `dev` group) over `.github/workflows/*.yml`: expressions, contexts, the job and step schema, and the `run:` blocks through the same pinned shellcheck (the gate puts the `bin/` of the environment first on `PATH` and passes `-shellcheck`, because actionlint lints `run:` blocks only with a shellcheck it finds); fails when a binary is missing. `actionlint-py` is an sdist in `uv.lock`: the first `uv sync` builds it and it downloads the pinned `actionlint` binary from github.com (checked against the SHA-256 in the sdist), so a sync needs GitHub as well as PyPI | `.github/actionlint.yaml` (optional) |
 | `vulture` | dead code, min confidence 60 | `[tool.vulture]`, `vulture_whitelist.py` |
 | `radon-cc` | no function/method rated C or worse (minimum rating B), tests included | `radon.cfg` |
 | `radon-mi` | every file maintainability grade A (score above 19), tests included | `radon.cfg` |
 | `mypy` | type check of `app`, `main.py`, `scripts` | `[tool.mypy]` |
 | `pylint` | score at least 8/10 | `[tool.pylint]` |
+| `architecture` | `tests/architecture`: the import contracts and the proofs of their rules, the rules of the workflow files, the shape of the release workflows; no GPU and no Docker | `[tool.importlinter]`, `tests/architecture/` |
 | `package` | the wheel and the sdist built from this checkout hold source only, see [Package contents](#package-contents) | `scripts/quality/package.py`, `[tool.hatch.build.targets.*]` |
+| `wheel` | the built wheel installs on the locked dependencies, starts and resolves, see [The wheel gate](#the-wheel-gate) | `scripts/quality/wheel.py` |
 | `snapshots` | syrupy snapshot tests (`-m snapshot`): CLI argument tree, settings defaults, Qdrant collection layout and payload types, MCP meta-tool signatures and tool catalogue, HTTP route table | `tests/integration/test_snapshots.py`, `tests/e2e/test_snapshots_e2e.py` |
-| `tests-fast` | `tests/architecture` and `tests/integration`, stopping at the first failure | `pytest.ini` |
+| `tests-fast` | `tests/integration`, stopping at the first failure (the architecture tests are the `architecture` gate) | `pytest.ini` |
 | `tests` | architecture + integration + end-to-end on one Qdrant node with branch coverage (erases previous coverage data first) | `[tool.coverage.*]` |
 | `e2e-qdrant` | `tests/cluster` (`-m cluster`) against a real three-node Qdrant cluster (replication factor 3, write consistency 2, strong ordering, API key and internal authentication; the restore tests also start a four-node and a second three-node cluster), appending to the coverage data (fails without a GPU or without Docker) | `tests/cluster/conftest.py`, `tests/qdrant_support.py` |
 | `coverage` | combined **100 %** line and branch coverage of `app` and `main.py`, from the single-node and cluster runs together | `[tool.coverage.report]` |
 | `memray` | memory budgets (`@pytest.mark.limit_memory`) via pytest-memray, run as `pytest tests/e2e -m memory --memray` (Linux/macOS only) | `tests/e2e/test_memory_budget_e2e.py` |
 | `trivy` | HIGH/CRITICAL vulnerabilities (fixed ones), secrets and misconfigurations (`fs` scan); the binary named by `TRIVY_BIN` or on `PATH`, else the pinned Docker image; fails when neither is available | `trivy.yaml`, `.trivyignore` |
 | `qodana` | Qodana Ultimate Plus (`jetbrains/qodana-python`), token from `QODANA_TOKEN`; analyses a `git archive` export of `HEAD` (uncommitted changes are not seen) with `--image`; fails when the `qodana` CLI or the token is missing | `qodana.yaml` |
-| `mutation` | mutmut on changed `app/` modules; survivors above `MUTATION_MAX_SURVIVORS` fail. Opt-in (`MUTATION=1`), see below | `[tool.mutmut]` |
-| `gitnexus` | `detect-changes` on the staged diff (pre-commit) or against `origin/main` (pre-push); a partial or truncated answer is retried once, then fails. Skipped without a local index or `node` (local tooling a push does not depend on) | `.gitnexus/` (local index) |
+| `mutation` | mutmut on changed `app/` modules; survivors above `MUTATION_MAX_SURVIVORS` fail; one run may take 24 h (`MUTATION_TIMEOUT_S`). Runs in every `pre-push`, see below | `[tool.mutmut]` |
+| `gitnexus` | `detect-changes` on the staged diff (pre-commit) or against the upstream of the branch (pre-push; `origin/main`, then `HEAD~1`, without one); a partial or truncated answer is retried once, then fails. Skipped without a local index or `node` (local tooling a push does not depend on) | `.gitnexus/` (local index) |
 
 `radon cc . -a -nc` and `radon mi . -s` work from the repository root and report the same files the
 gates check (`radon.cfg` excludes virtualenvs and generated paths).
@@ -236,6 +292,31 @@ after the locked environment is installed, and `publish.yml` runs `python -m scr
 signed files of the release before the upload to PyPI, which cannot be taken back. `dist-check <dir>` checks any directory
 that holds one wheel and one sdist, for example a package you built by hand before you upload it.
 
+### The wheel gate
+
+`package` reads what the wheel holds; `wheel` uses it, the way a user does. Everything happens in a temporary directory,
+never in `dist/` (which the release flow checks and signs) and never in `.venv`: the gate refuses an environment inside
+the repository. It builds the package as `package` does, then stops at the first step that fails:
+
+1. `uv lock --check`: `uv.lock` is current with `pyproject.toml` (the hooks run `uv run --frozen`, which never checks it);
+2. `twine check` on the wheel and the sdist (metadata and the README as it renders), `twine` pinned in the `dev` group;
+3. `check-wheel-contents` on the wheel, `check-wheel-contents` pinned in the `dev` group, with `W005` and `W009` ignored
+   (`WHEEL_IGNORE` in `scripts/quality/wheel.py`, with the reason: the top-level package is called `app`, and the wheel holds
+   the package and the `main.py` module that the console script points at);
+4. a clean environment: the locked dependencies without the dev group, the project and `tensorrt-cu13-libs`
+   (`uv sync --locked`, so the TensorRT packages come from NVIDIA's index as `uv.lock` records), the wheel on top
+   (`uv pip install --no-deps`), then `axmem --help` and `import main` from another directory, in isolated mode, so the
+   installed wheel is what runs and not `app/` of the checkout;
+5. the resolution of the wheel's own metadata with the extra index that the README documents (`uv pip compile`,
+   nothing is downloaded): the wheel names the TensorRT packages without an index and PyPI holds placeholders for two of
+   them, so the three packages must come from NVIDIA's index and the libraries as a wheel. The index URL and the package
+   names are read from `[tool.uv.index]` and `[tool.uv.sources]`.
+
+The gate needs the network (PyPI and `pypi.nvidia.com`) and `uv`, and fails without them. It runs in `pre-push`, in the
+`ci` stage and in the `smoke-test` job of `ci.yml`. `python -m scripts.quality wheel-check <dir>` runs steps 1 to 5 on a
+directory that holds one wheel and one sdist built elsewhere; `scripts/check-package.sh` calls it on the `dist/` of a
+release, so the release flow and the gate run the same code.
+
 ### Snapshots
 
 The snapshot tests pin the public surfaces that must not change by accident. A changed snapshot is a
@@ -265,15 +346,18 @@ new measurement in a comment next to it.
 
 ### Mutation testing
 
-`mutation` runs `mutmut` over the modules a change touched. A run over the whole of `app/` produces roughly
-33,000 mutants and is not practical, so the gate always needs a scope:
+`mutation` runs `mutmut` over the modules a change touched, in every `pre-push`. A run over the whole of `app/`
+produces roughly 33,000 mutants and is not practical, so the gate always needs a scope:
 
-* the `app/` files that differ from `origin/main` (the default for `pre-push` and a plain
-  `gate mutation`), or the `app/` files named with `--staged` or `--files`, or
+* the `app/` files that the push adds to the upstream of the branch (the default for `pre-push` and a plain
+  `gate mutation`; without an upstream the base is `main` of the remote being pushed to (the hook names it in
+  `QUALITY_PUSH_REMOTE`, so the first `git push -u <remote> <branch>` is compared with that remote), then `origin/main`,
+  and without that, `HEAD~1`; the `gitnexus` gate of `pre-push` has the same base), or the `app/` files named with `--staged` or `--files`, or
 * an explicit `MUTATION_TARGETS`, a space-separated list of mutmut name patterns such as
   `MUTATION_TARGETS='app.utils.*'`, which wins over both.
 
-With no scope it reports `SKIP`. The gate allows one `mutmut run` two hours; surviving mutants in the
+With no `app/` module in the diff and no `MUTATION_TARGETS` it reports `SKIP`, and the stage says so; a diff that git
+cannot make (a root commit has no `HEAD~1`) fails the gate with git's message instead of reading as no change. The gate allows one `mutmut run` 24 hours (`MUTATION_TIMEOUT_S`, see below); surviving mutants in the
 targets above `MUTATION_MAX_SURVIVORS` (default 0) fail it. `[tool.mutmut]` selects `tests/architecture` and `tests/integration` (which need Docker for their Qdrant node, like the
 other suites) as the tests that must kill a mutant
 and leaves `app/_version.py` unmutated. The tests run in a sandbox (`mutants/`) that holds only `app/`, `tests/` and the
@@ -282,10 +366,18 @@ run with it, which is why `.githooks/`, `.github/` and `.env.example` are copied
 `tests/architecture/test_mutation_sandbox.py` checks every root path the selected tests name. A test that lists the
 members of a class under `app/` must skip the names containing `__mutmut_` (mutmut adds its originals and mutants to a
 mutated class, see `protocol_methods` in `tests/integration/test_tenant_chokepoint.py`). No workflow runs the gate: the
-tests it selects need the GPU and Docker, so it is an opt-in gate of the pre-push hook (`MUTATION=1`). On a checkout of
-`main` there is no diff against `origin/main`, so give it a scope of its own, for example `MUTATION=1
-MUTATION_TARGETS='app.utils.* app.config.*' MUTATION_MAX_SURVIVORS=50`, and lower the tolerated survivors as mutants
-get killed.
+tests it selects need the GPU and Docker, so it is a gate of the pre-push hook only. On a checkout of
+`main` that is level with its upstream the diff is empty, so give it a scope of its own, for example
+`MUTATION_TARGETS='app.utils.* app.config.*' MUTATION_MAX_SURVIVORS=50 git push`, and lower the tolerated survivors as
+mutants get killed. A push of a long branch can take hours, so the cap of one `mutmut run` is 24 hours by default
+(`MUTATION_TIMEOUT_S`, in seconds, changes it: `MUTATION_TIMEOUT_S=172800 git push` allows two days). It must be a positive whole
+number up to 2147483 (the longest wait that `subprocess` accepts, about 24 days); any other value fails the gate and names
+the variable, and the gate never falls back to the default. A run that reaches the cap fails the push: the gate stops `mutmut`
+and the test workers it started and reports `mutation exceeded <cap> s`, with the ways out: a higher `MUTATION_TIMEOUT_S`,
+a scope of its own (`MUTATION_TARGETS`), or `SKIP=mutation git push` once, said in the PR description. The first push of a
+branch that changes most of `app/` (dozens of modules, tens of thousands of mutants) is the one that can reach it, and a
+rerun resumes: the mutants already tested stay in `mutants/` (git-ignored), and a rerun continues from them while the code
+and the files the tests read are unchanged; `rm -rf mutants` starts over.
 
 ## Secrets
 
@@ -300,16 +392,16 @@ secret. Do not put the token in `qodana.yaml`.
 SKIP=qodana,trivy git push            # skip named gates once
 ONLY=mypy uv run python -m scripts.quality stage pre-commit
 QUALITY_FULL=1 git commit             # pre-commit over the whole project, not just staged files
-MUTATION=1 git push                   # include mutation testing
+MUTATION_TARGETS='app.utils.*' git push   # mutation testing of these modules instead of the push's diff
 MUTATION_TARGETS='app.utils.*' uv run python -m scripts.quality gate mutation   # one scoped gate
 ```
 
 `SKIP` and `ONLY` take comma-separated gate names and apply to stages. `ONLY` runs just those gates of the
-stage; naming the opt-in `mutation` gate in `ONLY` also selects it. `MUTATION=1` only opts the gate into a
-stage: `gate mutation` runs it directly without that variable. Other knobs: `SEMGREP_PACKS` (extra registry packs, needs
-network), `TRIVY_BIN` (explicit trivy binary; otherwise `PATH`, then the Docker image `aquasec/trivy:<TRIVY_VERSION>`,
-pinned in `scripts/quality/security.py` like semgrep and Qodana) and
-`MUTATION_MAX_SURVIVORS`.
+stage. `gate mutation` runs the mutation gate on its own. Other knobs: `SEMGREP_PACKS` (the registry packs of semgrep, default `p/python p/security-audit`, needs
+network; empty leaves them out), `TRIVY_BIN` (explicit trivy binary; otherwise `PATH`, then the Docker image `aquasec/trivy:<TRIVY_VERSION>`,
+pinned in `scripts/quality/security.py` like semgrep and Qodana),
+`MUTATION_TARGETS`, `MUTATION_MAX_SURVIVORS` and `MUTATION_TIMEOUT_S` (see Mutation testing), and `QUALITY_PUSH_REMOTE` (the remote of the push,
+which the `pre-push` hook sets; the base of a branch without an upstream).
 
 A gate left out with `SKIP` is a decision to record in the PR description, not a default, and `git push
 --no-verify` skips the whole hook. A gate whose tool is missing (for example no Docker for `e2e-qdrant`) fails with the
@@ -335,6 +427,15 @@ untested.
   by construction, inline and with the reason on the same line: `# nosec B603 - argv list from
   constants, no shell` or `# nosemgrep: <rule-id> - reason`. Keep the matching `ruff.toml`
   per-file `S` ignore in step, and never add file-level skips to `[tool.bandit]`.
+* A shellcheck finding is fixed in the script. Where a directive is right, `# shellcheck disable=SC<code>` goes on the
+  line above the command with the reason after it (a sourced settings file, `scripts/lib/project.sh`, carries a
+  file-level `shell=` and `disable=SC2034` because its variables are read by the files that source it); an
+  actionlint finding is fixed in the workflow. Both tools are pinned in the `dev` group: bump `shellcheck-py` or
+  `actionlint-py` there (`uv lock --upgrade-package <name>`) and fix what the new version reports in the same change.
+* A new check of the project is a new gate: register it in `scripts/quality/registry.py`, put it in the stages that
+  reach it (`pre-commit` when it is cheap and works offline, always `pre-push`, and `ci` when it needs neither a GPU nor
+  Docker), pin its tool in the `dev` group and add a row to the tables above. A check that only a workflow, a script or a
+  person runs is not accepted.
 * The same convention applies to the other linters: `# noqa: <code> - reason` for ruff,
   `# type: ignore[<code>]` with a reason for mypy (`warn_unused_ignores` flags stale ones). The code base
   uses no inline pylint disables; a noisy check is disabled once, with a comment, in

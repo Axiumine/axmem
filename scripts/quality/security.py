@@ -13,9 +13,9 @@ from .core import (
     Ctx,
     MissingToolError,
     Skip,
+    base_ref,
     check,
     docker_ready,
-    git_lines,
     load_dotenv_values,
     run,
 )
@@ -81,8 +81,7 @@ def gate_gitnexus(ctx: Ctx) -> tuple[bool, str]:
         raise Skip("no local GitNexus index (.gitnexus/run.cjs) or node")
     scope = ["--scope", "staged"] if ctx.stage == "pre-commit" else ["--scope", "all"]
     if ctx.stage == "pre-push":
-        has_main = git_lines("rev-parse", "--verify", "-q", "origin/main")
-        scope = ["--scope", "compare", "--base-ref", "origin/main" if has_main else "HEAD~1"]
+        scope = ["--scope", "compare", "--base-ref", base_ref()]
     out = ""
     for _ in range(2):  # a partial/truncated answer is "unseen", not "clean": retry once
         code, out = run(

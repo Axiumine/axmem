@@ -58,7 +58,7 @@ the [contributors guide](docs/contributors.md).
 1. Fork the repository and branch from `main`.
 2. Make the change, with tests: integration and end-to-end tests over unit tests, covering the critical workflows
    ([docs/contributors.md](docs/contributors.md)).
-3. Run `uv tool run ruff check .`, `uv run pytest tests/architecture/` and the tests for the code you touched, for example
+3. Run `uv run python -m scripts.quality gate ruff`, `uv run pytest tests/architecture/` and the tests for the code you touched, for example
    `uv run pytest tests/integration/test_qdrant_archive.py`.
 4. Update [CHANGELOG.md](CHANGELOG.md) and [docs/changes-from-forgetful.md](docs/changes-from-forgetful.md) when the
    change is visible to a user, an MCP client or an operator (tools, REST routes, settings, schema, dependencies,
@@ -66,7 +66,7 @@ the [contributors guide](docs/contributors.md).
 5. Open a pull request against `main` that says what changed and why, and links the issue.
 
 The maintainer runs the slow gates (the full suites on a real Qdrant node and a three-node cluster, 100 % coverage, memory
-budgets, Qodana, mutation) from the `pre-push` hook on a machine with an NVIDIA GPU before merging, so a pull request does
+budgets, Qodana, mutation, which is stopped after 24 hours unless `MUTATION_TIMEOUT_S` says otherwise) from the `pre-push` hook on a machine with an NVIDIA GPU before merging, so a pull request does
 not need to pass all of them before review, but it must pass `ruff`, the architecture tests and its own tests. Hosted CI
 runs only the static checks on every pull request.
 

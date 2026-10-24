@@ -360,7 +360,7 @@ and the check of what the wheel and the sdist hold; [tests/architecture/test_wor
 a self-hosted runner, a schedule or a GPU or Docker job back). The suites above run in the `pre-push` Git hook on the developer machine,
 which refuses the push when a gate fails or when there is no NVIDIA GPU or Docker daemon. Storage-sensitive changes should exercise the end-to-end and cluster suites; contract/business-rule changes
 should first use the focused integration tests. Source links identify tests, not evidence that those
-suites have passed for any particular revision. Repository lint command: `uv tool run ruff check .`;
+suites have passed for any particular revision. Repository lint command: `uv run python -m scripts.quality gate ruff`;
 the full set of gates (types, security, complexity, 100% combined coverage, mutation) is described in
 [docs/quality-gates.md](docs/quality-gates.md).
 

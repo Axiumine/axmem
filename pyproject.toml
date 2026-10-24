@@ -54,7 +54,9 @@ tensorrt-cu13-libs = { index = "nvidia" }
 
 [dependency-groups]
 dev = [
+    "actionlint-py==1.7.12.25",
     "bandit[toml]==1.9.4",
+    "check-wheel-contents==0.6.3",
     "coverage[toml]==7.16.2",
     "grimp==3.17",
     "import-linter==2.15",
@@ -70,7 +72,9 @@ dev = [
     "radon==6.0.1",
     "requests==2.33.0",
     "ruff==0.17.1",
+    "shellcheck-py==0.11.0.1",
     "syrupy==6.1.1",
+    "twine==7.0.0",
     "vulture==2.16",
 ]
 # Dev-only: drives the UAT walkthrough container; agent-shell-py lives in the
@@ -346,6 +350,8 @@ pytest_add_cli_args = [
     "--ignore=tests/integration/test_harness_walkthrough.py",
     "--ignore=tests/integration/test_main_lifespan_and_routes.py",
     "--ignore=tests/integration/test_quality_runner.py",
+    "--ignore=tests/integration/test_quality_shell_gates.py",  # real tools on scratch repositories and on the checkout
+    "--ignore=tests/integration/test_quality_wheel_gate.py",  # builds the real package of the checkout
     # The release scripts tests run the scripts of a copy of scripts/ in scratch repositories and read git metadata
     # that the sandbox does not hold; they do not test app/, which is what mutmut mutates.
     "--ignore-glob=tests/integration/test_release_*.py",

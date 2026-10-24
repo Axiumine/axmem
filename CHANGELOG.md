@@ -13,6 +13,29 @@ without the mark, with the commit that landed it, in the commit that lands it.
 
 ### Added
 
+- Every check of the project is a quality gate that a Git hook runs. Four gates are new: `shellcheck` (`shellcheck -x` over
+  the files of `.githooks/`, the release scripts and the fake tools of the release tests), `actionlint` (the workflows, and
+  their `run:` blocks through the same shellcheck), `architecture` (`tests/architecture`, which `ci.yml` ran as a raw command
+  and the hooks ran only inside `tests-fast` and `tests`) and `wheel` (see the next entry). `shellcheck-py`, `actionlint-py`,
+  `twine` and `check-wheel-contents` are pinned in the `dev` group, so the gates and a hand run use the same versions; the
+  release script ran the last two unpinned through `uvx`. `twine` 7.0.0 needs `rich>=14.3.3` and `packaging>=26.1`, so
+  `uv.lock` also moves `rich` from 14.3.2 to 15.0.0 (a major version, a transitive dependency of `fastmcp`) and `packaging`
+  from 26.0 to 26.3. The first three run in `pre-commit`, `pre-push` and the `ci`
+  stage; `quality.yml` and `ci.yml` call them by gate name. `AGENTS.md` and
+  [docs/quality-gates.md](docs/quality-gates.md) state the rule and what a new check must do.
+- The quality runner says what it left out. A stage prints a `SKIP` line for every gate that `SKIP` or `ONLY`
+  left out and ends `OK (N gates left out)`; a name in `SKIP` or `ONLY` that is no gate, and an `ONLY` that
+  selects no gate of the stage, end with exit code 2 instead of passing; a gate that raises fails with the traceback and
+  the others of its group still report; a commit that only deletes files runs the gates over the whole project; a staged
+  `tests/integration/` file runs `architecture`, and a staged document, `.env.example` or workflow runs `tests-fast`. The
+  `shellcheck` and `actionlint` gates ignore `SHELLCHECK_OPTS` and a user-level rc file (a root `.shellcheckrc` stops that
+  search), and the pinned tools are taken only from a virtual environment.
+- `wheel` quality gate and `python -m scripts.quality wheel-check <dir>`: the wheel built from the checkout (or the one in a
+  directory) must pass `uv lock --check`, `twine check` and `check-wheel-contents`, install on the locked dependencies into
+  an environment of its own, run `axmem --help` and import `main` from another directory, and resolve with the extra index
+  that the README documents, the three TensorRT packages coming from NVIDIA's index. It replaces the build, install, CLI
+  and resolution steps of the `smoke-test` job of `ci.yml`, which only a workflow ran. It builds in a temporary directory,
+  never in `dist/`. It needs the network, so it runs in `pre-push` and the `ci` stage and not in `pre-commit`.
 - Quality gates run from one orchestrator, `scripts/quality`, used by the Git hooks and by hosted CI for its static gates: ruff, import-linter,
   bandit, semgrep, vulture, radon, mypy, pylint, syrupy snapshots, 100 % branch coverage, memray budgets, trivy,
   Qodana, mutmut and GitNexus (proposed upstream as #163).
@@ -43,8 +66,8 @@ without the mark, with the commit that landed it, in the commit that lands it.
   a release starts, an integrity check requires every version already on PyPI to have a pushed tag and a signed release, or
   to be named in `release-superseded.json`. The version comes from the tag (hatch-vcs) and each build pins it; the build
   backend (`hatchling`, `hatch-vcs`) is pinned to exact versions so that the local build and the rebuild of `release.yml`
-  produce the same bytes. `check-package.sh` runs the package gate, `twine check`, `check-wheel-contents` and a
-  clean-environment smoke test. See [docs/release.md](docs/release.md).
+  produce the same bytes. `check-package.sh` runs the package gate and then `wheel-check` (`twine check`,
+  `check-wheel-contents` and a clean-environment smoke test), the code of the `wheel` gate. See [docs/release.md](docs/release.md).
 - `commit-msg` hook (`95c1e5f1`): `[🤖 ]<type>(<scope>): <subject>`, subject up to 150 characters, body up to 10
   lines, AI Co-Authored-By trailers and "Generated with" lines rejected, `SKIP=commit-msg` to bypass, with tests.
 - `denylist-check` hook script: `pre-commit`, `commit-msg` and `pre-push` refuse staged changes, messages and
@@ -125,6 +148,28 @@ without the mark, with the commit that landed it, in the commit that lands it.
 
 ### Changed
 
+- **Quality gates:** `mutation` runs in every `pre-push`, like every other gate; the opt-in (`MUTATION=1`) is gone, and only
+  `SKIP` and `ONLY` leave it out. The gate mutates the `app/` modules that the push adds to the upstream of the branch
+  (`git rev-parse @{upstream}`, else `main` of the remote being pushed to, which the hook passes as `QUALITY_PUSH_REMOTE`, else
+  `origin/main`, else `HEAD~1`; the diff was against `origin/main` alone, which in a clone
+  whose `origin` is not the tracked remote holds the whole history), and reports `SKIP` only when that diff holds no `app/`
+  module; `MUTATION_TARGETS` still overrides the diff. The `gitnexus` gate of `pre-push` compares with the same base. A
+  `mutmut run` that reaches its limit now stops `mutmut` with its test workers (its own process group) and says
+  `mutation exceeded <cap> s` and how to go on (`MUTATION_TIMEOUT_S`, `MUTATION_TARGETS` or `SKIP=mutation`; a rerun
+  resumes from `mutants/`); the limit is 24 hours instead of two, because a push of a branch that changes dozens of
+  `app/` modules cannot finish in two, and `MUTATION_TIMEOUT_S` (a positive whole number of seconds, up to 2147483) changes
+  it, an invalid value failing the gate instead of falling back; a diff that git cannot make fails the gate instead of
+  reading as no change.
+- **Quality gates:** the `semgrep` gate adds the registry packs `p/python p/security-audit` by default (they ran only in
+  `quality.yml`, through an environment variable; a scoped `pre-commit` run keeps to the local rules, `SEMGREP_PACKS` in the
+  environment replaces them, empty leaves them out). Staging the configuration of a gate (`pyproject.toml`, `uv.lock`,
+  `ruff.toml`, `radon.cfg`, `pytest.ini`, `vulture_whitelist.py`, `trivy.yaml`, `.trivyignore`, `.semgrepignore`,
+  `.shellcheckrc`, `.semgrep/`) makes `pre-commit` check the whole project, where the scoped gates reported `SKIP`; a commit
+  that stages only a workflow, a hook, `pyproject.toml` or `uv.lock` now meets the `architecture` gate, and one that stages
+  only a snapshot file meets `snapshots` and `tests-fast`. `tests-fast` no longer runs `tests/architecture` (the
+  `architecture` gate does). `ci.yml` runs the `ruff`, `architecture`, `package` and `wheel` gates by name, no longer
+  `ruff check .` and `pytest tests/architecture`, and the docs tell contributors to run `gate ruff`, which uses the pinned
+  ruff, instead of `uv tool run ruff check .`.
 - **License:** Axmem is released under the GNU Affero General Public License, version 3 (`AGPL-3.0-only`), no longer under
   the MIT License. The MIT License of Forgetful (Copyright (c) 2025 Scott Raisbeck) allows this; its notice moved unchanged
   to `LICENSE-FORGETFUL-MIT.md` (it was `LICENCE.md`) and the AGPL text is in `LICENSE`. `pyproject.toml` declares
@@ -252,6 +297,10 @@ without the mark, with the commit that landed it, in the commit that lands it.
   sends work items to a plan or task store. Documentation only; no setting, route, tool or schema changed.
 
 ### Removed
+
+- The `git-hooks.nix` hooks of `flake.nix` (`nixfmt`, `deadnix`, `statix`, `ruff`, `typos`), the `nix fmt` formatter and the
+  `pre-commit` check of `nix flake check`, with the hook installation of the Nix dev shell: they were checks that no
+  hook gate ran. `.githooks/` is the only mechanism.
 
 - Graph REST view (`GET /api/v1/graph`, `/graph/subgraph`, `/graph/memory/{id}`), `GraphService`, the graph models,
   the `MAX_GRAPH_LIMIT` setting and the subgraph SQL on both backends (`6ce740e7`). Memory links, auto-linking,
@@ -657,7 +706,7 @@ Fixes found by reviewing the feature cuts (no upstream counterpart: the code the
   TensorRT libraries, a missing concurrency group, and a trivy version that differs from the gate's; `test_mutation_sandbox.py`
   checks that mutation is a gate of the pre-push hook and of no workflow. Both concurrency groups are now
   `workflow-ref` (the event no longer matters without a schedule). The `pre-push` hook is the one place that runs the
-  suites: tests, the Qdrant cluster suite, 100 % coverage, memory budgets, Qodana and (opt-in) mutation. A gate whose
+  suites: tests, the Qdrant cluster suite, 100 % coverage, memory budgets, Qodana and mutation. A gate whose
   tool or daemon is missing (the cluster suite without Docker, trivy with neither a binary nor Docker, Qodana without
   its CLI, semgrep with nothing to run it) now fails with the cause instead of reporting `SKIP`, and `trivy` runs with
   the static gates, before the long suites. The hook refuses the push of a commit that is not the checked-out `HEAD`

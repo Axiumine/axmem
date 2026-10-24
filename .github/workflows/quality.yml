@@ -47,9 +47,11 @@ jobs:
       - name: bandit
         run: uv run --frozen python -m scripts.quality gate bandit
       - name: semgrep
-        env:
-          SEMGREP_PACKS: p/python p/security-audit
         run: uv run --frozen python -m scripts.quality gate semgrep
+      - name: shellcheck
+        run: uv run --frozen python -m scripts.quality gate shellcheck
+      - name: actionlint
+        run: uv run --frozen python -m scripts.quality gate actionlint
       - name: vulture
         run: uv run --frozen python -m scripts.quality gate vulture
       - name: radon complexity (min rating B)

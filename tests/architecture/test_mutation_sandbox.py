@@ -4,8 +4,8 @@ mutmut copies ``source_paths``, ``also_copy`` and a few built-in paths into muta
 A test that reads another path from the repository root (a hook script, a document) fails in the sandbox, and the
 baseline run that mutmut starts with then fails, so the whole mutation gate cannot pass.
 
-The selected tests need the NVIDIA GPU and Docker like every other suite, so no hosted workflow runs the gate: it is an
-opt-in gate of the pre-push hook (``MUTATION=1``).
+The selected tests need the NVIDIA GPU and Docker like every other suite, so no hosted workflow runs the gate: it is a
+gate of the pre-push hook, which runs it on every push.
 """
 import re
 import tomllib
@@ -51,10 +51,10 @@ def test_the_hook_tests_are_among_the_tests_that_the_sandbox_must_serve():
     assert ".githooks" in {Path(entry).parts[0] for entry in CONFIG["also_copy"]}
 
 
-def test_mutation_is_an_opt_in_gate_of_the_pre_push_hook_and_of_the_ci_stage_of_no_one():
+def test_mutation_is_a_gate_of_the_pre_push_hook_and_of_the_ci_stage_of_no_one():
     stages = {stage: {name for group in groups for name in group} for stage, groups in registry.STAGES.items()}
 
-    assert "mutation" in registry.OPT_IN
+    assert not hasattr(registry, "OPT_IN")  # every gate of a hook runs, only SKIP and ONLY leave one out
     assert "mutation" in stages["pre-push"]
     assert "mutation" not in stages["ci"]
 

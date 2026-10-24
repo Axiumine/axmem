@@ -46,11 +46,15 @@ uv run python -m scripts.quality install     # sets core.hooksPath to .githooks
 The `commit-msg` hook enforces the commit message format (`[🤖 ]<type>(<scope>): <subject>`); see the
 Hooks table in [docs/quality-gates.md](quality-gates.md#hooks).
 
-`pre-commit` checks staged files (lint, import boundaries, security, dead code, complexity, types,
-snapshots, fast tests, GitNexus impact); `pre-push` runs the full pipeline: the same static gates over
-the whole project and trivy, the architecture, integration and end-to-end suites with coverage (they start a real Qdrant
+`pre-commit` checks staged files (lint, shell scripts and workflows, import boundaries, security, dead code, complexity,
+types, architecture tests, the package, snapshots, fast tests, GitNexus impact); `pre-push` runs the full pipeline: the
+same static gates over the whole project, trivy and the wheel (it installs the locked dependencies, so it needs the network),
+the architecture, integration and end-to-end suites with coverage (they start a real Qdrant
 node in Docker), the three-node Qdrant cluster e2e (Docker), **100 % combined coverage**, memory budgets (memray),
-Qodana and, only when asked for, mutation testing.
+Qodana and mutation testing of the `app/` modules that the push changes (the slowest gate: one run is stopped after 24
+hours, `MUTATION_TIMEOUT_S` changes the cap, and a run that reaches it fails the push and resumes on the next one; a branch
+that changes most of `app/` can also be scoped with `MUTATION_TARGETS` or left out once with `SKIP=mutation`, noted in
+the pull request).
 
 **The `pre-push` hook is the GPU gate.** Hosted CI has no GPU and the project has no self-hosted runner, so CI runs the
 static gates only (below). The suites that run the real TensorRT models and a real Qdrant run on your machine when you
@@ -62,6 +66,9 @@ and the tests that prove them are in [docs/quality-gates.md](quality-gates.md#th
 The Qodana token (`QODANA_TOKEN`) lives in your git-ignored dotenv file (see `.env.example` for the key
 name), never in a tracked file. Python 3.14 is the only supported version (`.python-version`).
 
+Every check of the project is a gate that a hook runs: there is no check that only a workflow or a manual command makes.
+`shellcheck`, `actionlint`, `twine` and `check-wheel-contents` are pinned in the `dev` group and come with the sync above.
+
 Everyday commands:
 
 ```bash
@@ -70,7 +77,7 @@ uv run python -m scripts.quality gate mypy                   # one gate, whole p
 SKIP=qodana,trivy git push                                   # skip named gates once; say so in the PR
 ONLY=mypy uv run python -m scripts.quality stage pre-commit  # only these gates
 QUALITY_FULL=1 git commit                                    # pre-commit over the whole project
-MUTATION=1 git push                                          # add mutation testing (changed app/ modules)
+MUTATION_TARGETS='app.utils.*' git push                      # mutate these modules instead of the app/ ones the push changes
 ```
 
 When a change alters a public surface (CLI flags, settings defaults, routes, MCP tools, collections, payload fields)
@@ -280,9 +287,9 @@ A push to a branch with an open PR starts both a push run and a PR run; newer ru
 
 ---
 ## Linting
-linting with ruff and uv (the `ruff` gate runs the same check)
+linting with the pinned ruff (the `ruff` gate runs the same check)
 ```bash
-uv tool run ruff check .
+uv run python -m scripts.quality gate ruff
 ```
 
 ## CI/CD Workflows
@@ -298,12 +305,13 @@ only the checks that need neither; the rest runs in the `pre-push` hook (see
 **Matrix**: Python 3.14.
 
 **Jobs**:
-1. `lint` (hosted Ubuntu runner): check architecture boundaries, rule proofs and the rules of the workflow files
-   (`tests/architecture/`), then run ruff. The TensorRT libraries are left out of its environment
+1. `lint` (hosted Ubuntu runner): the `architecture` gate (boundaries, rule proofs and the rules of the workflow files,
+   `tests/architecture/`), then the `ruff` gate. The TensorRT libraries are left out of its environment
    (`--no-install-package tensorrt-cu13-libs`).
-2. `smoke-test` (hosted runner, after `lint`): build the wheel, install the locked dependencies without the TensorRT
-   libraries and the wheel on top, check that `axmem --help` works, and resolve the wheel's metadata with the NVIDIA index that the
-   README documents for pip and `uv tool install` (the three TensorRT packages must come from that index).
+2. `smoke-test` (hosted runner, after `lint`): the `package` gate, then the `wheel` gate: it builds the wheel, installs
+   the locked dependencies without the TensorRT libraries and the wheel on top, checks that `axmem --help` works, and
+   resolves the wheel's metadata with the NVIDIA index that the README documents for pip and `uv tool install` (the
+   three TensorRT packages must come from that index).
 
 A push to a branch with an open pull request starts a push run and a pull request run; a newer run cancels an older one
 of the same workflow and ref. The Windows leg was removed because the TensorRT reranker is Linux-only.
@@ -319,7 +327,7 @@ tests). The workflow alone does not make it mandatory for merging. CI does not r
 **Purpose**: Run the static gates of the local Git hooks (`scripts/quality`) under the same gate names, so a bypassed hook
 is caught
 
-**Jobs**: `static` (lint, import boundaries, security, dead code, complexity, types and pylint, on Python 3.14) and `trivy`
+**Jobs**: `static` (lint, import boundaries, security, shell scripts and workflows, dead code, complexity, types and pylint, on Python 3.14) and `trivy`
 (the pinned release binary, checked against its SHA-256). Snapshots, coverage, memory budgets, Qodana and mutation are not
 here: they need the GPU, Docker or a token and run in the `pre-push` hook. See [quality-gates.md](quality-gates.md).
 

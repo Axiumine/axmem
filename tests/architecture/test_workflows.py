@@ -7,7 +7,6 @@ back into a workflow.
 """
 
 import re
-import tomllib
 from pathlib import Path
 
 import pytest
@@ -20,7 +19,8 @@ WORKFLOWS = sorted(WORKFLOWS_DIR.glob("*.yml"))
 GATE_COMMAND = re.compile(r"scripts\.quality\s+gate\s+([\w-]+)")
 # What a workflow may ask `scripts.quality` for: the gates that run on any Linux machine, none of them on a GPU or Docker.
 HOSTED_GATES = {
-    "ruff", "imports", "bandit", "semgrep", "vulture", "radon-cc", "radon-mi", "mypy", "pylint", "trivy", "package",
+    "ruff", "imports", "bandit", "semgrep", "shellcheck", "actionlint", "vulture", "radon-cc", "radon-mi", "mypy", "pylint",
+    "architecture", "trivy", "package", "wheel",
 }
 # Words of a step that only a GPU or a Docker host can act on.
 GPU_OR_DOCKER_WORDS = re.compile(
@@ -125,6 +125,27 @@ def test_every_hosted_gate_runs_in_a_workflow_and_in_the_ci_stage():
     assert {gate for group in registry.STAGES["ci"] for gate in group} == HOSTED_GATES
 
 
+def test_the_hooks_and_hosted_ci_run_the_same_gates():
+    """No check lives in a workflow alone: the pre-push hook starts with the `ci` stage, so a developer machine runs every
+    gate that hosted CI runs (by name), and a hosted gate that no hook reaches fails here."""
+    ci = registry.STAGES["ci"]
+    pre_push = registry.STAGES["pre-push"]
+    hooked = {gate for stage in ("pre-commit", "pre-push") for group in registry.STAGES[stage] for gate in group}
+
+    assert pre_push[: len(ci)] == ci
+    assert HOSTED_GATES <= hooked
+    assert set(registry.GATES) - HOSTED_GATES <= hooked  # the rest needs a GPU, Docker or a clone
+
+
+def test_no_workflow_step_runs_a_check_by_another_name_than_its_gate():
+    """A raw `ruff`, `pytest` or `twine` command in a workflow would be a check that the hooks do not run."""
+    raw = re.compile(r"\b(?:ruff|pytest|twine|check-wheel-contents|shellcheck|actionlint|lint-imports|mypy|pylint|bandit)\b")
+    for workflow, name, step in _steps():
+        if workflow in {"ci.yml", "quality.yml"}:
+            commands = [line for line in step.get("run", "").splitlines() if not line.lstrip().startswith("#")]
+            assert not [line for line in commands if raw.search(line) and "scripts.quality" not in line], (workflow, name)
+
+
 @pytest.mark.parametrize(("workflow", "name", "step"), INSTALLS, ids=INSTALL_IDS)
 def test_the_environment_is_installed_without_the_tensorrt_libraries(workflow, name, step):
     command = step["run"]
@@ -166,14 +187,15 @@ def test_no_job_keeps_a_fork_guard_for_a_runner_that_is_gone(workflow):
         assert "head.repo.full_name" not in str(job.get("if", "")), f"{workflow} job {name} guards a runner it does not use"
 
 
-def test_the_wheel_smoke_test_waits_for_lint_and_takes_the_tensorrt_pins_from_the_lock_not_from_pypi():
+def test_the_smoke_test_waits_for_lint_and_builds_nothing_itself():
     job = _load(WORKFLOWS_DIR / "ci.yml")["jobs"]["smoke-test"]
     script = "\n".join(step.get("run", "") for step in job["steps"])
 
     assert job["needs"] == ["lint"]
-    assert "uvx" not in script  # resolves the wheel's own metadata, where the TensorRT packages have no index
-    assert "uv sync --locked --no-dev --no-install-project --no-install-package tensorrt-cu13-libs" in script
-    assert "uv pip install --no-deps" in script
+    assert "uvx" not in script
+    assert "uv build" not in script  # the package and wheel gates build into temporary directories, never dist/
+    assert "uv pip" not in script  # the wheel gate installs and resolves in an environment of its own
+    assert script.count("scripts.quality gate") == 2
 
 
 def _step_names(workflow, job):
@@ -185,14 +207,29 @@ def _step(workflow, job, name):
     return step
 
 
-def test_the_smoke_test_runs_the_package_gate_once_the_environment_that_it_runs_in_is_installed():
+def test_the_smoke_test_runs_the_package_and_wheel_gates_once_the_environment_that_they_run_in_is_installed():
     names = _step_names("ci.yml", "smoke-test")
 
-    assert names.index("Install the locked dependencies") < names.index("Check what the package holds")
-    assert names.index("Build wheel") < names.index("Check what the package holds")
+    assert names.index("Install dependencies") < names.index("Check what the package holds")
+    assert names.index("Check what the package holds") < names.index("Check that the wheel installs, starts and resolves")
     assert _step("ci.yml", "smoke-test", "Check what the package holds")["run"] == (
         "uv run --frozen --no-sync python -m scripts.quality gate package"
     )
+    assert _step("ci.yml", "smoke-test", "Check that the wheel installs, starts and resolves")["run"] == (
+        "uv run --frozen --no-sync python -m scripts.quality gate wheel"
+    )
+
+
+def test_the_lint_job_runs_the_architecture_and_ruff_gates_by_name():
+    assert _step("ci.yml", "lint", "Check architecture boundaries, rule proofs and workflow rules")["run"] == (
+        "uv run --frozen --no-sync python -m scripts.quality gate architecture"
+    )
+    assert _step("ci.yml", "lint", "Run linting")["run"] == "uv run --frozen --no-sync python -m scripts.quality gate ruff"
+
+
+def test_the_static_job_runs_the_shell_and_workflow_linters_from_the_pinned_environment():
+    for name in ("shellcheck", "actionlint"):
+        assert _step("quality.yml", "static", name)["run"] == f"uv run --frozen python -m scripts.quality gate {name}"
 
 
 def test_the_publish_workflow_proves_the_files_it_uploads_before_the_job_that_uploads_them_and_uploads_last():
@@ -212,35 +249,6 @@ def test_the_publish_workflow_proves_the_files_it_uploads_before_the_job_that_up
     assert _step("publish.yml", "verify", "Check what the package holds")["run"] == (
         "python3 -m scripts.quality dist-check dist"
     )
-
-
-def _smoke_test_step_and_pyproject():
-    pyproject = tomllib.loads((WORKFLOWS_DIR.parents[1] / "pyproject.toml").read_text(encoding="utf-8"))
-    job = _load(WORKFLOWS_DIR / "ci.yml")["jobs"]["smoke-test"]
-    (step,) = [step for step in job["steps"] if step.get("name") == "Resolve the wheel with the documented index"]
-    return pyproject["tool"]["uv"], job["steps"], step
-
-
-def test_the_smoke_test_resolves_the_wheel_with_the_index_that_pyproject_declares():
-    uv, _, step = _smoke_test_step_and_pyproject()
-    (index,) = [entry for entry in uv["index"] if entry["name"] == "nvidia"]
-
-    assert f"--extra-index-url {index['url'].rstrip('/')}" in step["run"]
-    assert "uv pip compile" in step["run"]
-
-
-def test_the_smoke_test_expects_the_real_wheels_of_every_package_that_only_the_extra_index_serves():
-    uv, _, step = _smoke_test_step_and_pyproject()
-
-    assert all(f'"{name}"' in step["run"] for name in uv["sources"])
-    assert "the libraries must resolve to a wheel" in step["run"]
-
-
-def test_the_smoke_test_resolves_the_wheel_after_it_is_built():
-    _, steps, step = _smoke_test_step_and_pyproject()
-    names = [candidate.get("name") for candidate in steps]
-
-    assert names.index(step["name"]) > names.index("Build wheel")
 
 
 def test_the_trivy_job_installs_the_version_that_the_gate_pins_and_hands_the_gate_its_binary():

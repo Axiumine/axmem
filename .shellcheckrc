@@ -1,0 +1,2 @@
+# Root marker for shellcheck: it stops the search for a user-level rc file, so the shellcheck and actionlint gates
+# give the same result on every machine. Nothing is disabled here; a directive goes in the script with its reason.

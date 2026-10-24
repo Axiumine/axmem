@@ -7,6 +7,8 @@ each suite ends its run without a GPU or without Docker.
 """
 
 import ast
+import os
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -14,7 +16,8 @@ import pytest
 from scripts.quality import cli, core, registry, security, static, testing
 
 ROOT = Path(__file__).resolve().parents[2]
-STATIC_GATES = ["ruff", "imports", "bandit", "semgrep", "vulture", "radon-cc", "radon-mi"]
+STATIC_GATES = ["ruff", "imports", "bandit", "semgrep", "vulture", "radon-cc", "radon-mi", "shellcheck", "actionlint"]
+HOSTED_GATES = [*STATIC_GATES, "trivy", "mypy", "pylint", "architecture", "package", "wheel"]
 NEEDS_GPU_OR_DOCKER = {
     "snapshots", "tests-fast", "tests", "e2e-qdrant", "coverage", "memray", "qodana", "mutation", "gitnexus",
 }
@@ -28,7 +31,7 @@ def test_the_pre_push_pipeline_runs_the_cheap_gates_first_and_each_gate_after_th
     order = _pre_push_order()
     groups = registry.STAGES["pre-push"]
 
-    for cheap in [*STATIC_GATES, "trivy", "mypy", "pylint", "package"]:
+    for cheap in HOSTED_GATES:
         assert order.index(cheap) < order.index("tests"), f"{cheap} should fail the push before the long suites start"
     assert groups[0] == [*STATIC_GATES, "trivy"]
     assert order.index("tests") < order.index("e2e-qdrant") < order.index("coverage")  # coverage reads both data files
@@ -40,9 +43,23 @@ def test_the_pre_push_pipeline_runs_the_cheap_gates_first_and_each_gate_after_th
 def test_the_ci_stage_holds_the_gates_that_need_neither_a_gpu_nor_docker():
     ci = [name for group in registry.STAGES["ci"] for name in group]
 
-    assert set(ci) == {*STATIC_GATES, "trivy", "mypy", "pylint", "package"}
+    assert sorted(ci) == sorted(HOSTED_GATES)
     assert not set(ci) & NEEDS_GPU_OR_DOCKER
     assert registry.STAGES["ci"] == registry.STAGES["pre-push"][:2]
+
+
+def test_the_pre_commit_stage_runs_the_cheap_local_gates_and_leaves_out_what_needs_the_network():
+    pre_commit = [name for group in registry.STAGES["pre-commit"] for name in group]
+
+    assert {*STATIC_GATES, "mypy", "pylint", "architecture", "package", "snapshots", "tests-fast", "gitnexus"} == set(pre_commit)
+    assert registry.STAGES["pre-commit"][0] == STATIC_GATES
+    assert not {"wheel", "trivy"} & set(pre_commit)  # these fetch from PyPI, NVIDIA's index and trivy's database
+
+
+def test_every_gate_of_the_registry_is_in_a_stage_a_hook_runs():
+    staged = {name for stage in ("pre-commit", "pre-push") for group in registry.STAGES[stage] for name in group}
+
+    assert staged == set(registry.GATES)
 
 
 @pytest.mark.parametrize("failing", _pre_push_order())
@@ -58,7 +75,6 @@ def test_a_failing_gate_refuses_the_push_and_stops_the_gates_after_it(monkeypatc
     monkeypatch.setattr(registry, "GATES", {name: (gate(name), "") for name in _pre_push_order()})
     monkeypatch.delenv("SKIP", raising=False)
     monkeypatch.delenv("ONLY", raising=False)
-    monkeypatch.setenv("MUTATION", "1")
     expected = []
     for group in registry.STAGES["pre-push"]:
         expected += group
@@ -73,9 +89,66 @@ def test_a_pipeline_whose_gates_all_pass_lets_the_push_through(monkeypatch):
     monkeypatch.setattr(registry, "GATES", {name: (lambda _ctx: (True, ""), "") for name in _pre_push_order()})
     monkeypatch.delenv("SKIP", raising=False)
     monkeypatch.delenv("ONLY", raising=False)
-    monkeypatch.setenv("MUTATION", "1")
 
     assert cli.run_stage("pre-push") == 0
+
+
+def _pre_push_with_the_real_mutation_gate(monkeypatch, tmp_path, changed):
+    """Every gate of the stage a stand-in that passes, except mutation: the real gate over a repository holding ``changed``."""
+    gates = {name: (lambda _ctx: (True, ""), "") for name in _pre_push_order()}
+    gates["mutation"] = (testing.gate_mutation, "")
+    monkeypatch.setattr(registry, "GATES", gates)
+    for variable in ("SKIP", "ONLY", "MUTATION_TARGETS", "MUTATION_MAX_SURVIVORS", "MUTATION_TIMEOUT_S"):
+        monkeypatch.delenv(variable, raising=False)
+    # nor the configuration of whoever runs the test: a global commit.gpgsign=true would sign these commits
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+    monkeypatch.delenv("QUALITY_PUSH_REMOTE", raising=False)
+    git = ["git", "-c", "user.name=t", "-c", "user.email=t@example.org", "-C", str(tmp_path)]
+    for argv in (["init", "-q", "-b", "work"], ["commit", "-q", "--allow-empty", "-m", "first"]):
+        subprocess.run([*git, *argv], check=True, capture_output=True)  # noqa: S603
+    subprocess.run([*git, "remote", "add", "axiumine", "/nonexistent/axiumine.git"], check=True)  # noqa: S603
+    subprocess.run([*git, "update-ref", "refs/remotes/axiumine/main", "HEAD"], check=True)  # noqa: S603
+    subprocess.run([*git, "config", "branch.work.remote", "axiumine"], check=True)  # noqa: S603
+    subprocess.run([*git, "config", "branch.work.merge", "refs/heads/main"], check=True)  # noqa: S603
+    for name in changed:
+        (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / name).write_text("x = 1\n", encoding="utf-8")
+    subprocess.run([*git, "add", "."], check=True)  # noqa: S603
+    subprocess.run([*git, "commit", "-q", "--allow-empty", "-m", "change"], check=True, capture_output=True)  # noqa: S603
+    monkeypatch.setattr(core, "ROOT", tmp_path)
+
+
+def test_a_plain_pre_push_runs_mutation_on_the_app_modules_the_push_changes(monkeypatch, tmp_path, capsys):
+    _pre_push_with_the_real_mutation_gate(monkeypatch, tmp_path, ["app/utils/clock.py", "docs/page.md"])
+    mutmut = []
+
+    def fake_run(argv, **_kwargs):
+        if "run" in argv:
+            mutmut.append(argv[argv.index("run"):])
+        return 0, ""
+
+    monkeypatch.setattr(testing, "run", fake_run)
+
+    assert cli.run_stage("pre-push") == 0
+
+    assert mutmut == [["run", "app.utils.clock.*"]]
+    out = capsys.readouterr().out
+    assert "PASS  mutation" in out
+    assert "opt-in" not in out
+    assert "left out" not in out
+
+
+def test_a_plain_pre_push_says_skip_for_mutation_only_when_no_app_module_changed(monkeypatch, tmp_path, capsys):
+    _pre_push_with_the_real_mutation_gate(monkeypatch, tmp_path, ["docs/page.md", "tests/test_x.py"])
+    monkeypatch.setattr(testing, "run", lambda *a, **k: pytest.fail("mutmut must not start"))
+
+    assert cli.run_stage("pre-push") == 0
+
+    line = next(line for line in capsys.readouterr().out.splitlines() if "mutation" in line)
+    assert line.lstrip().startswith("SKIP")
+    assert "no changed app/ modules" in line
+    assert "MUTATION_TARGETS" in line
 
 
 def test_a_missing_tool_fails_the_gate_instead_of_skipping_it(monkeypatch, capsys):

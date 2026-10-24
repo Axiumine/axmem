@@ -5,17 +5,6 @@
 
 # ── Package identity ──────────────────────────────────────────────────────────
 PKG="axmem"                       # dist name (PEP 503)
-CLI="axmem"                       # console-script entry point
-# Modules the clean-environment smoke test imports. `main` is the console script's own module, which imports the
-# application with the runtime dependencies alone.
-IMPORT_MODS="main"
-
-# ── Wheel-contents check ──────────────────────────────────────────────────────
-# check-wheel-contents codes to ignore, comma separated.
-# W005: the top-level package is called `app`, which the tool lists among the common names a wheel should not claim.
-# W009: the wheel holds two top-level entries, the package `app/` and the module `main.py` that the console script
-#       points at (`[tool.hatch.build.targets.wheel] packages`). Both are the project's layout, by design.
-WHEEL_IGNORE="W005,W009"
 
 # ── Where a release goes ──────────────────────────────────────────────────────
 # The git remote that holds the repository's `main`: releases are pushed, tagged and checked there.

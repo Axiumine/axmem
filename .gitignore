@@ -46,12 +46,12 @@ app/_version.py
 test_harness/runs/
 test_harness/docker/requirements.lock
 
-# git-hooks.nix (generated, never commit)
-.pre-commit-config.yaml
-
 # Nix build output symlinks (never commit)
 result
 result-*
+
+# The maintainer's personal notes (never commit)
+/TODO
 
 # JetBrains
 .idea/

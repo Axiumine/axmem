@@ -51,7 +51,10 @@ class Pushes:
 
     def set_uv_exit(self, code):
         uv = self.bin / "uv"
-        uv.write_text(f'#!/bin/sh\necho "$@" >> "$UV_LOG"\nexit {code}\n', encoding="utf-8")
+        uv.write_text(
+            f'#!/bin/sh\necho "$@" >> "$UV_LOG"\necho "$QUALITY_PUSH_REMOTE" >> "$UV_LOG.remote"\nexit {code}\n',
+            encoding="utf-8",
+        )
         uv.chmod(0o755)
 
     def git(self, cwd, *args):
@@ -70,6 +73,9 @@ class Pushes:
             ["git", "-C", str(self.work), "push", "origin", *refspecs],  # noqa: S607
             capture_output=True, text=True, env=self.env, check=False,
         )
+
+    def pipeline_remotes(self):
+        return Path(f"{self.log}.remote").read_text(encoding="utf-8").splitlines()
 
     def remote_refs(self):
         return self.git(self.remote, "for-each-ref", "--format=%(refname)").splitlines()
@@ -95,6 +101,20 @@ def test_a_push_of_the_checked_out_branch_runs_the_pipeline_and_goes_through(pus
     assert result.returncode == 0, result.stderr
     assert pushes.pipeline_runs() == [PIPELINE]
     assert pushes.remote_refs() == ["refs/heads/main"]
+
+
+def test_the_pipeline_is_told_which_remote_the_push_goes_to(pushes):
+    other = pushes.remote.parent / "other.git"
+    pushes.git(pushes.work, "init", "-q", "--bare", "-b", "main", str(other))
+    pushes.git(pushes.work, "remote", "add", "axiumine", str(other))
+
+    result = subprocess.run(  # noqa: S603
+        ["git", "-C", str(pushes.work), "push", "axiumine", "main"],  # noqa: S607
+        capture_output=True, text=True, env=pushes.env, check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert pushes.pipeline_remotes() == ["axiumine"]
 
 
 def test_a_failing_pipeline_refuses_the_push(pushes):

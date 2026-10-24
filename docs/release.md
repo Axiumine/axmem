@@ -146,7 +146,7 @@ The steps, in order:
 6. the preflight gate, `python -m scripts.quality stage ci`; stamp the changelog (`## [Unreleased]` becomes
    `## [v0.6.0] - <date>`, with a new empty Unreleased above it); pin the build clock (`SOURCE_DATE_EPOCH`, the commit time of
    HEAD) and the version; build once with `uv build`; check that the sdist holds only tracked files; run
-   `scripts/check-package.sh` (the package gate, `twine check`,
+   `scripts/check-package.sh` (the package gate, then `python -m scripts.quality wheel-check dist`: `twine check`,
    `check-wheel-contents`, and an install of the wheel on top of the locked dependencies into a clean environment, where
    `axmem --help` runs); write `release-digests.json`: the version,
    tag, epoch, tool versions and the sha256 of each file. Nothing is committed yet, so a re-run does it again: a failure

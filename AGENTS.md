@@ -74,15 +74,21 @@ Docker is only a test dependency. The project has no container deployment: it ru
 
 ## Quality gates
 Commits and pushes are gated by `.githooks/` (enable with `uv run python -m scripts.quality install`).
-The pipeline (ruff, import-linter, bandit, semgrep, vulture, radon cc/mi, mypy, pylint, snapshot
+The pipeline (ruff, import-linter, bandit, semgrep, shellcheck, actionlint, vulture, radon cc/mi, mypy, pylint,
+the architecture tests, the package and wheel checks, snapshot
 tests, coverage at 100%, Qdrant e2e, memray, trivy, Qodana, mutmut,
 GitNexus) and how to run or bypass single gates is documented in
 [docs/quality-gates.md](docs/quality-gates.md). Run `uv run python -m scripts.quality stage pre-commit`
 before committing; do not weaken a threshold to make a gate pass, fix the code or justify the exception.
 
+Every check that guards this project is a named gate in `scripts/quality/registry.py` that a hook stage runs
+(`pre-commit` and `pre-push` call `python -m scripts.quality stage <name>`). A new check is added as a gate and to a
+stage, with its tool pinned in the `dev` group; it is never only a manual command, a step of a workflow or a line of a
+script that no hook reaches.
+
 The `pre-push` hook is the GPU gate. Hosted CI has no GPU and there is no self-hosted runner, so GitHub Actions runs only
-the static gates (ruff, import-linter, bandit, semgrep, vulture, radon, mypy, pylint, trivy), the architecture tests and the
-wheel smoke test. Everything that needs the NVIDIA GPU, Docker or a real Qdrant (tests, e2e, the cluster suite, coverage,
+the static gates (ruff, import-linter, bandit, semgrep, shellcheck, actionlint, vulture, radon, mypy, pylint, trivy), the
+architecture tests and the package and wheel gates, each called by its gate name, the same name the hooks run. Everything that needs the NVIDIA GPU, Docker or a real Qdrant (tests, e2e, the cluster suite, coverage,
 memray, Qodana, mutation) runs only in `pre-push` on the developer machine, where a missing GPU or Docker daemon fails the
 push instead of skipping a gate. Never add a self-hosted runner, a schedule or a GPU or Docker job to `.github/workflows`
 (`tests/architecture/test_workflows.py` fails on it), and commit before pushing: the gates test the working tree.
@@ -104,7 +110,7 @@ names from files outside this repository into anything you write here: describe 
 ## Linting
 Ensure that you run ruff following any changes and address any issues raised
 ```bash
-uv tool run ruff check .
+uv run python -m scripts.quality gate ruff
 ```
 
 **Note**: Ruff UP006 rule enforces Python 3.14 built-in generics (`list` instead of `typing.List`, `dict` instead of `typing.Dict`, etc.). This catches legacy type hint syntax automatically.

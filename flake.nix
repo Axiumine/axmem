@@ -27,11 +27,6 @@
         uv2nix.follows = "uv2nix";
       };
     };
-
-    git-hooks-nix = {
-      url = "github:cachix/git-hooks.nix";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
   };
 
   outputs =
@@ -42,10 +37,9 @@
         "x86_64-linux"
         "aarch64-linux"
       ];
-      imports = [ inputs.git-hooks-nix.flakeModule ];
 
       perSystem =
-        { config, pkgs, ... }:
+        { pkgs, ... }:
         let
           inherit (pkgs) lib;
           python = pkgs.python314;
@@ -110,15 +104,6 @@
           };
         in
         {
-          pre-commit.settings.hooks = {
-            nixfmt.enable = true;
-            deadnix.enable = true;
-            statix.enable = true;
-            ruff.enable = true;
-            typos.enable = true;
-            # Expand after first green pass: markdownlint, editorconfig-checker (+ .editorconfig)
-          };
-
           devShells.default = pkgs.mkShell {
             packages = [
               axmemEnv
@@ -126,17 +111,11 @@
               pkgs.ruff
               pkgs.python314Packages.pytest
               pkgs.python314Packages.pytest-asyncio
-            ]
-            ++ config.pre-commit.settings.enabledPackages;
+            ];
             shellHook = ''
-              ${config.pre-commit.shellHook}
               export PYTHONPATH="$PWD:$PYTHONPATH"
             '';
           };
-
-          formatter = pkgs.writeShellScriptBin "fmt" ''
-            ${lib.getExe config.pre-commit.settings.package} run --all-files --config ${config.pre-commit.settings.configFile}
-          '';
 
           # App package (house pattern: stdenv+makeWrapper server); pname is axmem.
           packages = {

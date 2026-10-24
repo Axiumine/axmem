@@ -16,6 +16,10 @@ def _no_inherited_git_environment(monkeypatch):
     """A Git hook exports GIT_DIR/GIT_INDEX_FILE; tests that init repos in tmp dirs must not inherit them."""
     for name in [key for key in os.environ if key.startswith("GIT_")]:
         monkeypatch.delenv(name)
+    monkeypatch.delenv("QUALITY_PUSH_REMOTE", raising=False)
+    # nor the configuration of whoever runs them: a global commit.gpgsign=true would sign the commits of the temporary repositories
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
 
 
 def test_every_stage_gate_is_registered():
@@ -32,7 +36,7 @@ def test_required_tools_are_gated_before_push():
     assert {
         "ruff", "mypy", "pylint", "bandit", "vulture", "semgrep", "radon-cc", "radon-mi",
         "tests", "e2e-qdrant", "coverage", "memray", "trivy", "qodana",
-        "gitnexus", "mutation", "package",
+        "gitnexus", "mutation", "package", "wheel", "shellcheck", "actionlint", "architecture",
     } <= pre_push
 
 
@@ -55,14 +59,14 @@ def test_the_trivy_image_is_pinned_to_a_version(monkeypatch, tmp_path):
     assert re.fullmatch(r"aquasec/trivy:\d+\.\d+\.\d+", security.TRIVY_IMAGE)
 
 
-def test_selected_honours_skip_only_and_opt_in(monkeypatch):
+def test_selected_honours_skip_and_only_and_leaves_no_gate_out_otherwise(monkeypatch):
     monkeypatch.delenv("SKIP", raising=False)
     monkeypatch.delenv("ONLY", raising=False)
-    monkeypatch.delenv("MUTATION", raising=False)
-    assert registry.selected("ruff")
+    assert all(registry.selected(name) for name in registry.GATES)  # the slow mutation gate is no exception
+    monkeypatch.setenv("SKIP", "mutation")
     assert not registry.selected("mutation")
-    monkeypatch.setenv("MUTATION", "1")
-    assert registry.selected("mutation")
+    assert registry.left_out("mutation") == "left out by SKIP"
+    monkeypatch.delenv("SKIP")
     monkeypatch.setenv("SKIP", "ruff, mypy")
     assert not registry.selected("ruff")
     assert not registry.selected("mypy")
@@ -119,6 +123,83 @@ def test_stage_stops_at_first_failing_group(monkeypatch, capsys):
     assert cli.run_stage("nope") == 2
 
 
+def stage_of(monkeypatch, names=("a", "b", "mutation")):
+    """A ``ci`` stage of stand-in gates that all pass, in one group per name; returns the list of gates that ran."""
+    calls = []
+    monkeypatch.setattr(registry, "GATES", {n: (lambda _ctx, n=n: calls.append(n) or (True, ""), "") for n in names})
+    monkeypatch.setattr(registry, "STAGES", {"ci": [[n] for n in names]})
+    for variable in ("SKIP", "ONLY"):
+        monkeypatch.delenv(variable, raising=False)
+    return calls
+
+
+def test_a_stage_names_every_gate_it_left_out_and_counts_them(monkeypatch, capsys):
+    calls = stage_of(monkeypatch)
+    monkeypatch.setenv("SKIP", "a")
+
+    assert cli.run_stage("ci") == 0
+
+    out = capsys.readouterr().out
+    assert calls == ["b", "mutation"]
+    assert "SKIP  a  (left out by SKIP)" in out
+    assert "[ci] OK (1 gate left out)" in out
+    monkeypatch.setenv("ONLY", "b")
+    monkeypatch.delenv("SKIP")
+    assert cli.run_stage("ci") == 0
+    out = capsys.readouterr().out
+    assert "SKIP  a  (left out by ONLY)" in out
+    assert "SKIP  mutation  (left out by ONLY)" in out
+    assert "[ci] OK (2 gates left out)" in out
+
+
+def test_a_stage_with_nothing_left_out_says_plain_ok(monkeypatch, capsys):
+    calls = stage_of(monkeypatch)
+
+    assert cli.run_stage("ci") == 0
+
+    assert calls == ["a", "b", "mutation"]
+    assert capsys.readouterr().out.rstrip().endswith("[ci] OK")
+
+
+def test_skip_or_only_naming_no_gate_is_refused_instead_of_leaving_a_gate_out_unseen(monkeypatch, capsys):
+    calls = stage_of(monkeypatch)
+    monkeypatch.setenv("SKIP", "a,shelcheck")
+
+    assert cli.run_stage("ci") == 2
+    assert "shelcheck" in capsys.readouterr().err
+    monkeypatch.delenv("SKIP")
+    monkeypatch.setenv("ONLY", "typo")
+    assert cli.run_stage("ci") == 2
+    assert calls == []
+
+
+def test_only_that_selects_no_gate_of_the_stage_is_refused(monkeypatch, capsys):
+    calls = stage_of(monkeypatch)
+    monkeypatch.setitem(registry.GATES, "elsewhere", (lambda _ctx: (True, ""), ""))
+    monkeypatch.setenv("ONLY", "elsewhere")
+
+    assert cli.run_stage("ci") == 2
+    assert "selects no gate of the ci stage" in capsys.readouterr().err
+    assert calls == []
+
+
+def test_a_gate_that_raises_fails_and_the_others_of_its_group_still_report(monkeypatch, capsys):
+    def broken(_ctx):
+        raise KeyError("python")
+
+    monkeypatch.setattr(registry, "GATES", {"broken": (broken, ""), "fine": (lambda _ctx: (True, ""), "")})
+    monkeypatch.setattr(registry, "STAGES", {"ci": [["broken", "fine"]]})
+    for variable in ("SKIP", "ONLY"):
+        monkeypatch.delenv(variable, raising=False)
+
+    assert cli.run_stage("ci") == 1
+
+    out = capsys.readouterr().out
+    assert "PASS  fine" in out
+    assert "FAIL  broken" in out
+    assert "KeyError" in out
+
+
 def test_skip_reason_is_reported_not_failed(monkeypatch):
     def gate(_ctx):
         raise core.Skip("tool missing")
@@ -167,46 +248,6 @@ def test_install_hooks_points_git_at_githooks(tmp_path, monkeypatch):
     ).stdout.strip()
     assert value == ".githooks"
     assert cli.uninstall_hooks() == 0
-
-
-def _mutmut(monkeypatch, run_result, results_text):
-    monkeypatch.setenv("MUTATION_TARGETS", "app.utils.*")
-    monkeypatch.delenv("MUTATION_MAX_SURVIVORS", raising=False)
-
-    def fake_run(argv, **_kwargs):
-        return run_result if "run" in argv else (0, results_text)
-
-    monkeypatch.setattr(testing, "run", fake_run)
-    return testing.gate_mutation(core.Ctx(stage="manual", files=None))
-
-
-def test_mutant_statuses_keep_only_targeted_modules():
-    results = "Survived:\n    app.utils.a.x_f__mutmut_1: survived\n    app.other.b.x_g__mutmut_2: survived\n"
-    assert testing.mutant_statuses(results, ["app.utils.*"]) == {"app.utils.a.x_f__mutmut_1": "survived"}
-
-
-def test_mutation_gate_fails_when_the_suite_cannot_run(monkeypatch):
-    ok, out = _mutmut(monkeypatch, (1, "failed to collect stats. runner returned 1"), "")
-    assert not ok
-    assert "could not run the test suite" in out
-
-
-def test_mutation_gate_never_passes_on_untested_mutants(monkeypatch):
-    ok, out = _mutmut(monkeypatch, (0, ""), "app.utils.a.x_f__mutmut_1: not checked\n")
-    assert not ok
-    assert "never tested" in out
-
-
-def test_mutation_gate_counts_survivors_against_the_tolerance(monkeypatch):
-    ok, out = _mutmut(monkeypatch, (0, ""), "app.utils.a.x_f__mutmut_1: survived\n")
-    assert not ok
-    assert "1 mutants not killed" in out
-    monkeypatch.setenv("MUTATION_MAX_SURVIVORS", "1")
-    assert testing.gate_mutation(core.Ctx(stage="manual", files=None)) == (True, "")
-
-
-def test_mutation_gate_passes_when_everything_is_killed(monkeypatch):
-    assert _mutmut(monkeypatch, (0, ""), "") == (True, "")
 
 
 def test_test_gates_run_without_the_git_hook_environment(monkeypatch):
