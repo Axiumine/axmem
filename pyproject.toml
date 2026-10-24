@@ -327,12 +327,18 @@ ignore_names = [
 source_paths = ["app/"]
 pytest_add_cli_args_test_selection = ["tests/architecture/", "tests/integration/"]
 do_not_mutate = ["app/_version.py"]
+# CUDA cannot start in a fork of a process that has started it, and the suites start it (the GPU preflight of the collection,
+# the TensorRT engines). The fork server only imports pytest and forks the workers; the default fork would fork them from the
+# process that ran the baseline, and warming the server up with a collection would start CUDA in it as well.
+process_isolation = "forkserver"
+forkserver_warmup = "none"
 also_copy = [
     "pytest.ini", "main.py", "pyproject.toml", "ruff.toml",
     ".env.example",  # test_reference_docs parses it
     ".githooks/",  # the hook tests (test_commit_msg_hook, test_denylist_check_hook) run the scripts of the repository
     ".github/",  # test_workflows reads the CI workflows
     "test_harness/", "scripts/", "skills/", "docs/", "architecture.md", "README.md",
+    "CHANGELOG.md",  # test_install_requirements and test_reference_docs read it
 ]
 # Modules that start Python child processes in other directories cannot run inside the mutmut
 # sandbox (an instrumented app module needs mutmut's config at import time), so they are skipped.
@@ -357,4 +363,6 @@ pytest_add_cli_args = [
     "--ignore-glob=tests/integration/test_release_*.py",
     "--ignore=tests/integration/test_startup_config_wiring.py",
     "--ignore=tests/integration/test_tensorrt_startup_refusal.py",
+    # This test starts main.py in a scratch directory, where an instrumented app module cannot find mutmut's config.
+    "--deselect=tests/integration/test_startup_failures.py::test_a_settings_file_that_is_not_utf8_is_named_in_one_line",
 ]

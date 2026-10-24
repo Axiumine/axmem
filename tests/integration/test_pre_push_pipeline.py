@@ -132,7 +132,7 @@ def test_a_plain_pre_push_runs_mutation_on_the_app_modules_the_push_changes(monk
 
     assert cli.run_stage("pre-push") == 0
 
-    assert mutmut == [["run", "app.utils.clock.*"]]
+    assert mutmut == [["run", "--max-children", str(testing.MUTATION_WORKERS), "app.utils.clock.*"]]  # the GPU holds a few
     out = capsys.readouterr().out
     assert "PASS  mutation" in out
     assert "opt-in" not in out

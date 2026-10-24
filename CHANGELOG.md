@@ -161,7 +161,11 @@ without the mark, with the commit that landed it, in the commit that lands it.
   resumes from `mutants/`); the limit is 24 hours instead of two, because a push of a branch that changes dozens of
   `app/` modules cannot finish in two, and `MUTATION_TIMEOUT_S` (a positive whole number of seconds, up to 2147483) changes
   it, an invalid value failing the gate instead of falling back; a diff that git cannot make fails the gate instead of
-  reading as no change.
+  reading as no change. The mutation sandbox now holds `CHANGELOG.md`, which two documentation tests read, and mutmut's
+  run leaves out the one test that starts `main.py` in a scratch directory, and an integration test no longer leaves the
+  queued logging of the commands running for the tests after it (mutmut runs them in an order of its own), so its baseline
+  no longer fails; mutmut forks its workers (three at most, as each holds the TensorRT engines) from a fork server that has
+  not started CUDA, which fails in a fork; `test_mutation_sandbox.py` also finds a root file that a test names in a list.
 - **Quality gates:** the `semgrep` gate adds the registry packs `p/python p/security-audit` by default (they ran only in
   `quality.yml`, through an environment variable; a scoped `pre-commit` run keeps to the local rules, `SEMGREP_PACKS` in the
   environment replaces them, empty leaves them out). Staging the configuration of a gate (`pyproject.toml`, `uv.lock`,

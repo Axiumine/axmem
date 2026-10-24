@@ -362,10 +362,10 @@ targets above `MUTATION_MAX_SURVIVORS` (default 0) fail it. `[tool.mutmut]` sele
 other suites) as the tests that must kill a mutant
 and leaves `app/_version.py` unmutated. The tests run in a sandbox (`mutants/`) that holds only `app/`, `tests/` and the
 `also_copy` paths; a selected test that reads another path from the repository root fails there and takes mutmut's baseline
-run with it, which is why `.githooks/`, `.github/` and `.env.example` are copied and why
-`tests/architecture/test_mutation_sandbox.py` checks every root path the selected tests name. A test that lists the
+run with it, which is why `.githooks/`, `.github/`, `.env.example` and `CHANGELOG.md` are copied and why
+`tests/architecture/test_mutation_sandbox.py` checks every root path the selected tests name (after `ROOT /`, or as a string that names a file in a test module that finds the root). A test that lists the
 members of a class under `app/` must skip the names containing `__mutmut_` (mutmut adds its originals and mutants to a
-mutated class, see `protocol_methods` in `tests/integration/test_tenant_chokepoint.py`). No workflow runs the gate: the
+mutated class, see `protocol_methods` in `tests/integration/test_tenant_chokepoint.py`). A test that starts a Python child outside the sandbox is left out in `[tool.mutmut]` (`--ignore`, `--deselect`): the instrumented `app/` cannot find mutmut's config there. The workers fork from a fork server that has not started CUDA (`process_isolation`) and are at most three (`MUTATION_WORKERS` in `scripts/quality/testing.py`), since each holds the TensorRT engines on the GPU. No workflow runs the gate: the
 tests it selects need the GPU and Docker, so it is a gate of the pre-push hook only. On a checkout of
 `main` that is level with its upstream the diff is empty, so give it a scope of its own, for example
 `MUTATION_TARGETS='app.utils.* app.config.*' MUTATION_MAX_SURVIVORS=50 git push`, and lower the tolerated survivors as

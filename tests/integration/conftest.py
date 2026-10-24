@@ -8,8 +8,11 @@ engines on the GPU (``tensorrt_embedder``, ``tensorrt_reranker``); the suite ref
 GPU or without Qdrant. Only HTTP I/O (remote providers, remote servers) is stubbed.
 """
 
+import logging
+
 import pytest
 
+from app.config import logging_config
 from app.services.memory_service import MemoryService
 from tests.gpu_preflight import require_gpu
 from tests.qdrant_support import require_docker
@@ -19,6 +22,30 @@ def pytest_collection_modifyitems(config, items):
     """The models run on the NVIDIA GPU and the data lives in Qdrant: without either this run ends, it never skips."""
     require_gpu()
     require_docker()
+
+
+@pytest.fixture(autouse=True)
+def logging_left_as_found():
+    """Stop the queued logging that a test started, so that no test depends on the order of the tests.
+
+    The operator commands and the server call ``configure_logging``, which puts a queue handler on the root logger and
+    starts a listener thread that writes to the stderr of that test. The stream is closed when the test ends, and a test
+    that runs later and asserts on its own stderr reads ``--- Logging error ---`` from the thread instead. In the order of
+    the files that never happens; mutmut runs the tests of a mutant in an order of its own.
+    """
+    root = logging.getLogger()
+    queued = [handler for handler in root.handlers if isinstance(handler, logging_config.RecordPreservingQueueHandler)]
+    level = root.level
+    yield
+    started = [
+        handler for handler in root.handlers
+        if isinstance(handler, logging_config.RecordPreservingQueueHandler) and handler not in queued
+    ]
+    if started:
+        for handler in started:
+            root.removeHandler(handler)
+        logging_config.shutdown_logging()
+        root.setLevel(level)
 
 
 @pytest.fixture

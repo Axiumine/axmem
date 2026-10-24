@@ -7,6 +7,7 @@ baseline run that mutmut starts with then fails, so the whole mutation gate cann
 The selected tests need the NVIDIA GPU and Docker like every other suite, so no hosted workflow runs the gate: it is a
 gate of the pre-push hook, which runs it on every push.
 """
+import ast
 import re
 import tomllib
 from pathlib import Path
@@ -32,12 +33,23 @@ def _selected_test_files():
                 yield path
 
 
+def _root_names(source):
+    """What a test module reads from the repository root: the names after ``ROOT /`` and, in a module that finds the root,
+    every string that names a file of the checkout (``(ROOT / path).read_text()`` over a tuple of names has no literal
+    next to ``ROOT``, which ``ROOT_PATH`` cannot see)."""
+    names = set(ROOT_PATH.findall(source))
+    if "parents[2]" in source:
+        strings = {node.value for node in ast.walk(ast.parse(source)) if isinstance(node, ast.Constant) and isinstance(node.value, str)}
+        names |= {string for string in strings if string and not string.startswith("/") and (ROOT / string).is_file()}
+    return {Path(name).parts[0] for name in names}
+
+
 def test_the_sandbox_holds_every_root_path_the_selected_tests_read():
     sandbox = BUILT_IN | {Path(entry).parts[0] for entry in CONFIG["also_copy"] + CONFIG["source_paths"]}
     missing = {
         f"{path.relative_to(ROOT)}: {name}"
         for path in _selected_test_files()
-        for name in ROOT_PATH.findall(path.read_text(encoding="utf-8"))
+        for name in _root_names(path.read_text(encoding="utf-8"))
         if name not in sandbox
     }
 
@@ -49,6 +61,12 @@ def test_the_hook_tests_are_among_the_tests_that_the_sandbox_must_serve():
 
     assert {"test_commit_msg_hook.py", "test_denylist_check_hook.py"} <= names
     assert ".githooks" in {Path(entry).parts[0] for entry in CONFIG["also_copy"]}
+
+
+def test_mutmut_forks_its_workers_from_a_process_that_has_not_started_cuda():
+    """CUDA fails in a fork of a process that started it, which the baseline run and a warm-up collection both do."""
+    assert CONFIG["process_isolation"] == "forkserver"
+    assert CONFIG["forkserver_warmup"] == "none"
 
 
 def test_mutation_is_a_gate_of_the_pre_push_hook_and_of_the_ci_stage_of_no_one():

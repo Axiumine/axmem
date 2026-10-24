@@ -34,6 +34,9 @@ E2E_QDRANT_TIMEOUT_SECONDS = 10800
 # subprocess can wait at most MUTATION_TIMEOUT_S_MAX for (poll() takes milliseconds in a C int)
 MUTATION_TIMEOUT_S_DEFAULT = 86400
 MUTATION_TIMEOUT_S_MAX = 2147483
+# Every mutmut worker is a pytest process that holds the TensorRT embedder and reranker on the GPU (about 4.6 GiB, see
+# tests/gpu_preflight.py); mutmut starts one per CPU unless told otherwise, and a card holds a handful of them
+MUTATION_WORKERS = 3
 
 
 def check_tests(argv: list[str], **kwargs) -> tuple[bool, str]:
@@ -146,7 +149,8 @@ def gate_mutation(ctx: Ctx) -> tuple[bool, str]:
     except ValueError as exc:
         return False, str(exc)
     targets = mutation_targets(ctx)
-    code, out = run([*venv_tool("mutmut"), "run", *targets], timeout=timeout, scrub_git=True, own_session=True)
+    command = [*venv_tool("mutmut"), "run", "--max-children", str(MUTATION_WORKERS), *targets]
+    code, out = run(command, timeout=timeout, scrub_git=True, own_session=True)
     if code == 124:
         return False, (
             f"mutation exceeded {timeout} s over {len(targets)} module patterns and was stopped, "
