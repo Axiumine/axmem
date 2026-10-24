@@ -342,8 +342,11 @@ also_copy = [
 ]
 # Modules that start Python child processes in other directories cannot run inside the mutmut
 # sandbox (an instrumented app module needs mutmut's config at import time), so they are skipped.
+# A worker ends with os._exit, so pytest's clean-up at exit never runs and a run of thousands of mutants keeps the temp
+# directories of every test (the Qdrant backups alone are 210 MB each): "failed" removes those of the tests that pass
+# (and the whole base directory of a passing session) at once; tests/conftest.py removes the rest when a session ends.
 pytest_add_cli_args = [
-    "-p", "no:cacheprovider", "-q",
+    "-p", "no:cacheprovider", "-q", "-o", "tmp_path_retention_policy=failed",
     "--ignore=tests/architecture/test_contracts.py",
     "--ignore=tests/integration/test_cli_env_file_writer.py",
     "--ignore=tests/integration/test_config_precedence.py",

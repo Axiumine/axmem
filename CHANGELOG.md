@@ -165,7 +165,9 @@ without the mark, with the commit that landed it, in the commit that lands it.
   run leaves out the one test that starts `main.py` in a scratch directory, and an integration test no longer leaves the
   queued logging of the commands running for the tests after it (mutmut runs them in an order of its own), so its baseline
   no longer fails; mutmut forks its workers (three at most, as each holds the TensorRT engines) from a fork server that has
-  not started CUDA, which fails in a fork; `test_mutation_sandbox.py` also finds a root file that a test names in a list.
+  not started CUDA, which fails in a fork; `test_mutation_sandbox.py` also finds a root file that a test names in a list; the workers
+  no longer leave their pytest temp directories behind (a worker ends with `os._exit`, so pytest never cleaned them up, and a run of
+  14,000 mutants filled two disks with the Qdrant backups the tests had written); the test suites run with a `XDG_CONFIG_HOME` of their own, so a mutant that ignores the `--env-file` of a test cannot write `AXMEM_SERVER` to the settings file of the user (one did, and every CLI test after it failed on a server that does not exist).
 - **Quality gates:** the `semgrep` gate adds the registry packs `p/python p/security-audit` by default (they ran only in
   `quality.yml`, through an environment variable; a scoped `pre-commit` run keeps to the local rules, `SEMGREP_PACKS` in the
   environment replaces them, empty leaves them out). Staging the configuration of a gate (`pyproject.toml`, `uv.lock`,

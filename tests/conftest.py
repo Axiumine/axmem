@@ -1,11 +1,14 @@
 """Fixtures shared by every test suite."""
 
+import os
+import shutil
 import uuid
 
 import pytest
 from pydantic import SecretStr
 
 from app.config.settings import settings
+from tests import CONFIG_HOME
 from tests.embedding_doubles import spy_on
 from tests.qdrant_support import (
     QdrantServer,
@@ -24,8 +27,26 @@ def base_temp_made_first(tmp_path_factory):
     A test that records or replaces ``atexit.register`` (the commands and the server register the log shutdown there)
     and is the first, or the only one, to ask would make pytest call its patch with the clean-up's five arguments:
     ``list.append`` refused them, so a test file run on its own errored while the same file passed in a full run.
+
+    Under mutmut the directory is removed again when the session ends. A mutmut worker ends with ``os._exit``, so pytest's
+    ``atexit`` clean-up never runs, its lock is never released (it then spares the directory for three days) and the
+    directory of every mutant that a test killed stays: the Qdrant backups of those tests filled the disk.
     """
-    return tmp_path_factory.getbasetemp()
+    mutating = "MUTANT_UNDER_TEST" in os.environ
+    base = tmp_path_factory.getbasetemp()
+    yield base
+    if mutating:
+        shutil.rmtree(base, ignore_errors=True)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def config_home_removed():
+    """Remove the settings directory that ``tests/__init__.py`` made for this process when its session ends.
+
+    A mutmut worker ends with ``os._exit``, which skips ``atexit``, and a run makes one worker per mutant.
+    """
+    yield
+    shutil.rmtree(CONFIG_HOME, ignore_errors=True)
 
 
 @pytest.fixture(autouse=True)
