@@ -18,7 +18,9 @@ include:
   - name: VulnerableLibrariesLocal
   - name: CheckDependencyLicenses
 
-bootstrap: export UV_CACHE_DIR=/tmp/uv-cache SETUPTOOLS_SCM_PRETEND_VERSION=0.0.0+qodana && pip install uv && uv sync --locked --all-extras --dev
+# The Python that uv installs in the image does not look where the image keeps its CA bundle. Without SSL_CERT_FILE the build of
+# actionlint-py (an sdist that downloads its binary from GitHub; the uv cache is empty on every run) fails with a certificate error.
+bootstrap: export UV_CACHE_DIR=/tmp/uv-cache SETUPTOOLS_SCM_PRETEND_VERSION=0.0.0+qodana SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt && pip install uv && uv sync --locked --all-extras --dev
 
 exclude:
   - name: All

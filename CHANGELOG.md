@@ -20,8 +20,10 @@ without the mark, with the commit that landed it, in the commit that lands it.
   `twine` and `check-wheel-contents` are pinned in the `dev` group, so the gates and a hand run use the same versions; the
   release script ran the last two unpinned through `uvx`. `twine` 7.0.0 needs `rich>=14.3.3` and `packaging>=26.1`, so
   `uv.lock` also moves `rich` from 14.3.2 to 15.0.0 (a major version, a transitive dependency of `fastmcp`) and `packaging`
-  from 26.0 to 26.3. The first three run in `pre-commit`, `pre-push` and the `ci`
-  stage; `quality.yml` and `ci.yml` call them by gate name. `AGENTS.md` and
+  from 26.0 to 26.3. `actionlint-py` ships only an sdist that downloads its binary from GitHub, and the Python that uv
+  installs in the Qodana image does not find the image's CA bundle, so the `bootstrap` of `qodana.yaml` sets
+  `SSL_CERT_FILE`; without it the build failed with a certificate error and the `qodana` gate stopped the push. The first
+  three run in `pre-commit`, `pre-push` and the `ci` stage; `quality.yml` and `ci.yml` call them by gate name. `AGENTS.md` and
   [docs/quality-gates.md](docs/quality-gates.md) state the rule and what a new check must do.
 - The quality runner says what it left out. A stage prints a `SKIP` line for every gate that `SKIP` or `ONLY`
   left out and ends `OK (N gates left out)`; a name in `SKIP` or `ONLY` that is no gate, and an `ONLY` that
