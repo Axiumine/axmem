@@ -66,13 +66,13 @@ def seeded_cache(monkeypatch, tmp_path, vocabulary):
 
 @pytest.fixture
 def hanging_download(monkeypatch):
-    """Every download blocks (a firewall that drops the packets) until the test ends; the calls are recorded."""
+    """Every download blocks (a firewall that drops the packets) until the test ends or three seconds pass; the calls are recorded."""
     release = threading.Event()
     calls: list[str] = []
 
     def hang(url, *args, **kwargs):
         calls.append(url)
-        release.wait(60)
+        release.wait(3)
         raise requests.exceptions.ConnectionError("released at the end of the test")
 
     monkeypatch.setattr(requests, "get", hang)

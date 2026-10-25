@@ -10,6 +10,8 @@ from app.middleware.static_token import StaticTokenVerifier, hash_token
 
 ALICE_TOKEN = "alice-secret-token-value"
 BOB_TOKEN = "bob-secret-token-value"
+# computed here, not by the code under test: a parameter is evaluated when the module is collected
+ALICE_HASH = hashlib.sha256(ALICE_TOKEN.encode()).hexdigest()
 
 
 @pytest.fixture
@@ -37,7 +39,7 @@ async def test_each_token_names_only_its_own_tenant(verifier):
 
 @pytest.mark.parametrize(
     "presented",
-    ["", "wrong-token", ALICE_TOKEN.upper(), ALICE_TOKEN + " ", " " + ALICE_TOKEN, ALICE_TOKEN[:-1], hash_token(ALICE_TOKEN)],
+    ["", "wrong-token", ALICE_TOKEN.upper(), ALICE_TOKEN + " ", " " + ALICE_TOKEN, ALICE_TOKEN[:-1], ALICE_HASH],
     ids=["empty", "wrong", "case", "trailing-space", "leading-space", "prefix", "the-hash-itself"],
 )
 async def test_any_other_token_is_refused(verifier, presented):

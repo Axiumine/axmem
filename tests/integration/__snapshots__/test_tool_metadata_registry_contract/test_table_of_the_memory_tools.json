@@ -1,0 +1,749 @@
+[
+  {
+    "category": "memory",
+    "description": "Create atomic memory with auto-linking and lifecycle management. Stores single concepts (<400 words).",
+    "examples": [
+      "execute_axmem_tool(\"create_memory\", {\"title\": \"FastAPI auth pattern\", \"content\": \"Use JWT with httponly cookies...\", \"context\": \"Security decision\", \"keywords\": [\"auth\", \"jwt\"], \"tags\": [\"security\"], \"importance\": 9})"
+    ],
+    "mutates": true,
+    "name": "create_memory",
+    "parameters": [
+      {
+        "description": "Memory title (max 200 characters)",
+        "example": "TTS preference: XTTS-v2",
+        "name": "title",
+        "required": true,
+        "type": "str"
+      },
+      {
+        "description": "Memory content (max 2000 characters, ~300-400 words) - single concept",
+        "example": "Selected XTTS-v2 for voice cloning - provides high quality output with low latency",
+        "name": "content",
+        "required": true,
+        "type": "str"
+      },
+      {
+        "description": "WHY this memory matters, HOW it relates, WHAT implications (max 500 characters)",
+        "example": "Decision made while implementing voice integration with AI agent",
+        "name": "context",
+        "required": true,
+        "type": "str"
+      },
+      {
+        "description": "Search keywords for semantic matching (max 10, each max 100 characters)",
+        "example": [
+          "tts",
+          "voice-cloning",
+          "xtts"
+        ],
+        "name": "keywords",
+        "required": true,
+        "type": "List[str]"
+      },
+      {
+        "description": "Categorization tags (max 10, each max 100 characters)",
+        "example": [
+          "decision",
+          "preference",
+          "audio"
+        ],
+        "name": "tags",
+        "required": true,
+        "type": "List[str]"
+      },
+      {
+        "description": "Score 1-10. 9-10: Personal/foundational, 8-9: Critical solutions, 7-8: Useful patterns, 6-7: Milestones",
+        "example": 9,
+        "name": "importance",
+        "required": true,
+        "type": "int"
+      },
+      {
+        "description": "FastMCP Context (automatically injected)",
+        "name": "ctx",
+        "required": true,
+        "type": "Context"
+      },
+      {
+        "default": null,
+        "description": "Optional free-form project scope label (max 500 characters); created on first use",
+        "example": "axmem",
+        "name": "project",
+        "required": false,
+        "type": "Optional[str]"
+      },
+      {
+        "default": null,
+        "description": "Repository/project source (e.g., 'owner/repo') for provenance tracking",
+        "example": "axiumine/axmem",
+        "name": "source_repo",
+        "required": false,
+        "type": "Optional[str]"
+      },
+      {
+        "default": null,
+        "description": "Files that informed this memory (list of paths) for provenance tracking",
+        "example": [
+          "src/main.py",
+          "tests/test.py"
+        ],
+        "name": "source_files",
+        "required": false,
+        "type": "Optional[List[str]]"
+      },
+      {
+        "default": null,
+        "description": "URL to original source material for provenance tracking",
+        "example": "https://github.com/owner/repo/blob/main/README.md",
+        "name": "source_url",
+        "required": false,
+        "type": "Optional[str]"
+      },
+      {
+        "default": null,
+        "description": "Encoding confidence score (0.0-1.0) for provenance tracking",
+        "example": 0.85,
+        "name": "confidence",
+        "required": false,
+        "type": "Optional[float]"
+      },
+      {
+        "default": null,
+        "description": "Agent/process that created this memory for provenance tracking",
+        "example": "claude-sonnet-4-20250514",
+        "name": "encoding_agent",
+        "required": false,
+        "type": "Optional[str]"
+      },
+      {
+        "default": null,
+        "description": "Version of encoding process/prompt for provenance tracking",
+        "example": "0.1.0",
+        "name": "encoding_version",
+        "required": false,
+        "type": "Optional[str]"
+      },
+      {
+        "default": null,
+        "description": "Agent identity for provenance tracking",
+        "example": "CodeAgentUltra",
+        "name": "agent_id",
+        "required": false,
+        "type": "Optional[str]"
+      },
+      {
+        "default": null,
+        "description": "Agent version for provenance tracking",
+        "example": "1.0",
+        "name": "agent_version",
+        "required": false,
+        "type": "Optional[str]"
+      },
+      {
+        "default": null,
+        "description": "LLM model used for provenance tracking",
+        "example": "claude-sonnet-4-6",
+        "name": "agent_model",
+        "required": false,
+        "type": "Optional[str]"
+      }
+    ],
+    "returns": "MemoryCreateResponse with id, title, linked_memory_ids, similar_memories, obsolete_matches",
+    "tags": [
+      "memory",
+      "create",
+      "linking"
+    ]
+  },
+  {
+    "category": "memory",
+    "description": "Semantic search across memories to find relevant information",
+    "examples": [
+      "execute_axmem_tool(\"query_memory\", {\"query\": \"authentication patterns\", \"query_context\": \"building API login\", \"k\": 5})",
+      "execute_axmem_tool(\"query_memory\", {\"query\": \"database design\", \"query_context\": \"schema review\", \"importance_threshold\": 8, \"k\": 3})"
+    ],
+    "mutates": false,
+    "name": "query_memory",
+    "parameters": [
+      {
+        "description": "Natural language search query",
+        "example": "What did we decide about authentication?",
+        "name": "query",
+        "required": true,
+        "type": "str"
+      },
+      {
+        "description": "Context explaining why you're searching (improves ranking)",
+        "example": "Implementing login system for new API",
+        "name": "query_context",
+        "required": true,
+        "type": "str"
+      },
+      {
+        "description": "FastMCP Context (automatically injected)",
+        "name": "ctx",
+        "required": true,
+        "type": "Context"
+      },
+      {
+        "default": 3,
+        "description": "Number of primary results to return (1-20), use INSTEAD of LIMIT",
+        "example": 5,
+        "name": "k",
+        "required": false,
+        "type": "int"
+      },
+      {
+        "default": true,
+        "description": "Whether to include linked memories for context",
+        "example": true,
+        "name": "include_links",
+        "required": false,
+        "type": "bool"
+      },
+      {
+        "default": 5,
+        "description": "Maximum number of linked memories per primary memory",
+        "example": 3,
+        "name": "max_links_per_primary",
+        "required": false,
+        "type": "int"
+      },
+      {
+        "default": null,
+        "description": "Minimum importance score (1-10) to include",
+        "example": 7,
+        "name": "importance_threshold",
+        "required": false,
+        "type": "Optional[int]"
+      },
+      {
+        "default": null,
+        "description": "Only search memories in this project scope",
+        "example": "axmem",
+        "name": "project",
+        "required": false,
+        "type": "Optional[str]"
+      },
+      {
+        "default": false,
+        "description": "If True, linked memories must also be in the specified project scope",
+        "example": false,
+        "name": "strict_project_filter",
+        "required": false,
+        "type": "bool"
+      }
+    ],
+    "returns": "MemoryQueryResult with primary_memories, linked_memories, scores, total_count, token_count, truncated flag",
+    "tags": [
+      "memory",
+      "search",
+      "semantic",
+      "query"
+    ]
+  },
+  {
+    "category": "memory",
+    "description": "Update existing memory fields using PATCH semantics (only specified fields are updated)",
+    "examples": [
+      "execute_axmem_tool(\"update_memory\", {\"memory_id\": \"018f2c3e-0000-7000-8000-000000000042\", \"importance\": 9})",
+      "execute_axmem_tool(\"update_memory\", {\"memory_id\": \"018f2c3e-0000-7000-8000-000000000042\", \"content\": \"Updated content\", \"tags\": [\"revised\", \"important\"]})"
+    ],
+    "mutates": true,
+    "name": "update_memory",
+    "parameters": [
+      {
+        "description": "ID of the memory to update",
+        "example": "018f2c3e-0000-7000-8000-000000000042",
+        "name": "memory_id",
+        "required": true,
+        "type": "str"
+      },
+      {
+        "description": "FastMCP Context (automatically injected)",
+        "name": "ctx",
+        "required": true,
+        "type": "Context"
+      },
+      {
+        "default": null,
+        "description": "New title (optional)",
+        "example": "Updated title",
+        "name": "title",
+        "required": false,
+        "type": "Optional[str]"
+      },
+      {
+        "default": null,
+        "description": "New content (optional)",
+        "example": "Updated content with new information",
+        "name": "content",
+        "required": false,
+        "type": "Optional[str]"
+      },
+      {
+        "default": null,
+        "description": "New context (optional)",
+        "example": "Updated context explanation",
+        "name": "context",
+        "required": false,
+        "type": "Optional[str]"
+      },
+      {
+        "default": null,
+        "description": "New keywords - replaces existing (optional)",
+        "example": [
+          "new",
+          "keywords"
+        ],
+        "name": "keywords",
+        "required": false,
+        "type": "Optional[List[str]]"
+      },
+      {
+        "default": null,
+        "description": "New tags - replaces existing (optional)",
+        "example": [
+          "updated",
+          "tag"
+        ],
+        "name": "tags",
+        "required": false,
+        "type": "Optional[List[str]]"
+      },
+      {
+        "default": null,
+        "description": "New importance score 1-10 (optional)",
+        "example": 8,
+        "name": "importance",
+        "required": false,
+        "type": "Optional[int]"
+      },
+      {
+        "default": null,
+        "description": "New project scope label - replaces the existing one; an empty string clears it (optional)",
+        "example": "axmem",
+        "name": "project",
+        "required": false,
+        "type": "Optional[str]"
+      },
+      {
+        "default": null,
+        "description": "New repository/project source. Unchanged if null.",
+        "example": "axiumine/axmem",
+        "name": "source_repo",
+        "required": false,
+        "type": "Optional[str]"
+      },
+      {
+        "default": null,
+        "description": "New source files list. Replaces existing if provided, unchanged if null.",
+        "example": [
+          "src/main.py",
+          "tests/test.py"
+        ],
+        "name": "source_files",
+        "required": false,
+        "type": "Optional[List[str]]"
+      },
+      {
+        "default": null,
+        "description": "New URL to source material. Unchanged if null.",
+        "example": "https://github.com/owner/repo/blob/main/README.md",
+        "name": "source_url",
+        "required": false,
+        "type": "Optional[str]"
+      },
+      {
+        "default": null,
+        "description": "New encoding confidence score (0.0-1.0). Unchanged if null.",
+        "example": 0.85,
+        "name": "confidence",
+        "required": false,
+        "type": "Optional[float]"
+      },
+      {
+        "default": null,
+        "description": "New agent/process identifier. Unchanged if null.",
+        "example": "claude-sonnet-4-20250514",
+        "name": "encoding_agent",
+        "required": false,
+        "type": "Optional[str]"
+      },
+      {
+        "default": null,
+        "description": "New encoding process version. Unchanged if null.",
+        "example": "0.1.0",
+        "name": "encoding_version",
+        "required": false,
+        "type": "Optional[str]"
+      },
+      {
+        "default": null,
+        "description": "Agent identity for provenance tracking",
+        "example": "CodeAgentUltra",
+        "name": "agent_id",
+        "required": false,
+        "type": "Optional[str]"
+      },
+      {
+        "default": null,
+        "description": "Agent version for provenance tracking",
+        "example": "1.0",
+        "name": "agent_version",
+        "required": false,
+        "type": "Optional[str]"
+      },
+      {
+        "default": null,
+        "description": "LLM model used for provenance tracking",
+        "example": "claude-sonnet-4-6",
+        "name": "agent_model",
+        "required": false,
+        "type": "Optional[str]"
+      }
+    ],
+    "returns": "Full Memory object after update",
+    "tags": [
+      "memory",
+      "update",
+      "patch"
+    ]
+  },
+  {
+    "category": "memory",
+    "description": "Manually create bidirectional links between memories (symmetric linking). Accepts memory_id + related_ids (or aliases source_id + target_id/target_ids, memory_ids=[src, tgt])",
+    "examples": [
+      "execute_axmem_tool(\"link_memories\", {\"memory_id\": \"018f2c3e-0000-7000-8000-000000000042\", \"related_ids\": [\"018f2c3e-0000-7000-8000-000000000010\", \"018f2c3e-0000-7000-8000-000000000015\"]})",
+      "execute_axmem_tool(\"link_memories\", {\"source_id\": \"018f2c3e-0000-7000-8000-000000000042\", \"target_id\": \"018f2c3e-0000-7000-8000-000000000057\"})",
+      "execute_axmem_tool(\"link_memories\", {\"memory_ids\": [\"018f2c3e-0000-7000-8000-000000000042\", \"018f2c3e-0000-7000-8000-000000000057\"]})"
+    ],
+    "mutates": true,
+    "name": "link_memories",
+    "parameters": [
+      {
+        "description": "Source memory ID (aliases: source_id, from_id, id)",
+        "example": "018f2c3e-0000-7000-8000-000000000042",
+        "name": "memory_id",
+        "required": true,
+        "type": "str"
+      },
+      {
+        "description": "List of target memory IDs to link (or a single id; aliases: target_id, target_ids, related_id)",
+        "example": [
+          "018f2c3e-0000-7000-8000-000000000010",
+          "018f2c3e-0000-7000-8000-000000000015",
+          "018f2c3e-0000-7000-8000-000000000020"
+        ],
+        "name": "related_ids",
+        "required": true,
+        "type": "List[str]"
+      },
+      {
+        "description": "FastMCP Context (automatically injected)",
+        "name": "ctx",
+        "required": true,
+        "type": "Context"
+      }
+    ],
+    "returns": "Dict with linked_memory_ids: the target memory IDs that were newly linked (a target that does not exist for the tenant, the source itself and a link that exists already are skipped)",
+    "tags": [
+      "memory",
+      "linking",
+      "relationships"
+    ]
+  },
+  {
+    "category": "memory",
+    "description": "Remove bidirectional link(s) between memories. Accepts source_id + target_id (or aliases memory_id + related_id, target_ids, related_ids, memory_ids=[src, tgt, ...])",
+    "examples": [
+      "execute_axmem_tool(\"unlink_memories\", {\"source_id\": \"018f2c3e-0000-7000-8000-000000000042\", \"target_id\": \"018f2c3e-0000-7000-8000-000000000057\"})",
+      "execute_axmem_tool(\"unlink_memories\", {\"memory_id\": \"018f2c3e-0000-7000-8000-000000000042\", \"related_id\": \"018f2c3e-0000-7000-8000-000000000057\"})",
+      "execute_axmem_tool(\"unlink_memories\", {\"memory_id\": \"018f2c3e-0000-7000-8000-000000000042\", \"related_ids\": [\"018f2c3e-0000-7000-8000-000000000057\", \"018f2c3e-0000-7000-8000-000000000058\"]})",
+      "execute_axmem_tool(\"unlink_memories\", {\"memory_ids\": [\"018f2c3e-0000-7000-8000-000000000042\", \"018f2c3e-0000-7000-8000-000000000057\", \"018f2c3e-0000-7000-8000-000000000058\"]})"
+    ],
+    "mutates": true,
+    "name": "unlink_memories",
+    "parameters": [
+      {
+        "description": "Source memory ID (aliases: memory_id, from_id, id)",
+        "example": "018f2c3e-0000-7000-8000-000000000042",
+        "name": "source_id",
+        "required": true,
+        "type": "str"
+      },
+      {
+        "description": "Target memory ID(s) to unlink (aliases: target_ids, related_id, related_ids, to_id)",
+        "example": "018f2c3e-0000-7000-8000-000000000057",
+        "name": "target_id",
+        "required": true,
+        "type": "str"
+      },
+      {
+        "description": "FastMCP Context (automatically injected)",
+        "name": "ctx",
+        "required": true,
+        "type": "Context"
+      }
+    ],
+    "returns": "Dict with 'success' boolean (True if all requested links were removed, False if any link didn't exist)",
+    "tags": [
+      "memory",
+      "unlink",
+      "graph",
+      "linking"
+    ]
+  },
+  {
+    "category": "memory",
+    "description": "Retrieve complete memory details by ID",
+    "examples": [
+      "execute_axmem_tool(\"get_memory\", {\"memory_id\": \"018f2c3e-0000-7000-8000-000000000042\"})"
+    ],
+    "mutates": false,
+    "name": "get_memory",
+    "parameters": [
+      {
+        "description": "ID of the memory to retrieve",
+        "example": "018f2c3e-0000-7000-8000-000000000042",
+        "name": "memory_id",
+        "required": true,
+        "type": "str"
+      },
+      {
+        "description": "FastMCP Context (automatically injected)",
+        "name": "ctx",
+        "required": true,
+        "type": "Context"
+      }
+    ],
+    "returns": "Complete Memory object with all fields",
+    "tags": [
+      "memory",
+      "retrieve",
+      "read"
+    ]
+  },
+  {
+    "category": "memory",
+    "description": "Mark a memory as obsolete (soft delete with audit trail). Restore with unobsolete_memory.",
+    "examples": [
+      "execute_axmem_tool(\"mark_memory_obsolete\", {\"memory_id\": \"018f2c3e-0000-7000-8000-000000000042\", \"reason\": \"Outdated approach\", \"superseded_by\": \"018f2c3e-0000-7000-8000-000000000100\"})"
+    ],
+    "mutates": true,
+    "name": "mark_memory_obsolete",
+    "parameters": [
+      {
+        "description": "ID of the memory to mark as obsolete",
+        "example": "018f2c3e-0000-7000-8000-000000000042",
+        "name": "memory_id",
+        "required": true,
+        "type": "str"
+      },
+      {
+        "description": "Explanation for why this memory is obsolete",
+        "example": "Superseded by a newer decision",
+        "name": "reason",
+        "required": true,
+        "type": "str"
+      },
+      {
+        "description": "FastMCP Context (automatically injected)",
+        "name": "ctx",
+        "required": true,
+        "type": "Context"
+      },
+      {
+        "default": null,
+        "description": "Optional ID of the replacement memory",
+        "example": "018f2c3e-0000-7000-8000-000000000100",
+        "name": "superseded_by",
+        "required": false,
+        "type": "Optional[str]"
+      }
+    ],
+    "returns": "Dict {\"success\": true} once the memory is marked obsolete; a memory that is not found, is already obsolete or would be superseded by itself is an error, never false",
+    "tags": [
+      "memory",
+      "delete",
+      "obsolete",
+      "lifecycle"
+    ]
+  },
+  {
+    "category": "memory",
+    "description": "Restore a memory previously marked obsolete (undo soft delete)",
+    "examples": [
+      "execute_axmem_tool(\"unobsolete_memory\", {\"memory_id\": \"018f2c3e-0000-7000-8000-000000000042\"})"
+    ],
+    "mutates": true,
+    "name": "unobsolete_memory",
+    "parameters": [
+      {
+        "description": "ID of the obsolete memory to restore",
+        "example": "018f2c3e-0000-7000-8000-000000000042",
+        "name": "memory_id",
+        "required": true,
+        "type": "str"
+      },
+      {
+        "description": "FastMCP Context (automatically injected)",
+        "name": "ctx",
+        "required": true,
+        "type": "Context"
+      }
+    ],
+    "returns": "Dict {\"success\": true} once the memory is active again; a memory that is not found or is not obsolete is an error, never false",
+    "tags": [
+      "memory",
+      "obsolete",
+      "lifecycle"
+    ]
+  },
+  {
+    "category": "memory",
+    "description": "Retrieve most recent memories sorted by creation timestamp (newest first by default)",
+    "examples": [
+      "execute_axmem_tool(\"get_recent_memories\", {\"limit\": 5})",
+      "execute_axmem_tool(\"get_recent_memories\", {\"limit\": 10, \"project\": \"axmem\"})",
+      "execute_axmem_tool(\"get_recent_memories\", {\"tags\": [\"ai-champion\"], \"limit\": 20})",
+      "execute_axmem_tool(\"get_recent_memories\", {\"importance_min\": 8, \"created_since\": \"2026-08-01T00:00:00Z\", \"sort_by\": \"importance\"})"
+    ],
+    "mutates": false,
+    "name": "get_recent_memories",
+    "parameters": [
+      {
+        "description": "FastMCP Context (automatically injected)",
+        "name": "ctx",
+        "required": true,
+        "type": "Context"
+      },
+      {
+        "default": 10,
+        "description": "Maximum number of memories to return (1-100)",
+        "example": 10,
+        "name": "limit",
+        "required": false,
+        "type": "int"
+      },
+      {
+        "default": 0,
+        "description": "Number of memories to skip for pagination",
+        "example": 0,
+        "name": "offset",
+        "required": false,
+        "type": "int"
+      },
+      {
+        "default": null,
+        "description": "Optional filter to one project scope",
+        "example": "axmem",
+        "name": "project",
+        "required": false,
+        "type": "Optional[str]"
+      },
+      {
+        "default": false,
+        "description": "Include obsolete memories when true",
+        "example": false,
+        "name": "include_obsolete",
+        "required": false,
+        "type": "bool"
+      },
+      {
+        "default": "created_at",
+        "description": "Sort field: created_at, updated_at, or importance",
+        "example": "created_at",
+        "name": "sort_by",
+        "required": false,
+        "type": "str"
+      },
+      {
+        "default": "desc",
+        "description": "Sort direction: asc or desc",
+        "example": "desc",
+        "name": "sort_order",
+        "required": false,
+        "type": "str"
+      },
+      {
+        "default": null,
+        "description": "Optional tag filter (OR semantics when multiple tags)",
+        "example": [
+          "ai-champion"
+        ],
+        "name": "tags",
+        "required": false,
+        "type": "Optional[List[str]]"
+      },
+      {
+        "default": null,
+        "description": "Minimum importance (1-10, inclusive)",
+        "example": 8,
+        "name": "importance_min",
+        "required": false,
+        "type": "Optional[int]"
+      },
+      {
+        "default": null,
+        "description": "Inclusive ISO 8601 creation timestamp with timezone",
+        "example": "2026-08-01T00:00:00Z",
+        "name": "created_since",
+        "required": false,
+        "type": "Optional[str]"
+      }
+    ],
+    "returns": "Dictionary with memories list (sorted per sort_by/sort_order) and total_count",
+    "tags": [
+      "memory",
+      "query",
+      "recency",
+      "timeline"
+    ]
+  },
+  {
+    "category": "memory",
+    "description": "Rebuild embeddings for a tenant-scoped subset of memories without resetting global vector storage. Targets explicit memory ids, a single project scope, or all caller-owned memories.",
+    "examples": [
+      "execute_axmem_tool(\"rebuild_embeddings\", {\"memory_ids\": [\"018f2c3e-0000-7000-8000-000000000123\", \"018f2c3e-0000-7000-8000-000000000124\"]})",
+      "execute_axmem_tool(\"rebuild_embeddings\", {\"project\": \"axmem\"})",
+      "execute_axmem_tool(\"rebuild_embeddings\", {})"
+    ],
+    "mutates": true,
+    "name": "rebuild_embeddings",
+    "parameters": [
+      {
+        "description": "FastMCP Context (automatically injected)",
+        "name": "ctx",
+        "required": true,
+        "type": "Context"
+      },
+      {
+        "default": null,
+        "description": "Explicit memory ids owned by the caller; leave null to use project or the whole tenant",
+        "example": [
+          "018f2c3e-0000-7000-8000-000000000123",
+          "018f2c3e-0000-7000-8000-000000000124"
+        ],
+        "name": "memory_ids",
+        "required": false,
+        "type": "Optional[List[str]]"
+      },
+      {
+        "default": null,
+        "description": "Restrict the rebuild to memories in this project scope of the caller",
+        "example": "axmem",
+        "name": "project",
+        "required": false,
+        "type": "Optional[str]"
+      }
+    ],
+    "returns": "Dict with rebuilt_ids (List[str]), skipped_ids (List[str]; edited, made obsolete or deleted while the rebuild ran so the newer state was kept), failed (List[Dict[memory_id, reason]]; reason is embedding_failed, persistence_failed, auto_link_failed or not_found_or_not_owned, the last for an id that does not exist, belongs to another tenant or is obsolete; an auto_link_failed entry also has phase). An unknown project scope is rejected with VALIDATION_ERROR",
+    "tags": [
+      "memory",
+      "embeddings",
+      "admin",
+      "repair"
+    ]
+  }
+]
