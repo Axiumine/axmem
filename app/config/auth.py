@@ -34,6 +34,9 @@ type _ProviderFactory = Callable[[], AuthProvider]
 # Factory of the auth provider of each mode that needs one
 _PROVIDER_FACTORIES: dict[str, _ProviderFactory] = {}
 
+# The values of AUTH_MODE that build no provider: unset (refused separately, see ``build_auth_provider``) and ``none``
+_NO_CREDENTIAL_MODES = ("", "none")
+
 
 class AuthConfigError(ValueError):
     """The authentication configuration does not allow the server to start."""
@@ -139,9 +142,13 @@ def build_auth_provider() -> AuthProvider | None:
     Raises AuthConfigError (a ValueError) when the selected mode is missing its settings. ``main`` catches
     it when it builds the server and has ``serve`` report it, so that only a server that would serve refuses.
     """
-    mode = settings.AUTH_MODE
+    # ``main`` calls this function when it is imported. A mutant of the next two statements raises there for an unset mode
+    # (``KeyError`` from the lookup below), so every test module that imports ``main`` fails to be collected and pytest ends
+    # with a usage error (exit code 4, "found no collectors" for the test ids mutmut names) before any test runs, whatever
+    # the tests assert. They are the mutants ``mode = None`` and ``not in``; nothing else is on these two statements.
+    mode = settings.AUTH_MODE  # pragma: no mutate
 
-    if mode in ("", "none"):
+    if mode in _NO_CREDENTIAL_MODES:  # pragma: no mutate
         logger.info("No auth provider configured (AUTH_MODE=%s)", mode or "unset")
         return None
 

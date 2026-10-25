@@ -9,7 +9,7 @@ from platformdirs import user_config_dir
 
 
 def config_dir() -> Path:
-    return Path(user_config_dir("axmem", ensure_exists=False))
+    return Path(user_config_dir("axmem"))  # ensure_exists defaults to False: nothing is created
 
 
 def user_env_file() -> Path:

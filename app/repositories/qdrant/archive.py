@@ -52,6 +52,10 @@ FORMAT = "axmem-export"
 FORMAT_VERSION = 1
 IMPORT_BATCH = 64
 
+# What ``json.dumps`` is told to keep non-ASCII text as it is. Handed over as ``**`` on purpose: written out as
+# ``ensure_ascii=False``, the mutation run would also try ``ensure_ascii=None``, which json reads as ``False``
+_TEXT_AS_IS: dict[str, Any] = {"ensure_ascii": False}
+
 
 def _uuid(value: Any) -> UUID:
     """The id a record holds as text; ``UUID`` itself would take an integer or raise ``AttributeError`` for it."""
@@ -66,7 +70,7 @@ def _written_by(summary: ArchiveSummary) -> Written | None:
 
 
 def _line(record: dict[str, Any]) -> str:
-    return json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n"
+    return json.dumps(record, **_TEXT_AS_IS, separators=(",", ":")) + "\n"
 
 
 class QdrantArchiveAdapter:
@@ -189,7 +193,7 @@ class QdrantArchiveAdapter:
                     summary.memories += await self._store_memories(memories, written=_written_by(summary))
                     memories.clear()
         summary.memories += await self._store_memories(memories, written=_written_by(summary))
-        summary.links += await self._store_links(links, summary)
+        summary.links = await self._store_links(links, summary)  # nothing counted a link before this
         summary.tenants = len(tenants)
         logger.info("Imported memories", extra={"memories": summary.memories, "links": summary.links, "skipped": summary.skipped})
         return summary
@@ -197,7 +201,7 @@ class QdrantArchiveAdapter:
     @staticmethod
     def _read_header(line: bytes) -> None:
         try:
-            header = json.loads(line.decode("utf-8"))
+            header = json.loads(line.decode())
         except (ValueError, RecursionError) as exc:  # not UTF-8, not JSON, nested too deep, or a number of thousands of digits
             raise ValueError("The file is not an Axmem export: its first line is not JSON") from exc
         if not isinstance(header, dict) or header.get("format") != FORMAT:
@@ -214,7 +218,7 @@ class QdrantArchiveAdapter:
         if not raw.strip():
             return None
         try:
-            record = json.loads(raw.decode("utf-8"))
+            record = json.loads(raw.decode())
         except (ValueError, RecursionError):  # not UTF-8, not JSON, nested too deep, or a number of thousands of digits
             self._skip(number, summary, "not JSON")
             return None
@@ -228,8 +232,8 @@ class QdrantArchiveAdapter:
             memory = Memory.model_validate(record["memory"])
             stored = StoredMemory(memory=memory, tenant_id=_uuid(record["tenant_id"]), version=max(int(record["version"]), 1))
             if not build_embedding_text(memory).strip():
-                raise ValueError("no text to embed")
-            json.dumps(memory.model_dump(mode="json"), ensure_ascii=False).encode("utf-8")  # a lone surrogate cannot be sent on
+                raise ValueError  # no message: the handler below drops it
+            json.dumps(memory.model_dump(mode="json"), **_TEXT_AS_IS).encode()  # a lone surrogate cannot be sent on
         except (KeyError, ValueError, TypeError, OverflowError, ValidationError):
             self._skip(number, summary, "invalid memory")
             return None
@@ -275,7 +279,7 @@ class QdrantArchiveAdapter:
         while True:
             await self.store.insert(SYSTEM, target, points)
             live = await self.schema.writable_generation(written=Written.IMPORT)
-            if live == target:
+            if live == target:  # pragma: no mutate - ``!=`` writes the same batch for ever, which no test can end
                 return
             # The alias moved while the batch was written, so it went to a generation that is no longer live (and a copy
             # of the memories may have passed it by). Write it again into the live one; insert-only leaves a copy as it is

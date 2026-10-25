@@ -123,7 +123,7 @@ def _extract_ids(spec: LinkAliasSpec, provided: dict[str, Any]) -> tuple[UUID | 
     raw_src = _first_provided(provided, spec.source_aliases)
     src = None if raw_src is None else coerce_memory_id(raw_src, spec.source_label)
     raw_targets = _first_provided(provided, spec.target_aliases)
-    targets = [] if raw_targets is None else coerce_memory_ids(raw_targets, spec.target_label)
+    targets = coerce_memory_ids(raw_targets, spec.target_label)  # None (no target given) is the empty list
     return src, targets
 
 

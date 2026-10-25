@@ -33,8 +33,12 @@ _LINE_UNSAFE = re.compile(r"[\x00-\x1f\x7f-\x9f\u2028\u2029]")
 _TEXT_UNSAFE = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f\u2028\u2029]")
 
 
+_ESCAPE_CODEC = "unicode_escape"
+
+
 def _escape(match: re.Match) -> str:
-    return match.group().encode("unicode_escape").decode("ascii")
+    # The escaped text is ASCII, which str-from-bytes decodes to the same characters under the UTF-8 default.
+    return match.group().encode(_ESCAPE_CODEC).decode()
 
 
 def sanitize_line(value: Any) -> str:

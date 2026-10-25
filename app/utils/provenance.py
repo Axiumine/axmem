@@ -27,7 +27,7 @@ def apply_provenance_defaults(data):
     enforce = settings.ENFORCE_ENV_OVERWRITE
 
     for field, setting_name in PROVENANCE_ENV_MAP.items():
-        env_value = getattr(settings, setting_name, "")
+        env_value = getattr(settings, setting_name, None)
         if env_value:
             current = getattr(data, field, None)
             if enforce or current is None:
@@ -51,7 +51,7 @@ def apply_provenance_defaults_for_update(data):
 
     updates = {}
     for field, setting_name in PROVENANCE_ENV_MAP.items():
-        env_value = getattr(settings, setting_name, "")
+        env_value = getattr(settings, setting_name, None)
         if env_value and field in data.model_fields_set:
             updates[field] = env_value
 

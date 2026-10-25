@@ -15,6 +15,7 @@ from __future__ import annotations
 import logging
 import os
 import queue
+import threading
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -441,9 +442,11 @@ class TensorRTEngine:
                 "engine-unusable", f"TensorRT cannot deserialize the plan: {TRT_LOGGER.last_error}",
             )
         self._failure = ""
-        self._closed = False
+        self._closing = threading.Event()
         self._slots: queue.SimpleQueue[_Slot] = queue.SimpleQueue()
-        self._size = 0  # the slots made so far; ``close`` takes this many back from the pool
+        # The slots made so far, which ``close`` takes back from the pool. None is borrowed while the engine is built,
+        # so the pool holds them all; a count kept by hand could be wrong, and ``close`` would wait for ever.
+        self._size = self._slots.qsize()
         try:
             names = [self._engine.get_tensor_name(i) for i in range(self._engine.num_io_tensors)]
             mode = self._engine.get_tensor_mode
@@ -451,7 +454,7 @@ class TensorRTEngine:
             output = next(n for n in names if mode(n) == trt.TensorIOMode.OUTPUT)
             for _ in range(contexts):
                 self._slots.put(_Slot(self._engine, self.input_names, output, profile))
-                self._size += 1
+                self._size = self._slots.qsize()
         except BaseException:
             # An engine that cannot be built is never handed out, so nobody else could close the slots made before
             # the one that failed: release them, then the engine and the runtime. The error that stopped the
@@ -463,6 +466,10 @@ class TensorRTEngine:
     def failure(self) -> str:
         """Why the engine refuses all work, or an empty string while it can serve."""
         return self._failure
+
+    @property
+    def _closed(self) -> bool:
+        return self._closing.is_set()
 
     def infer(self, arrays: Mapping[str, np.ndarray]) -> np.ndarray:
         """Run the model on ``arrays`` (one per input name) and return its output."""
@@ -503,7 +510,7 @@ class TensorRTEngine:
         """
         if self._closed:
             return
-        self._closed = True
+        self._closing.set()
         failures: list[tuple[str, str]] = []
         for _ in range(self._size):
             failures += self._slots.get().release()

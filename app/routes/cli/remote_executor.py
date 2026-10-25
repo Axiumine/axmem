@@ -17,6 +17,9 @@ from app.utils.url_helpers import redact_url
 # (urlparse misreads its scheme as "localhost"), so match on the "://" form.
 _SCHEME_RE = re.compile(r"^([a-zA-Z][a-zA-Z0-9+.-]*)://")
 _LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
+# The default scheme of a scheme-less server URL: plain HTTP for a loopback host, TLS for everything else.
+_LOOPBACK_SCHEME = "http"
+_REMOTE_SCHEME = "https"
 
 # fastmcp waits forever by default, for the initialize handshake and for every request.
 # A server that answers with 200 and a non-MCP body (proxy error page, SPA catch-all,
@@ -46,8 +49,8 @@ def normalize_server_url(url: str) -> str:
     else:
         # Prepend a throwaway scheme so urlparse can extract the real hostname
         # (it strips IPv6 brackets and lowercases), then pick the true default.
-        host = urlparse(f"http://{url}").hostname or ""
-        scheme = "http" if host in _LOOPBACK_HOSTS else "https"
+        host = urlparse(f"http://{url}").hostname  # None without a host: not a loopback host either
+        scheme = _LOOPBACK_SCHEME if host in _LOOPBACK_HOSTS else _REMOTE_SCHEME
         url = f"{scheme}://{url}"
     parts = urlsplit(url)  # also lower-cases the scheme
     return urlunsplit(parts._replace(path=parts.path.rstrip("/") or "/mcp"))

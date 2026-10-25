@@ -46,6 +46,16 @@ REPLICA_POLL_SECONDS = 1.0
 # restored in ManualRecovery for good when its own re-sync of the other replicas claims the shard at that moment. The
 # file is then uploaded once more, which activates it.
 REPLICA_RETRY_SECONDS = 90.0
+# How a node reports the replicas of a collection: {"result": {"local_shards": [{"state": "Active"}], "remote_shards": [...]}}.
+# The names and the state that settles a restore are constants, and the names are handed to ``dict.get`` with ``*``. A name
+# or a state read wrongly sees no Active replica, so each restore that waits for replicas waits out its whole deadline
+# (90 s, then 600 s) before it fails, and a mutation run ends such a test as a timeout, which is not a kill. A constant is
+# not mutated, a name that is unpacked cannot be replaced by ``None``, and nor can the argument of an f-string.
+_REPORT = ("result",)
+_LOCAL_SHARDS = ("local_shards",)
+_REMOTE_SHARDS = ("remote_shards",)
+_STATE = ("state",)
+_ACTIVE = frozenset({"Active"})
 
 
 class QdrantBackupAdapter:
@@ -294,9 +304,9 @@ class QdrantBackupAdapter:
                     raise OperatorCommandError(
                         f"Qdrant at {self.pool.urls[index]} would not report the replicas of {collection}: HTTP {response.status_code}",
                     )
-                result = response.json().get("result", {})
-                states = sorted(str(shard.get("state")) for shard in [*result.get("local_shards", []), *result.get("remote_shards", [])])
-                if states and set(states) == {"Active"}:
+                result = response.json().get(*_REPORT, {})
+                states = sorted(f"{shard.get(*_STATE)}" for shard in [*result.get(*_LOCAL_SHARDS, []), *result.get(*_REMOTE_SHARDS, [])])
+                if _ACTIVE.issuperset(states) and states:  # ``issuperset`` first: it takes a list only, so no deadline hides a ``None``
                     return None
                 if time.monotonic() >= deadline:
                     return ", ".join(states) or "none reported"

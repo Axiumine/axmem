@@ -2,7 +2,6 @@
 """
 import re
 from pathlib import Path
-from typing import cast
 from urllib.parse import urlsplit
 
 from platformdirs import user_config_dir, user_data_dir
@@ -85,7 +84,8 @@ def _field_name(info: ValidationInfo) -> str:
     """Name of the field a field validator is running for."""
     # pydantic leaves field_name None only for validators that are not bound to a field;
     # every validator in this module is registered with @field_validator on named fields.
-    return cast(str, info.field_name)
+    # Only the type checker sees a str | None here; there is no check at run time.
+    return info.field_name  # type: ignore[return-value]
 
 
 class Settings(BaseSettings):

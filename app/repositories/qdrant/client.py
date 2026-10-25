@@ -145,7 +145,7 @@ class NodePool:
 
     async def run(self, call: Callable[[AsyncQdrantClient], Awaitable[T]], attempts: int = 1) -> T:
         """Run ``call`` on a node; after an ambiguous failure try again (on the next node) up to ``attempts`` times."""
-        failure: BaseException = RuntimeError("no attempt was made")  # replaced by the first failure below
+        failure: BaseException  # set by the first ambiguous failure below: an attempt that does not fail ends the call
         order = itertools.cycle(self._order())
         for attempt in range(max(attempts, 1)):
             if attempt:

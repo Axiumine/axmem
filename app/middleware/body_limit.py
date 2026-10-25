@@ -49,9 +49,11 @@ class BodyLimitMiddleware:
             return
 
         received = 0
-        stopped = False  # the body is over the limit: the application sees a disconnect from now on
-        answered = False  # the application has started its own response
-        refused = False  # this middleware has sent the 413, so the application's own answer is dropped
+        # stopped: the body is over the limit, so the application sees a disconnect from now on
+        # answered: the application has started its own response
+        # refused: this middleware has sent the 413, so the application's own answer is dropped
+        # (one unpacking: a flag that starts as None would be as false as False, which no test can tell apart)
+        stopped, answered, refused = False, False, False
 
         async def counted_receive() -> Message:
             nonlocal received, stopped, refused

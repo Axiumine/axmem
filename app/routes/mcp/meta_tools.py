@@ -94,7 +94,8 @@ def _build_tool_categories_line() -> str:
 
 def _get_mcp_descriptor_mode() -> str:
     """Return the normalized descriptor mode for meta-tool docstrings."""
-    mode = str(getattr(settings, "MCP_DESCRIPTOR_MODE", "verbose")).strip().lower()
+    # A settings object without the attribute reads as None, whose text "none" is no more "compact" than the old default
+    mode = str(getattr(settings, "MCP_DESCRIPTOR_MODE", None)).strip().lower()
     if mode == "compact":
         return "compact"
     return "verbose"

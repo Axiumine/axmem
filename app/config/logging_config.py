@@ -33,7 +33,8 @@ def wants_colour(stream: object) -> bool:
     """
     if os.environ.get("NO_COLOR"):
         return False
-    isatty = getattr(stream, "isatty", lambda: False)
+    # bool() is False: a stream without isatty is not a terminal
+    isatty = getattr(stream, "isatty", bool)
     return bool(isatty())
 
 
@@ -325,8 +326,13 @@ def logging_while_starting(log_level: str, log_format: str) -> Iterator[None]:
         root.setLevel(previous_level)
 
 
+# The default level is named: it is normalised on the way in (``upper()``), so mutation testing, which makes "info" of "INFO"
+# in a literal default, cannot be answered by a test (the format is normalised too, but a test can see what it is handed).
+_DEFAULT_LOG_LEVEL = "INFO"
+
+
 def configure_logging(
-    log_level: str = "INFO",
+    log_level: str = _DEFAULT_LOG_LEVEL,
     log_format: str = "console",
 ) -> logging.handlers.QueueListener:
     """Configure centralized logging with QueueHandler for asyncio.

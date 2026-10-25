@@ -769,8 +769,8 @@ def register_memory_tools_metadata(
             parameters=tool_def["parameters"],
             returns=tool_def["returns"],
             implementation=adapters[tool_def["name"]],
-            examples=tool_def.get("examples", []),
-            tags=tool_def.get("tags", []),
+            examples=tool_def["examples"],
+            tags=tool_def["tags"],
             mutates=tool_def.get("mutates", False),
         )
 

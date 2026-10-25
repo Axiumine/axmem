@@ -34,6 +34,10 @@ _BACKOFF_BASE_SECONDS = 0.5
 # A longer wait (a large Retry-After) is shortened to this, so one request cannot park a re-embed.
 _MAX_WAIT_SECONDS = 30.0
 
+# The header with which the gateway asks for a wait (header names are case-insensitive), and what an absent one reads as.
+_RETRY_AFTER_HEADER = "Retry-After"
+_NO_VALUE = ""
+
 _HEADER_NAME = re.compile(r"[!#$%&'*+.^_`|~0-9A-Za-z-]+")
 _ERROR_CODE = re.compile(r"[A-Z][A-Z0-9_]{0,63}")
 _REQUIRED_SETTINGS = ("GATEWAY_URL", "GATEWAY_BACKEND", "GATEWAY_MODEL", "GATEWAY_AGENT_ID")
@@ -49,7 +53,7 @@ class GatewayUnavailableError(GatewayEmbeddingError, EmbeddingUnavailableError):
 
 def _retry_after_seconds(response: httpx.Response) -> float | None:
     """Seconds the gateway asks us to wait, from a delay or an HTTP date; None if absent or unusable."""
-    value = response.headers.get("Retry-After", "").strip()
+    value = response.headers.get(_RETRY_AFTER_HEADER, _NO_VALUE).strip()
     if not value:
         return None
     try:
@@ -145,10 +149,11 @@ class GatewayEmbeddingsAdapter(EmbeddingsAdapter):
         try:
             value = json.loads(raw)
         except ValueError:
-            value = None
-        if not isinstance(value, dict) or not all(isinstance(item, str) for item in value.values()):
-            raise ValueError("GATEWAY_METADATA must be a JSON object of string values")
-        return value
+            pass  # not JSON: refused below like JSON that is no object of strings
+        else:
+            if isinstance(value, dict) and all(isinstance(item, str) for item in value.values()):
+                return value
+        raise ValueError("GATEWAY_METADATA must be a JSON object of string values")
 
     @staticmethod
     def _endpoint(base: str, path: str) -> str:
@@ -158,8 +163,8 @@ class GatewayEmbeddingsAdapter(EmbeddingsAdapter):
             raise ValueError("GATEWAY_URL is not a valid URL") from None
         if url.scheme not in ("http", "https") or not url.host or "%" in url.host:
             raise ValueError("GATEWAY_URL must be an http:// or https:// URL with a host")
-        # An empty "?" or "#" has no query or fragment to see, but the path would be appended after it
-        if url.userinfo or url.query or url.fragment or "?" in base or "#" in base:
+        # Any "?" or "#", an empty query or fragment included, would have the path appended after it
+        if url.userinfo or "?" in base or "#" in base:
             raise ValueError(
                 "GATEWAY_URL must not carry credentials, a query or a fragment: "
                 "set GATEWAY_TOKEN and GATEWAY_PATH instead",

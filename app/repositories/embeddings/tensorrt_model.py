@@ -65,7 +65,7 @@ def model_slug(repository: str, setting: str = "EMBEDDING_MODEL") -> str:
 def sha256_of(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
-        for block in iter(lambda: handle.read(1 << 20), b""):
+        while block := handle.read(1 << 20):
             digest.update(block)
     return digest.hexdigest()
 

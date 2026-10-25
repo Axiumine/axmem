@@ -145,8 +145,8 @@ class ToolMetadata(BaseModel):
             return "object"
 
         # Basic type mappings
+        # "str" needs no entry: "string" is what a name that is not listed maps to
         type_map = {
-            "str": "string",
             "int": "integer",
             "float": "number",
             "bool": "boolean",

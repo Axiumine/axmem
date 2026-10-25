@@ -57,8 +57,8 @@ class QdrantClusterInspector:
                 continue
             report.nodes.append(NodeReport(url=url, points=len(view)))
             views.append(view)
-        every_point = set().union(*views) if views else set()
-        for key in sorted(every_point, key=lambda item: (item[0], str(item[1]))):
+        every_point = set().union(*views)  # no views, no points
+        for key in sorted(every_point):  # (collection, UUID): the order of the text of the id is the order of the UUIDs
             states = {view.get(key) for view in views}
             if len(states) > 1:
                 report.divergent.append(f"{key[0]}:{key[1]}")

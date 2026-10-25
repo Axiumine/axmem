@@ -26,6 +26,9 @@ from app.routes.cli.remote_executor import (
 from app.routes.cli.render import redact_urls_in_text
 from app.utils.url_helpers import redact_url
 
+# The settings file is parsed as UTF-8 (settings.py). A module-level constant: the one spelling of the codec.
+_ENV_FILE_ENCODING = "utf-8"
+
 
 def _set_key_lines(lines: list[str], key: str, value: str) -> list[str]:
     """Return lines with every assignment of key set to value, or key=value appended.
@@ -35,12 +38,10 @@ def _set_key_lines(lines: list[str], key: str, value: str) -> list[str]:
     dotenv lets the last one win. Nothing else is touched.
     """
     result = list(lines)
-    found = False
-    for index, line in enumerate(result):
-        if line.strip().startswith(f"{key}="):
-            result[index] = f"{key}={value}" + ("\r" if line.endswith("\r") else "")
-            found = True
-    if not found:
+    assignments = [index for index, line in enumerate(result) if line.strip().startswith(f"{key}=")]
+    for index in assignments:
+        result[index] = f"{key}={value}" + ("\r" if result[index].endswith("\r") else "")
+    if not assignments:
         result.append(f"{key}={value}" + ("\r" if result and result[-1].endswith("\r") else ""))
     return result
 
@@ -86,13 +87,13 @@ def upsert_env_var(env_file: Path, key: str, value: str) -> None:
         if not os.access(target, os.W_OK):
             # Replacing the file would sidestep a read-only config the user locked.
             raise PermissionError(errno.EACCES, os.strerror(errno.EACCES), str(target))
-        with target.open(encoding="utf-8", newline="") as handle:
+        with target.open(encoding=_ENV_FILE_ENCODING, newline="") as handle:
             text = handle.read()
     lines = text.split("\n")
     if lines[-1] == "":
         lines.pop()
 
-    data = ("\n".join(_set_key_lines(lines, key, value)) + "\n").encode("utf-8")
+    data = ("\n".join(_set_key_lines(lines, key, value)) + "\n").encode()  # str.encode() writes UTF-8 by default
     _atomic_write(target, data, mode)
 
 

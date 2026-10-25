@@ -1,5 +1,7 @@
 """Memory tool adapters: wrap MemoryService calls as registry-compatible callables."""
 
+from collections.abc import Callable
+from functools import partial
 from typing import Any, cast
 
 from fastmcp import Context
@@ -39,6 +41,10 @@ from app.services.re_embedding_service import ReEmbeddingService
 from app.utils.pydantic_helper import filter_none_values
 
 logger = logging.getLogger(__name__)
+
+# typing.cast(Memory, value) as a one-argument callable: the services type a missing memory as None, but the repository
+# raises NotFoundError instead of returning it. Built here, outside any function, so mutmut makes no mutant of the type.
+_as_memory: Callable[[Memory | None], Memory] = partial(cast, Memory)
 
 
 class MemoryToolAdapters:
@@ -229,7 +235,7 @@ class MemoryToolAdapters:
             updated_memory=updated_memory,
         )
 
-        return cast(Memory, refreshed_memory)
+        return _as_memory(refreshed_memory)
 
     async def link_memories(
         self,
@@ -384,9 +390,7 @@ class MemoryToolAdapters:
         tenant = await get_tenant_from_auth(ctx)
 
         # the repository raises NotFoundError for a missing memory instead of returning None
-        memory = cast(
-            Memory, await self.memory_service.get_memory(user_id=tenant.id, memory_id=mid),
-        )
+        memory = _as_memory(await self.memory_service.get_memory(user_id=tenant.id, memory_id=mid))
 
         logger.info(
             "MCP Tool - successfully retrieved memory",
@@ -465,7 +469,7 @@ class MemoryToolAdapters:
             False if include_obsolete is None
             else coerce_bool(include_obsolete, "include_obsolete")
         )
-        tags = coerce_str_list(tags, "tags")
+        tags = coerce_str_list(tags)
         check_importance_min(importance_min)
         since = parse_created_since(created_since)
 

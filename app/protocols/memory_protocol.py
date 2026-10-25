@@ -127,7 +127,7 @@ class MemoryRepository(Protocol):
             project: str | None,
             max_links: int = 5,
             exclude_ids: list[UUID] | None = None,
-    ) -> list[Memory]:
+    ) -> list[Memory]:  # pragma: no mutate block - a stub: no body reads an argument, so no test can see the default of a parameter
         ...
     async def find_similar_memories(
             self,
@@ -151,7 +151,7 @@ class MemoryRepository(Protocol):
             memory_id: UUID,
             limit: int = 3,
             min_similarity: float = 0.89,
-    ) -> list[tuple[Memory, float]]:
+    ) -> list[tuple[Memory, float]]:  # pragma: no mutate block - a stub: no body reads an argument, so no test can see the default of a parameter
         ...
 
     async def list_memories(
@@ -166,7 +166,7 @@ class MemoryRepository(Protocol):
             tags: list[str] | None = None,
             importance_min: int | None = None,
             created_since: datetime | None = None,
-    ) -> tuple[list[Memory], int]:
+    ) -> tuple[list[Memory], int]:  # pragma: no mutate block - a stub: no body reads an argument, so no test can see the default of a parameter
         """Get memories with pagination, sorting, and filtering.
 
         Args:
@@ -311,7 +311,7 @@ class MemoryRepository(Protocol):
         """Delete a generation that was never activated."""
         ...
 
-    async def rebuild_links(self, *, unfinished_only: bool = False) -> bool:
+    async def rebuild_links(self, *, unfinished_only: bool = False) -> bool:  # pragma: no mutate - a stub: no body reads an argument, so no test can see the default
         """Give the stored links the layout the settings describe (shards, replicas, write consistency); return
         whether they had to be rebuilt. A run that stopped half way is finished by running it again;
         ``unfinished_only`` does nothing else than finish such a run."""

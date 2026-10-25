@@ -113,7 +113,8 @@ async def test_an_answer_without_a_name_does_not_leave_the_snapshot_behind(node,
 async def test_a_cancelled_snapshot_request_looks_once_and_does_not_wait(node, pool, caplog):
     node.create_delay = 60.0
     task = asyncio.create_task(pool.create_snapshot(0, COLLECTION))
-    while ("POST", f"/collections/{COLLECTION}/snapshots") not in node.requests:
+    # A task that has already ended without sending the request would keep this loop spinning for ever
+    while ("POST", f"/collections/{COLLECTION}/snapshots") not in node.requests and not task.done():
         await asyncio.sleep(0.01)
 
     task.cancel()

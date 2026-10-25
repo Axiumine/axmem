@@ -6,6 +6,7 @@ falls back to the legacy launcher so every documented pre-CLI invocation keeps w
 """
 import argparse
 import asyncio
+import functools
 import json
 from uuid import UUID
 
@@ -15,6 +16,10 @@ from app.version import get_version
 # (--transport, --re-embed, --version) never appear here, so they fall through
 # to the legacy launcher permanently.
 KNOWN = {"serve", "re-embed", "tools", "call", "auth", "memory", "backup", "restore", "export", "import", "qdrant-check"}
+
+
+# The parent parser of the tool commands carries their shared flags and adds no -h of its own: each child adds one.
+_flags_parent_parser = functools.partial(argparse.ArgumentParser, add_help=False)
 
 
 def _json_object(value: str) -> dict:
@@ -117,7 +122,7 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser("qdrant-check", help="Compare the Qdrant nodes of a cluster by reading each one on its own")
 
     # Flags shared by every tool command
-    output_flags = argparse.ArgumentParser(add_help=False)
+    output_flags = _flags_parent_parser()
     output_flags.add_argument(
         "--json",
         action="store_true",
@@ -181,8 +186,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     memory_search.add_argument(
         "-n", "--limit",
-        type=int,
-        default=None,
+        type=int,  # no default= : argparse leaves the option None when it is not given
         help="Maximum number of memories to return",
     )
     memory_search.add_argument("-p", "--project", help="Project scope (a free-form label) to search in")
@@ -243,7 +247,7 @@ async def _build_executor(args):
     """
     from app.config.settings import settings
 
-    if not getattr(args, "local", False):
+    if not getattr(args, "local", None):
         server_url = getattr(args, "server", None) or settings.AXMEM_SERVER
         if server_url:
             from app.routes.cli.remote_executor import (
