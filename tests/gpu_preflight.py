@@ -33,6 +33,17 @@ def worker_budget_problem(total_bytes: int, workers: int) -> str | None:
     )
 
 
+def exit_code() -> int:
+    """The exit code of a failed preflight: 2 (the documented one), or 1 under mutmut.
+
+    mutmut sets ``MUTANT_UNDER_TEST`` in every process that runs tests, and books exit code 2 as "check was interrupted
+    by user", a status that no test turns into "killed". A mutant of ``probe_gpu`` that makes the preflight fail must be
+    killed, so under mutmut the run ends with 1, the code of a failed test. This hides no real failure: mutmut runs the
+    suite unmutated first and stops when that run fails, so a machine whose GPU is unusable never reaches a mutant.
+    """
+    return 1 if "MUTANT_UNDER_TEST" in os.environ else 2
+
+
 def require_gpu() -> None:
     """End the pytest run (never skip) when this process cannot run the TensorRT embedder and reranker."""
     try:
@@ -44,9 +55,9 @@ def require_gpu() -> None:
             f"GPU preflight failed ({exc.cause}): {exc}\n"
             "These suites run the real TensorRT embedder and reranker on an NVIDIA GPU; there is no CPU "
             "path and nothing is skipped.",
-            returncode=2,
+            returncode=exit_code(),
         )
     workers = int(os.environ.get("PYTEST_XDIST_WORKER_COUNT", "1"))
     problem = worker_budget_problem(gpu.total_bytes, workers)
     if problem:
-        pytest.exit(f"GPU preflight failed (memory): {problem}", returncode=2)
+        pytest.exit(f"GPU preflight failed (memory): {problem}", returncode=exit_code())
