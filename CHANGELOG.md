@@ -906,6 +906,9 @@ Fixes found by reviewing the feature cuts (no upstream counterpart: the code the
 
 ### Security
 
+- `filelock` is locked at 4.2.4 (was 3.21.1, which the vulnerability database of the `trivy` gate lists as CVE-2026-112940,
+  an arbitrary file overwrite through the reopening of an insecure database file, fixed in 4.2.1); it is a transitive
+  dependency of `huggingface-hub` and the only entry of `uv.lock` that changed.
 - `certifi` is locked at 2026.10.19 (was 2026.1.4, which bundles root CAs named in GHSA-6q48-6c7w-9gw2); it is a
   transitive dependency of the HTTP clients and the only entry of `uv.lock` that changed.
 - Authentication fails closed (`3201a2c3`). A server with no `AUTH_MODE` refuses to start (exit code 1), `AUTH_MODE=none` is accepted only on stdio or on a loopback bind (`127.0.0.1`, `::1`; a hostname such as `localhost` does not count), and the credential modes are refused on stdio, which carries no bearer token. A request-level check refuses to serve when no provider is attached and the mode is not `none`. Fixes the finding that, without `FASTMCP_SERVER_AUTH`, every request was the same default user (`app/middleware/auth.py`), so any caller of a network-bound server read and changed every memory. Existing deployments that relied on that default must set `AUTH_MODE` (and bind to a loopback address if it is `none`) before the next start.
