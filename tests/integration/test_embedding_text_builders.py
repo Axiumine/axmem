@@ -4,11 +4,13 @@ Covers which parts of a memory reach the embedding text and the rerank text when
 parts (context, keywords, tags) are empty, and when a memory stored by an older version
 has a blank title or content.
 """
+import logging
 from uuid import uuid4
 
 import pytest
 
 from app.models.memory_models import Memory, MemoryCreate
+from app.utils import embedding_helpers
 from app.utils.embedding_helpers import (
     build_contextual_query,
     build_embedding_text,
@@ -55,6 +57,14 @@ class TestEmbeddingText:
     )
     def test_memory_stored_with_blank_text_still_gets_embedding_text(self, overrides, expected):
         assert build_embedding_text(_stored_memory(**overrides)) == expected
+
+    def test_the_length_of_the_text_is_logged_at_debug_level(self, caplog):
+        caplog.set_level(logging.DEBUG, logger=embedding_helpers.logger.name)
+
+        text = build_embedding_text(_stored_memory())
+
+        [record] = [record for record in caplog.records if record.name == embedding_helpers.logger.name]
+        assert (record.getMessage(), record.levelno) == (f"Built embedding text: {len(text)} characters", logging.DEBUG)
 
 
 class TestRerankText:

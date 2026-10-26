@@ -14,10 +14,10 @@ from app.repositories.qdrant.store import Scope, Where, at_least, equals, has_id
 from app.utils.embedding_helpers import build_embedding_text
 from tests.embedding_doubles import cosine
 from tests.memory_search_support import (
-    FIVE,
     a_memory,
     ask,
     build_world,
+    five,
     one_memory_short,
     seed,
 )
@@ -40,9 +40,9 @@ class Searched:
 @pytest.fixture
 async def searched(world):
     """Five memories of the tenant and one of another, a search for the best three, and what the best three should be."""
-    created = await seed(world, *FIVE)
+    created = await seed(world, *five())
     await seed(world, a_memory("Deploying a service with Docker"), tenant=uuid4())
-    query = "  " + build_embedding_text(FIVE[0]) + "  "
+    query = "  " + build_embedding_text(five()[0]) + "  "
     query_vector = await world.real_embedder.generate_embedding(query.strip())
 
     scored = await ask(world, query, k=3)
@@ -85,23 +85,23 @@ async def test_a_search_asks_the_node_for_the_k_nearest_active_memories_of_the_t
 
 
 async def test_a_search_without_scores_is_the_memories_of_the_search_with_scores(world):
-    await seed(world, *FIVE)
+    await seed(world, *five())
 
-    query = build_embedding_text(FIVE[2])
+    query = build_embedding_text(five()[2])
 
     plain = await world.repo.search(world.tenant, query, "", 4, None, None, None)
     scored = await ask(world, query, k=4)
 
     assert len(plain) == 4
     assert [memory.id for memory in plain] == [memory.id for memory, _ in scored]
-    assert plain[0].title == FIVE[2].title
+    assert plain[0].title == five()[2].title
 
 
 @pytest.mark.parametrize("query", ["", " ", "   \n\t "])
 @pytest.mark.parametrize("reranking", [False, True])
 async def test_a_blank_query_finds_nothing_and_embeds_and_searches_nothing(world, monkeypatch, query, reranking):
     monkeypatch.setattr(settings, "RERANKING_ENABLED", reranking)
-    await seed(world, *FIVE[:2])
+    await seed(world, *five()[:2])
 
     assert await ask(world, query) == []
 
@@ -189,7 +189,7 @@ async def test_a_search_without_scores_keeps_to_the_same_memories(world, deploym
 
 
 async def test_a_search_never_pairs_the_scores_with_fewer_memories_than_it_found(world, monkeypatch):
-    await seed(world, *FIVE[:2])
+    await seed(world, *five()[:2])
     one_memory_short(monkeypatch, world.repo)
 
     with pytest.raises(ValueError, match="zip"):

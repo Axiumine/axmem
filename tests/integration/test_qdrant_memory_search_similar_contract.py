@@ -16,9 +16,9 @@ from app.exceptions import NotFoundError
 from app.repositories.qdrant.store import Scope, Where, equals, has_ids
 from tests.embedding_doubles import similarity
 from tests.memory_search_support import (
-    FIVE,
     a_memory,
     build_world,
+    five,
     one_memory_short,
     seed,
 )
@@ -159,7 +159,7 @@ async def test_the_memories_like_a_stored_one_are_without_scores_when_the_scores
 
 
 async def test_the_similar_memories_are_never_paired_with_fewer_memories_than_were_found(world, monkeypatch):
-    subject, _ = await seed(world, *FIVE[:2])
+    subject, _ = await seed(world, *five()[:2])
     monkeypatch.setattr(settings, "MEMORY_SIMILARITY_THRESHOLD", -1.0)
     one_memory_short(monkeypatch, world.repo)
 

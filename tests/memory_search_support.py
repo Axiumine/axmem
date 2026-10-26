@@ -117,10 +117,16 @@ def one_memory_short(monkeypatch, repo: Any) -> None:
     monkeypatch.setattr(repo, "_memories", one_short)
 
 
-FIVE = [
-    a_memory("Deploying a service with Docker", content="Build the image and run it with docker compose up"),
-    a_memory("Baking a chocolate cake", content="Melt the chocolate, fold in the flour and bake for forty minutes"),
-    a_memory("Training a neural network", content="Gradient descent adjusts the weights after every batch"),
-    a_memory("Planting tomatoes", content="Sow the seeds indoors and move the seedlings out after the frost"),
-    a_memory("Tuning a guitar", content="Turn each peg until the string matches the reference pitch"),
-]
+def five() -> list[MemoryCreate]:
+    """Five memories about unrelated things, built when a test asks, never when a module is imported.
+
+    A memory is checked by the model when it is built. At import time a mutant of that check would break the collection of
+    every module that uses these (pytest then ends with 4 and mutmut books a timeout) instead of failing the tests.
+    """
+    return [
+        a_memory("Deploying a service with Docker", content="Build the image and run it with docker compose up"),
+        a_memory("Baking a chocolate cake", content="Melt the chocolate, fold in the flour and bake for forty minutes"),
+        a_memory("Training a neural network", content="Gradient descent adjusts the weights after every batch"),
+        a_memory("Planting tomatoes", content="Sow the seeds indoors and move the seedlings out after the frost"),
+        a_memory("Tuning a guitar", content="Turn each peg until the string matches the reference pitch"),
+    ]

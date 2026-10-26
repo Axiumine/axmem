@@ -13,7 +13,7 @@ from app.repositories.embeddings.reranker_adapter import RerankAdapter
 from app.repositories.qdrant import memory_search as search_module
 from app.repositories.qdrant.store import Scope
 from app.utils.embedding_helpers import build_contextual_query, build_memory_text
-from tests.memory_search_support import FIVE, ask, build_world, seed
+from tests.memory_search_support import ask, build_world, five, seed
 
 
 @pytest.fixture
@@ -33,7 +33,7 @@ async def reranked(world, monkeypatch, k, context):
     """Five memories stored, a search for ``k`` of them with ``context`` and the reranker to choose among five."""
     monkeypatch.setattr(settings, "RERANKING_ENABLED", True)
     monkeypatch.setattr(settings, "DENSE_SEARCH_CANDIDATES", 5)
-    created = await seed(world, *FIVE)
+    created = await seed(world, *five())
     query = " How is a service deployed? "
 
     return Reranked(created, query, await ask(world, query, context=context, k=k))
@@ -89,7 +89,7 @@ async def test_the_adapter_that_reranks_the_candidates_is_taken_as_a_reranker(wo
         taken_as.append(target)
         return value
 
-    await seed(world, *FIVE)
+    await seed(world, *five())
     monkeypatch.setattr(search_module, "cast", noting_cast)
 
     await ask(world, k=2)
@@ -100,7 +100,7 @@ async def test_the_adapter_that_reranks_the_candidates_is_taken_as_a_reranker(wo
 async def test_a_search_without_scores_returns_the_candidates_in_the_order_the_reranker_chose(world, monkeypatch):
     monkeypatch.setattr(settings, "RERANKING_ENABLED", True)
     monkeypatch.setattr(settings, "DENSE_SEARCH_CANDIDATES", 5)
-    await seed(world, *FIVE)
+    await seed(world, *five())
 
     chosen = await world.repo.search(world.tenant, "How is a service deployed?", "on a laptop", 3, None, None, None)
 
@@ -116,7 +116,7 @@ async def test_the_candidates_stay_in_their_dense_order_when_no_reranking_is_nee
 ):
     monkeypatch.setattr(settings, "RERANKING_ENABLED", reranking)
     monkeypatch.setattr(settings, "DENSE_SEARCH_CANDIDATES", 5)
-    await seed(world, *FIVE)
+    await seed(world, *five())
 
     scored = await ask(world, k=k)
 
@@ -129,7 +129,7 @@ async def test_the_candidates_stay_in_their_dense_order_when_no_reranking_is_nee
 
 
 async def test_the_candidates_are_kept_whole_when_reranking_is_off_whatever_the_number_the_store_returned(world):
-    await seed(world, *FIVE)
+    await seed(world, *five())
 
     async def returns_more_than_asked_for(scope: Scope, collection: str, **kwargs: Any) -> list[Any]:
         return await world.store.real.search(scope, collection, **{**kwargs, "limit": 5})
