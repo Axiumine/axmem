@@ -3,6 +3,13 @@
 from __future__ import annotations
 
 import os
+import shutil
+import tempfile
+from collections.abc import Iterator
+from contextlib import contextmanager
+from pathlib import Path
+
+from platformdirs import user_data_dir
 
 from .core import (
     SUITES,
@@ -37,6 +44,15 @@ MUTATION_TIMEOUT_S_MAX = 2147483
 # Every mutmut worker is a pytest process that holds the TensorRT embedder and reranker on the GPU (about 4.6 GiB, see
 # tests/gpu_preflight.py); mutmut starts one per CPU unless told otherwise, and a card holds a handful of them
 MUTATION_WORKERS = 3
+# The tests load the models and the TensorRT engines from the data directory of the user (~/.local/share/axmem/models), and a
+# mutant that changes a path constant builds another path there: a directory of another name for a model (with the 128 MB
+# download and the engine built from it), another fingerprint directory for an engine. The engine cache also prunes every
+# fingerprint but its own, so a mutant that changes the fingerprint removes the engine that the next run loads. A mutation
+# run therefore gets a data directory of its own (platformdirs reads XDG_DATA_HOME) that holds a mirror of the cache: real
+# directories, the files up to SMALL_FILE_BYTES copied (manifests, fingerprints, locks) and the large ones (model.onnx,
+# engine.plan) as links, so that a mutant writes and removes in the mirror and the cache of the user stays as it was.
+MODELS_DIR = "models"
+SMALL_FILE_BYTES = 1 << 20
 
 
 def check_tests(argv: list[str], **kwargs) -> tuple[bool, str]:
@@ -115,15 +131,51 @@ def mutation_targets(ctx: Ctx) -> list[str]:
     return [f.removesuffix(".py").replace("/", ".") + ".*" for f in changed]
 
 
-def mutant_statuses(results: str, targets: list[str]) -> dict[str, str]:
-    """`mutmut results` lines ('<dotted name>: <status>') belonging to the targeted modules."""
-    prefixes = tuple(t.removesuffix("*") for t in targets)
+def listed_mutants(results: str) -> dict[str, str]:
+    """Every ``mutmut results`` line ('<dotted name>: <status>') by mutant name."""
     found: dict[str, str] = {}
     for line in results.splitlines():
         name, sep, status = line.strip().partition(": ")
-        if sep and name.startswith(prefixes):
+        if sep:
             found[name] = status.strip()
     return found
+
+
+def mutant_statuses(results: str, targets: list[str]) -> dict[str, str]:
+    """`mutmut results` lines ('<dotted name>: <status>') belonging to the targeted modules."""
+    prefixes = tuple(t.removesuffix("*") for t in targets)
+    return {name: status for name, status in listed_mutants(results).items() if name.startswith(prefixes)}
+
+
+def models_dir(data_home: Path | None = None) -> Path:
+    """Where Axmem keeps its models and engines: in the data directory of the user, or under ``data_home`` as XDG_DATA_HOME."""
+    own = Path(user_data_dir("axmem", ensure_exists=False))
+    return (own if data_home is None else data_home / own.name) / MODELS_DIR
+
+
+def mirror_cache(source: Path, target: Path) -> None:
+    """Make ``target`` a tree of real directories like ``source``: files up to ``SMALL_FILE_BYTES`` copied, larger ones linked."""
+    target.mkdir(parents=True, exist_ok=True)
+    for entry in sorted(source.iterdir()):
+        mirrored = target / entry.name
+        if entry.is_dir():
+            mirror_cache(entry, mirrored)
+        elif not entry.is_file():
+            continue  # a link to nothing
+        elif entry.stat().st_size <= SMALL_FILE_BYTES:
+            shutil.copy2(entry, mirrored)
+        else:
+            mirrored.symlink_to(entry)
+
+
+@contextmanager
+def private_data_home() -> Iterator[dict[str, str]]:
+    """The environment of a mutation run: a data directory of its own with a mirror of the model cache, removed at the end."""
+    cache = models_dir()
+    with tempfile.TemporaryDirectory(prefix="axmem-mutation-data-", ignore_cleanup_errors=True) as home:
+        if cache.is_dir():
+            mirror_cache(cache, models_dir(Path(home)))
+        yield {"XDG_DATA_HOME": home}
 
 
 def mutation_timeout() -> int:
@@ -142,6 +194,11 @@ def mutation_timeout() -> int:
     )
 
 
+def output_tail(out: str) -> str:
+    """The last 40 lines of what a command printed (a progress bar rewrites its line with a carriage return)."""
+    return "\n".join(out.replace("\r", "\n").splitlines()[-40:])
+
+
 def gate_mutation(ctx: Ctx) -> tuple[bool, str]:
     tolerated = int(os.environ.get("MUTATION_MAX_SURVIVORS", "0"))
     try:
@@ -150,7 +207,8 @@ def gate_mutation(ctx: Ctx) -> tuple[bool, str]:
         return False, str(exc)
     targets = mutation_targets(ctx)
     command = [*venv_tool("mutmut"), "run", "--max-children", str(MUTATION_WORKERS), *targets]
-    code, out = run(command, timeout=timeout, scrub_git=True, own_session=True)
+    with private_data_home() as sandbox:
+        code, out = run(command, timeout=timeout, env=sandbox, scrub_git=True, own_session=True)
     if code == 124:
         return False, (
             f"mutation exceeded {timeout} s over {len(targets)} module patterns and was stopped, "
@@ -159,15 +217,42 @@ def gate_mutation(ctx: Ctx) -> tuple[bool, str]:
             "pull request. mutants/ keeps the mutants already tested, and a rerun continues from them while the code "
             "and the files the tests read stay as they are."
         )
-    tail = "\n".join(out.replace("\r", "\n").splitlines()[-40:])
+    tail = output_tail(out)
     if code != 0 or "failed to collect stats" in out:
         return False, f"mutmut could not run the test suite (exit {code}):\n{tail}"
-    _, results = run([*venv_tool("mutmut"), "results"])
+    return mutation_verdict(targets, tolerated, tail)
+
+
+def unusable_listing(code: int, results: str) -> str:
+    """Why ``mutmut results`` says nothing about the run, or an empty string when its listing can be trusted.
+
+    An error exit, or a listing without a single mutant (mutmut names one '<function>__mutmut_<n>'), is no answer: it must
+    not read as "nothing survived".
+    """
+    shown = output_tail(results) or "(no output)"
+    if code != 0:
+        return f"mutmut could not list its results (exit {code}):\n{shown}"
+    if not any("__mutmut_" in name for name in listed_mutants(results)):
+        return f"mutmut listed no mutant at all, so nothing says what the run tested:\n{shown}"
+    return ""
+
+
+def mutation_verdict(targets: list[str], tolerated: int, tail: str) -> tuple[bool, str]:
+    """What the mutants of the targeted modules say after a run; ``tail`` is the end of the output of that run.
+
+    ``mutmut results`` is asked for every status (``--all true``), so that what the gate drops is the killed mutants
+    and nothing else: a mutant that was never tested ("not checked") fails whatever ``tolerated`` says, and every other
+    status that is not "killed" (survived, timeout, no tests, suspicious, skipped, segfault, caught by type check,
+    interrupted) is a survivor.
+    """
+    code, results = run([*venv_tool("mutmut"), "results", "--all", "true"])
+    if problem := unusable_listing(code, results):
+        return False, problem
     statuses = mutant_statuses(results, targets)
     untested = [name for name, status in statuses.items() if status == "not checked"]
     if untested:
         return False, f"{len(untested)} targeted mutants were never tested (first: {untested[0]}):\n{tail}"
-    survivors = [f"{name}: {status}" for name, status in statuses.items()]
+    survivors = [f"{name}: {status}" for name, status in statuses.items() if status != "killed"]
     if len(survivors) > tolerated:
         header = f"{len(survivors)} mutants not killed (tolerated {tolerated}):\n"
         return False, header + "\n".join(survivors[:200])

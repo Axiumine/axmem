@@ -172,6 +172,13 @@ without the mark, with the commit that landed it, in the commit that lands it.
   environment has `MUTANT_UNDER_TEST`); everywhere else it still ends the run with 2. mutmut books exit code 2 as "check was
   interrupted by user", so the mutants of `probe_gpu` and `_unpacked` that make the preflight fail could never be killed.
   mutmut runs the suite unmutated first and stops when that fails, so a machine whose GPU is unusable never reaches a mutant.
+- **Quality gates:** the `mutation` gate runs `mutmut run` with a data directory of its own: `XDG_DATA_HOME` names a temporary
+  `axmem-mutation-data-*` directory, removed when the run ends, whose `axmem/models` mirrors the model cache of the user (real
+  directories, files up to 1 MiB copied, `model.onnx` and `engine.plan` as links). The tests still load the cached models and
+  TensorRT engines, so nothing is downloaded or built again, but a mutant that changed a path constant (the directory name of a
+  model, the fingerprint of an engine) used to write beside them in `~/.local/share/axmem/models` (128 MB per directory), and the
+  engine cache removes every fingerprint but its own, so a mutant could remove the engine that the next run loads. Such a mutant
+  now downloads the model and builds the engine again inside the temporary directory.
 - **Quality gates:** the `semgrep` gate adds the registry packs `p/python p/security-audit` by default (they ran only in
   `quality.yml`, through an environment variable; a scoped `pre-commit` run keeps to the local rules, `SEMGREP_PACKS` in the
   environment replaces them, empty leaves them out). Staging the configuration of a gate (`pyproject.toml`, `uv.lock`,
@@ -906,6 +913,10 @@ Fixes found by reviewing the feature cuts (no upstream counterpart: the code the
 - **Embeddings:** the error log line of the Azure adapter for a refused request read "Error generatring embeddings"; it reads
   "Error generating embeddings" now, like the Google, OpenAI and Ollama adapters. A log filter or alert that matched the
   misspelt text must use the corrected one.
+- **Quality gates:** the `mutation` gate no longer reads a failed or empty `mutmut results` as "nothing survived". It asks for
+  every status (`mutmut results --all true`) and fails when that command exits with an error or lists no mutant at all; a
+  targeted mutant that mutmut never tested ("not checked") fails whatever `MUTATION_MAX_SURVIVORS` says; every targeted status
+  except "killed" is a survivor, as before, and mutants outside the targets are still ignored.
 
 ### Security
 

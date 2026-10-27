@@ -126,7 +126,8 @@ def test_a_plain_pre_push_runs_mutation_on_the_app_modules_the_push_changes(monk
     def fake_run(argv, **_kwargs):
         if "run" in argv:
             mutmut.append(argv[argv.index("run"):])
-        return 0, ""
+            return 0, ""
+        return 0, "app.utils.clock.x_now__mutmut_1: killed\n"  # `mutmut results --all true`
 
     monkeypatch.setattr(testing, "run", fake_run)
 
