@@ -197,6 +197,9 @@ jobs:
       id-token: write
       contents: write
       actions: read
+    # A tag and not a commit, on purpose: the README of slsa-github-generator says its reusable workflows "MUST be referenced
+    # by tag in order for the slsa-verifier to be able to verify the ref", in the form @vX.Y.Z. That is a limit of GitHub
+    # Actions and it overrides the advice to pin by digest. The other actions of this file are commits.
     uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.1.0
     with:
       base64-subjects: ${{ needs.sign-artefacts.outputs.subjects-b64 }}

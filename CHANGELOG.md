@@ -189,6 +189,12 @@ without the mark, with the commit that landed it, in the commit that lands it.
   `architecture` gate does). `ci.yml` runs the `ruff`, `architecture`, `package` and `wheel` gates by name, no longer
   `ruff check .` and `pytest tests/architecture`, and the docs tell contributors to run `gate ruff`, which uses the pinned
   ruff, instead of `uv tool run ruff check .`.
+- **CI:** the `smoke-test` job of `ci.yml` checks out the commit alone: its `fetch-depth: 0` (the full history, kept for
+  hatch-vcs to read the tags when the job built the wheel itself) is gone, as the commit that moved the build into the
+  `package` and `wheel` gates left it behind (`98a81ad5`). Both gates build a copy of the checkout that has no git history
+  and pin the version with `SETUPTOOLS_SCM_PRETEND_VERSION=0.0.0`, and the project install of `uv sync` is the one the
+  `lint` job already makes on a shallow checkout, so the job needs no tag. `docs/quality-gates.md` now says so, and that the
+  `commit-msg` hook runs `denylist-check` on the message before anything `SKIP=commit-msg` leaves out.
 - **License:** Axmem is released under the GNU Affero General Public License, version 3 (`AGPL-3.0-only`), no longer under
   the MIT License. The MIT License of Forgetful (Copyright (c) 2025 Scott Raisbeck) allows this; its notice moved unchanged
   to `LICENSE-FORGETFUL-MIT.md` (it was `LICENCE.md`) and the AGPL text is in `LICENSE`. `pyproject.toml` declares
@@ -320,7 +326,6 @@ without the mark, with the commit that landed it, in the commit that lands it.
 - The `git-hooks.nix` hooks of `flake.nix` (`nixfmt`, `deadnix`, `statix`, `ruff`, `typos`), the `nix fmt` formatter and the
   `pre-commit` check of `nix flake check`, with the hook installation of the Nix dev shell: they were checks that no
   hook gate ran. `.githooks/` is the only mechanism.
-
 - Graph REST view (`GET /api/v1/graph`, `/graph/subgraph`, `/graph/memory/{id}`), `GraphService`, the graph models,
   the `MAX_GRAPH_LIMIT` setting and the subgraph SQL on both backends (`6ce740e7`). Memory links, auto-linking,
   the link tools and the `query_memory` link expansion stay. No schema change.

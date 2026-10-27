@@ -10,8 +10,11 @@ Axmem ships to one place, PyPI, by trusted publishing. A version is one tag, `v<
 4. its job `verify` proves the signed files again; the reviewers of the environment `pypi` approve; its job `publish`
    uploads them to PyPI with an OIDC identity, and the script reads PyPI until it serves the manifest's bytes.
 
-No token, password or environment file exists anywhere in this flow, and `uv publish` is never run. A GitHub release made
-by hand starts nothing: `publish.yml` runs only when it is dispatched on a tag.
+No PyPI token, password or environment file exists anywhere in this flow, and `uv publish` is never run. What the script
+does use is the maintainer's own GitHub login, which it neither reads nor stores: `gh auth login` (see "Once, before the
+first release") for the GitHub API, the CI runs, the release downloads and the dispatch, and the same login in git for the
+push of `main` and of the tag. PyPI is only read, without any login. A GitHub release made by hand starts nothing:
+`publish.yml` runs only when it is dispatched on a tag.
 
 ## What the release guarantees
 
@@ -79,7 +82,11 @@ runs it every time before it does anything else.
   `scripts/release/` use the standard library alone.
 * Log in with `gh auth login` (github.com, HTTPS) with a fine-grained token limited to `Axiumine/axmem`: Contents, Actions
   and Workflows with write access, Administration with read access (`publish-ready` reads the environment and the
-  rulesets, with their bypass lists). Run `publish-ready` once and adjust the token to what it reports.
+  rulesets, with their bypass lists). Run `publish-ready` once and adjust the token to what it reports. This login is the
+  one credential a release needs: answer yes to "Authenticate Git with your GitHub credentials" (or run
+  `gh auth setup-git`) so that git pushes `main` and the tag to the HTTPS remote with it; an SSH remote is served by the
+  maintainer's key instead. `publish-ready` is the first call a release makes to GitHub, so a missing or too narrow login stops it
+  before anything is changed.
 * Enable the hooks with `uv run python -m scripts.quality install`. A release makes a commit and pushes it, so the
   pre-commit hook and the GPU gate of the pre-push hook run: a release needs the NVIDIA GPU and Docker like any other push.
   `SKIP` and `ONLY`, which leave gates out of a stage, make the script refuse to start.

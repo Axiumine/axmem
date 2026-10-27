@@ -57,7 +57,7 @@ synced as above.
 |---|---|---|
 | `pre-commit` | stage `pre-commit` on the staged files, and `denylist-check` | yes |
 | `pre-push` | stage `pre-push` on the whole project, and `denylist-check`: the one place that runs the GPU, Docker and Qdrant gates. It gates the pushed commit only when that is the checked-out `HEAD` (the gates read the working tree), so a push of any other commit is refused and not passed unchecked; deleting a remote ref has nothing to check and goes through | yes |
-| `commit-msg` | commit message format: `[🤖 ]<type>(<scope>): <subject>`, types feat/fix/chore/docs/refactor/test/perf/ci/build, subject <=150 chars, body <=10 lines, no AI attribution trailers; skip once with `SKIP=commit-msg` or `--no-verify` | yes |
+| `commit-msg` | commit message format: `[🤖 ]<type>(<scope>): <subject>`, types feat/fix/chore/docs/refactor/test/perf/ci/build, subject <=150 chars, body <=10 lines, no AI attribution trailers; skip once with `SKIP=commit-msg` or `--no-verify`. The message goes through `denylist-check` first, which `SKIP=commit-msg` does not skip | yes |
 | `post-commit` | refreshes the local GitNexus index in the background (needs `.gitnexus/run.cjs` and `node`) | never |
 | `denylist-check` | called by `pre-commit` (staged file names and added lines), `commit-msg` (the message) and `pre-push` (every unpushed commit); refuses any match with `.git/info/denylist` | yes |
 
@@ -163,7 +163,7 @@ name, split across jobs (`stage ci` runs the same set in one go on a developer m
 | `quality.yml` job `static` | ruff, imports, bandit, semgrep (with `p/python p/security-audit`, the default of the gate), shellcheck, actionlint, vulture, radon-cc, radon-mi, mypy, pylint |
 | `quality.yml` job `trivy` | `trivy`, with the pinned release binary downloaded and checked against its SHA-256 (no Docker image) |
 | `ci.yml` job `lint` | the `architecture` gate (`tests/architecture`: the import contracts, the rule proofs and the rules of these workflow files) and the `ruff` gate |
-| `ci.yml` job `smoke-test` | the `package` gate and the `wheel` gate, see [The wheel gate](#the-wheel-gate) |
+| `ci.yml` job `smoke-test` | the `package` gate and the `wheel` gate, see [The wheel gate](#the-wheel-gate); the checkout is shallow, because both gates build a copy without git history and pin the version themselves |
 | `publish.yml` job `verify` | on a dispatch on a `v<version>` tag: checks the signed files of the GitHub release again (digests, cosign identity of `release.yml`, the release guard) and runs `dist-check` on them (a package that holds model weights, engines, native libraries or other files than source is refused), before the job `publish` uploads them to PyPI; see [release.md](release.md) |
 | `release.yml` jobs `sign-artefacts` and `provenance-artefacts` | on a `v<version>` tag: rebuilds the package from the committed `release-digests.json`, refuses to sign unless the rebuild is byte-identical, runs `dist-check`, signs each file with cosign (keyless) and attests them (SLSA-3); started by `scripts/release-pypi.sh`, see [release.md](release.md) |
 

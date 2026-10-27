@@ -10,7 +10,8 @@ puts the release's files on the fake PyPI (``state/pypi``) when it succeeds. The
 is a stub that logs and exits 0, and so is the preflight gate of the fake ``uv``. Git hooks in the scratch repository log
 what they see and refuse when a marker file says so.
 
-The working repository is on the local branch ``axmem``, which tracks ``axiumine/main``: a release runs on the branch
+The working repository is on the local branch ``LOCAL_BRANCH`` (``axmem``), which tracks ``axiumine/main``. The name is
+chosen to differ from ``main``, which the local branch of the real repository is called: a release runs on the branch
 that tracks the remote's main, whatever it is called, and pushes to the remote's ``main``. There is no environment file;
 ``trap_env`` plants one that cannot be read, to prove that the release never opens it.
 
