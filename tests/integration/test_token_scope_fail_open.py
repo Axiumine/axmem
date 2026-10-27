@@ -120,13 +120,12 @@ class TestUnknownScopesAreIgnored:
         )
         assert permitted == READ_TOOLS
 
-    def test_extract_returns_only_recognised_scopes(self, registry):
-        ctx = _make_ctx(registry)
+    def test_extract_returns_only_recognised_scopes(self):
         with patch(
             "fastmcp.server.dependencies.get_access_token",
             return_value=_token({"scope": "openid read write:memories profile"}),
         ):
-            assert _extract_token_scopes(ctx) == frozenset({"read", "write:memories"})
+            assert _extract_token_scopes() == frozenset({"read", "write:memories"})
 
 
 class TestNothingRecognisedDenies:
@@ -144,13 +143,12 @@ class TestNothingRecognisedDenies:
         permitted = _effective(registry, {"scope": scope_claim})
         assert permitted == set()
 
-    def test_extract_returns_empty_set_not_none(self, registry):
-        ctx = _make_ctx(registry)
+    def test_extract_returns_empty_set_not_none(self):
         with patch(
             "fastmcp.server.dependencies.get_access_token",
             return_value=_token({"scope": "openid profile"}),
         ):
-            assert _extract_token_scopes(ctx) == frozenset()
+            assert _extract_token_scopes() == frozenset()
 
     def test_list_claim_without_recognised_scope_denies_everything(self, registry):
         permitted = _effective(registry, {"scp": ["openid", "profile"]})
@@ -230,23 +228,21 @@ class TestNoScopeClaimKeepsInstanceCeiling:
 
 
 class TestDenyIsLogged:
-    def test_ignored_scopes_are_warned_about_when_nothing_is_recognised(self, registry):
-        ctx = _make_ctx(registry)
+    def test_ignored_scopes_are_warned_about_when_nothing_is_recognised(self):
         with patch(
             "fastmcp.server.dependencies.get_access_token",
             return_value=_token({"scope": "openid profile"}),
         ), patch("app.routes.mcp.scope_resolver.logger") as mock_logger:
-            _extract_token_scopes(ctx)
+            _extract_token_scopes()
         mock_logger.warning.assert_called_once()
         message = mock_logger.warning.call_args.args[0]
         assert "openid" in message
         assert "denying" in message
 
-    def test_ignored_scopes_next_to_recognised_ones_do_not_warn(self, registry):
-        ctx = _make_ctx(registry)
+    def test_ignored_scopes_next_to_recognised_ones_do_not_warn(self):
         with patch(
             "fastmcp.server.dependencies.get_access_token",
             return_value=_token({"scope": "openid read"}),
         ), patch("app.routes.mcp.scope_resolver.logger") as mock_logger:
-            _extract_token_scopes(ctx)
+            _extract_token_scopes()
         mock_logger.warning.assert_not_called()

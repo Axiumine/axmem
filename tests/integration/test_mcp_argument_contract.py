@@ -550,12 +550,22 @@ def test_ids_is_read_as_source_then_targets_when_memory_ids_is_absent():
 @pytest.mark.parametrize("name", ["memory_ids", "ids"])
 @pytest.mark.parametrize(
     "value",
-    [[str(FIRST)], [], (str(FIRST),), str(FIRST), "ab", 7, {"a": 1}],
-    ids=["one-item", "empty-list", "one-item-tuple", "bare-string", "two-letter-string", "int", "dict"],
+    [[str(FIRST)], [], (str(FIRST),), str(FIRST), "ab", 7, {"a": 1}, {str(FIRST)}],
+    ids=["one-item", "empty-list", "one-item-tuple", "bare-string", "two-letter-string", "int", "dict", "one-item-set"],
 )
 @pytest.mark.parametrize("spec", [LINK_SPEC, UNLINK_SPEC], ids=["link", "unlink"])
 def test_a_memory_ids_argument_with_fewer_than_two_ids_is_refused_naming_the_tool_and_the_argument(spec, name, value):
     message = _refusal(resolve_link_arguments, spec, _provided(**{name: value}))
+
+    assert message == f"{spec.tool} {name} must contain at least 2 IDs [source, target, ...]"
+
+
+@pytest.mark.parametrize("name", ["memory_ids", "ids"])
+@pytest.mark.parametrize("make", [set, frozenset], ids=["set", "frozenset"])
+@pytest.mark.parametrize("spec", [LINK_SPEC, UNLINK_SPEC], ids=["link", "unlink"])
+def test_a_set_of_ids_is_refused_like_any_other_value_that_is_not_a_list_because_it_has_no_source(spec, name, make):
+    """The first id is the source and a set has no first item, so it must not reach the indexing as a TypeError."""
+    message = _refusal(resolve_link_arguments, spec, _provided(**{name: make([str(FIRST), str(SECOND)])}))
 
     assert message == f"{spec.tool} {name} must contain at least 2 IDs [source, target, ...]"
 

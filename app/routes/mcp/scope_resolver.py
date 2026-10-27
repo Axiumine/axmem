@@ -44,7 +44,9 @@ for _cat_value, _scope_name in CATEGORY_TO_SCOPE.items():
 # Token claims that can carry the OAuth scopes, in precedence order (as in FastMCP's JWTVerifier)
 _TOKEN_SCOPE_CLAIMS = ("scope", "scp")
 
-VALID_ACTIONS = frozenset({"read", "write"})
+# What each action grants: the tools that do not mutate state (read) or the ones that do (write)
+_ACTION_MUTATES: dict[str, bool] = {"read": False, "write": True}
+VALID_ACTIONS = frozenset(_ACTION_MUTATES)
 VALID_CATEGORIES = frozenset(_SCOPE_TO_CATEGORIES.keys())
 
 
@@ -104,17 +106,19 @@ def parse_scopes(scope_string: str) -> frozenset[str]:
 
 
 def _token_permits(token: str, tool: ToolMetadata) -> bool:
-    """Whether one validated scope token (other than ``*``) permits a tool"""
-    if ":" in token:
-        action, scope_category = token.split(":", 1)
-        if tool.category.value not in _SCOPE_TO_CATEGORIES.get(scope_category, []):
-            return False
-        return tool.mutates == (action != "read")
-    if token == "read":  # nosec B105 - scope grant name, not a credential
-        return not tool.mutates
-    if token == "write":  # nosec B105 - scope grant name, not a credential
-        return tool.mutates
-    return False
+    """Whether one scope token (other than ``*``) permits a tool
+
+    Fails closed: only the actions of ``VALID_ACTIONS`` grant anything. A token with any other action
+    (``admin:memories``, ``Read:memories``) or an unknown category permits no tool, it is never read as a
+    write. ``parse_scopes`` rejects such tokens before they get here; this keeps a token that skipped it from widening.
+    """
+    action, separator, scope_category = token.partition(":")
+    mutates = _ACTION_MUTATES.get(action)
+    if mutates is None:
+        return False
+    if separator and tool.category.value not in _SCOPE_TO_CATEGORIES.get(scope_category, []):
+        return False
+    return tool.mutates == mutates
 
 
 def resolve_permitted_tools(scopes: frozenset[str], registry: ToolRegistry) -> set[str]:
@@ -212,7 +216,7 @@ def get_effective_scopes(ctx: Context) -> tuple[set[str], frozenset[str]]:
     Returns:
         Tuple of (permitted_tool_names, effective_scope_tokens)
     """
-    return effective_permitted_tools(server_of(ctx), _extract_token_scopes(ctx))
+    return effective_permitted_tools(server_of(ctx), _extract_token_scopes())
 
 
 def _current_access_token() -> Any:
@@ -291,7 +295,7 @@ def token_scopes_from_claims(claims: dict[str, Any]) -> frozenset[str] | None:
     return frozenset(recognised)
 
 
-def _extract_token_scopes(ctx: Context) -> frozenset[str] | None:
+def _extract_token_scopes() -> frozenset[str] | None:
     """Extract scopes from the OAuth access token of the current MCP request, if there is one.
 
     Returns None if no auth is configured or the token has no scope claim (see

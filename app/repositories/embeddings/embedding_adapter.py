@@ -114,7 +114,7 @@ class AzureOpenAIAdapter(_OneTextPerRequest):
                 **kwargs,
             )
         except Exception:
-            logger.error("Error generatring embeddings", exc_info=True, extra={
+            logger.error("Error generating embeddings", exc_info=True, extra={
                 "embedding provider": "Azure",
                 "embedding model": self.model,
             })

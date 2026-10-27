@@ -903,6 +903,9 @@ Fixes found by reviewing the feature cuts (no upstream counterpart: the code the
   - **Clusters of other sizes and a restore into another cluster are tested** (`tests/cluster/test_cluster_backup_restore_other_clusters.py`,
     `start_cluster(nodes=...)` in `tests/qdrant_support.py`): see the results in
     [docs/changes-from-forgetful.md](docs/changes-from-forgetful.md#facts-to-re-verify).
+- **Embeddings:** the error log line of the Azure adapter for a refused request read "Error generatring embeddings"; it reads
+  "Error generating embeddings" now, like the Google, OpenAI and Ollama adapters. A log filter or alert that matched the
+  misspelt text must use the corrected one.
 
 ### Security
 

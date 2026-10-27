@@ -3177,7 +3177,7 @@ classDiagram
         +resolve_permitted_tools(scopes: frozenset[str], registry: ToolRegistry) set[str]
         +get_required_scope(tool_name: str, registry: ToolRegistry) str
         +get_effective_scopes(ctx: Context) Type79
-        -_extract_token_scopes(ctx: Context) Type80
+        -_extract_token_scopes() Type80
     }
     class c0227["app/routes/mcp/skill_tools.py"] {
         <<module>>

@@ -153,6 +153,32 @@ def test_a_category_scope_covers_only_the_tool_categories_mapped_to_it(registry,
     assert resolve_permitted_tools(frozenset({"read:links", "write:memories"}), registry) == {"linking_read", "memory_write"}
 
 
+@pytest.mark.parametrize(
+    "token",
+    ["admin:memories", "delete:memories", "Read:memories", "WRITE:memories", ":memories", " read:memories", "*:memories"],
+)
+def test_a_token_with_an_action_that_is_not_read_or_write_permits_nothing_instead_of_counting_as_a_write(registry, token):
+    """Only the actions that parse_scopes accepts grant a tool; any other action is not read as 'anything but read'."""
+    assert resolve_permitted_tools(frozenset({token}), registry) == set()
+
+
+@pytest.mark.parametrize("token", ["admin", "delete", "Read", "WRITE", "*:", "", ":"])
+def test_a_token_that_is_not_a_scope_permits_nothing(registry, token):
+    assert resolve_permitted_tools(frozenset({token}), registry) == set()
+
+
+def test_a_token_with_an_unknown_action_does_not_change_what_the_known_ones_grant(registry):
+    assert resolve_permitted_tools(frozenset({"admin:memories", "read:memories"}), registry) == {"memory_read", "linking_read"}
+    assert resolve_permitted_tools(frozenset({"admin:memories", "admin"}), registry) == set()
+
+
+def test_a_scope_that_names_no_category_grants_its_action_to_every_category_and_an_empty_category_grants_nothing(registry):
+    assert resolve_permitted_tools(frozenset({"read"}), registry) == {"memory_read", "linking_read"}
+    assert resolve_permitted_tools(frozenset({"write"}), registry) == {"memory_write", "linking_write"}
+    assert resolve_permitted_tools(frozenset({"read:"}), registry) == set()
+    assert resolve_permitted_tools(frozenset({"write:"}), registry) == set()
+
+
 def test_a_token_with_more_than_one_colon_permits_nothing(registry):
     """Only the first colon separates the action from the category, so a token like this never reaches a category."""
     assert resolve_permitted_tools(frozenset({"read:memories:extra"}), registry) == set()
@@ -404,16 +430,16 @@ def test_the_scopes_of_a_request_come_from_its_token_and_the_server_of_its_conte
     assert get_effective_scopes(ctx) == (set(), frozenset({"*"}))
 
 
-def test_the_request_context_is_what_the_token_scopes_are_extracted_for(registry, monkeypatch):
-    server = _server(registry)
-    ctx = SimpleNamespace(fastmcp=server)
-    asked_for = []
+def test_the_token_scopes_are_looked_up_once_for_the_current_request_alone(registry, monkeypatch):
+    """The access token is a property of the running request, so the lookup is handed nothing from the context."""
+    ctx = SimpleNamespace(fastmcp=_server(registry))
+    asked = []
 
-    def _scopes_of(context):
-        asked_for.append(context)
+    def _scopes_of(*arguments, **keywords):
+        asked.append((arguments, keywords))
         return frozenset({"read"})
 
     monkeypatch.setattr(scope_resolver, "_extract_token_scopes", _scopes_of)
 
     assert get_effective_scopes(ctx) == (ALL_TOOLS, frozenset({"*"}))
-    assert asked_for == [ctx]
+    assert asked == [((), {})]

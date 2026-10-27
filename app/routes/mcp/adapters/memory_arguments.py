@@ -99,8 +99,11 @@ UNLINK_SPEC = LinkAliasSpec(
 
 
 def _require_id_pair(tool: str, name: str, ids: Any) -> None:
-    """Reject a ``memory_ids`` / ``ids`` argument that is not a collection of 2+ items."""
-    if not isinstance(ids, (list, tuple, set)) or len(ids) < 2:
+    """Reject a ``memory_ids`` / ``ids`` argument that is not an ordered sequence of 2+ items.
+
+    The first id is the source, so a set (no order, no first item) is refused like any other value that is not a list.
+    """
+    if not isinstance(ids, (list, tuple)) or len(ids) < 2:
         raise ValueError(f"{tool} {name} must contain at least 2 IDs [source, target, ...]")
 
 

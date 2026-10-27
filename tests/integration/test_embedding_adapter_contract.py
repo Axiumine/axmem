@@ -268,7 +268,7 @@ async def test_the_width_is_left_out_of_a_request_to_a_deployment_that_does_not_
 # The line an operator reads when a provider refuses a request
 # --------------------------------------------------------------------------
 @pytest.mark.parametrize(("provider", "message", "fields"), [
-    ("Azure", "Error generatring embeddings", {"embedding provider": "Azure", "embedding model": "text-embedding-ada-002"}),
+    ("Azure", "Error generating embeddings", {"embedding provider": "Azure", "embedding model": "text-embedding-ada-002"}),
     ("Google", "Error generating embeddings", {"embedding_provider": "google", "embedding_model": MODEL}),
     ("OpenAI", "Error generating embeddings", {"embedding_provider": "openai", "embedding_model": MODEL}),
     ("Ollama", "Error generating embeddings", {"embedding_provider": "ollama", "embedding_model": MODEL}),
