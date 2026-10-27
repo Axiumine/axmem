@@ -11,17 +11,43 @@ GPU or without Qdrant. Only HTTP I/O (remote providers, remote servers) is stubb
 import logging
 
 import pytest
+from qdrant_client import AsyncQdrantClient
 
 from app.config import logging_config
 from app.services.memory_service import MemoryService
 from tests.gpu_preflight import require_gpu
-from tests.qdrant_support import require_docker
+from tests.qdrant_support import SCROLLS_PER_TEST, require_docker
 
 
 def pytest_collection_modifyitems(config, items):
     """The models run on the NVIDIA GPU and the data lives in Qdrant: without either this run ends, it never skips."""
     require_gpu()
     require_docker()
+
+
+@pytest.fixture(autouse=True)
+def paging_loop_ends_the_test(monkeypatch):
+    """Fail the test on its ``SCROLLS_PER_TEST + 1``-th read of a page of points instead of letting a paging loop run on.
+
+    Every scan of a collection (``iterate``, the rebuilds, the backup, the inspector) reads page after page from the
+    cursor of the page before. A mutant that stops the cursor from advancing makes the scan endless, and whether a test
+    ends it depends on the order in which mutmut runs the tests that cover it: one that only waits runs until mutmut
+    stops it, which mutmut books as a timeout and the mutation gate counts as a survivor. With this limit the first test
+    to reach such a loop fails within seconds. No integration test reads a thousand pages. ``pytest.fail`` raises a
+    ``BaseException``, so no ``except Exception`` of the code under test can swallow it and go on looping. The limit
+    belongs to this suite alone: mutmut runs these tests, and the cluster suite lets eight writers read beside a scan.
+    """
+    real = AsyncQdrantClient.scroll
+    scrolls = 0
+
+    async def counted(self, *args, **kwargs):
+        nonlocal scrolls
+        scrolls += 1
+        if scrolls > SCROLLS_PER_TEST:
+            pytest.fail(f"more than {SCROLLS_PER_TEST} pages were read in one test: a paging loop that does not end")
+        return await real(self, *args, **kwargs)
+
+    monkeypatch.setattr(AsyncQdrantClient, "scroll", counted)
 
 
 @pytest.fixture(autouse=True)

@@ -1,9 +1,9 @@
-"""The limit on page reads per test (``paging_loop_ends_the_test`` in tests/conftest.py): a loop that never ends fails."""
+"""The limit on page reads per test (``paging_loop_ends_the_test`` in tests/integration/conftest.py): a loop that never ends fails."""
 import pytest
 
 from app.repositories.qdrant.store import Scope
-from tests.conftest import SCROLLS_PER_TEST
 from tests.qdrant_store_support import TENANT, open_stack
+from tests.qdrant_support import SCROLLS_PER_TEST
 
 
 @pytest.fixture

@@ -23,6 +23,7 @@ API_KEY = "axmem-test-api-key-0123456789abcdef"
 READY_TIMEOUT_SECONDS = 90
 PULL_TIMEOUT_SECONDS = 1800  # the image is about 150 MB, but a clean runner may sit behind a slow or rate-limited registry
 LABEL = "axmem-test=1"
+SCROLLS_PER_TEST = 1_000  # the page reads one integration test may make: see ``paging_loop_ends_the_test``
 
 
 def _docker(*args: str, check: bool = True, timeout: float = 120) -> str:
