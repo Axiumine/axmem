@@ -60,6 +60,35 @@ def local_tenant_mode(monkeypatch):
     monkeypatch.setattr(settings, "AUTH_MODE", "none")
 
 
+SCROLLS_PER_TEST = 1_000
+
+
+@pytest.fixture(autouse=True)
+def paging_loop_ends_the_test(monkeypatch):
+    """Fail the test on its ``SCROLLS_PER_TEST + 1``-th read of a page of points instead of letting a paging loop run on.
+
+    Every scan of a collection (``iterate``, the rebuilds, the backup, the inspector) reads page after page from the
+    cursor of the page before. A mutant that stops the cursor from advancing makes the scan endless, and whether a test
+    ends it depends on the order in which mutmut runs the tests that cover it: one that only waits runs until mutmut
+    stops it, which mutmut books as a timeout and the mutation gate counts as a survivor. With this limit the first test
+    to reach such a loop fails within seconds. No test reads a thousand pages. ``pytest.fail`` raises a
+    ``BaseException``, so no ``except Exception`` of the code under test can swallow it and go on looping.
+    """
+    from qdrant_client import AsyncQdrantClient
+
+    real = AsyncQdrantClient.scroll
+    scrolls = 0
+
+    async def counted(self, *args, **kwargs):
+        nonlocal scrolls
+        scrolls += 1
+        if scrolls > SCROLLS_PER_TEST:
+            pytest.fail(f"more than {SCROLLS_PER_TEST} pages were read in one test: a paging loop that does not end")
+        return await real(self, *args, **kwargs)
+
+    monkeypatch.setattr(AsyncQdrantClient, "scroll", counted)
+
+
 @pytest.fixture(scope="session")
 def tensorrt_reranker():
     """The real TensorRT reranker, built (or loaded from the engine cache) once per test process.
