@@ -336,6 +336,7 @@ also_copy = [
     "pytest.ini", "main.py", "pyproject.toml", "ruff.toml",
     ".env.example",  # test_reference_docs parses it
     "trivy.yaml", ".gitignore",  # test_workflows checks that the trivy gate skips mutants/, which git ignores
+    "release-digests.json",  # the release commit adds it; test_release_workflow names it (mutmut skips a path that does not exist yet)
     ".githooks/",  # the hook tests (test_commit_msg_hook, test_denylist_check_hook) run the scripts of the repository
     ".github/",  # test_workflows reads the CI workflows
     "test_harness/", "scripts/", "skills/", "docs/", "architecture.md", "README.md",

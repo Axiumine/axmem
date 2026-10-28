@@ -457,6 +457,10 @@ Fixes to features that are removed above are moot once those features go.
   findings that the real `uv.lock` no longer had (a push stopped on the old `authlib` and `dnspython` of that copy). A test keeps
   `mutants` in `skip-dirs` of `trivy.yaml` while `.gitignore` names it, and `trivy.yaml` and `.gitignore` join `also_copy` of
   `[tool.mutmut]`, so that the test also runs inside the mutation sandbox.
+- The mutation sandbox copies `release-digests.json`. The file does not exist until the first release commit adds it, and
+  from then on the `architecture` test that checks the sandbox found it named by `test_release_workflow.py` and refused the
+  push of the release commit (`also_copy` of `[tool.mutmut]` did not list it); the first release stopped there, before anything
+  was tagged or uploaded. mutmut skips an `also_copy` path that does not exist, so the entry is harmless before that.
 - **Security:** token scope fails closed (#107), ownership checks on link endpoints, referenced projects and
   embeddings (#103, #113), token cache honours expiry (#110), no SQL echo or parameters in logs (#143), server
   URLs redacted (#112), owner-only backups and storage (#137), user upsert keeps notes and metadata (#108),
