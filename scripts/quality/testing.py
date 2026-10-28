@@ -9,8 +9,6 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
-from platformdirs import user_data_dir
-
 from .core import (
     SUITES,
     Ctx,
@@ -149,6 +147,9 @@ def mutant_statuses(results: str, targets: list[str]) -> dict[str, str]:
 
 def models_dir(data_home: Path | None = None) -> Path:
     """Where Axmem keeps its models and engines: in the data directory of the user, or under ``data_home`` as XDG_DATA_HOME."""
+    # Imported here: the trivy job of quality.yml runs the gates with the standard library alone.
+    from platformdirs import user_data_dir
+
     own = Path(user_data_dir("axmem", ensure_exists=False))
     return (own if data_home is None else data_home / own.name) / MODELS_DIR
 

@@ -7,6 +7,8 @@ back into a workflow.
 """
 
 import re
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -259,6 +261,22 @@ def test_the_trivy_job_installs_the_version_that_the_gate_pins_and_hands_the_gat
     assert re.fullmatch(r"[0-9a-f]{64}", job["env"]["TRIVY_SHA256"])
     assert "sha256sum --check" in script
     assert 'TRIVY_BIN=$RUNNER_TEMP/trivy/trivy" >> "$GITHUB_ENV"' in script  # without it the gate runs a Docker image
+
+
+def test_the_trivy_job_can_import_the_gates_because_it_installs_no_dependency():
+    """The job runs ``python -m scripts.quality`` on a bare setup-python: a third-party import at module level breaks it."""
+    steps = _load(WORKFLOWS_DIR / "quality.yml")["jobs"]["trivy"]["steps"]
+    assert not any("uv " in step.get("run", "") or "pip install" in step.get("run", "") for step in steps)
+
+    result = subprocess.run(  # nosec B603 - the interpreter of this run, fixed argv
+        [sys.executable, "-S", "-c", "import scripts.quality.cli"],  # -S: no site-packages, as on the runner
+        cwd=WORKFLOWS_DIR.parents[1],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
 
 
 PINNED_ACTION = re.compile(r"[\w.-]+/[\w./-]+@[0-9a-f]{40}")

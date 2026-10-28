@@ -421,6 +421,11 @@ without the mark, with the commit that landed it, in the commit that lands it.
 Fork fixes proposed upstream as pull requests #102 to #154 (none merged there when checked on 2026-10-19).
 Fixes to features that are removed above are moot once those features go.
 
+- The `trivy` job of `quality.yml` ran red on every push of `main` since the mutation gate got a data directory of its own:
+  `scripts/quality/testing.py` imported `platformdirs` at module level, and the job runs `python -m scripts.quality` on a
+  bare Python with no dependency installed, so it stopped with `ModuleNotFoundError`. The import is now in `models_dir`, the
+  one function that needs it, and a test in `tests/architecture/test_workflows.py` imports the gates with `python -S` so the
+  job cannot break this way again. A red `Quality gates` run on `main` also stopped the release script at its CI check.
 - **Security:** token scope fails closed (#107), ownership checks on link endpoints, referenced projects and
   embeddings (#103, #113), token cache honours expiry (#110), no SQL echo or parameters in logs (#143), server
   URLs redacted (#112), owner-only backups and storage (#137), user upsert keeps notes and metadata (#108),
