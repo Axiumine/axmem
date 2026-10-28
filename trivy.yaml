@@ -17,5 +17,8 @@ scan:
     - .coverage-data
     - node_modules
     - test_harness/runs
+    # mutmut's working copy of the project, with its own copy of uv.lock from the last mutation run: it is not tracked, and
+    # after a lock change it holds the old pins until the next run, so it would fail the gate for findings that uv.lock no longer has
+    - mutants
 vulnerability:
   ignore-unfixed: true

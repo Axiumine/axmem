@@ -452,6 +452,11 @@ Fixes to features that are removed above are moot once those features go.
   bare Python with no dependency installed, so it stopped with `ModuleNotFoundError`. The import is now in `models_dir`, the
   one function that needs it, and a test in `tests/architecture/test_workflows.py` imports the gates with `python -S` so the
   job cannot break this way again. A red `Quality gates` run on `main` also stopped the release script at its CI check.
+- The `trivy` gate skips `mutants/`, the working copy that mutmut makes of the project. The copy is not tracked and holds its
+  own `uv.lock` from the last mutation run, so after a lock change it still carried the old pins and the gate failed on
+  findings that the real `uv.lock` no longer had (a push stopped on the old `authlib` and `dnspython` of that copy). A test keeps
+  `mutants` in `skip-dirs` of `trivy.yaml` while `.gitignore` names it, and `trivy.yaml` and `.gitignore` join `also_copy` of
+  `[tool.mutmut]`, so that the test also runs inside the mutation sandbox.
 - **Security:** token scope fails closed (#107), ownership checks on link endpoints, referenced projects and
   embeddings (#103, #113), token cache honours expiry (#110), no SQL echo or parameters in logs (#143), server
   URLs redacted (#112), owner-only backups and storage (#137), user upsert keeps notes and metadata (#108),

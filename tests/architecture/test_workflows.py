@@ -264,6 +264,15 @@ def test_the_trivy_job_installs_the_version_that_the_gate_pins_and_hands_the_gat
     assert 'TRIVY_BIN=$RUNNER_TEMP/trivy/trivy" >> "$GITHUB_ENV"' in script  # without it the gate runs a Docker image
 
 
+def test_trivy_skips_the_mutation_copy_of_the_project_that_git_ignores():
+    """mutmut copies the project, uv.lock included, into ``mutants/``; its stale pins must not fail a scan of the real tree."""
+    skipped = yaml.safe_load((WORKFLOWS_DIR.parents[1] / "trivy.yaml").read_text(encoding="utf-8"))["scan"]["skip-dirs"]
+    ignored = (WORKFLOWS_DIR.parents[1] / ".gitignore").read_text(encoding="utf-8").splitlines()
+
+    assert "mutants" in skipped
+    assert "mutants/" in ignored  # the directory is generated and untracked, so skipping it hides nothing that is committed
+
+
 def test_the_trivy_job_can_import_the_gates_because_it_installs_no_dependency():
     """The job runs ``python -m scripts.quality`` on a bare setup-python: a third-party import at module level breaks it."""
     steps = _load(WORKFLOWS_DIR / "quality.yml")["jobs"]["trivy"]["steps"]
