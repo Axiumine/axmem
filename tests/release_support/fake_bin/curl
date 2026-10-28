@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fake ``curl`` for PyPI: the JSON of the project ``axmem`` and the files behind its links.
+"""Fake ``curl`` for PyPI and for TestPyPI: the JSON of the project ``axmem`` and the files behind its links.
 
 The release script reads PyPI with GET and nothing else, so this fake pins the exact argv: the options it knows are
 ``-s -S -L -f`` (alone or joined), ``--globoff`` (required: a brace or a bracket in a URL is not expanded into several
@@ -15,6 +15,12 @@ It serves ``https://pypi.org/pypi/axmem/json`` in the real shape, built from the
 the bytes of each file at that URL. A project that holds no file answers 404 (the real answer for a project that does not
 exist), and so does a file it does not hold. Any other path on the two hosts is refused: per-version JSON and ``/simple``
 are not what the release reads.
+
+TestPyPI, the scratch index of the rehearsal, is a second site of the same program: ``https://test.pypi.org/pypi/axmem/json``
+built from the files in ``$FAKE_STATE/testpypi`` (or ``$FAKE_TESTPYPI``), whose links are
+``https://test-files.pythonhosted.org/packages/<filename>``. Its knobs are the ones below with the prefix ``testpypi_``
+(``testpypi_cdn_lag``, ``testpypi_hide_files``, ``testpypi_json_raw``, ``testpypi_downloads``, ``testpypi_digest_lie``,
+``testpypi_yanked``, ``testpypi_appears_on_read``), and a host of one site never serves a path of the other.
 
 Knobs (``config.json``, or ``gh.json`` for the light fakes):
 
@@ -38,13 +44,31 @@ import json
 import re
 import sys
 from pathlib import Path
+from typing import NamedTuple
 from urllib.parse import urlsplit
 
 import _state
 
+
+class Site(NamedTuple):
+    """One index the fake serves: its two hosts, the directory of its files, and the prefix of its knobs."""
+
+    host: str
+    files_host: str
+    directory: Path
+    prefix: str
+    published: Path
+
+
+SITES = (
+    Site(_state.PYPI_HOST, _state.FILES_HOST, _state.PYPI_DIR, "", _state.STATE / "published"),
+    Site(
+        _state.TESTPYPI_HOST, _state.TESTPYPI_FILES_HOST, _state.TESTPYPI_DIR, "testpypi_",
+        _state.STATE / "testpypi-published",
+    ),
+)
 args = sys.argv[1:]
 conf = _state.config()
-pypi = _state.PYPI_DIR
 LONG_FLAGS = ("--silent", "--show-error", "--location", "--fail", "--globoff")
 SENDING = ("-X", "--request", "-T", "--upload-file", "-F", "--form", "-d", "--data", "--data-binary", "--data-raw")
 url, out, write_out, fail, proto, redir, globoff = "", "", "", False, "", "", False
@@ -96,8 +120,9 @@ if not refused and not globoff:
     refused = "--globoff is required: a URL is fetched as it is, never expanded"
 if not refused and (parts.scheme != "https" or "@" in parts.netloc or parts.port is not None):
     refused = f"not a plain https URL: {url}"
-if not refused and parts.hostname not in (_state.PYPI_HOST, _state.FILES_HOST):
-    refused = f"host {parts.hostname} is not {_state.PYPI_HOST} or {_state.FILES_HOST}"
+hosts = [host for site in SITES for host in (site.host, site.files_host)]
+if not refused and parts.hostname not in hosts:
+    refused = f"host {parts.hostname} is not one of {', '.join(hosts)}"
 if refused:
     if sends:
         _state.log("curl-upload", url)
@@ -121,9 +146,9 @@ def answer(code: int, body: bytes = b"") -> None:
     sys.exit(0)
 
 
-def listed(knob: str, name: str) -> bool:
-    """True when the knob ``knob`` is ``true`` or names ``name``."""
-    wanted = conf.get(knob, [])
+def listed(site: Site, knob: str, name: str) -> bool:
+    """True when the knob ``knob`` of the site is ``true`` or names ``name``."""
+    wanted = conf.get(f"{site.prefix}{knob}", [])
     return wanted is True or name in wanted
 
 
@@ -133,41 +158,42 @@ def version_of(name: str) -> str:
     return found.group(1) if found else name
 
 
-def lagging() -> list[str]:
+def lagging(site: Site) -> list[str]:
     """The names a lagging CDN has not got yet: the files of the last publication, for the first ``cdn_lag`` reads after it."""
-    published = _state.STATE / "published"
-    if published.exists() and conf.get("cdn_lag") and _state.step("lag", [True] * conf["cdn_lag"] + [False]):
-        return list(json.loads(published.read_text(encoding="utf-8")))
+    lag = conf.get(f"{site.prefix}cdn_lag")
+    if site.published.exists() and lag and _state.step(f"{site.prefix}lag", [True] * lag + [False]):
+        return list(json.loads(site.published.read_text(encoding="utf-8")))
     return []
 
 
-def late() -> list[str]:
+def late(site: Site) -> list[str]:
     """The names that the JSON does not list yet at this read (``appears_on_read``); counts one read per call."""
-    wanted = conf.get("appears_on_read", {})
+    wanted = conf.get(f"{site.prefix}appears_on_read", {})
     if not wanted:
         return []
-    read = _state.step("json_reads", list(range(1, 1000)))
+    read = _state.step(f"{site.prefix}json_reads", list(range(1, 1000)))
     return [name for name, first in wanted.items() if read < first]
 
 
-def served() -> list[Path]:
-    """The files of the fake PyPI that its JSON lists: not the hidden ones, nor the ones a lagging CDN has not got yet."""
-    files = sorted(path for path in pypi.glob("*") if path.is_file()) if pypi.exists() else []
-    hidden = [*conf.get("hide_files", []), *lagging(), *late()]
+def served(site: Site) -> list[Path]:
+    """The files of the fake index that its JSON lists: not the hidden ones, nor the ones a lagging CDN has not got yet."""
+    directory = site.directory
+    files = sorted(path for path in directory.glob("*") if path.is_file()) if directory.exists() else []
+    hidden = [*conf.get(f"{site.prefix}hide_files", []), *lagging(site), *late(site)]
     return [path for path in files if path.name not in hidden]
 
 
-def document() -> bytes:
-    """The JSON of the project as PyPI prints it for the files in the fake PyPI."""
+def document(site: Site) -> bytes:
+    """The JSON of the project as the index prints it for the files in its fake directory."""
     releases: dict[str, list[dict[str, object]]] = {}
-    for path in served():
-        digest = "0" * 64 if listed("digest_lie", path.name) else _state.sha256(path)
+    for path in served(site):
+        digest = "0" * 64 if listed(site, "digest_lie", path.name) else _state.sha256(path)
         releases.setdefault(version_of(path.name), []).append(
             {
                 "filename": path.name,
                 "digests": {"sha256": digest},
-                "url": f"https://{_state.FILES_HOST}/packages/{path.name}",
-                "yanked": listed("yanked", path.name),
+                "url": f"https://{site.files_host}/packages/{path.name}",
+                "yanked": listed(site, "yanked", path.name),
                 "packagetype": "bdist_wheel" if path.suffix == ".whl" else "sdist",
             },
         )
@@ -176,33 +202,39 @@ def document() -> bytes:
     return json.dumps({"info": info, "releases": releases, "urls": [], "vulnerabilities": []}).encode()
 
 
-def project_json() -> None:
+def project_json(site: Site) -> None:
     """Answer a read of the project JSON: the planted entry of ``json_raw`` for this read, else the real document."""
-    planted = conf.get("json_raw")
-    entry = None if planted is None else _state.step("json", planted if isinstance(planted, list) else [planted])
+    planted = conf.get(f"{site.prefix}json_raw")
+    entry = (
+        None
+        if planted is None
+        else _state.step(f"{site.prefix}json", planted if isinstance(planted, list) else [planted])
+    )
     if isinstance(entry, str):
         answer(200, entry.encode())
     elif isinstance(entry, int) and not isinstance(entry, bool):
         answer(entry)
     elif isinstance(entry, dict):
         answer(int(entry.get("code", 200)), str(entry.get("body", "")).encode())
-    body = document()
+    body = document(site)
     answer(200, body) if json.loads(body)["releases"] else answer(404)
 
 
-def download() -> None:
+def download(site: Site) -> None:
     """Answer a read of a file at ``/packages/<name>``."""
     name = parts.path.removeprefix("/packages/")
-    path = pypi / name
-    if conf.get("downloads") == "missing" or "/" in name or not path.is_file():
+    path = site.directory / name
+    mode = conf.get(f"{site.prefix}downloads")
+    if mode == "missing" or "/" in name or not path.is_file():
         answer(404)
-    answer(200, path.read_bytes() + (b"tampered" if conf.get("downloads") == "other" else b""))
+    answer(200, path.read_bytes() + (b"tampered" if mode == "other" else b""))
 
 
-if parts.hostname == _state.PYPI_HOST and parts.path == f"/pypi/{_state.PACKAGE}/json":
-    project_json()
-elif parts.hostname == _state.FILES_HOST and parts.path.startswith("/packages/"):
-    download()
+served_by = [site for site in SITES if parts.hostname in (site.host, site.files_host)]
+if served_by and parts.hostname == served_by[0].host and parts.path == f"/pypi/{_state.PACKAGE}/json":
+    project_json(served_by[0])
+elif served_by and parts.hostname == served_by[0].files_host and parts.path.startswith("/packages/"):
+    download(served_by[0])
 else:
     _state.log("curl-refused", f"no such path on {parts.hostname}: {parts.path}")
     print(f"fake curl: the release reads only /pypi/{_state.PACKAGE}/json and /packages/<file>", file=sys.stderr)

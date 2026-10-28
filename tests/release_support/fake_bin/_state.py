@@ -4,7 +4,8 @@ The test names a directory in ``FAKE_STATE``. ``config.json`` in it says what th
 ``tests/release_support/fakes.py`` read ``gh.json`` instead; the answer is the same document); ``events.log`` is where
 every fake, hook and stub writes one line per thing it did, in order, so a test can read what the release script
 ran and in which order. ``pypi/`` is the fake PyPI: one file per published artefact, served by the fake ``curl`` as
-the JSON of the project and as the files behind its links (``FAKE_PYPI`` names another directory for the light fakes).
+the JSON of the project and as the files behind its links (``FAKE_PYPI`` names another directory for the light fakes);
+``testpypi/`` is the fake TestPyPI in the same way (``FAKE_TESTPYPI``), served under the hosts of TestPyPI.
 """
 
 from __future__ import annotations
@@ -21,9 +22,14 @@ from typing import Any
 STATE = Path(os.environ["FAKE_STATE"])
 #: the fake PyPI: the files it holds, which its JSON lists and its file host serves
 PYPI_DIR = Path(os.environ.get("FAKE_PYPI") or STATE / "pypi")
+#: the fake TestPyPI, the scratch index of the rehearsal: the same, one directory beside the other
+TESTPYPI_DIR = Path(os.environ.get("FAKE_TESTPYPI") or STATE / "testpypi")
 #: the only two hosts the release script reads: the JSON API of the project and the host of the files behind it
 PYPI_HOST = "pypi.org"
 FILES_HOST = "files.pythonhosted.org"
+#: the two hosts of the rehearsal's index; ``release-testpypi.sh`` reads these and no other
+TESTPYPI_HOST = "test.pypi.org"
+TESTPYPI_FILES_HOST = "test-files.pythonhosted.org"
 #: the package the scratch repository releases, and the GitHub repository its remote's URL names
 PACKAGE = "axmem"
 GITHUB_REPO = "Axiumine/axmem"

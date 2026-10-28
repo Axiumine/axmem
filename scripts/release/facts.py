@@ -37,6 +37,34 @@ NO_RUN_GRACE_S = 600
 RUN_TIMEOUT_S = 180
 
 
+class Index(NamedTuple):
+    """What the release flow knows of one package index: how its messages name it, the one host that serves its files,
+    the workflow that uploads to it and the GitHub environment that workflow runs in."""
+
+    label: str
+    file_host: str
+    workflow: str
+    environment: str
+
+
+# The two indexes, as literals. Every function that reads an index takes a key of this table (default ``pypi``) and
+# nothing else: a host, a workflow or an environment is never a parameter, an input or an environment variable, so a
+# PyPI read cannot be turned into a read of the other index, or the other way round, by anything that is not a line of
+# this table. TestPyPI is the scratch index of the rehearsal (``publish-testpypi.yml``, docs/release.md).
+INDEXES: dict[str, Index] = {
+    "pypi": Index("PyPI", PYPI_FILE_HOST, PUBLISH_WORKFLOW, "pypi"),
+    "testpypi": Index("TestPyPI", "test-files.pythonhosted.org", "publish-testpypi.yml", "testpypi"),
+}
+
+
+def index_row(index: str) -> Index:
+    """The row of ``INDEXES`` for ``index``; a key that is not in the table raises ``ValueError``."""
+    try:
+        return INDEXES[index]
+    except KeyError:
+        raise ValueError(f"unknown index {index!r}: the release flow reads {' and '.join(INDEXES)} only") from None
+
+
 class FactsError(Exception):
     """A fact could not be read: the command is missing, GitHub or git did not answer."""
 
@@ -350,7 +378,10 @@ class PypiFile(NamedTuple):
 
 # printable ASCII after the host and a slash: no userinfo, port, backslash, space or control character can pass, and no
 # bracket or brace, which curl would expand into several downloads written to one file
-_FILE_URL = re.compile(rf"https://{re.escape(PYPI_FILE_HOST)}/[\x21-\x5a\x5e-\x7a\x7c\x7e]+")
+_FILE_URLS = {
+    key: re.compile(rf"https://{re.escape(row.file_host)}/[\x21-\x5a\x5e-\x7a\x7c\x7e]+")
+    for key, row in INDEXES.items()
+}
 # a file name is used as a path in a download directory, so it holds no separator and does not start with a dot
 _FILE_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+-]*")
 _SHA256 = re.compile(r"[0-9A-Fa-f]{64}")
@@ -362,35 +393,40 @@ def _normalised(name: str) -> str:
     return re.sub(r"[-_.]+", "-", name).lower()
 
 
-def _pypi_file(version: str, raw: Any) -> PypiFile:
+def _pypi_file(version: str, raw: Any, index: str = "pypi") -> PypiFile:
     """A ``PypiFile`` from one entry of ``releases[version]``; an entry that is not whole raises ``FactsError``."""
+    row = index_row(index)
     try:
         name, sha256, url, yanked = raw["filename"], raw["digests"]["sha256"], raw["url"], raw.get("yanked", False)
     except (LookupError, TypeError, AttributeError) as exc:
-        raise FactsError(f"a file of {version} in the PyPI JSON is not whole: {exc!r}") from exc
+        raise FactsError(f"a file of {version} in the {row.label} JSON is not whole: {exc!r}") from exc
     if not (isinstance(name, str) and _FILE_NAME.fullmatch(name)):
-        raise FactsError(f"a file of {version} in the PyPI JSON has a name that is not a plain file name")
+        raise FactsError(f"a file of {version} in the {row.label} JSON has a name that is not a plain file name")
     if not re.fullmatch(rf"{_DIST_STEM}-{re.escape(version)}(\.tar\.gz|-[A-Za-z0-9_.-]+\.whl)", name):
-        raise FactsError(f"{name} in the PyPI JSON is neither the wheel nor the sdist of {version}")
+        raise FactsError(f"{name} in the {row.label} JSON is neither the wheel nor the sdist of {version}")
     if not (isinstance(sha256, str) and _SHA256.fullmatch(sha256)):
-        raise FactsError(f"{name} in the PyPI JSON has no sha256 digest")
-    if not (isinstance(url, str) and _FILE_URL.fullmatch(url)):
-        raise FactsError(f"{name} in the PyPI JSON is linked at a URL that is not https://{PYPI_FILE_HOST}/")
+        raise FactsError(f"{name} in the {row.label} JSON has no sha256 digest")
+    if not (isinstance(url, str) and _FILE_URLS[index].fullmatch(url)):
+        raise FactsError(f"{name} in the {row.label} JSON is linked at a URL that is not https://{row.file_host}/")
     if not isinstance(yanked, bool):
-        raise FactsError(f"{name} in the PyPI JSON has a yanked flag that is not true or false")
+        raise FactsError(f"{name} in the {row.label} JSON has a yanked flag that is not true or false")
     return PypiFile(name, version, sha256.lower(), url, yanked)
 
 
-def parse_release_json(text: str, package: str) -> list[PypiFile]:
+def parse_release_json(text: str, package: str, index: str = "pypi") -> list[PypiFile]:
     """The files of ``package`` in a PyPI project JSON (``/pypi/<package>/json``), each name once, in version order.
+
+    ``index`` is a key of ``INDEXES`` (``pypi``, or ``testpypi`` for the rehearsal): it names the one host the file links
+    may point at, and the index in the messages. The messages of the default are the ones below, word for word.
 
     An empty body is a project with no versions (PyPI answers 404 for a project it has none of, and the release
     script saves that as an empty file). Anything else must be the JSON of ``package``: a proxy or maintenance
     page, or the document of another project, is refused, not read as "nothing is on PyPI". A version with an
     empty file list has no files. Yanked files are kept and marked: a yanked name stays used, so it still counts as
-    present. Every file link must be ``https`` on ``PYPI_FILE_HOST`` itself, because the release downloads from
-    these links and a link elsewhere must lead nowhere.
+    present. Every file link must be ``https`` on the file host of the index itself (``PYPI_FILE_HOST`` for PyPI),
+    because the release downloads from these links and a link elsewhere, the other index's host included, must lead nowhere.
     """
+    label = index_row(index).label
     if not text.strip():
         return []
     try:
@@ -399,37 +435,39 @@ def parse_release_json(text: str, package: str) -> list[PypiFile]:
         if not isinstance(releases, dict):
             raise TypeError("releases is not an object")
     except (ValueError, LookupError, TypeError) as exc:
-        raise FactsError(f"the answer read from PyPI is not the JSON of a project: {exc!r}") from exc
+        raise FactsError(f"the answer read from {label} is not the JSON of a project: {exc!r}") from exc
     if not isinstance(found, str) or _normalised(found) != _normalised(package):
-        raise FactsError(f"the answer read from PyPI is not the JSON of {package}")
-    return _release_files(releases, package)
+        raise FactsError(f"the answer read from {label} is not the JSON of {package}")
+    return _release_files(releases, package, index)
 
 
-def _release_files(releases: dict[str, Any], package: str) -> list[PypiFile]:
+def _release_files(releases: dict[str, Any], package: str, index: str = "pypi") -> list[PypiFile]:
     """The files of every version of ``releases`` (version -> list of file entries), each name once."""
+    label = index_row(index).label
     files: dict[str, PypiFile] = {}
     for version, entries in releases.items():
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._+!-]*", version) or not isinstance(entries, list):
-            raise FactsError(f"the PyPI JSON of {package} lists a version that is not readable")
+            raise FactsError(f"the {label} JSON of {package} lists a version that is not readable")
         for raw in entries:
-            file = _pypi_file(version, raw)
+            file = _pypi_file(version, raw, index)
             if file.name in files:
-                raise FactsError(f"{file.name} is listed twice in the PyPI JSON of {package}")
+                raise FactsError(f"{file.name} is listed twice in the {label} JSON of {package}")
             files[file.name] = file
     return list(files.values())
 
 
-def read_index(path: str, package: str) -> list[PypiFile]:
+def read_index(path: str, package: str, index: str = "pypi") -> list[PypiFile]:
     """The files of ``package`` in the PyPI JSON saved at ``path`` (see ``parse_release_json``)."""
+    label = index_row(index).label
     try:
         text = Path(path).read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as exc:
-        raise FactsError(f"cannot read the PyPI JSON {path}: {getattr(exc, 'strerror', None) or exc}") from exc
-    return parse_release_json(text, package)
+        raise FactsError(f"cannot read the {label} JSON {path}: {getattr(exc, 'strerror', None) or exc}") from exc
+    return parse_release_json(text, package, index)
 
 
-def publish_runs(repo: str, sha: str, tag: str) -> list[dict[str, Any]]:
-    """The ``publish.yml`` runs dispatched on ``tag`` at the commit ``sha``, and no other run.
+def publish_runs(repo: str, sha: str, tag: str, index: str = "pypi") -> list[dict[str, Any]]:
+    """The runs of the upload workflow of ``index`` (``publish.yml``) dispatched on ``tag`` at the commit ``sha``, and no other run.
 
     The workflow runs only when somebody dispatches it, on the tag itself (GitHub names the ``headBranch`` of a
     run on a tag after the tag), so GitHub is asked for the ``workflow_dispatch`` event on the tag's ref and every
@@ -442,7 +480,7 @@ def publish_runs(repo: str, sha: str, tag: str) -> list[dict[str, Any]]:
             "-R",
             repo,
             "--workflow",
-            PUBLISH_WORKFLOW,
+            index_row(index).workflow,
             "--event",
             "workflow_dispatch",
             "--branch",

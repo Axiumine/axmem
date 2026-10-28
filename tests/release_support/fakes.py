@@ -54,6 +54,9 @@ FAKE_BIN = Path(__file__).resolve().parent / "fake_bin"
 #: the two hosts of PyPI: the JSON API of the project and the files behind its links
 PYPI_HOST = "pypi.org"
 FILES_HOST = "files.pythonhosted.org"
+#: and the two of TestPyPI, the scratch index of the rehearsal
+TESTPYPI_HOST = "test.pypi.org"
+TESTPYPI_FILES_HOST = "test-files.pythonhosted.org"
 
 FAKE_GH = r"""#!/usr/bin/env python3
 import base64
@@ -264,6 +267,7 @@ def write_scenario(state: Path, scenario: dict[str, Any]) -> None:
     (state / "gh.json").write_text(json.dumps(scenario), encoding="utf-8")
     (state / "gh-counters.json").unlink(missing_ok=True)
     (state / "publish-runs.json").unlink(missing_ok=True)
+    (state / "testpypi-runs.json").unlink(missing_ok=True)
     shutil.rmtree(state / "counters", ignore_errors=True)
 
 

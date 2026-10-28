@@ -25,7 +25,10 @@ signing run, then require the bundles), ``find-release`` (the release commit a r
 PyPI JSON of the project holds, saved by the script: 404 is saved as an empty file and means no version),
 ``pypi-missing`` (what ``publish.yml`` runs before the upload: it takes out of ``dist`` the files PyPI holds already) and the
 ``publish-*`` commands of ``scripts.release.publish`` (the repository settings the publication relies on, and the
-``publish.yml`` run). ``pypi-state`` exits 0 when PyPI holds exactly the manifest's files, 5 when it holds some
+``publish.yml`` run). The rehearsal on TestPyPI (``publish-testpypi.yml``, ``scripts/release-testpypi.sh``) has its own
+commands, which are the ones above with the key ``testpypi`` of ``facts.INDEXES`` and nothing else changed: ``testpypi-state``,
+``testpypi-urls`` and ``testpypi-missing`` here, ``testpypi-ready`` and ``testpypi-run`` in ``scripts.release.testpypi``.
+``pypi-state`` exits 0 when PyPI holds exactly the manifest's files, 5 when it holds some
 of them with the manifest's digests, 4 when it holds none and 1 when it holds anything else (the version is
 spent). ``find-release`` and ``pypi-last`` exit 4 for none. Exit 3 is a deadline.
 
@@ -44,6 +47,11 @@ Stdlib only, on purpose: it runs before the project is importable. Run from the 
     guard publish-state    --repo R --sha S --tag T --lag N
     guard publish-dispatch --repo R --sha S --tag T [--timeout 120] [--interval 5]
     guard publish-wait     --repo R --sha S --tag T --run ID --deadline E [--interval 30]
+    guard testpypi-state   --json F --package P --version V [--manifest M]
+    guard testpypi-urls    --json F --package P --version V
+    guard testpypi-missing --json F --package P --version V --dist D
+    guard testpypi-ready   --repo R
+    guard testpypi-run     --repo R --sha S --tag T --deadline E [--interval 30] [--timeout 120]
 """
 
 from __future__ import annotations
@@ -54,6 +62,7 @@ import json
 import stat
 import sys
 import time
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -64,6 +73,7 @@ from .facts import (
     FactsError,
     Target,
     by_version,
+    index_row,
     origin_tags,
     poll,
     read_index,
@@ -75,6 +85,7 @@ from .facts import (
     version_key,
 )
 from .publish import register as register_publish
+from .testpypi import register as register_testpypi
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MANIFEST_NAME = "release-digests.json"
@@ -289,47 +300,50 @@ def cmd_find_release(args: argparse.Namespace) -> int:
     return 4
 
 
-def _index_files(args: argparse.Namespace) -> dict[str, Any]:
-    """The files of ``--version`` in the PyPI JSON ``--json``, by name."""
-    return dict(by_version(read_index(args.json, args.package)).get(args.version, {}))
+def _index_files(args: argparse.Namespace, index: str = "pypi") -> dict[str, Any]:
+    """The files of ``--version`` in the JSON ``--json`` of the index ``index`` (a key of ``facts.INDEXES``), by name."""
+    return dict(by_version(read_index(args.json, args.package, index)).get(args.version, {}))
 
 
-def _state_lines(expected: dict[str, str], files: dict[str, Any]) -> list[str]:
-    """One line per file of the manifest or of PyPI: the digest each holds, ``(yanked)`` marked."""
+def _state_lines(expected: dict[str, str], files: dict[str, Any], label: str = "PyPI") -> list[str]:
+    """One line per file of the manifest or of the index: the digest each holds, ``(yanked)`` marked."""
     lines = []
     for name in sorted(set(expected) | set(files)):
         file = files.get(name)
-        on_pypi = "absent" if file is None else f"{file.sha256}{' (yanked)' if file.yanked else ''}"
-        lines.append(f"  {name}: manifest {expected.get(name, 'absent')}, PyPI {on_pypi}")
+        held = "absent" if file is None else f"{file.sha256}{' (yanked)' if file.yanked else ''}"
+        lines.append(f"  {name}: manifest {expected.get(name, 'absent')}, {label} {held}")
     return lines
 
 
-def cmd_pypi_state(args: argparse.Namespace) -> int:
+def cmd_pypi_state(args: argparse.Namespace, index: str = "pypi") -> int:
     """Exit 4: no file of the version on PyPI. 0: exactly the manifest's files. 5: some of them, all with its digests.
 
     Exit 1 is everything else: a digest that differs, a file the manifest does not list, or the version on PyPI
     with no ``--manifest`` to compare it with. Yanked files count as present, and are shown, not a state of their own.
+    ``testpypi-state`` is this function with ``index="testpypi"``: the same verdicts, the words ``TestPyPI`` and the file
+    host of TestPyPI, and no other change.
     """
-    files = _index_files(args)
+    label = index_row(index).label
+    files = _index_files(args, index)
     if not files:
-        print(f"{args.version} is not on PyPI")
+        print(f"{args.version} is not on {label}")
         return 4
     if not args.manifest:
-        print(f"{args.version} is on PyPI: {', '.join(sorted(files))}")
+        print(f"{args.version} is on {label}: {', '.join(sorted(files))}")
         return 1
     expected = {name: str(sha).lower() for name, sha in _manifest_digests(Path(args.manifest)).items()}
-    print("\n".join(_state_lines(expected, files)))
+    print("\n".join(_state_lines(expected, files, label)))
     if any(name not in expected or file.sha256 != expected[name] for name, file in files.items()):
-        print(f"{args.version} is on PyPI, and its files are not the manifest's")
+        print(f"{args.version} is on {label}, and its files are not the manifest's")
         return 1
     if len(files) < len(expected):
-        print(f"{args.version} is on PyPI with {len(files)} of the manifest's {len(expected)} files")
+        print(f"{args.version} is on {label} with {len(files)} of the manifest's {len(expected)} files")
         return 5
-    print(f"{args.version} is on PyPI with the manifest's files and digests")
+    print(f"{args.version} is on {label} with the manifest's files and digests")
     return 0
 
 
-def cmd_pypi_missing(args: argparse.Namespace) -> int:
+def cmd_pypi_missing(args: argparse.Namespace, index: str = "pypi") -> int:
     """Take out of ``--dist`` each file PyPI holds for the version with the same sha256; exit 1 when one differs.
 
     PyPI refuses a file name it has used for good, so after a half upload the file that is already there must not be
@@ -337,7 +351,8 @@ def cmd_pypi_missing(args: argparse.Namespace) -> int:
     other bytes is not a half upload, it is a spent version, and the run ends. Only the entries of ``dist`` are
     looked at, by their own names; a file PyPI holds that ``dist`` does not carry is not this command's to judge.
     """
-    held = _index_files(args)
+    label = index_row(index).label
+    held = _index_files(args, index)
     refused = []
     for entry in sorted(Path(args.dist).iterdir(), key=lambda entry: entry.name):
         file = held.get(entry.name)
@@ -347,9 +362,9 @@ def cmd_pypi_missing(args: argparse.Namespace) -> int:
             found = hashlib.file_digest(handle, "sha256").hexdigest()
         if found == file.sha256:
             entry.unlink()
-            print(f"{entry.name}: PyPI holds it with the same sha256, not uploaded again")
+            print(f"{entry.name}: {label} holds it with the same sha256, not uploaded again")
         else:
-            refused.append(f"{entry.name}: PyPI holds sha256 {file.sha256}, this run has {found}")
+            refused.append(f"{entry.name}: {label} holds sha256 {file.sha256}, this run has {found}")
     for problem in refused:
         print(f"ERROR: {problem}", file=sys.stderr)
     return 1 if refused else 0
@@ -362,9 +377,9 @@ def cmd_artefacts(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_pypi_urls(args: argparse.Namespace) -> int:
-    """Print ``name<TAB>url`` of each file of the version; ``read_index`` has refused every URL off PyPI's file host."""
-    for name, file in sorted(_index_files(args).items()):
+def cmd_pypi_urls(args: argparse.Namespace, index: str = "pypi") -> int:
+    """Print ``name<TAB>url`` of each file of the version; ``read_index`` has refused every URL off the index's file host."""
+    for name, file in sorted(_index_files(args, index).items()):
         print(f"{name}\t{file.url}")
     return 0
 
@@ -404,7 +419,13 @@ def _parser() -> argparse.ArgumentParser:
     command("pypi-urls", cmd_pypi_urls, "json", "package", "version")
     command("pypi-last", cmd_pypi_last, "json", "package")
     command("pypi-missing", cmd_pypi_missing, "json", "package", "version", "dist")
+    # the same three functions for the rehearsal, with the closed key of the other index
+    tp_state = command("testpypi-state", partial(cmd_pypi_state, index="testpypi"), "json", "package", "version")
+    tp_state.add_argument("--manifest")
+    command("testpypi-urls", partial(cmd_pypi_urls, index="testpypi"), "json", "package", "version")
+    command("testpypi-missing", partial(cmd_pypi_missing, index="testpypi"), "json", "package", "version", "dist")
     register_publish(command, seconds)
+    register_testpypi(command, seconds)
     for child in sub.choices.values():
         child.add_argument("--root", default=".")
         child.add_argument("--remote", default="origin")

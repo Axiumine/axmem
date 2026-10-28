@@ -24,16 +24,18 @@ from pathlib import Path
 from typing import Any
 
 from .facts import (
+    INDEXES,
     PUBLISH_WORKFLOW,
     DeadlineError,
     FactsError,
     gh_json,
+    index_row,
     poll,
     publish_runs,
     run_text,
 )
 
-ENVIRONMENT = "pypi"
+ENVIRONMENT = INDEXES["pypi"].environment
 TAG_RULE = "v*.*.*"
 # the pattern of the release tags; a ruleset that includes it (or every ref) protects them
 TAG_REF = "refs/tags/v*"
@@ -84,50 +86,55 @@ def _repo_problems(repo: str) -> list[str]:
     return problems
 
 
-def _workflow_problems(repo: str) -> list[str]:
-    """Why ``publish.yml`` is not registered and active on the default branch."""
-    state = _read(f"repos/{repo}/actions/workflows/{PUBLISH_WORKFLOW}").get("state")
+def _workflow_problems(repo: str, index: str = "pypi") -> list[str]:
+    """Why the upload workflow of ``index`` (``publish.yml``) is not registered and active on the default branch."""
+    workflow = index_row(index).workflow
+    state = _read(f"repos/{repo}/actions/workflows/{workflow}").get("state")
     if state == "active":
         return []
-    return [f"{PUBLISH_WORKFLOW} is {state or 'not registered'}, not active: merge it to the default branch first"]
+    return [f"{workflow} is {state or 'not registered'}, not active: merge it to the default branch first"]
 
 
-def _reviewer_problems(env: dict[str, Any]) -> list[str]:
+def _reviewer_problems(env: dict[str, Any], index: str = "pypi") -> list[str]:
     """Why the environment ``pypi`` has no reviewer to approve a deployment, or lets administrators bypass them."""
+    environment = index_row(index).environment
     problems = []
     if env.get("can_admins_bypass") is not False:
-        problems.append(f"environment {ENVIRONMENT} lets administrators bypass its rules")
+        problems.append(f"environment {environment} lets administrators bypass its rules")
     rules = [
         rule
         for rule in env.get("protection_rules") or []
         if rule.get("type") == "required_reviewers" and rule.get("reviewers")
     ]
     if not rules:
-        problems.append(f"environment {ENVIRONMENT} has no required reviewer")
+        problems.append(f"environment {environment} has no required reviewer")
     return problems
 
 
-def _selected_problems(env: dict[str, Any]) -> list[str]:
+def _selected_problems(env: dict[str, Any], index: str = "pypi") -> list[str]:
     """Why the environment is open to every branch, or to the protected ones only: the tag rule would not apply."""
     if env.get("deployment_branch_policy") == SELECTED_ONLY:
         return []
-    return [f"environment {ENVIRONMENT} must deploy from selected branches and tags only (Deployment branches and tags: Selected)"]
+    return [f"environment {index_row(index).environment} must deploy from selected branches and tags only (Deployment branches and tags: Selected)"]
 
 
-def _policy_problems(policies: list[dict[str, Any]]) -> list[str]:
+def _policy_problems(policies: list[dict[str, Any]], index: str = "pypi") -> list[str]:
     """Why the deployment rules of the environment are not exactly the one tag rule ``v*.*.*``."""
     if [(p.get("name"), p.get("type")) for p in policies] == [(TAG_RULE, "tag")]:
         return []
     has = ", ".join(f"{p.get('name')} of type {p.get('type')}" for p in policies) or "none"
-    return [f"environment {ENVIRONMENT} must have exactly one deployment rule, the tag {TAG_RULE} (it has {has})"]
+    return [f"environment {index_row(index).environment} must have exactly one deployment rule, the tag {TAG_RULE} (it has {has})"]
 
 
-def _environment_problems(repo: str) -> list[str]:
-    """Why the environment ``pypi`` does not gate the upload: reviewers, no admin bypass, tags ``v*.*.*`` only."""
-    base = f"repos/{repo}/environments/{ENVIRONMENT}"
+def _environment_problems(repo: str, index: str = "pypi") -> list[str]:
+    """Why the environment of ``index`` (``pypi``) does not gate the upload: reviewers, no admin bypass, tags ``v*.*.*`` only.
+
+    The same checks for every index, from the same functions: a second environment is held to the rules of the first.
+    """
+    base = f"repos/{repo}/environments/{index_row(index).environment}"
     policies = _read(f"{base}/deployment-branch-policies").get("branch_policies") or []
     env = _read(base)
-    return [*_reviewer_problems(env), *_selected_problems(env), *_policy_problems(policies)]
+    return [*_reviewer_problems(env, index), *_selected_problems(env, index), *_policy_problems(policies, index)]
 
 
 def _covers(ref_name: dict[str, Any]) -> bool:
@@ -222,12 +229,17 @@ def _generator_problems(root: str) -> list[str]:
     ]
 
 
-def cmd_publish_ready(args: argparse.Namespace) -> int:
-    """Exit 0 when the repository is set up for the publication, 1 listing every reason when it is not."""
+def cmd_publish_ready(args: argparse.Namespace, index: str = "pypi") -> int:
+    """Exit 0 when the repository is set up for the publication, 1 listing every reason when it is not.
+
+    ``index`` is a key of ``INDEXES``: ``testpypi-ready`` (``scripts.release.testpypi``) is this very check, every step of
+    it, for the workflow and the environment of the rehearsal, so the second environment is never held to less.
+    """
+    row = index_row(index)
     problems = [
         *_repo_problems(args.repo),
-        *_workflow_problems(args.repo),
-        *_environment_problems(args.repo),
+        *_workflow_problems(args.repo, index),
+        *_environment_problems(args.repo, index),
         *_ruleset_problems(args.repo),
         *_generator_problems(args.root),
     ]
@@ -238,7 +250,7 @@ def cmd_publish_ready(args: argparse.Namespace) -> int:
     if problems:
         return 1
     print(
-        f"{args.repo} is ready to publish: {PUBLISH_WORKFLOW}, environment {ENVIRONMENT}, the tag ruleset and the SLSA generator tag hold",
+        f"{args.repo} is ready to publish: {row.workflow}, environment {row.environment}, the tag ruleset and the SLSA generator tag hold",
     )
     return 0
 

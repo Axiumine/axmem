@@ -71,6 +71,16 @@ without the mark, with the commit that landed it, in the commit that lands it.
   backend (`hatchling`, `hatch-vcs`) is pinned to exact versions so that the local build and the rebuild of `release.yml`
   produce the same bytes. `check-package.sh` runs the package gate and then `wheel-check` (`twine check`,
   `check-wheel-contents` and a clean-environment smoke test), the code of the `wheel` gate. See [docs/release.md](docs/release.md).
+- Release rehearsal on TestPyPI, guard half: `scripts/release/guard.py` gains `testpypi-ready`, `testpypi-state`,
+  `testpypi-urls`, `testpypi-missing` and `testpypi-run`. They are the commands of the PyPI release with the index
+  `testpypi` selected from a closed table of two rows in `scripts/release/facts.py` (PyPI: `pypi.org`, `publish.yml`,
+  environment `pypi`; TestPyPI: `test.pypi.org`, `test-files.pythonhosted.org`, `publish-testpypi.yml`, environment
+  `testpypi`), not copies of them: `testpypi-ready` runs every check of `publish-ready` (repository, environment, tag
+  ruleset, SLSA generator tag) for the environment `testpypi`, and the state, urls and missing commands read the public JSON
+  of test.pypi.org and refuse a file link that is not on its file host. The index is the name of the command, never an option,
+  an input or an environment variable, and the PyPI commands and their messages are unchanged. `testpypi-run` adopts a live
+  run of `publish-testpypi.yml` on the tag or dispatches one, and follows it (a cancelled run is a failure; a name TestPyPI
+  refused as used says that the version is spent on TestPyPI and PyPI is unaffected). The rehearsal is advisory, not a gate.
 - `commit-msg` hook (`95c1e5f1`): `[🤖 ]<type>(<scope>): <subject>`, subject up to 150 characters, body up to 10
   lines, AI Co-Authored-By trailers and "Generated with" lines rejected, `SKIP=commit-msg` to bypass, with tests.
 - `denylist-check` hook script: `pre-commit`, `commit-msg` and `pre-push` refuse staged changes, messages and

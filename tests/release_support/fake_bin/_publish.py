@@ -22,8 +22,16 @@ takes the next one), ``publish_hidden_lists`` (the number of ``run list`` calls 
 starts with it), ``publish_rerun`` (the script of a run after ``gh run rerun ID``, default ``["success"]``), ``run_log`` (the
 text of ``gh run view ID --log-failed``, a string or a list of lines).
 
+The rehearsal's workflow, ``publish-testpypi.yml``, is a second flow of the same code with a store of its own
+(``testpypi-runs.json``, run ids from 2000) and its own keys, each the key above with the prefix ``testpypi_`` in place of
+``publish_`` (``testpypi_runs``, ``testpypi_existing``, ``testpypi_effect``, ``testpypi_hidden_lists``, ``testpypi_row``,
+``testpypi_successor``, ``testpypi_rerun``, ``testpypi_run_log``): a successful run puts the release's files on the fake
+TestPyPI (``state/testpypi``). Its ``gh_fail_on`` kinds are ``testpypi-runs``, ``testpypi-dispatch``, ``testpypi-view``,
+``testpypi-log`` and ``testpypi-rerun``. A run of one workflow is never listed for the other.
+
 ``gh api`` answers the settings from ``publish_ready``, a dict with the parts ``repo``, ``workflow``, ``environment``,
-``policies``, ``rulesets`` (the list), ``ruleset_details`` (id as text to the body) and ``main_rules``. A part that is given
+``policies``, ``rulesets`` (the list), ``ruleset_details`` (id as text to the body) and ``main_rules``; the environment of
+the rehearsal has the parts ``testpypi_workflow``, ``testpypi_environment`` and ``testpypi_policies``, with the same defaults. A part that is given
 replaces the default (everything is ready); ``publish_ready_patch`` merges its dicts into the default part instead (one
 reason at a time: ``{"environment": {"can_admins_bypass": true}}``). A part that is ``{"__http": 404}`` answers the error of
 the endpoint (exit 1, ``gh: ... (HTTP 404)``). The tag of the SLSA generator that ``release.yml`` uses is read from the same
@@ -43,17 +51,49 @@ import sys
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 import _state
 
 WORKFLOW = "publish.yml"
+TESTPYPI_WORKFLOW = "publish-testpypi.yml"
 #: the git data of the SLSA generator's repository: the tag the release workflow uses is read here, not in the released repository
 SLSA_GIT = "repos/slsa-framework/slsa-github-generator/git/"
-RUNS = _state.STATE / "publish-runs.json"
 DONE = ("success", "failure", "cancelled")
 DEFAULT_SCRIPT = ["queued", "in_progress", "success"]
 Origin = Callable[..., "subprocess.CompletedProcess[str]"]
+
+
+class Flow(NamedTuple):
+    """One upload workflow of the fake: its runs, the keys of its scenario, and the index its successful runs fill."""
+
+    workflow: str
+    title: str  # the name GitHub shows for its runs
+    store: Path  # the runs, as json
+    prefix: str  # the scenario keys are ``<prefix>runs``, ``<prefix>existing``, ...
+    log_key: str  # the scenario key of the text of ``run view --log-failed``
+    kind: str  # the kinds of ``gh_fail_on`` are ``<kind>-runs``, ``<kind>-dispatch``, ...
+    first_id: int
+    index_dir: Path  # the fake index that a successful run puts the files on
+    published: Path  # the names of the last publication, for the fake curl's lagging CDN
+
+
+FLOWS = {
+    WORKFLOW: Flow(
+        WORKFLOW, "Publish to PyPI", _state.STATE / "publish-runs.json", "publish_", "run_log", "publish", 1000,
+        _state.PYPI_DIR, _state.STATE / "published",
+    ),
+    TESTPYPI_WORKFLOW: Flow(
+        TESTPYPI_WORKFLOW, "Publish to TestPyPI", _state.STATE / "testpypi-runs.json", "testpypi_", "testpypi_run_log",
+        "testpypi", 2000, _state.TESTPYPI_DIR, _state.STATE / "testpypi-published",
+    ),
+}
+PYPI_FLOW = FLOWS[WORKFLOW]
+
+
+def _key(flow: Flow, name: str) -> str:
+    """The scenario key of ``flow`` for ``name`` (``runs``, ``existing``, ``effect``, ``hidden_lists``, ``row``, ...)."""
+    return f"{flow.prefix}{name}"
 
 
 def _stamp(moment: datetime) -> str:
@@ -73,9 +113,9 @@ def _fail(message: str, code: int = 1) -> None:
     sys.exit(code)
 
 
-def _scripts(conf: dict[str, Any]) -> list[list[str]]:
+def _scripts(conf: dict[str, Any], flow: Flow = PYPI_FLOW) -> list[list[str]]:
     """``publish_runs`` as one script per dispatch."""
-    planted = conf.get("publish_runs", DEFAULT_SCRIPT)
+    planted = conf.get(_key(flow, "runs"), DEFAULT_SCRIPT)
     return planted if planted and isinstance(planted[0], list) else [planted]
 
 
@@ -103,14 +143,14 @@ def _run(script: list[str], tag: str, sha: str, state: dict[str, Any], age_s: fl
     return run
 
 
-def _load(tag: str | None = None, sha: str | None = None) -> dict[str, Any]:
+def _load(tag: str | None = None, sha: str | None = None, flow: Flow = PYPI_FLOW) -> dict[str, Any]:
     """The runs; the first call that knows a tag and a commit also makes the ``publish_existing`` runs of the scenario."""
-    if RUNS.exists():
-        loaded: dict[str, Any] = json.loads(RUNS.read_text(encoding="utf-8"))
+    if flow.store.exists():
+        loaded: dict[str, Any] = json.loads(flow.store.read_text(encoding="utf-8"))
         return loaded
-    state: dict[str, Any] = {"next_id": 1000, "runs": [], "lists": 0, "dispatches": 0}
+    state: dict[str, Any] = {"flow": flow.workflow, "next_id": flow.first_id, "runs": [], "lists": 0, "dispatches": 0}
     if tag and sha:
-        for row in _state.config().get("publish_existing", []):
+        for row in _state.config().get(_key(flow, "existing"), []):
             script = list(row.get("script") or [row.get("state", "success")])
             _run(script, tag, sha, state, row.get("age_s", 0), effect=False, effected=True, row=row.get("row", {}))
     _save(state)
@@ -118,23 +158,24 @@ def _load(tag: str | None = None, sha: str | None = None) -> dict[str, Any]:
 
 
 def _save(state: dict[str, Any]) -> None:
-    RUNS.write_text(json.dumps(state), encoding="utf-8")
+    FLOWS[state["flow"]].store.write_text(json.dumps(state), encoding="utf-8")
 
 
 def _current(run: dict[str, Any]) -> str:
     return str(run["script"][min(run["seen"], len(run["script"]) - 1)])
 
 
-def _apply_effect(run: dict[str, Any], artefacts: Callable[[str], dict[str, bytes]]) -> None:
-    """A run that succeeded put the release's files on the fake PyPI, as ``publish_effect`` says."""
-    mode = _state.config().get("publish_effect", "all")
+def _apply_effect(state: dict[str, Any], run: dict[str, Any], artefacts: Callable[[str], dict[str, bytes]]) -> None:
+    """A run that succeeded put the release's files on the fake index of its workflow, as ``publish_effect`` says."""
+    flow = FLOWS[state["flow"]]
+    mode = _state.config().get(_key(flow, "effect"), "all")
     files = artefacts(run["tag"]) if mode != "none" else {}
     names = sorted(files)[:1] if mode == "partial" else sorted(files)
-    _state.PYPI_DIR.mkdir(exist_ok=True)
+    flow.index_dir.mkdir(exist_ok=True)
     for name in names:
-        (_state.PYPI_DIR / name).write_bytes(files[name] + (b"tampered" if mode == "wrong_bytes" else b""))
+        (flow.index_dir / name).write_bytes(files[name] + (b"tampered" if mode == "wrong_bytes" else b""))
     if names:
-        (_state.STATE / "published").write_text(json.dumps(names), encoding="utf-8")
+        flow.published.write_text(json.dumps(names), encoding="utf-8")
 
 
 def _settle(state: dict[str, Any], run: dict[str, Any], artefacts: Callable[[str], dict[str, bytes]]) -> str:
@@ -144,8 +185,8 @@ def _settle(state: dict[str, Any], run: dict[str, Any], artefacts: Callable[[str
         run["updated"] = _stamp(datetime.now(UTC))
     if current == "success" and run["effect"] and not run["effected"]:
         run["effected"] = True
-        _apply_effect(run, artefacts)
-    successor = _state.config().get("publish_successor")
+        _apply_effect(state, run, artefacts)
+    successor = _state.config().get(_key(FLOWS[state["flow"]], "successor"))
     if current == "cancelled" and successor and not run.get("replaced"):
         run["replaced"] = True
         _run(list(successor), run["tag"], run["sha"], state)
@@ -154,13 +195,14 @@ def _settle(state: dict[str, Any], run: dict[str, Any], artefacts: Callable[[str
 
 def _report(state: dict[str, Any], run: dict[str, Any], artefacts: Callable[[str], dict[str, bytes]]) -> dict[str, Any]:
     """The row GitHub shows for ``run`` now; the first time it shows a success the files appear on the fake PyPI."""
+    flow = FLOWS[state["flow"]]
     current = _settle(state, run, artefacts)
     done = current in DONE
     now = _stamp(datetime.now(UTC))
     row = {
         "databaseId": run["id"],
-        "workflowName": "Publish to PyPI",
-        "name": "Publish to PyPI",
+        "workflowName": flow.title,
+        "name": flow.title,
         "status": "completed" if done else current,
         "conclusion": current if done else "",
         "event": "workflow_dispatch",
@@ -168,14 +210,14 @@ def _report(state: dict[str, Any], run: dict[str, Any], artefacts: Callable[[str
         "headBranch": run["tag"],
         "createdAt": run["created"],
         "updatedAt": run["updated"] if done else now,
-        "url": f"https://github.example/run/publish-{run['id']}",
+        "url": f"https://github.example/run/{flow.kind}-{run['id']}",
     }
-    return {**row, **_state.config().get("publish_row", {}), **run.get("row", {})}
+    return {**row, **_state.config().get(_key(flow, "row"), {}), **run.get("row", {})}
 
 
 def _list_runs(args: list[str], artefacts: Callable[[str], dict[str, bytes]]) -> None:
     """``gh run list --workflow publish.yml``: the runs the filters (``--branch``, ``--commit``, ``--event``) let through."""
-    state = _load(_flag(args, "--branch"), _flag(args, "--commit"))
+    state = _load(_flag(args, "--branch"), _flag(args, "--commit"), FLOWS[_flag(args, "--workflow")])
     shown = []
     for run in list(state["runs"]):
         if run["hide"] > 0:
@@ -192,20 +234,28 @@ def _list_runs(args: list[str], artefacts: Callable[[str], dict[str, bytes]]) ->
     print(json.dumps([{key: row[key] for key in fields if key in row} for row in shown]))
 
 
+def _find(run_id: str) -> tuple[dict[str, Any], dict[str, Any]]:
+    """The state and the run of the id ``run_id``, whichever workflow it belongs to (the ids of the two never meet)."""
+    for flow in FLOWS.values():
+        state = _load(flow=flow) if flow.store.exists() else {"runs": []}
+        found = [run for run in state["runs"] if str(run["id"]) == run_id]
+        if found:
+            return state, found[0]
+    _fail(f"HTTP 404: Not Found (https://api.github.com/repos/x/actions/runs/{run_id})")
+    raise AssertionError("unreachable: _fail exits")
+
+
 def _view_run(args: list[str], artefacts: Callable[[str], dict[str, bytes]], fail_kind: Callable[[str], None]) -> None:
     """``gh run view ID --json ...`` (one look at the run: the next state of its script) or ``--log-failed``."""
-    state = _load()
-    found = [run for run in state["runs"] if str(run["id"]) == args[2]]
-    if not found:
-        _fail(f"HTTP 404: Not Found (https://api.github.com/repos/x/actions/runs/{args[2]})")
-    run = found[0]
+    state, run = _find(args[2])
+    flow = FLOWS[state["flow"]]
     if "--log-failed" in args:
-        fail_kind("publish-log")
+        fail_kind(f"{flow.kind}-log")
         _state.log("gh", f"run-log {run['id']}")
-        text = _state.config().get("run_log", "")
+        text = _state.config().get(flow.log_key, "")
         print("\n".join(text) if isinstance(text, list) else text)
         return
-    fail_kind("publish-view")
+    fail_kind(f"{flow.kind}-view")
     row = _report(state, run, artefacts)
     run["seen"] += 1
     _save(state)
@@ -220,7 +270,7 @@ def _refusal(args: list[str], origin: Origin) -> str:
     tag = next((item.removeprefix("tag=") for item in inputs if item.startswith("tag=")), "")
     known = origin("rev-parse", "-q", "--verify", f"refs/tags/{tag}").returncode == 0
     checks = [
-        (args[2:3] != [WORKFLOW], f"could not find any workflows named {args[2:3]}"),
+        (args[2:3] not in ([WORKFLOW], [TESTPYPI_WORKFLOW]), f"could not find any workflows named {args[2:3]}"),
         (not tag, "required input 'tag' not provided"),
         (ref != tag, f"--ref {ref!r} is not the tag {tag!r}: dispatch on the tag itself"),
         (len(inputs) != 1, f"unexpected inputs {inputs}"),
@@ -230,35 +280,37 @@ def _refusal(args: list[str], origin: Origin) -> str:
 
 
 def _dispatch(args: list[str], origin: Origin, fail_kind: Callable[[str], None]) -> None:
-    """``gh workflow run publish.yml --ref T -f tag=T``: refused unless it is exactly that."""
-    fail_kind("publish-dispatch")
+    """``gh workflow run publish.yml --ref T -f tag=T`` (or the rehearsal's workflow): refused unless it is exactly that."""
+    flow = FLOWS.get(args[2] if len(args) > 2 else "", PYPI_FLOW)
+    fail_kind(f"{flow.kind}-dispatch")
     reason = _refusal(args, origin)
     if reason:
         _state.log("gh", f"workflow-run-refused {reason}")
         _fail(f"fake gh: {reason}")
     tag = _flag(args, "--ref")
     sha = origin("rev-parse", f"refs/tags/{tag}^{{commit}}").stdout.strip()
-    _state.log("gh", f"workflow-run {WORKFLOW} tag={tag}")
-    state = _load(tag, sha)
-    scripts = _scripts(_state.config())
+    _state.log("gh", f"workflow-run {flow.workflow} tag={tag}")
+    state = _load(tag, sha, flow)
+    scripts = _scripts(_state.config(), flow)
     run = _run(list(scripts[min(state["dispatches"], len(scripts) - 1)]), tag, sha, state)
-    run["hide"] = int(_state.config().get("publish_hidden_lists", 0))
+    run["hide"] = int(_state.config().get(_key(flow, "hidden_lists"), 0))
     state["dispatches"] += 1
     _save(state)
-    print(f"Created workflow_dispatch event for {WORKFLOW} at {tag}")
+    print(f"Created workflow_dispatch event for {flow.workflow} at {tag}")
 
 
 def _rerun(args: list[str], fail_kind: Callable[[str], None]) -> None:
     """``gh run rerun ID``: a publish run is played again from ``publish_rerun``; any other id is the signing run's."""
     fail_kind("publish-rerun")
     _state.log("gh", f"run-rerun {args[2]}")
-    state = _load()
-    for run in state["runs"]:
-        if str(run["id"]) == args[2]:
-            script = list(_state.config().get("publish_rerun", ["success"]))
-            run.update({"script": script, "seen": 0, "updated": None, "effect": True, "effected": False})
-            _save(state)
-            return
+    for flow in FLOWS.values():
+        state = _load(flow=flow) if flow.store.exists() else {"runs": []}
+        for run in state["runs"]:
+            if str(run["id"]) == args[2]:
+                script = list(_state.config().get(_key(flow, "rerun"), ["success"]))
+                run.update({"script": script, "seen": 0, "updated": None, "effect": True, "effected": False})
+                _save(state)
+                return
     (_state.STATE / "rerun").write_text(args[2], encoding="utf-8")
 
 
@@ -279,6 +331,9 @@ def _ready(repo: str) -> dict[str, Any]:
     return {
         "repo": {"full_name": repo, "private": False, "permissions": {"admin": True, "push": True, "pull": True}},
         "workflow": {"id": 1, "name": "Publish to PyPI", "path": ".github/workflows/publish.yml", "state": "active"},
+        "testpypi_workflow": {
+            "id": 2, "name": "Publish to TestPyPI", "path": ".github/workflows/publish-testpypi.yml", "state": "active",
+        },
         "environment": {
             "name": "pypi",
             "can_admins_bypass": False,
@@ -288,7 +343,17 @@ def _ready(repo: str) -> dict[str, Any]:
             ],
             "deployment_branch_policy": {"protected_branches": False, "custom_branch_policies": True},
         },
+        "testpypi_environment": {
+            "name": "testpypi",
+            "can_admins_bypass": False,
+            "protection_rules": [
+                {"id": 2, "type": "required_reviewers", "prevent_self_review": False,
+                 "reviewers": [{"type": "User", "reviewer": {"login": "maintainer", "id": 1}}]},
+            ],
+            "deployment_branch_policy": {"protected_branches": False, "custom_branch_policies": True},
+        },
         "policies": {"total_count": 1, "branch_policies": [{"id": 1, "name": "v*.*.*", "type": "tag"}]},
+        "testpypi_policies": {"total_count": 1, "branch_policies": [{"id": 2, "name": "v*.*.*", "type": "tag"}]},
         "rulesets": [{"id": 7, "name": "release tags", "target": "tag", "enforcement": "active"}],
         "ruleset_details": {"7": ruleset},
         "main_rules": [{"type": kind} for kind in ("non_fast_forward", "deletion", "required_status_checks")],
@@ -315,8 +380,11 @@ def _part(repo: str, name: str) -> Any:
 ENDPOINTS = {
     "": "repo",
     "actions/workflows/publish.yml": "workflow",
+    "actions/workflows/publish-testpypi.yml": "testpypi_workflow",
     "environments/pypi": "environment",
     "environments/pypi/deployment-branch-policies": "policies",
+    "environments/testpypi": "testpypi_environment",
+    "environments/testpypi/deployment-branch-policies": "testpypi_policies",
     "rulesets": "rulesets",
     "rules/branches/main": "main_rules",
 }
@@ -383,7 +451,7 @@ def handle(
     artefacts: Callable[[str], dict[str, bytes]],
     repo: str | None = None,
 ) -> bool:
-    """Answer the call if it is about ``publish.yml``, a run of it, or the settings; False when it is not.
+    """Answer the call if it is about ``publish.yml`` or ``publish-testpypi.yml``, a run of one, or the settings; False when it is not.
 
     ``origin`` runs git in the remote's bare repository, ``fail_kind`` plays the ``gh_fail_on`` and ``gh_hooks`` of a
     kind of call, ``artefacts`` gives the files (name to bytes) of the release of a tag, and ``repo`` is the GitHub
@@ -393,7 +461,7 @@ def handle(
     if args[:1] == ["api"]:
         _api(args, repo, fail_kind)
         return True
-    if kind == ["run", "list"] and _flag(args, "--workflow") != WORKFLOW:
+    if kind == ["run", "list"] and _flag(args, "--workflow") not in FLOWS:
         return False
     if kind not in (["workflow", "run"], ["run", "list"], ["run", "view"], ["run", "rerun"]):
         return False
@@ -404,7 +472,7 @@ def handle(
     elif kind == ["run", "rerun"]:
         _rerun(args, fail_kind)
     elif kind == ["run", "list"]:
-        fail_kind("publish-runs")
+        fail_kind(f"{FLOWS[_flag(args, '--workflow')].kind}-runs")
         _list_runs(args, artefacts)
     else:
         _view_run(args, artefacts, fail_kind)
