@@ -151,6 +151,10 @@ without the mark, with the commit that landed it, in the commit that lands it.
 
 ### Changed
 
+- **Release:** `publish-ready`, the first check of `scripts/release-pypi.sh`, also stops a release whose SLSA generator tag was
+  moved. The generator can only be referenced by tag (its verifier needs one), so `release.yml` records the commit that
+  `v2.1.0` pointed to (`SLSA_GENERATOR_COMMIT`) and `publish-ready` compares it with what the tag points to on GitHub, through
+  the tag objects in between, and names both commits when they differ. A tag moved after the check is not seen.
 - **Quality gates:** `mutation` runs in every `pre-push`, like every other gate; the opt-in (`MUTATION=1`) is gone, and only
   `SKIP` and `ONLY` leave it out. The gate mutates the `app/` modules that the push adds to the upstream of the branch
   (`git rev-parse @{upstream}`, else `main` of the remote being pushed to, which the hook passes as `QUALITY_PUSH_REMOTE`, else

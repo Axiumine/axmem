@@ -14,6 +14,10 @@ from scripts.release import guard
 from tests.integration.release_guard_world import REPO, World
 
 RULES = ("creation", "update", "deletion", "non_fast_forward")
+GENERATOR = "slsa-framework/slsa-github-generator"
+GENERATOR_REF = f"repos/{GENERATOR}/git/ref/tags/v2.1.0"
+ELSEWHERE = "0123456789abcdef0123456789abcdef01234567"
+TAG_OBJECT = "89abcdef0123456789abcdef0123456789abcdef"
 
 
 @pytest.fixture
@@ -63,7 +67,7 @@ def test_a_repository_that_is_set_up_is_ready_and_reads_only(ready, world):
     code, out, err = ready()
 
     assert code == 0
-    assert out == f"{REPO} is ready to publish: publish.yml, environment pypi and the tag ruleset hold\n"
+    assert out == f"{REPO} is ready to publish: publish.yml, environment pypi, the tag ruleset and the SLSA generator tag hold\n"
     assert err == ""
     paths = [line.split()[-1] for line in world.events() if line.startswith("gh api ")]
     assert paths == [
@@ -73,6 +77,7 @@ def test_a_repository_that_is_set_up_is_ready_and_reads_only(ready, world):
         f"repos/{REPO}/environments/pypi",
         f"repos/{REPO}/rulesets",
         f"repos/{REPO}/rulesets/7",
+        GENERATOR_REF,
         f"repos/{REPO}/rules/branches/main",
     ]
 

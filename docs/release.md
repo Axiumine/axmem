@@ -55,6 +55,16 @@ of the repository:
 `python3 -m scripts.release.guard publish-ready --repo Axiumine/axmem` checks all of these settings, and the release script
 runs it every time before it does anything else.
 
+### The tag of the SLSA generator
+
+`release.yml` calls the SLSA generator by tag (`@v2.1.0`): its verifier needs a tag, so a commit pin is impossible, and a tag
+can be moved. The workflow therefore records the commit the tag pointed to when it was chosen (`SLSA_GENERATOR_COMMIT`, next
+to `SLSA_GENERATOR_VERSION`), and `publish-ready` reads what the tag points to on GitHub now, through the tag objects in
+between, and refuses the release when it is another commit, naming both. The check cannot see a tag moved between the
+check and the signing run, which starts minutes later. To move to another version, change the version, the tag in `uses:` and
+the commit in one commit (the commit is `git ls-remote https://github.com/slsa-framework/slsa-github-generator refs/tags/<tag>`;
+read the generator's release notes first); a test keeps the version and the tag in `uses:` together and requires the commit to be 40 hex digits.
+
 ## Once, before the first release
 
 * Make `Axiumine/axmem` public first. `publish-ready` refuses a private repository, the guard in CI reads `main` without

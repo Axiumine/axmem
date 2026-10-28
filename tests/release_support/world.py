@@ -34,6 +34,8 @@ from typing import Any
 REPO_ROOT = Path(__file__).resolve().parents[2]
 #: the fake ``gh``, ``curl``, ``uv`` and ``ssh`` (and the ``_state`` and ``_publish`` modules they share), copied into every world
 FAKES = Path(__file__).resolve().parent / "fake_bin"
+#: the release workflow, which every world holds a copy of: ``publish-ready`` reads the SLSA generator pin from it
+RELEASE_WORKFLOW = ".github/workflows/release.yml"
 #: the package the release builds, and the prefix of the names of its files
 PACKAGE = "axmem"
 #: the git remote the release pushes to and reads (``RELEASE_REMOTE`` of ``scripts/lib/project.sh``), its branch, and the
@@ -178,6 +180,7 @@ class World:
             ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "quality"),
         )
         self._write("scripts/check-package.sh", GATE_STUB, 0o755)
+        self._write(RELEASE_WORKFLOW, (REPO_ROOT / RELEASE_WORKFLOW).read_text(encoding="utf-8"))
         self._write("pyproject.toml", f'[project]\nname = "{PACKAGE}"\ndynamic = ["version"]\n')
         self._write(
             "CHANGELOG.md", f"# Changelog\n\n{UNRELEASED_HEADING}\n\n### Added\n\n- something\n",

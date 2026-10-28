@@ -217,6 +217,8 @@ def test_the_provenance_is_made_by_the_pinned_slsa_generator_and_lands_on_the_sa
         job["uses"],
     )
     assert job["uses"].endswith(f"@{pin}")  # a `uses:` cannot read `env`, so the test holds the two together
+    # the commit the tag pointed to when it was chosen: `publish-ready` stops a release whose tag was moved
+    assert re.fullmatch(r"[0-9a-f]{40}", _workflow()["env"]["SLSA_GENERATOR_COMMIT"])
     assert job["needs"] == "sign-artefacts"
     assert job["permissions"] == {"id-token": "write", "contents": "write", "actions": "read"}
     assert job["with"]["base64-subjects"] == "${{ needs.sign-artefacts.outputs.subjects-b64 }}"

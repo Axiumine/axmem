@@ -26,22 +26,30 @@ text of ``gh run view ID --log-failed``, a string or a list of lines).
 ``policies``, ``rulesets`` (the list), ``ruleset_details`` (id as text to the body) and ``main_rules``. A part that is given
 replaces the default (everything is ready); ``publish_ready_patch`` merges its dicts into the default part instead (one
 reason at a time: ``{"environment": {"can_admins_bypass": true}}``). A part that is ``{"__http": 404}`` answers the error of
-the endpoint (exit 1, ``gh: ... (HTTP 404)``). ``gh_fail_on`` and ``gh_hooks`` know the kinds ``publish-runs``,
+the endpoint (exit 1, ``gh: ... (HTTP 404)``). The tag of the SLSA generator that ``release.yml`` uses is read from the same
+``publish_ready``: ``slsa_ref`` (the answer for ``git/ref/tags/T``; default: the commit that ``release.yml`` of ``$FAKE_REPO``
+records in ``SLSA_GENERATOR_COMMIT``, as a commit) and ``slsa_tags`` (tag object sha to the answer for ``git/tags/SHA``).
+``gh_fail_on`` and ``gh_hooks`` know the kinds ``publish-runs``,
 ``publish-dispatch``, ``publish-view``, ``publish-log``, ``publish-rerun`` and ``api``.
 """
 
 from __future__ import annotations
 
 import json
+import os
+import re
 import subprocess
 import sys
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 import _state
 
 WORKFLOW = "publish.yml"
+#: the git data of the SLSA generator's repository: the tag the release workflow uses is read here, not in the released repository
+SLSA_GIT = "repos/slsa-framework/slsa-github-generator/git/"
 RUNS = _state.STATE / "publish-runs.json"
 DONE = ("success", "failure", "cancelled")
 DEFAULT_SCRIPT = ["queued", "in_progress", "success"]
@@ -329,10 +337,35 @@ def _target(args: list[str], repo: str | None) -> tuple[str, str, str]:
     return named, part, ruleset
 
 
+def _pinned_commit() -> str:
+    """The commit that ``release.yml`` of the scratch repository records for the generator tag: where a tag that was not moved points."""
+    text = (Path(os.environ["FAKE_REPO"]) / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+    found = re.search(r"^\s*SLSA_GENERATOR_COMMIT:\s*(\S+)", text, re.MULTILINE)
+    return found.group(1) if found else ""
+
+
+def _slsa(path: str) -> None:
+    """``gh api repos/slsa-framework/slsa-github-generator/git/...``: the tag ref, or a tag object, as ``publish_ready`` says."""
+    _state.log("gh", f"api {path}")
+    conf = _state.config().get("publish_ready", {})
+    if path.startswith(f"{SLSA_GIT}ref/tags/"):
+        body = conf.get("slsa_ref", {"object": {"type": "commit", "sha": _pinned_commit()}})
+    else:
+        body = conf.get("slsa_tags", {}).get(path.rsplit("/", 1)[1])
+    if isinstance(body, dict) and "__http" in body:
+        _http_error(path, int(body["__http"]))
+    if body is None:
+        _http_error(path)
+    print(json.dumps(body))
+
+
 def _api(args: list[str], repo: str | None, fail_kind: Callable[[str], None]) -> None:
     """``gh api repos/R...``: the settings of the repository as ``publish_ready`` says."""
     fail_kind("api")
     path = args[1].split("?")[0]
+    if path.startswith(SLSA_GIT):
+        _slsa(path)
+        return
     named, part, ruleset = _target(args, repo)
     _state.log("gh", f"api {path}")
     body = _part(named, part) if part else None

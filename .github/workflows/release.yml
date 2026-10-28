@@ -21,8 +21,12 @@ env:
   # cosign-installer v3.x cannot install cosign v3, hence @v4 at the step.
   COSIGN_VERSION: v3.1.3
   # Declared pin for the generator ref below: a reusable-workflow `uses:` cannot read `env`, so the two are held
-  # together by a test (tests/architecture/test_workflows.py), not by interpolation.
+  # together by a test (tests/architecture/test_release_workflow.py), not by interpolation.
   SLSA_GENERATOR_VERSION: v2.1.0
+  # The commit that tag pointed to when it was chosen. The generator cannot be pinned by commit (see its job), so
+  # `publish-ready` of scripts/release-pypi.sh compares this with what the tag points to on GitHub and stops a release
+  # whose tag was moved. Set it together with the version, from `git ls-remote <generator repository> refs/tags/<tag>`.
+  SLSA_GENERATOR_COMMIT: f7dd8c54c2067bafc12ca7a55595d5ee9b75204a
 
 permissions:
   contents: read
@@ -199,7 +203,8 @@ jobs:
       actions: read
     # A tag and not a commit, on purpose: the README of slsa-github-generator says its reusable workflows "MUST be referenced
     # by tag in order for the slsa-verifier to be able to verify the ref", in the form @vX.Y.Z. That is a limit of GitHub
-    # Actions and it overrides the advice to pin by digest. The other actions of this file are commits.
+    # Actions and it overrides the advice to pin by digest. The other actions of this file are commits. What the tag may
+    # point to is held by SLSA_GENERATOR_COMMIT above, which `publish-ready` checks before every release.
     uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.1.0
     with:
       base64-subjects: ${{ needs.sign-artefacts.outputs.subjects-b64 }}

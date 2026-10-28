@@ -12,12 +12,16 @@ some) are removed so the scratch repository is never confused with the one the t
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import time
+from pathlib import Path
 
 from scripts.release import guard
 from tests.release_support import fakes
 
+#: the release workflow of this repository: ``publish-ready`` reads the SLSA generator pin from the copy in every world
+RELEASE_WORKFLOW = Path(__file__).resolve().parents[2] / ".github" / "workflows" / "release.yml"
 REPO = "Axiumine/axmem"
 VERSION = "0.1.0"
 TAG = f"v{VERSION}"
@@ -43,6 +47,7 @@ class World:
             "GIT_COMMITTER_NAME": "t",
             "GIT_COMMITTER_EMAIL": "t@t.invalid",
             "FAKE_STATE": str(self.state),
+            "FAKE_REPO": str(self.repo),
             "FAKE_ORIGIN": str(self.origin),
             "FAKE_PYPI": str(base / "pypi"),
         }
@@ -51,6 +56,8 @@ class World:
         fakes.install(base / "bin")
         self.repo.mkdir()
         self.git("init", "-b", "main", ".")
+        (self.repo / ".github" / "workflows").mkdir(parents=True)
+        shutil.copy2(RELEASE_WORKFLOW, self.repo / ".github" / "workflows" / "release.yml")
         (self.repo / "dist").mkdir()
         # what uv writes into its output directory on every build
         (self.repo / "dist" / ".gitignore").write_bytes(b"*")

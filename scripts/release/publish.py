@@ -20,6 +20,7 @@ import time
 from collections.abc import Callable
 from datetime import UTC, datetime
 from fnmatch import fnmatchcase
+from pathlib import Path
 from typing import Any
 
 from .facts import (
@@ -43,6 +44,13 @@ SELECTED_ONLY = {"protected_branches": False, "custom_branch_policies": True}
 ADMIN_ROLE_ID = 5
 MAIN_RULES = ("non_fast_forward", "deletion", "required_status_checks")
 FAILED_LOG_LINES = 30
+# The SLSA generator of release.yml can only be referenced by tag, so the commit it pointed to is recorded beside the tag
+GENERATOR = "slsa-framework/slsa-github-generator"
+RELEASE_WORKFLOW = ".github/workflows/release.yml"
+GENERATOR_PIN = re.compile(r"^\s*SLSA_GENERATOR_(VERSION|COMMIT):[ \t]*(\S+)[ \t]*$", re.MULTILINE)
+COMMIT_SHA = re.compile(r"[0-9a-f]{40}")
+# a tag object may point to another tag object; GitHub nests them no deeper than this in practice
+TAG_HOPS = 3
 SPENT_MARKERS = ("previously used", "already exists")
 SPENT_HINT = "PyPI refused a name already used: this version is spent"
 
@@ -177,6 +185,43 @@ def _main_warnings(repo: str) -> list[str]:
     return [f"main has no {name} rule" for name in MAIN_RULES if name not in held]
 
 
+def _tag_commit(tag: str) -> str | None:
+    """The commit that the tag ``tag`` of the SLSA generator points to now, through the tag objects in between."""
+    target = _read(f"repos/{GENERATOR}/git/ref/tags/{tag}").get("object") or {}
+    for _ in range(TAG_HOPS):
+        if target.get("type") != "tag":
+            break
+        target = _read(f"repos/{GENERATOR}/git/tags/{target.get('sha')}").get("object") or {}
+    sha = target.get("sha")
+    return sha if isinstance(sha, str) else None
+
+
+def _generator_problems(root: str) -> list[str]:
+    """Why the tag of the SLSA generator in ``release.yml`` cannot be trusted to be the one that was chosen.
+
+    The generator cannot be pinned by commit (its verifier needs a tag), and a tag can be moved. ``release.yml``
+    records the commit the tag pointed to when it was chosen (``SLSA_GENERATOR_COMMIT``); a tag that points elsewhere
+    now stops the release before the tag of the release is pushed. A tag moved after this check is not seen.
+    """
+    try:
+        text = (Path(root) / RELEASE_WORKFLOW).read_text(encoding="utf-8")
+    except OSError as exc:
+        return [f"cannot read {RELEASE_WORKFLOW} to check the SLSA generator: {exc}"]
+    pins = dict(GENERATOR_PIN.findall(text))
+    tag, commit = pins.get("VERSION", ""), pins.get("COMMIT", "")
+    if not tag or not COMMIT_SHA.fullmatch(commit):
+        return [f"{RELEASE_WORKFLOW} must set SLSA_GENERATOR_VERSION and SLSA_GENERATOR_COMMIT (the 40 hex digits of that tag's commit)"]
+    found = _tag_commit(tag)
+    if found == commit:
+        return []
+    return [
+        (
+            f"the tag {tag} of {GENERATOR} points to {found or 'nothing'}, not to {commit} that {RELEASE_WORKFLOW} records:"
+            " the tag was moved, so review what it holds now and, if it is sound, record its commit in SLSA_GENERATOR_COMMIT"
+        ),
+    ]
+
+
 def cmd_publish_ready(args: argparse.Namespace) -> int:
     """Exit 0 when the repository is set up for the publication, 1 listing every reason when it is not."""
     problems = [
@@ -184,6 +229,7 @@ def cmd_publish_ready(args: argparse.Namespace) -> int:
         *_workflow_problems(args.repo),
         *_environment_problems(args.repo),
         *_ruleset_problems(args.repo),
+        *_generator_problems(args.root),
     ]
     for warning in _main_warnings(args.repo):
         print(f"WARNING: {warning}", file=sys.stderr)
@@ -191,7 +237,9 @@ def cmd_publish_ready(args: argparse.Namespace) -> int:
         print(f"ERROR: {problem}", file=sys.stderr)
     if problems:
         return 1
-    print(f"{args.repo} is ready to publish: {PUBLISH_WORKFLOW}, environment {ENVIRONMENT} and the tag ruleset hold")
+    print(
+        f"{args.repo} is ready to publish: {PUBLISH_WORKFLOW}, environment {ENVIRONMENT}, the tag ruleset and the SLSA generator tag hold",
+    )
     return 0
 
 
