@@ -177,7 +177,7 @@ the tag), and install the downloaded wheel by its path. Never install from TestP
 | HEAD is not the release commit's tree | check the release commit out, as for a re-run of the release; a fix on `main` cannot be rehearsed at this tag |
 | the run waits for approval | a reviewer of the environment `testpypi` approves it; a re-run waits on the live run and never dispatches a second |
 | the run is red or was cancelled | the tail of its log is printed and PyPI holds nothing; run the script again after the cause is fixed |
-| TestPyPI refused a name already used, or holds the version with other bytes | the version is spent on TestPyPI only and cannot be rehearsed again; PyPI is unaffected, and the real release of that version is not spent. Rehearse the next version, or release without a rehearsal |
+| TestPyPI refused a name already used, or holds the version with other bytes | the version is spent on TestPyPI only and is not rehearsed again (a refusal that only came from a lagging listing is the one case a later run can still finish); PyPI is unaffected, and the real release of that version is not spent. Rehearse the next version, or release without a rehearsal |
 | TestPyPI does not list the files after a green run | its listing can lag; the script polls for 30 minutes from the green run, then stops. A re-run reads again, and may dispatch again, which leaves out the files TestPyPI lists |
 
 Limits. TestPyPI may prune a project (it is a scratch index), and the first rehearsal creates the project from the pending

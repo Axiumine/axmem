@@ -12,7 +12,7 @@
 #
 # The caller sets what release-flow.sh asks for (SCRIPT_DIR REPO_ROOT VERSION TAG PKG MANIFEST GH_REPO RELEASE_REMOTE
 # RELEASE_BRANCH RELEASE_SHA) and defines err(). The constants below are the shell's copy of the row `testpypi` of the table
-# in scripts/release/facts.py and of .github/workflows/publish-testpypi.yml; tests/integration/test_release_testpypi_script.py
+# in scripts/release/facts.py and of .github/workflows/publish-testpypi.yml; tests/integration/test_release_testpypi_scripts_text.py
 # holds the three together.
 
 # Where the rehearsal goes: the scratch index, the workflow that uploads to it and the environment that workflow runs in.

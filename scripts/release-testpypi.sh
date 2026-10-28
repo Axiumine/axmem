@@ -8,8 +8,8 @@
 # The rehearsal is advisory, not a gate, and PyPI is not touched: it reads test.pypi.org and test-files.pythonhosted.org,
 # GitHub through gh, and git, and it dispatches publish-testpypi.yml, never publish.yml. The order of the two is by hand:
 # nothing here is read by scripts/release-pypi.sh, and nothing there is read by this script. It proves that the signed
-# bytes of the release upload to a package index and install from it, and that the trusted publisher, the environment
-# testpypi and the upload step work; it does not prove PyPI's own publisher or the environment pypi.
+# bytes of the release upload to a package index, and that the trusted publisher, the environment testpypi and the
+# upload step work (nothing installs the files from TestPyPI); it does not prove PyPI's own publisher or the environment pypi.
 #
 # It makes no release: no changelog stamp, no build, no commit, no tag, no push. It needs a release that scripts/release-pypi.sh
 # has made up to the signing run (release commit pushed and green in CI, tag pushed, release.yml run green with a bundle per

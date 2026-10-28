@@ -27,7 +27,7 @@ The rehearsal's workflow, ``publish-testpypi.yml``, is a second flow of the same
 ``publish_`` (``testpypi_runs``, ``testpypi_existing``, ``testpypi_effect``, ``testpypi_hidden_lists``, ``testpypi_row``,
 ``testpypi_successor``, ``testpypi_rerun``, ``testpypi_run_log``): a successful run puts the release's files on the fake
 TestPyPI (``state/testpypi``). Its ``gh_fail_on`` kinds are ``testpypi-runs``, ``testpypi-dispatch``, ``testpypi-view``,
-``testpypi-log`` and ``testpypi-rerun``. A run of one workflow is never listed for the other.
+and ``testpypi-log`` (a rerun of either workflow fails on ``publish-rerun``; the rehearsal never reruns). A run of one workflow is never listed for the other.
 
 ``gh api`` answers the settings from ``publish_ready``, a dict with the parts ``repo``, ``workflow``, ``environment``,
 ``policies``, ``rulesets`` (the list), ``ruleset_details`` (id as text to the body) and ``main_rules``; the environment of
