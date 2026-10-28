@@ -11,6 +11,8 @@ without the mark, with the commit that landed it, in the commit that lands it.
 
 ## [Unreleased]
 
+## [v0.6.0rc1] - 2026-10-28
+
 ### Added
 
 - Every check of the project is a quality gate that a Git hook runs. Four gates are new: `shellcheck` (`shellcheck -x` over
