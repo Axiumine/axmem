@@ -127,10 +127,12 @@
             axmem = {
               type = "app";
               program = "${appPkg}/bin/axmem";
+              meta.description = "Run the Axmem MCP server";
             };
             default = {
               type = "app";
               program = "${appPkg}/bin/axmem";
+              meta.description = "Run the Axmem MCP server";
             };
           };
         };
