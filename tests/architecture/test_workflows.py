@@ -33,6 +33,7 @@ JOBS_OF = {
     "ci.yml": {"lint", "smoke-test"},
     "quality.yml": {"static", "trivy"},
     "publish.yml": {"verify", "publish"},
+    "publish-testpypi.yml": {"verify", "publish"},
     "release.yml": {"sign-artefacts", "provenance-artefacts"},
 }
 

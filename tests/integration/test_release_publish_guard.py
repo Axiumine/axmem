@@ -30,6 +30,7 @@ from tests.release_support.script import (
 from tests.release_support.upload_scan import files_naming, upload_commands, uploads_in
 
 PYPI_ROUTE = ".github/workflows/publish.yml"
+TESTPYPI_ROUTE = ".github/workflows/publish-testpypi.yml"
 
 
 @pytest.fixture(name="script", scope="module")
@@ -194,11 +195,15 @@ NOT_UPLOADS = [
 
 
 class TestNothingElseUploads:
-    def test_the_only_upload_command_of_the_repository_is_the_one_step_of_the_publish_workflow(self) -> None:
+    def test_the_only_upload_commands_of_the_repository_are_the_one_step_of_each_of_the_two_publish_workflows(
+        self,
+    ) -> None:
         found = upload_commands()
-        assert sorted(found) == [PYPI_ROUTE], found
-        assert len(found[PYPI_ROUTE]) == 1
-        assert found[PYPI_ROUTE][0].startswith("uses: pypa/gh-action-pypi-publish@")
+        assert sorted(found) == [TESTPYPI_ROUTE, PYPI_ROUTE], found
+        for route in (PYPI_ROUTE, TESTPYPI_ROUTE):
+            assert len(found[route]) == 1
+            assert found[route][0].startswith("uses: pypa/gh-action-pypi-publish@")
+        assert found[PYPI_ROUTE] == found[TESTPYPI_ROUTE]  # the same pinned action, not another one
 
     def test_the_publish_workflow_runs_on_a_dispatch_alone(self) -> None:
         document = yaml.safe_load((REPO_ROOT / PYPI_ROUTE).read_text(encoding="utf-8"))
@@ -219,6 +224,34 @@ class TestNothingElseUploads:
         assert not re.search(
             r"^\s*(?:user|username|password|repository[-_]url|skip[-_]existing)\s*:", text, re.MULTILINE,
         )
+
+    def test_the_testpypi_workflow_runs_on_a_dispatch_alone(self) -> None:
+        document = yaml.safe_load((REPO_ROOT / TESTPYPI_ROUTE).read_text(encoding="utf-8"))
+        triggers = document.get("on", document.get(True))  # YAML reads a bare `on` as the boolean True
+        assert set(triggers) == {"workflow_dispatch"}
+        assert set(triggers["workflow_dispatch"]["inputs"]) == {"tag"}
+
+    def test_the_testpypi_workflow_uploads_by_trusted_publishing_to_the_one_url(self) -> None:
+        document = yaml.safe_load((REPO_ROOT / TESTPYPI_ROUTE).read_text(encoding="utf-8"))
+        steps = [step for job in document["jobs"].values() for step in job["steps"]]
+        (upload,) = [step for step in steps if "gh-action-pypi-publish" in step.get("uses", "")]
+        assert set(upload["with"]) == {"packages-dir", "print-hash", "repository-url"}
+        assert upload["with"]["repository-url"] == "https://test.pypi.org/legacy/"
+        assert document["jobs"]["publish"]["environment"] == "testpypi"
+        assert document["jobs"]["publish"]["permissions"] == {"contents": "read", "id-token": "write"}
+
+    def test_the_testpypi_workflow_holds_no_secret_user_or_password(self) -> None:
+        text = (REPO_ROOT / TESTPYPI_ROUTE).read_text(encoding="utf-8")
+        assert "secrets." not in text
+        assert not re.search(r"^\s*(?:user|username|password|skip[-_]existing)\s*:", text, re.MULTILINE)
+        assert len(re.findall(r"^\s*repository[-_]url\s*:", text, re.MULTILINE)) == 1
+
+    def test_the_upload_to_pypi_names_no_repository_url_and_the_one_to_testpypi_names_no_pypi_one(self) -> None:
+        pypi = (REPO_ROOT / PYPI_ROUTE).read_text(encoding="utf-8")
+        testpypi = (REPO_ROOT / TESTPYPI_ROUTE).read_text(encoding="utf-8")
+        assert "repository-url" not in pypi
+        assert "test.pypi.org" not in pypi
+        assert not re.search(r"(?<![\w.-])(?:upload\.)?pypi\.org/legacy", testpypi)
 
     @pytest.mark.parametrize(
         ("suffix", "text"), SEEN, ids=[f"{n}-{s[1][:40]!r}" for n, s in enumerate(SEEN)],

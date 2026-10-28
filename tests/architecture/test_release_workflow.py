@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from scripts.release import facts
+from scripts.release import facts, testpypi
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github" / "workflows" / "release.yml"
@@ -255,11 +255,12 @@ def test_no_script_and_no_workflow_runs_uv_publish():
     assert not [name for name, text in texts.items() if re.search(r"^\s*uv publish\b", text, re.MULTILINE)]
 
 
-def test_the_only_upload_to_an_index_is_the_pypi_action_of_the_publish_workflow():
+def test_the_only_uploads_to_an_index_are_the_pypi_action_of_the_two_publish_workflows():
     texts = _texts("scripts", ".github/workflows")
 
     assert {name for name, text in texts.items() if "pypa/gh-action-pypi-publish" in text} == {
         ".github/workflows/publish.yml",
+        ".github/workflows/publish-testpypi.yml",
     }
 
 
@@ -280,6 +281,19 @@ def test_the_dispatch_of_the_publish_workflow_is_one_command_in_the_release_pack
     assert holders
     assert facts.PUBLISH_WORKFLOW == "publish.yml"
     assert "gh workflow run" not in SCRIPT.read_text(encoding="utf-8")
+
+
+def test_the_dispatch_of_the_rehearsal_workflow_is_one_command_of_its_own_module_and_nothing_else_dispatches_it():
+    package = _texts("scripts/release")
+    dispatch = r'"gh",\s*"workflow",\s*"run",\s*TESTPYPI_WORKFLOW'
+    holders = {name for name, text in package.items() if re.search(dispatch, text)}
+
+    assert holders == {"scripts/release/testpypi.py"}
+    assert len(re.findall(dispatch, package["scripts/release/testpypi.py"])) == 1
+    assert testpypi.TESTPYPI_WORKFLOW == "publish-testpypi.yml" == facts.INDEXES["testpypi"].workflow
+    assert not [name for name, text in package.items() if re.search(r'"gh",\s*"workflow",\s*"run",\s*"publish', text)]
+    for path in (SCRIPT, FLOW):
+        assert "gh workflow run" not in path.read_text(encoding="utf-8")
 
 
 def test_uv_does_not_restore_a_cache_in_the_job_that_signs():

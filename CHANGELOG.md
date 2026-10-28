@@ -71,7 +71,13 @@ without the mark, with the commit that landed it, in the commit that lands it.
   backend (`hatchling`, `hatch-vcs`) is pinned to exact versions so that the local build and the rebuild of `release.yml`
   produce the same bytes. `check-package.sh` runs the package gate and then `wheel-check` (`twine check`,
   `check-wheel-contents` and a clean-environment smoke test), the code of the `wheel` gate. See [docs/release.md](docs/release.md).
-- Release rehearsal on TestPyPI, guard half: `scripts/release/guard.py` gains `testpypi-ready`, `testpypi-state`,
+- Release rehearsal on TestPyPI: `.github/workflows/publish-testpypi.yml` (dispatched on a release tag, by trusted
+  publishing in the GitHub environment `testpypi`, `id-token: write` on its publish job alone, the same pinned upload action,
+  `repository-url: https://test.pypi.org/legacy/`, no token, no password, no secret, no skip-existing) is `publish.yml` with
+  the listed differences and no others: its jobs `verify` and `publish` upload the same signed bytes of the release of the
+  same tag, after the same checks (sha256 against the manifest, the cosign identity of `release.yml`, the release guard, the
+  package gate), and a test builds what the file must be from `publish.yml` and a closed table of differences. The guard half:
+  `scripts/release/guard.py` gains `testpypi-ready`, `testpypi-state`,
   `testpypi-urls`, `testpypi-missing` and `testpypi-run`. They are the commands of the PyPI release with the index
   `testpypi` selected from a closed table of two rows in `scripts/release/facts.py` (PyPI: `pypi.org`, `publish.yml`,
   environment `pypi`; TestPyPI: `test.pypi.org`, `test-files.pythonhosted.org`, `publish-testpypi.yml`, environment

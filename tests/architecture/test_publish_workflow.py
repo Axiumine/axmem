@@ -318,7 +318,7 @@ def test_the_workflow_is_a_hosted_one_without_a_container_a_gpu_or_the_tests_of_
     assert not {"container", "services"} & {key for job in _workflow()["jobs"].values() for key in job}
 
 
-def test_no_other_workflow_than_the_signing_and_the_publishing_one_asks_for_an_identity_token():
+def test_no_other_workflow_than_the_signing_and_the_two_publishing_ones_asks_for_an_identity_token():
     asking = set()
     for path in sorted(WORKFLOWS.glob("*.yml")):
         document = _load(path)
@@ -326,4 +326,4 @@ def test_no_other_workflow_than_the_signing_and_the_publishing_one_asks_for_an_i
         if any(isinstance(grant, dict) and grant.get("id-token") == "write" for grant in grants):
             asking.add(path.name)
 
-    assert asking == {"release.yml", "publish.yml"}
+    assert asking == {"release.yml", "publish.yml", "publish-testpypi.yml"}
