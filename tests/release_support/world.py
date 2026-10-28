@@ -17,7 +17,8 @@ that tracks the remote's main, whatever it is called, and pushes to the remote's
 
 Every fake, stub and hook appends one line to ``events.log`` in the state directory, so a test reads what the release
 ran and in which order: the ``gh workflow-run`` lines (``dispatches``) are the publications, and ``uv publish`` (which no
-release makes) is in ``uv_publishes``.
+release makes) is in ``uv_publishes``. ``release_testpypi`` runs ``scripts/release-testpypi.sh`` in the same world, after a release that stopped at the
+approval of the environment ``pypi``; its ``publish-testpypi.yml`` runs put the files on the fake TestPyPI (``state/testpypi``, read with ``testpypi``).
 """
 
 from __future__ import annotations
@@ -264,7 +265,7 @@ class World:
         return log.read_text(encoding="utf-8").splitlines() if log.exists() else []
 
     def dispatches(self) -> list[str]:
-        """The ``publish.yml`` dispatches that the fake ``gh`` accepted, each ``gh workflow-run publish.yml tag=T``."""
+        """The dispatches that the fake ``gh`` accepted, each ``gh workflow-run <workflow> tag=T``: ``publish.yml``'s, and ``publish-testpypi.yml``'s once a rehearsal ran."""
         return [line for line in self.events() if line.startswith("gh workflow-run ")]
 
     def uv_publishes(self) -> list[str]:
@@ -294,6 +295,29 @@ class World:
             check=False,
             timeout=300,
         )
+
+    def release_testpypi(self, *args: str, **env: str) -> subprocess.CompletedProcess[str]:
+        """Run the real TestPyPI rehearsal script (``release-testpypi.sh``) with exactly these arguments; ``env`` adds variables."""
+        return subprocess.run(  # noqa: S603
+            ["bash", str(self.root / "scripts" / "release-testpypi.sh"), *args],  # noqa: S607
+            cwd=self.root,
+            env=self._env(**env),
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=300,
+        )
+
+    def testpypi(self) -> dict[str, str]:
+        """The fake TestPyPI: file name to sha256 (empty until a rehearsal run put files there)."""
+        directory = self.state / "testpypi"
+        if not directory.is_dir():
+            return {}
+        return {path.name: digest(path) for path in sorted(directory.glob("*"))}
+
+    def testpypi_dispatches(self) -> list[str]:
+        """The ``publish-testpypi.yml`` dispatches that the fake ``gh`` accepted, each ``gh workflow-run publish-testpypi.yml tag=T``."""
+        return [line for line in self.events() if line.startswith("gh workflow-run publish-testpypi.yml ")]
 
     def advance_origin(self) -> str:
         """Push one more commit to the remote's main from a second clone, as a merged pull request would."""

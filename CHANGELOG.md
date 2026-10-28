@@ -76,8 +76,16 @@ without the mark, with the commit that landed it, in the commit that lands it.
   `repository-url: https://test.pypi.org/legacy/`, no token, no password, no secret, no skip-existing) is `publish.yml` with
   the listed differences and no others: its jobs `verify` and `publish` upload the same signed bytes of the release of the
   same tag, after the same checks (sha256 against the manifest, the cosign identity of `release.yml`, the release guard, the
-  package gate), and a test builds what the file must be from `publish.yml` and a closed table of differences. The guard half:
-  `scripts/release/guard.py` gains `testpypi-ready`, `testpypi-state`,
+  package gate), and a test builds what the file must be from `publish.yml` and a closed table of differences.
+  `scripts/release-testpypi.sh <version>` (library `scripts/lib/testpypi-flow.sh`) dispatches it for a release that
+  `scripts/release-pypi.sh` has made up to the signing run, refuses unless the repository is set up for the environment
+  `testpypi` (`testpypi-ready`, before anything is read), checks the signed files with the release guard, dispatches
+  `publish-testpypi.yml` on the tag once (a live run is waited for, never a second dispatched), reads test.pypi.org until it
+  lists the manifest's digests and downloads the files from test-files.pythonhosted.org to compare them. It makes no release
+  (no commit, tag, push, build or stamp), holds its own lock so that it runs beside a release that waits for the approval of
+  the environment `pypi`, never reads pypi.org and never dispatches `publish.yml`; its last line is "TestPyPI rehearsal
+  complete: now approve environment pypi". The order of the two is by hand. A version TestPyPI holds with other bytes is spent
+  on TestPyPI only. The guard half: `scripts/release/guard.py` gains `testpypi-ready`, `testpypi-state`,
   `testpypi-urls`, `testpypi-missing` and `testpypi-run`. They are the commands of the PyPI release with the index
   `testpypi` selected from a closed table of two rows in `scripts/release/facts.py` (PyPI: `pypi.org`, `publish.yml`,
   environment `pypi`; TestPyPI: `test.pypi.org`, `test-files.pythonhosted.org`, `publish-testpypi.yml`, environment

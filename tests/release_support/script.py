@@ -20,6 +20,9 @@ RELEASE_SCRIPT = REPO_ROOT / "scripts" / "release-pypi.sh"
 #: the name the lifted functions run under (`$0`), so `$(basename "$0")` in a message reads as it does in the script
 ARGV0 = RELEASE_SCRIPT.name
 RELEASE_FLOW = REPO_ROOT / "scripts" / "lib" / "release-flow.sh"
+#: the TestPyPI rehearsal script and the library it sources, as this repository holds them
+TESTPYPI_SCRIPT = REPO_ROOT / "scripts" / "release-testpypi.sh"
+TESTPYPI_FLOW = REPO_ROOT / "scripts" / "lib" / "testpypi-flow.sh"
 
 
 def function_source(name: str, script: str | None = None) -> str:
