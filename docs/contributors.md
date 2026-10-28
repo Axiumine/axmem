@@ -340,6 +340,16 @@ GitHub release made by hand starts nothing
 after the reviewers of the environment `pypi` approve, publish them to PyPI by trusted publishing. It builds nothing and
 holds no token.
 
+### `publish-testpypi.yml` - TestPyPI Rehearsal
+
+**Triggers**: `workflow_dispatch` on a release tag `v<version>`, which `scripts/release-testpypi.sh` starts after its guard; no
+other workflow and no script starts it
+
+**Purpose**: The advisory rehearsal of `publish.yml`: the same verification of the signed files, then, after the reviewers of
+the environment `testpypi` approve, an upload to `https://test.pypi.org/legacy/` by trusted publishing. It is `publish.yml`
+with a closed table of differences (`tests/architecture/test_publish_testpypi_workflow.py` builds the one from the other), builds
+nothing, holds no token and is not a gate: nothing on the PyPI path reads it.
+
 ---
 
 ## Creating a Release
@@ -347,4 +357,6 @@ holds no token.
 There is one route, and it is a script: `scripts/release-pypi.sh <version>` builds, tags and signs the version, dispatches
 `publish.yml` and checks what PyPI serves. Do not tag by hand and do not publish a GitHub release by hand: a hand-made
 release publishes nothing, and a tag pushed by hand starts `release.yml` without the release commit and the manifest that it
-needs. The setup, the steps and what to do when one stops are in [Releasing Axmem](release.md).
+needs. The setup, the steps and what to do when one stops are in [Releasing Axmem](release.md). Before the real upload,
+`scripts/release-testpypi.sh <version>` rehearses the same signed files on TestPyPI; it is optional and advisory, makes no
+release, and is described there too.

@@ -165,12 +165,13 @@ name, split across jobs (`stage ci` runs the same set in one go on a developer m
 | `ci.yml` job `lint` | the `architecture` gate (`tests/architecture`: the import contracts, the rule proofs and the rules of these workflow files) and the `ruff` gate |
 | `ci.yml` job `smoke-test` | the `package` gate and the `wheel` gate, see [The wheel gate](#the-wheel-gate); the checkout is shallow, because both gates build a copy without git history and pin the version themselves |
 | `publish.yml` job `verify` | on a dispatch on a `v<version>` tag: checks the signed files of the GitHub release again (digests, cosign identity of `release.yml`, the release guard) and runs `dist-check` on them (a package that holds model weights, engines, native libraries or other files than source is refused), before the job `publish` uploads them to PyPI; see [release.md](release.md) |
+| `publish-testpypi.yml` job `verify` | the rehearsal of the same upload on TestPyPI, advisory and not a gate: the checks of the job `verify` of `publish.yml`, step for step (a test builds one from the other with a closed table of differences), before its job `publish` uploads the files to TestPyPI in the environment `testpypi`; started by `scripts/release-testpypi.sh`, see [release.md](release.md) |
 | `release.yml` jobs `sign-artefacts` and `provenance-artefacts` | on a `v<version>` tag: rebuilds the package from the committed `release-digests.json`, refuses to sign unless the rebuild is byte-identical, runs `dist-check`, signs each file with cosign (keyless) and attests them (SLSA-3); started by `scripts/release-pypi.sh`, see [release.md](release.md) |
 
 A workflow step calls a gate by its name (`uv run --frozen python -m scripts.quality gate <name>`) and holds no check
 of its own: a command that guards the project is a gate first. `tests/architecture/test_workflows.py` fails when a gate
 of the `ci` stage is missing from the workflows. The only other commands in `ci.yml` and `quality.yml` install a tool
-(`setup-uv`, `uv sync`, the pinned trivy binary); the checks of `release.yml` and `publish.yml` (tag shape, digests,
+(`setup-uv`, `uv sync`, the pinned trivy binary); the checks of `release.yml`, `publish.yml` and `publish-testpypi.yml` (tag shape, digests,
 cosign identity, the release guard) need a release and its signed files, so they are not hook gates, and `actionlint`
 and `shellcheck` lint those workflows too.
 

@@ -16,6 +16,10 @@ first release") for the GitHub API, the CI runs, the release downloads and the d
 push of `main` and of the tag. PyPI is only read, without any login. A GitHub release made by hand starts nothing:
 `publish.yml` runs only when it is dispatched on a tag.
 
+Before the real upload the same signed bytes can be rehearsed on TestPyPI, with `scripts/release-testpypi.sh <version>` and
+`.github/workflows/publish-testpypi.yml` (see "Rehearsal on TestPyPI"). TestPyPI is not a second place to ship to: the
+rehearsal is advisory, not a gate, nothing on the PyPI path reads it, and it never touches PyPI.
+
 ## What the release guarantees
 
 PyPI refuses a second upload of a file name for good, even after the file is deleted. So the dispatch is the last step, and
@@ -75,10 +79,21 @@ read the generator's release notes first); a test keeps the version and the tag 
   (Your projects, Publishing): project `axmem`, owner `Axiumine`, repository `axmem`, workflow `publish.yml`, environment
   `pypi`. The project is created by the first upload, which may fail; from the first dispatch on it is an ordinary publisher
   and a retry needs no setup.
+* TestPyPI, only for the rehearsal (leave it out to release without one): an account on test.pypi.org, which is not the
+  account of pypi.org, with a hardware-key second factor and no API token, ever. Check that
+  <https://test.pypi.org/project/axmem/> answers 404. Right before the first rehearsal, add a pending publisher there (Your
+  projects, Publishing): project `axmem`, owner `Axiumine`, repository `axmem`, workflow `publish-testpypi.yml`, environment
+  `testpypi`. `publish-testpypi.yml` is registered on test.pypi.org only: never on pypi.org, where `publish.yml` is the one
+  publisher. TestPyPI is a scratch index and may delete a project and its files; if it does, add the pending publisher again.
 * GitHub, Settings, Environments, `pypi`: Deployment branches and tags set to Selected, with one rule of the type tag,
   `v*.*.*`, and no branch rule; Required reviewers set; Allow administrators to bypass off; no secrets. Turn Prevent
   self-review on only when a second reviewer account exists: with one maintainer who approves their own deployment the gate
   is a pause, not a second pair of eyes. `publish-ready` enforces everything here except self-review.
+* GitHub, Settings, Environments, `testpypi`, for the rehearsal: the same settings as `pypi` (Selected, one rule of the type
+  tag `v*.*.*`, Required reviewers, Allow administrators to bypass off, no secrets).
+  `python3 -m scripts.release.guard testpypi-ready --repo Axiumine/axmem` runs every check of `publish-ready` for it (the
+  workflow `publish-testpypi.yml` active, the environment, the tag ruleset, the SLSA generator tag), and the rehearsal script
+  runs it before it reads or dispatches anything.
 * GitHub, Settings, Rules, Rulesets:
   * a tag ruleset on `refs/tags/v*`: creation restricted to the maintainer (the Admin role is the only bypass actor), update,
     deletion and non-fast-forward blocked (`publish-ready` enforces it, bypass list included);
@@ -104,17 +119,81 @@ read the generator's release notes first); a test keeps the version and the tag 
   `https://github.com/Axiumine/axmem`. Check out the local branch that tracks `axiumine/main`, with HEAD equal to the pushed
   tip: the script refuses a branch that is behind, diverged or ahead of it. The remote must already hold
   `release-superseded.json` (see below).
-* Merge the release flow into `axiumine/main` before the first release: `workflow_dispatch` needs `publish.yml` on the
-  default branch and inside the tagged commit, and the pending publisher names that file. Never push all tags to
+* Merge the release flow into `axiumine/main` before the first release: `workflow_dispatch` needs `publish.yml` (and
+  `publish-testpypi.yml`, for the rehearsal) on the default branch and inside the tagged commit, and the pending publisher
+  names that file. A release commit made before `publish-testpypi.yml` reached `main` cannot be rehearsed at its tag. Never push all tags to
   `axiumine` (`git push --tags`): the clone holds the tags of Forgetful (`v0.0.1` to `v0.5.5`, `models-v1.0.0`).
 * After the first upload, check on PyPI (project, Publishing) that only `publish.yml` with the environment `pypi` is listed,
-  and that no API token exists. Then change the install notes that say the package is not on PyPI yet (`README.md`,
+  and that no API token exists; after the first rehearsal, check the same on test.pypi.org (only `publish-testpypi.yml` with
+  the environment `testpypi`). Then change the install notes that say the package is not on PyPI yet (`README.md`,
   `docs/`, `skills/axmem-*-setup`) in the commit that follows.
+
+### Rehearsal on TestPyPI
+
+`scripts/release-testpypi.sh <version>` uploads the signed files of a release to TestPyPI, through
+`.github/workflows/publish-testpypi.yml` in the environment `testpypi`, so that the trusted publisher, the environment and the
+upload step are tried on a scratch index before the upload to PyPI that cannot be taken back. The files are the same bytes
+that `publish.yml` will upload for the same tag: the signed files of the GitHub release, checked against the manifest by the
+same guard, and by a job `verify` that is the one of `publish.yml` step for step (a test builds one from the other with a
+closed table of differences).
+
+The sequence is by hand, in two terminals of the same checkout, and the rehearsal needs no release of its own:
+
+1. terminal A: `bash scripts/release-pypi.sh 0.6.0rc1`. It makes the release commit, pushes it, tags it, waits for the signing
+   run and dispatches `publish.yml`, which waits for the approval of the environment `pypi`;
+2. terminal B, once the release is tagged (the rehearsal waits for the signing run too): `bash scripts/release-testpypi.sh 0.6.0rc1`.
+   The first line it prints says that it goes to TestPyPI, that it is advisory and that PyPI is not touched. It runs
+   `testpypi-ready`, checks the signed files with the release guard and dispatches `publish-testpypi.yml` on the tag;
+3. a reviewer approves the deployment to the environment `testpypi`. The rehearsal waits for the run, reads test.pypi.org until
+   it lists both files with the manifest's digests, downloads them from `test-files.pythonhosted.org` and compares them, and
+   prints the address of the `publish.yml` run that waits and `TestPyPI rehearsal complete: now approve environment pypi`;
+4. only then approve the environment `pypi` for the run of terminal A. If the rehearsal failed, reject that deployment
+   instead: the run fails and PyPI holds nothing.
+
+Nothing enforces this order. The rehearsal is advisory, not a gate: the script does not know whether the deployment to `pypi`
+was approved, and the PyPI path reads nothing of the rehearsal. The order is the maintainer's.
+
+What the script does. It needs a release that `release-pypi.sh` made up to the signing run, with HEAD at the tree of the
+release commit; with none it stops and names `release-pypi.sh`. It makes no release: no commit, tag, push, build or changelog
+stamp. It holds its own lock (`release-testpypi.lock`), so it runs beside the release, which holds `release-pypi.lock` while it
+waits for the approval. It dispatches `publish-testpypi.yml` once on the tag (a live run is waited for, never a second one
+dispatched), never `publish.yml`, and reads only `test.pypi.org` and `test-files.pythonhosted.org`, never `pypi.org` or
+`files.pythonhosted.org`. The only ref it writes is the remote-tracking ref `refs/remotes/axiumine/main`, which the guard
+fetches; HEAD, the branches and the tags are not changed. A re-run reads GitHub and TestPyPI first and continues from what
+they hold: a version TestPyPI holds in full is verified with no dispatch, a half upload is finished by a dispatch.
+
+What it proves, and what it does not. It proves that the signed bytes upload by trusted publishing from the workflow and the
+environment and that TestPyPI serves them with the manifest's digests. It does not prove PyPI's own publisher, the
+environment `pypi` or the project on pypi.org: those are registered apart and are first tried by the real upload, or by a
+release candidate (below). A green rehearsal and a red first upload are possible. To look at a rehearsed file, download it from
+`test-files.pythonhosted.org` and read the attestation on its page at test.pypi.org (its identity is `publish-testpypi.yml` at
+the tag), and install the downloaded wheel by its path. Never install from TestPyPI by name, and never put TestPyPI on
+`--extra-index-url`: a name on a scratch index that is not Axmem's would be taken for a dependency.
+
+| Stop of the rehearsal | What it means |
+|---|---|
+| the repository is not set up (`testpypi-ready`) | the reasons are listed and nothing was read or dispatched; fix the environment `testpypi`, the workflow or the rulesets named |
+| no release commit of the version | run `release-pypi.sh <version>` first; the rehearsal never makes a release |
+| HEAD is not the release commit's tree | check the release commit out, as for a re-run of the release; a fix on `main` cannot be rehearsed at this tag |
+| the run waits for approval | a reviewer of the environment `testpypi` approves it; a re-run waits on the live run and never dispatches a second |
+| the run is red or was cancelled | the tail of its log is printed and PyPI holds nothing; run the script again after the cause is fixed |
+| TestPyPI refused a name already used, or holds the version with other bytes | the version is spent on TestPyPI only and cannot be rehearsed again; PyPI is unaffected, and the real release of that version is not spent. Rehearse the next version, or release without a rehearsal |
+| TestPyPI does not list the files after a green run | its listing can lag; the script polls for 30 minutes from the green run, then stops. A re-run reads again, and may dispatch again, which leaves out the files TestPyPI lists |
+
+Limits. TestPyPI may prune a project (it is a scratch index), and the first rehearsal creates the project from the pending
+publisher: look at its Publishing page before each rehearsal. A defect in the TestPyPI code (the workflow, the script, the
+guard commands) found once the release commit exists cannot be fixed in place: `rf_require_release_tree` requires HEAD to be
+the release commit's tree, and `publish-testpypi.yml` is frozen per tag like `publish.yml`. Fix it on `main` and rehearse the
+next version; the real release is not affected. So run `python3 -m scripts.release.guard testpypi-ready --repo Axiumine/axmem`
+by hand before the real release, to see a refusal of the settings before any commit exists. The integrity check does not walk
+TestPyPI, and a version on TestPyPI proves nothing about PyPI.
 
 ### Rehearsal with a release candidate
 
 The first version goes up as a release candidate, because it settles what cannot be tried offline: the trusted publisher
-(project, workflow `publish.yml`, environment `pypi`) and the settings that `publish-ready` reads, in the real service.
+(project, workflow `publish.yml`, environment `pypi`) and the settings that `publish-ready` reads, in the real service. The
+rehearsal on TestPyPI settles most of the same on the scratch index, but not PyPI's own publisher, so the release candidate
+stays the one real trial of that.
 PyPI refuses a file name it has used, even for the same bytes, so a half-finished upload is not resumed by sending a file
 twice: the job `publish` reads the project JSON and sends only the files that PyPI does not list.
 
@@ -276,13 +355,18 @@ bash scripts/release-pypi.sh 0.6.0
 
 The keyless signature is recorded in the public Rekor transparency log, with the name of the repository.
 
+The rehearsal on TestPyPI is not part of this check: files on test.pypi.org carry the identity of `publish-testpypi.yml`, and
+a version that is on TestPyPI says nothing about PyPI.
+
 ## Known gap
 
 The one read of PyPI in the shell (`rf_pypi_get`, a `curl` of a constant URL with `--proto =https`) is checked only against
 a fake `curl`, because the URL is constant, so no test can point it at a local server. The argv of the call is pinned in the
 fake, and the parts that judge the answer (`scripts/release/facts.py`, and `guard pypi-missing` for `publish.yml`) are tested
 on real documents. The step of `publish.yml` that reads the same JSON is held by structure tests only. The first release is
-the first real read.
+the first real read. The rehearsal has the same gap for test.pypi.org (`tp_try_load`, `testpypi-missing` in
+`publish-testpypi.yml`), and one more: the trusted publisher of TestPyPI and the creation of the project by a pending publisher
+are seen only by the first rehearsal.
 
 ## Files
 
@@ -291,10 +375,13 @@ the first real read.
 | `scripts/release-pypi.sh` | the release, step by step; it uploads nothing and dispatches the publish workflow |
 | `scripts/lib/release-flow.sh` | the steps that read or change the state of a release |
 | `scripts/lib/project.sh` | package name, remote, PyPI hosts, publish workflow and environment |
+| `scripts/release-testpypi.sh` | the rehearsal of the upload on TestPyPI; it uploads nothing, makes no release and dispatches `publish-testpypi.yml` |
+| `scripts/lib/testpypi-flow.sh` | the steps of the rehearsal that are not those of the release: TestPyPI's host, workflow and environment, its lock and its reads |
 | `scripts/check-package.sh` | what a package must pass before a release |
 | `scripts/release/guard.py` | the five conditions, and the reads of the flow |
 | `scripts/release/publish.py` | the settings check (`publish-ready`) and the runs of `publish.yml` (dispatch, state, wait) |
-| `scripts/release/facts.py` | what git, GitHub and the JSON of PyPI say about a release |
+| `scripts/release/testpypi.py` | `testpypi-ready` (the settings check for the environment `testpypi`) and `testpypi-run` (the run of `publish-testpypi.yml`) |
+| `scripts/release/facts.py` | what git, GitHub and the JSON of PyPI say about a release, and the closed table of the two indexes (`pypi`, `testpypi`) |
 | `scripts/release/integrity.py` | the integrity check of every version on PyPI |
 | `scripts/release/superseded.py` | the reader of `release-superseded.json` |
 | `scripts/release/digests.py` | writes and verifies `release-digests.json` |
@@ -302,3 +389,4 @@ the first real read.
 | `scripts/release/sdist.py` | refuses an sdist with files that git does not track |
 | `.github/workflows/release.yml` | the rebuild, the digest check, the signing and the provenance; uploads nothing |
 | `.github/workflows/publish.yml` | the verification of the signed files and the upload to PyPI; dispatched by the script on the tag |
+| `.github/workflows/publish-testpypi.yml` | `publish.yml` with the listed differences: the same verification and the upload to TestPyPI; dispatched by the rehearsal script on the tag |

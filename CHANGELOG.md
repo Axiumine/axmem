@@ -94,7 +94,9 @@ without the mark, with the commit that landed it, in the commit that lands it.
   of test.pypi.org and refuse a file link that is not on its file host. The index is the name of the command, never an option,
   an input or an environment variable, and the PyPI commands and their messages are unchanged. `testpypi-run` adopts a live
   run of `publish-testpypi.yml` on the tag or dispatches one, and follows it (a cancelled run is a failure; a name TestPyPI
-  refused as used says that the version is spent on TestPyPI and PyPI is unaffected). The rehearsal is advisory, not a gate.
+  refused as used says that the version is spent on TestPyPI and PyPI is unaffected). The rehearsal is advisory, not a gate,
+  and needs a pending publisher on test.pypi.org (workflow `publish-testpypi.yml`, environment `testpypi`) and a GitHub
+  environment `testpypi` set up like `pypi`. See [docs/release.md](docs/release.md).
 - `commit-msg` hook (`95c1e5f1`): `[🤖 ]<type>(<scope>): <subject>`, subject up to 150 characters, body up to 10
   lines, AI Co-Authored-By trailers and "Generated with" lines rejected, `SKIP=commit-msg` to bypass, with tests.
 - `denylist-check` hook script: `pre-commit`, `commit-msg` and `pre-push` refuse staged changes, messages and
