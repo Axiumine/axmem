@@ -961,6 +961,13 @@ Fixes found by reviewing the feature cuts (no upstream counterpart: the code the
 
 ### Security
 
+- `authlib` is locked at 1.9.1 (was 1.7.2, which the vulnerability database of the `trivy` gate lists as CVE-2026-96760,
+  a signature verification bypass rated critical, fixed in 1.9.0, and CVE-2026-114615 and CVE-2026-114616, rated high, the
+  second an authentication bypass through a zero-length HMAC key, fixed in 1.9.1); `dnspython` is locked at 2.9.0 (was
+  2.8.0, CVE-2026-114605, a denial of service through excessive DNS compression pointer traversal, rated high). Both are
+  transitive dependencies of `fastmcp` and the only entries of `uv.lock` that changed. The `trivy` job of `quality.yml`
+  failed on them on every push of `main`, and the local `trivy` gate had not seen them because its vulnerability database
+  was older.
 - `filelock` is locked at 4.2.4 (was 3.21.1, which the vulnerability database of the `trivy` gate lists as CVE-2026-112940,
   an arbitrary file overwrite through the reopening of an insecure database file, fixed in 4.2.1); it is a transitive
   dependency of `huggingface-hub` and the only entry of `uv.lock` that changed.
