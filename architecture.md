@@ -53,7 +53,7 @@ flowchart TD
     Qdrant --> Schema["QdrantSchema: collections, payload indexes, generations, the live alias"]
     Store --> Pool["NodePool: failover between nodes, retry of ambiguous failures with the same claim token"]
     Schema --> Pool
-    Pool --> QdrantDB["Qdrant 1.19 or newer: one node or a three-node cluster"]
+    Pool --> QdrantDB["Qdrant 1.19 or newer: one node or a cluster"]
     Qdrant --> Providers["Embedding and rerank adapters"]
     Providers --> TensorRT["TensorRT embedder and reranker: fp32 engines on the NVIDIA GPU, one CUDA context, cached per fingerprint"]
     Lifespan["main.lifespan"] -->|calls| Bootstrap["bootstrap.build_runtime"]

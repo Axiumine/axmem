@@ -202,6 +202,10 @@ without the mark, with the commit that landed it, in the commit that lands it.
 
 ### Changed
 
+- The README, the architecture overview and the roadmap say that Qdrant runs on one node or on a cluster, not on one node or
+  a three-node cluster: a cluster of any size is supported, and three nodes is only the profile that the cluster tests
+  verify (`QDRANT_SHARD_NUMBER=3`, `QDRANT_REPLICATION_FACTOR=3`, `QDRANT_WRITE_CONSISTENCY_FACTOR=2`). The README section on
+  Qdrant says how to set the layout for another size.
 - The release no longer pushes to `main`, and the rules for `main` have no bypass actor. The ruleset of `main` is a
   repository setting, not a file: the maintainer applies it right after this change is merged (2026-11-02), and the state
   that results is that nobody pushes to `main`, the lead maintainer and the Admin role included. A change reaches `main` only

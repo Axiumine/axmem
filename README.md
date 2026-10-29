@@ -216,6 +216,10 @@ first start. Run the nodes with `QDRANT__CLUSTER__ENABLED=true`, the same API ke
 with strong ordering, waits for it, and reads back at quorum consistency. `axmem qdrant-check` reads each node on
 its own and reports any node whose points differ; it only reports, repair is the operator's decision.
 
+**Other cluster sizes** are supported: list every node in `QDRANT_URL` and choose the shard number, the replication factor
+and the write consistency factor (never above the replication factor) for the nodes you have, see
+[docs/configuration.md](docs/configuration.md#qdrant-configuration). Three nodes is the profile the cluster tests verify.
+
 **Backups** have two lines. Qdrant snapshots (`axmem backup`) are the fast restore. The JSONL export
 (`axmem export`, restored with `axmem import`) is the second line: it holds the memories and links without
 vectors, and an import computes the vectors again with the configured model, so it also moves memories between
