@@ -36,6 +36,12 @@ def _selected_test_files():
                 yield path
 
 
+def _is_checkout_file(string):
+    """Whether a string names a file of the checkout. ".git" is a file in a linked worktree and a directory in a clone;
+    mutmut never copies it and the tests that name it build a repository of their own."""
+    return bool(string) and string != ".git" and not string.startswith("/") and (ROOT / string).is_file()
+
+
 def _root_names(source):
     """What a test module reads from the repository root: the names after ``ROOT /`` and, in a module that finds the root,
     every string that names a file of the checkout (``(ROOT / path).read_text()`` over a tuple of names has no literal
@@ -43,7 +49,7 @@ def _root_names(source):
     names = set(ROOT_PATH.findall(source))
     if "parents[2]" in source:
         strings = {node.value for node in ast.walk(ast.parse(source)) if isinstance(node, ast.Constant) and isinstance(node.value, str)}
-        names |= {string for string in strings if string and not string.startswith("/") and (ROOT / string).is_file()}
+        names |= {string for string in strings if _is_checkout_file(string)}
     return {Path(name).parts[0] for name in names}
 
 
