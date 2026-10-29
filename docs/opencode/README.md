@@ -6,8 +6,9 @@ Custom commands and skills for using Axmem with [OpenCode](https://opencode.ai).
 
 Ensure you have:
 - [OpenCode](https://opencode.ai) installed
-- Axmem installed. It is not published to PyPI yet, so `uvx axmem` does not resolve. From a checkout of the repository,
-  `uv tool install .` puts the `axmem` command on your `PATH` (after a release, `uvx axmem` does the same)
+- Axmem installed. It is on PyPI (`0.6.0rc1`, a release candidate):
+  `uv tool install --extra-index-url https://pypi.nvidia.com axmem` puts the `axmem` command on your `PATH`, and `uvx axmem`
+  runs it without installing
 - A Qdrant server and an NVIDIA GPU for the default embedder, as in the [README](../../README.md#quick-start)
 
 ## MCP Server Configuration
@@ -224,7 +225,7 @@ Verify the `axmem` command is on your `PATH`:
 which axmem
 ```
 
-If not found, install it from a checkout with `uv tool install .` (needs
+If not found, install it from PyPI with `uv tool install --extra-index-url https://pypi.nvidia.com axmem` (needs
 [uv](https://docs.astral.sh/uv/getting-started/installation/)).
 
 ### Server Exits at Start

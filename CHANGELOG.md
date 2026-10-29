@@ -5,17 +5,29 @@ All notable changes to Axmem are recorded here. Axmem is derived from
 `6d0199ed` (2026-10-18), plus the fork work on top of it. Upstream's later commits are not merged. The reason
 behind each change is in [docs/changes-from-forgetful.md](docs/changes-from-forgetful.md).
 
-The format follows [Keep a Changelog](https://keepachangelog.com/). Axmem has no release yet, so everything is
-under Unreleased. Entries marked **(planned)** are decided but have not landed; each is moved to its section
+The format follows [Keep a Changelog](https://keepachangelog.com/). The first release is [v0.6.0rc1] (commit
+`16e8ec8`), a release candidate that is on PyPI; changes after it go under [Unreleased] until the next release stamps them.
+Entries marked **(planned)** are decided but have not landed; each is moved to its section
 without the mark, with the commit that landed it, in the commit that lands it.
 
 ## [Unreleased]
+
+### Changed
+
+- The install notes say that Axmem is on PyPI: `0.6.0rc1`, a release candidate and the only version there, installs with
+  `uv tool install --extra-index-url https://pypi.nvidia.com axmem` or `pip install --extra-index-url https://pypi.nvidia.com axmem`
+  (the flag takes the three TensorRT packages from NVIDIA's index, see the README), and `uvx axmem` runs it without installing,
+  so the `uvx axmem` commands of the client guides resolve as written. The README table of Installing the package lists the two
+  PyPI routes first, and `tests/integration/test_install_requirements.py` keeps them in step with `pyproject.toml`. The
+  `axmem-cli-setup` and `axmem-mcp-setup` skills, the connectivity guide, the Gemini CLI, OpenCode and Copilot CLI guides with
+  their `axmem-setup` commands and the roadmap no longer say that the package is not published or must be installed from a
+  checkout first; the checkout, Git URL and wheel routes stay as alternatives for development.
 
 ## [v0.6.0rc1] - 2026-10-28
 
 ### Added
 
-- Every check of the project is a quality gate that a Git hook runs. Four gates are new: `shellcheck` (`shellcheck -x` over
+- Every check of the project is a quality gate that a Git hook runs (`98a81ad5`, `da6120b`). Four gates are new: `shellcheck` (`shellcheck -x` over
   the files of `.githooks/`, the release scripts and the fake tools of the release tests), `actionlint` (the workflows, and
   their `run:` blocks through the same shellcheck), `architecture` (`tests/architecture`, which `ci.yml` ran as a raw command
   and the hooks ran only inside `tests-fast` and `tests`) and `wheel` (see the next entry). `shellcheck-py`, `actionlint-py`,
@@ -58,7 +70,7 @@ without the mark, with the commit that landed it, in the commit that lands it.
   license metadata or license files that differ from `pyproject.toml`. It runs in `pre-commit` (when a staged file goes into
   the package), in `pre-push`, in the `ci` stage and in the `smoke-test` job of `ci.yml`; `publish.yml` runs `dist-check` on
   the files it uploads, before the upload.
-- Release to PyPI: `scripts/release-pypi.sh <version>` builds, tests, tags and signs a version, and dispatches the upload
+- Release to PyPI (`b9c5229`): `scripts/release-pypi.sh <version>` builds, tests, tags and signs a version, and dispatches the upload
   last, after `scripts/release/guard.py` has proved that the release commit is pushed and green in CI, the tag is on the
   remote, the `release.yml` run signed the files (cosign, keyless, one `.sigstore.json` bundle each, SLSA-3 provenance) and
   the signed files to publish are byte for byte the `release-digests.json` committed in the release commit. The release tag
@@ -73,7 +85,7 @@ without the mark, with the commit that landed it, in the commit that lands it.
   backend (`hatchling`, `hatch-vcs`) is pinned to exact versions so that the local build and the rebuild of `release.yml`
   produce the same bytes. `check-package.sh` runs the package gate and then `wheel-check` (`twine check`,
   `check-wheel-contents` and a clean-environment smoke test), the code of the `wheel` gate. See [docs/release.md](docs/release.md).
-- Release rehearsal on TestPyPI: `.github/workflows/publish-testpypi.yml` (dispatched on a release tag, by trusted
+- Release rehearsal on TestPyPI (`f966e7b`, `f95894d`, `09f79ab`, `57e5f20`, `1835c89`): `.github/workflows/publish-testpypi.yml` (dispatched on a release tag, by trusted
   publishing in the GitHub environment `testpypi`, `id-token: write` on its publish job alone, the same pinned upload action,
   `repository-url: https://test.pypi.org/legacy/`, no token, no password, no secret, no skip-existing) is `publish.yml` with
   the listed differences and no others: its jobs `verify` and `publish` upload the same signed bytes of the release of the
@@ -179,7 +191,7 @@ without the mark, with the commit that landed it, in the commit that lands it.
 
 ### Changed
 
-- **Release:** `publish-ready`, the first check of `scripts/release-pypi.sh`, also stops a release whose SLSA generator tag was
+- **Release:** `publish-ready` (`3f7074f`), the first check of `scripts/release-pypi.sh`, also stops a release whose SLSA generator tag was
   moved. The generator can only be referenced by tag (its verifier needs one), so `release.yml` records the commit that
   `v2.1.0` pointed to (`SLSA_GENERATOR_COMMIT`) and `publish-ready` compares it with what the tag points to on GitHub, through
   the tag objects in between, and names both commits when they differ. A tag moved after the check is not seen.
@@ -201,7 +213,7 @@ without the mark, with the commit that landed it, in the commit that lands it.
   not started CUDA, which fails in a fork; `test_mutation_sandbox.py` also finds a root file that a test names in a list; the workers
   no longer leave their pytest temp directories behind (a worker ends with `os._exit`, so pytest never cleaned them up, and a run of
   14,000 mutants filled two disks with the Qdrant backups the tests had written); the test suites run with a `XDG_CONFIG_HOME` of their own, so a mutant that ignores the `--env-file` of a test cannot write `AXMEM_SERVER` to the settings file of the user (one did, and every CLI test after it failed on a server that does not exist).
-- **Quality gates:** the GPU preflight of the test suites exits with code 1 instead of 2 inside a mutmut worker (the
+- **Quality gates:** the GPU preflight of the test suites exits with code 1 instead of 2 inside a mutmut worker (`d391519`; the
   environment has `MUTANT_UNDER_TEST`); everywhere else it still ends the run with 2. mutmut books exit code 2 as "check was
   interrupted by user", so the mutants of `probe_gpu` and `_unpacked` that make the preflight fail could never be killed.
   mutmut runs the suite unmutated first and stops when that fails, so a machine whose GPU is unusable never reaches a mutant.
@@ -453,16 +465,16 @@ Fixes to features that are removed above are moot once those features go.
   `scripts/quality/testing.py` imported `platformdirs` at module level, and the job runs `python -m scripts.quality` on a
   bare Python with no dependency installed, so it stopped with `ModuleNotFoundError`. The import is now in `models_dir`, the
   one function that needs it, and a test in `tests/architecture/test_workflows.py` imports the gates with `python -S` so the
-  job cannot break this way again. A red `Quality gates` run on `main` also stopped the release script at its CI check.
+  job cannot break this way again. A red `Quality gates` run on `main` also stopped the release script at its CI check (`353509a`).
 - The `trivy` gate skips `mutants/`, the working copy that mutmut makes of the project. The copy is not tracked and holds its
   own `uv.lock` from the last mutation run, so after a lock change it still carried the old pins and the gate failed on
   findings that the real `uv.lock` no longer had (a push stopped on the old `authlib` and `dnspython` of that copy). A test keeps
   `mutants` in `skip-dirs` of `trivy.yaml` while `.gitignore` names it, and `trivy.yaml` and `.gitignore` join `also_copy` of
-  `[tool.mutmut]`, so that the test also runs inside the mutation sandbox.
+  `[tool.mutmut]`, so that the test also runs inside the mutation sandbox (`13b27e7`).
 - The mutation sandbox copies `release-digests.json`. The file does not exist until the first release commit adds it, and
   from then on the `architecture` test that checks the sandbox found it named by `test_release_workflow.py` and refused the
   push of the release commit (`also_copy` of `[tool.mutmut]` did not list it); the first release stopped there, before anything
-  was tagged or uploaded. mutmut skips an `also_copy` path that does not exist, so the entry is harmless before that.
+  was tagged or uploaded. mutmut skips an `also_copy` path that does not exist, so the entry is harmless before that (`1834ada`).
 - **Security:** token scope fails closed (#107), ownership checks on link endpoints, referenced projects and
   embeddings (#103, #113), token cache honours expiry (#110), no SQL echo or parameters in logs (#143), server
   URLs redacted (#112), owner-only backups and storage (#137), user upsert keeps notes and metadata (#108),
@@ -978,10 +990,10 @@ Fixes found by reviewing the feature cuts (no upstream counterpart: the code the
   2.8.0, CVE-2026-114605, a denial of service through excessive DNS compression pointer traversal, rated high). Both are
   transitive dependencies of `fastmcp` and the only entries of `uv.lock` that changed. The `trivy` job of `quality.yml`
   failed on them on every push of `main`, and the local `trivy` gate had not seen them because its vulnerability database
-  was older.
+  was older (`0287e9a`).
 - `filelock` is locked at 4.2.4 (was 3.21.1, which the vulnerability database of the `trivy` gate lists as CVE-2026-112940,
   an arbitrary file overwrite through the reopening of an insecure database file, fixed in 4.2.1); it is a transitive
-  dependency of `huggingface-hub` and the only entry of `uv.lock` that changed.
+  dependency of `huggingface-hub` and the only entry of `uv.lock` that changed (`70dde33`).
 - `certifi` is locked at 2026.10.19 (was 2026.1.4, which bundles root CAs named in GHSA-6q48-6c7w-9gw2); it is a
   transitive dependency of the HTTP clients and the only entry of `uv.lock` that changed.
 - Authentication fails closed (`3201a2c3`). A server with no `AUTH_MODE` refuses to start (exit code 1), `AUTH_MODE=none` is accepted only on stdio or on a loopback bind (`127.0.0.1`, `::1`; a hostname such as `localhost` does not count), and the credential modes are refused on stdio, which carries no bearer token. A request-level check refuses to serve when no provider is attached and the mode is not `none`. Fixes the finding that, without `FASTMCP_SERVER_AUTH`, every request was the same default user (`app/middleware/auth.py`), so any caller of a network-bound server read and changed every memory. Existing deployments that relied on that default must set `AUTH_MODE` (and bind to a loopback address if it is `none`) before the next start.

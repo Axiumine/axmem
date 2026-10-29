@@ -28,8 +28,9 @@ Ask the user which setup they prefer:
 1. **Standard (Recommended)** - Runs the installed `axmem` command against a Qdrant on `http://127.0.0.1:6333`, as the one local tenant (`AUTH_MODE=none`). Perfect for most users.
 2. **Custom** - For advanced setups: remote HTTP server, another Qdrant, custom embeddings, a bearer token, etc.
 
-Axmem is not published to PyPI yet, so `uvx axmem` does not resolve. Check that `axmem` is on the `PATH` (`which axmem`);
-if not, it is installed from a checkout of the repository with `uv tool install .`.
+Axmem is on PyPI (`0.6.0rc1`, a release candidate), and `uvx axmem` runs it without installing. To have `axmem` on the `PATH`
+(`which axmem`), install it with `uv tool install --extra-index-url https://pypi.nvidia.com axmem` (a checkout works too:
+`uv tool install .`).
 
 ## Step 3a: Standard Setup
 
@@ -112,7 +113,7 @@ WebFetch: https://github.com/Axiumine/axmem/blob/main/docs/configuration.md
 ## Troubleshooting
 
 If setup fails:
-- Check that `axmem` is installed: `which axmem` (`uv tool install .` from a checkout)
+- Check that `axmem` is installed: `which axmem` (`uv tool install --extra-index-url https://pypi.nvidia.com axmem`)
 - Run `AUTH_MODE=none axmem serve --transport stdio` by hand: a start that is refused prints one `Error:` line with the cause
 - For HTTP: verify the server is running and accessible
 - Restart OpenCode after configuration changes

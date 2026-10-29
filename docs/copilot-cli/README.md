@@ -7,8 +7,9 @@ Custom agents and skills for using Axmem with [GitHub Copilot CLI](https://githu
 Ensure you have:
 - [GitHub Copilot CLI](https://docs.github.com/en/copilot/how-tos/set-up/install-copilot-cli) installed
 - A GitHub Copilot subscription (Pro, Pro+, Business, or Enterprise)
-- Axmem installed. It is not published to PyPI yet, so `uvx axmem` does not resolve. From a checkout of the repository,
-  `uv tool install .` puts the `axmem` command on your `PATH` (after a release, `uvx axmem` does the same)
+- Axmem installed. It is on PyPI (`0.6.0rc1`, a release candidate):
+  `uv tool install --extra-index-url https://pypi.nvidia.com axmem` puts the `axmem` command on your `PATH`, and `uvx axmem`
+  runs it without installing
 - A Qdrant server and an NVIDIA GPU for the default embedder, as in the [README](../../README.md#quick-start)
 
 ## MCP Server Configuration
@@ -245,7 +246,7 @@ Verify the `axmem` command is on your `PATH`:
 which axmem
 ```
 
-If not found, install it from a checkout with `uv tool install .` (needs
+If not found, install it from PyPI with `uv tool install --extra-index-url https://pypi.nvidia.com axmem` (needs
 [uv](https://docs.astral.sh/uv/getting-started/installation/)).
 
 ### Server Exits at Start

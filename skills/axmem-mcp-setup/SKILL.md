@@ -24,8 +24,9 @@ object). Roughly 500 tokens of surface, with everything else disclosed at runtim
 
 - **stdio** — the client spawns the server per session: command `axmem serve --transport stdio` with
   `AUTH_MODE=none`, because the server refuses to start without an auth mode and stdio carries no bearer
-  token. Axmem is not published to PyPI yet: install it from a checkout with `uv tool install .` (after a
-  release, `uvx axmem` does the same). Right for a personal, local setup.
+  token. Axmem is on PyPI (`0.6.0rc1`, a release candidate): `uvx axmem` runs it without installing, and
+  `uv tool install --extra-index-url https://pypi.nvidia.com axmem` puts `axmem` on the PATH (a checkout works too:
+  `uv tool install .`). Right for a personal, local setup.
 - **HTTP** — the client connects to a running server at `<server>/mcp`, e.g.
   `http://localhost:8020/mcp`. Right for a shared or deployed instance; send
   `Authorization: Bearer <token>` unless the server runs `AUTH_MODE=none` on a loopback bind.

@@ -65,6 +65,8 @@ def test_the_readme_lists_the_install_commands_that_work_for_uv_and_pip():
 
     assert "## Quick Start" in readme and "### Installing the package" in readme
     assert "uv tool install ." in commands
+    assert f"uv tool install --extra-index-url {INDEX_URL} axmem" in commands  # PyPI, with uv
+    assert f"pip install --extra-index-url {INDEX_URL} axmem" in commands  # PyPI, with pip
     assert f"uv tool install --extra-index-url {INDEX_URL} dist/axmem-*.whl" in commands
     assert f"pip install --extra-index-url {INDEX_URL} dist/axmem-*.whl" in commands
     assert any(command.startswith("pip install") and "git+" in command and INDEX_URL in command for command in commands)

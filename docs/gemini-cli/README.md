@@ -6,9 +6,9 @@ Custom commands for using Axmem with [Gemini CLI](https://github.com/google-gemi
 
 ## Prerequisites
 
-Ensure Axmem MCP server is configured. Axmem is not published to PyPI yet, so `uvx axmem` does not resolve: from a
-checkout of the repository, `uv tool install .` puts the `axmem` command on your `PATH` (after a release, `uvx axmem`
-does the same). Axmem also fails closed: a server with no `AUTH_MODE` exits at start. A server that Gemini CLI starts
+Ensure Axmem MCP server is configured. Axmem is on PyPI (`0.6.0rc1`, a release candidate):
+`uv tool install --extra-index-url https://pypi.nvidia.com axmem` puts the `axmem` command on your `PATH`, and `uvx axmem`
+runs it without installing (a checkout works too: `uv tool install .`). Axmem also fails closed: a server with no `AUTH_MODE` exits at start. A server that Gemini CLI starts
 runs over STDIO, which carries no bearer token, so set `AUTH_MODE=none` for it once, in the user config file (every
 request is then the one local tenant, `DEFAULT_TENANT`):
 

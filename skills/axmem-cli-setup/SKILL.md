@@ -21,11 +21,11 @@ can run a command. Setup ends with a verified round-trip, not an installed binar
 ## Install
 
 ```bash
-uv tool install .       # from a checkout of the repository: puts `axmem` on the PATH
+uv tool install --extra-index-url https://pypi.nvidia.com axmem   # from PyPI: puts `axmem` on the PATH
 axmem --version
 ```
 
-Axmem is not published to PyPI yet, so `uvx axmem` and `pip install axmem` do not work until a release exists.
+Axmem is on PyPI (`0.6.0rc1`, a release candidate; Python 3.14 is required), and `uvx axmem` runs it without installing. `--extra-index-url` takes the TensorRT packages from NVIDIA's index. From a checkout of the repository (development), `uv tool install .` installs the working tree.
 A built wheel (`uv build`) or a pip install needs the NVIDIA index for the TensorRT packages: `uv tool install --extra-index-url https://pypi.nvidia.com dist/axmem-*.whl` or the same flag with `pip install` (the README, section Installing the package, lists every way).
 `axmem` is the only console script.
 

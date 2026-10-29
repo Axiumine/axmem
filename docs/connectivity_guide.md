@@ -1,8 +1,10 @@
 This section provides more detailed instructions on how to connect axmem to various AI Agent applications.
 
-> **Install first.** Axmem is not published to PyPI yet, so the `uvx axmem` commands below only work once a release
-> exists. Until then, install it from a checkout with `uv tool install .` (see the README) and replace `uvx axmem` with
-> `axmem serve --transport stdio` (or just `axmem` for the CLI) in every example.
+> **Install first.** Axmem is on PyPI (`0.6.0rc1`, a release candidate), so the `uvx axmem` commands below work as
+> written (Python 3.14 is required). To have `axmem` on the `PATH` instead, run
+> `uv tool install --extra-index-url https://pypi.nvidia.com axmem` (see the README) and replace `uvx axmem` with
+> `axmem serve --transport stdio` (or just `axmem` for the CLI) in every example. A checkout (`uv tool install .`), a Git URL
+> or a built wheel are the alternatives for development.
 
 - [Claude Code](#claude-code)
 - [VS Code](#vs-code)
@@ -385,10 +387,10 @@ required. It executes the same tool registry the meta-tools use.
 
 ### Local (default)
 
-Axmem is not published to PyPI yet, so install it from a checkout of the repository (run this in its root):
+Axmem is on PyPI (`0.6.0rc1`, a release candidate): this puts `axmem` on the `PATH`:
 
 ```bash
-uv tool install .
+uv tool install --extra-index-url https://pypi.nvidia.com axmem
 axmem memory search "wsl dns" -c "wsl networking"
 axmem memory save "content" --title "Title" --importance 7
 ```
@@ -398,8 +400,8 @@ Local mode uses the same Qdrant and settings as a locally launched server
 
 ### Without installing it
 
-`uv tool install axmem` (and `uvx axmem`) need a PyPI release, which does not exist yet; `uv tool install .` from a
-clone installs the checkout, as above (a built wheel or a pip install needs `--extra-index-url https://pypi.nvidia.com`, see [Installing the package](../README.md#installing-the-package)). To exercise the CLI without installing, run the console script through the
+`uvx axmem memory recent` runs the CLI from PyPI without installing it (add `--extra-index-url https://pypi.nvidia.com` after `uvx` to take the TensorRT files from NVIDIA's index; a built wheel or a pip install needs that flag too, see [Installing the package](../README.md#installing-the-package)). `uv tool install .` from a
+clone installs the checkout instead. To exercise the CLI from a checkout without installing, run the console script through the
 project venv - edits apply immediately:
 
 ```bash

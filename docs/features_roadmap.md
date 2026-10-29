@@ -27,7 +27,7 @@
     - [x] Remote mode via fastmcp client (AXMEM_TOKEN bearer)
     - [x] auth login / status (the browser OAuth flow and the token cache were removed)
     - [x] Curated verbs (memory search/save/get/recent, with a project scope string)
-- [ ] PyPI package (not published yet; install from a checkout with `uv tool install .`)
+- [x] PyPI package (`0.6.0rc1`, a release candidate; `uv tool install --extra-index-url https://pypi.nvidia.com axmem`)
 - [x] Logging and Telemetry
     - [x] STDIO / JSON log configuration
     - [ ] Open Telemetry forwarding (no OpenTelemetry code exists)
