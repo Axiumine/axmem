@@ -331,6 +331,12 @@ without the mark, with the commit that landed it, in the commit that lands it.
 - The docs and `.env.example` said that `AUTH_MODE=none` needs `127.0.0.1` or `::1`; the server accepts, as 0.6.0rc1 does, any
   address of `127.0.0.0/8` and `::1` (and no host name, `localhost` included). The text now says what the code does. No behaviour
   changed.
+- The `tests` gate of the `pre-push` hook runs its suites without the `GIT_*` variables that a hook exports, as the other test
+  gates already did. A push made from a linked git worktree exports `GIT_DIR` (a clone does not), so the tests that build
+  temporary repositories ran their `git` commands on the real repository: three tests failed with "remote already exists" and
+  one of them set `core.bare=true` in the shared `.git/config`. The architecture test of the mutation sandbox no longer counts
+  `.git`, a file in a worktree and a directory in a clone, as a path that the sandbox must hold, so the `architecture` gate
+  passes in a worktree too.
 
 ### Security
 

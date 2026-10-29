@@ -97,7 +97,7 @@ def gate_tests_fast(ctx: Ctx) -> tuple[bool, str]:
 def gate_tests(_ctx: Ctx) -> tuple[bool, str]:
     """Architecture + integration + end-to-end on a single Qdrant node, collecting branch coverage."""
     run([*venv_tool("coverage"), "erase"])
-    return check(
+    return check_tests(
         [*venv_tool("pytest"), *SUITES, *PYTEST, "--cov", "--cov-branch", "--cov-report=", "--cov-fail-under=0"],
         timeout=TESTS_TIMEOUT_SECONDS,
     )

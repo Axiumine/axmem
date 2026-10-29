@@ -266,6 +266,21 @@ def test_test_gates_run_without_the_git_hook_environment(monkeypatch):
     assert seen["scrub_git"] is True
 
 
+def test_the_tests_gate_of_a_push_runs_without_the_git_hook_environment(monkeypatch):
+    """A hook in a linked worktree exports GIT_DIR: the suites that build repositories of their own would act on the real one."""
+    seen = {}
+
+    def fake_run(argv, **kwargs):
+        seen.update(kwargs)
+        return 0, ""
+
+    monkeypatch.setattr(testing, "run", lambda *a, **k: (0, ""))
+    monkeypatch.setattr(core, "run", fake_run)
+    ok, _ = testing.gate_tests(core.Ctx(stage="pre-push", files=None))
+    assert ok
+    assert seen["scrub_git"] is True
+
+
 def test_scrub_git_drops_git_variables_from_the_child_environment(monkeypatch):
     monkeypatch.setenv("GIT_INDEX_FILE", "/nonexistent/index")
     monkeypatch.setenv("KEEP_ME", "1")
