@@ -18,7 +18,8 @@ push of `main` and of the tag. PyPI is only read, without any login. A GitHub re
 
 Before the real upload the same signed bytes can be rehearsed on TestPyPI, with `scripts/release-testpypi.sh <version>` and
 `.github/workflows/publish-testpypi.yml` (see "Rehearsal on TestPyPI"). TestPyPI is not a second place to ship to: the
-rehearsal is advisory, not a gate, nothing on the PyPI path reads it, and it never touches PyPI.
+rehearsal is advisory, not a gate, nothing on the PyPI path reads it, and it never touches PyPI. Once a version is on an index,
+`scripts/smoke-release.sh` installs its files from there and uses the server they start (see "Install check of a release").
 
 ## What the release guarantees
 
@@ -126,7 +127,8 @@ read the generator's release notes first); a test keeps the version and the tag 
 * After the first upload, check on PyPI (project, Publishing) that only `publish.yml` with the environment `pypi` is listed,
   and that no API token exists; after the first rehearsal, check the same on test.pypi.org (only `publish-testpypi.yml` with
   the environment `testpypi`). Then change the install notes that say the package is not on PyPI yet (`README.md`,
-  `docs/`, `skills/axmem-*-setup`) in the commit that follows.
+  `docs/`, `skills/axmem-*-setup`) in the commit that follows, and run the install check of each index
+  (`scripts/smoke-release.sh --index testpypi <version>`, then `--index pypi`; see "Install check of a release").
 
 ### Rehearsal on TestPyPI
 
@@ -169,6 +171,7 @@ release candidate (below). A green rehearsal and a red first upload are possible
 `test-files.pythonhosted.org` and read the attestation on its page at test.pypi.org (its identity is `publish-testpypi.yml` at
 the tag), and install the downloaded wheel by its path. Never install from TestPyPI by name, and never put TestPyPI on
 `--extra-index-url`: a name on a scratch index that is not Axmem's would be taken for a dependency.
+`scripts/smoke-release.sh --index testpypi <version>` does that install, and uses the server (see "Install check of a release").
 
 | Stop of the rehearsal | What it means |
 |---|---|
@@ -187,6 +190,46 @@ the release commit's tree, and `publish-testpypi.yml` is frozen per tag like `pu
 next version; the real release is not affected. So run `python3 -m scripts.release.guard testpypi-ready --repo Axiumine/axmem`
 by hand before the real release, to see a refusal of the settings before any commit exists. The integrity check does not walk
 TestPyPI, and a version on TestPyPI proves nothing about PyPI.
+
+### Install check of a release
+
+`scripts/smoke-release.sh [--keep] [--index testpypi|pypi] <version>` installs the files that an index serves for a version
+and uses the server they start. It is run by hand, in the checkout that holds the tag, once for each index:
+
+1. `--index testpypi` after the rehearsal has printed `TestPyPI rehearsal complete`, and before the environment `pypi` is
+   approved: the files that are about to go to PyPI are installed from test.pypi.org first;
+2. `--index pypi` after the release has printed `Release complete`: the files PyPI serves are installed and used the same way.
+
+It needs the NVIDIA GPU, Docker and the models of Axmem, which is the machine of the pre-push gates (the server loads the real
+TensorRT embedder and reranker), and the tag `v<version>` in the checkout (`git fetch` the tags first). It uploads nothing,
+writes nothing in the repository and needs no credential: the only secrets are a random Qdrant key and a random bearer token,
+made for the run and gone with it. It is advisory, not a gate: no hook, workflow or other script runs it or reads its result,
+and the order is the maintainer's. It prints `ERROR: <reason>` and stops at the first thing that is not as it should be.
+
+What it does, in order. It reads the digests of `release-digests.json` at the tag, which is signed, and trusts nothing the
+index says; reads the JSON of the version on the index and requires it to list exactly the files of the manifest, each on the
+files host of that index (`test-files.pythonhosted.org` or `files.pythonhosted.org`), over https only, with the manifest's
+sha256; downloads them and compares the bytes. It installs the wheel by its path into a new Python 3.14 environment with
+`https://pypi.nvidia.com` as the only extra index (TestPyPI is never an index of an install, and the shell's six index
+variables of uv and pip, such as `UV_INDEX_URL` and `PIP_INDEX_URL`, are cleared), checks `uv pip check`, the version and
+`axmem --help`. It starts a Qdrant container for the run (`qdrant/qdrant:v1.19.2`, a loopback port, a random key,
+memory-backed storage, the label `axmem-wheelsmoke=1`) and `axmem serve --transport http` from the new environment, on a
+loopback port with static bearer-token authentication and a clean environment (none of the shell's `AXMEM_*`, `QDRANT_*` or
+proxy variables, no `.env`), and waits for `/health`. The installed command, as a client with the token, lists the tools, is
+refused with a wrong token, saves four memories, finds the first by a paraphrase through the embedder and the reranker (with
+a rerank score), reads it back and is told that an unknown id does not exist. The server is then stopped with SIGTERM and the
+container removed, and so they are on any other end, an error or an interrupt: nothing is left but, with `--keep`, the
+temporary directory with the files, the venv and the logs, whose path is printed. A run that was killed with SIGKILL can
+leave a container: `docker ps -a --filter label=axmem-wheelsmoke=1` finds it. The last line is `<index> install and server
+check passed: axmem <version>`.
+
+What it proves, and what it does not. It proves that the index serves, byte for byte, the files that the signed tag records, and
+that the wheel installs on this machine from today's dependencies, starts, authenticates and keeps and finds a memory with the
+real models. It does not prove the signatures and the attestations (see "Checking a release"), the sdist (its bytes are compared,
+it is never installed), the trusted publisher or the environment of the index (the rehearsal and the upload try those), the
+dependencies of `uv.lock` (the install resolves afresh from pypi.org and pypi.nvidia.com, so a pass does not hold for another
+day), or another Python, platform, GPU or configuration. Its tests (`test_release_smoke_script*.py`) run the real script with
+fake `curl`, `uv`, `docker`, `nvidia-smi` and `axmem`, and need no GPU, Docker or network; the real thing is seen only by a run.
 
 ### Rehearsal with a release candidate
 
@@ -356,7 +399,8 @@ bash scripts/release-pypi.sh 0.6.0
 The keyless signature is recorded in the public Rekor transparency log, with the name of the repository.
 
 The rehearsal on TestPyPI is not part of this check: files on test.pypi.org carry the identity of `publish-testpypi.yml`, and
-a version that is on TestPyPI says nothing about PyPI.
+a version that is on TestPyPI says nothing about PyPI. Nor is the install check (`scripts/smoke-release.sh`): it compares the
+bytes an index serves with the manifest of the tag and installs and uses them, and verifies no signature.
 
 ## Known gap
 
@@ -377,6 +421,7 @@ are seen only by the first rehearsal.
 | `scripts/lib/project.sh` | package name, remote, PyPI hosts, publish workflow and environment |
 | `scripts/release-testpypi.sh` | the rehearsal of the upload on TestPyPI; it uploads nothing, makes no release and dispatches `publish-testpypi.yml` |
 | `scripts/lib/testpypi-flow.sh` | the steps of the rehearsal that are not those of the release: TestPyPI's host, workflow and environment, its lock and its reads |
+| `scripts/smoke-release.sh` | the install check of a release: installs the files an index serves for a version, starts the server from them against a Qdrant of its own and uses it; advisory, needs the GPU, Docker and the models, uploads nothing |
 | `scripts/check-package.sh` | what a package must pass before a release |
 | `scripts/release/guard.py` | the five conditions, and the reads of the flow |
 | `scripts/release/publish.py` | the settings check (`publish-ready`) and the runs of `publish.yml` (dispatch, state, wait) |

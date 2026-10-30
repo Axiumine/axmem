@@ -359,4 +359,5 @@ There is one route, and it is a script: `scripts/release-pypi.sh <version>` buil
 release publishes nothing, and a tag pushed by hand starts `release.yml` without the release commit and the manifest that it
 needs. The setup, the steps and what to do when one stops are in [Releasing Axmem](release.md). Before the real upload,
 `scripts/release-testpypi.sh <version>` rehearses the same signed files on TestPyPI; it is optional and advisory, makes no
-release, and is described there too.
+release, and is described there too. Once a version is on an index, `scripts/smoke-release.sh --index testpypi|pypi <version>`
+installs its files from there and uses the server they start, on this machine's GPU, Docker and models; it is advisory too.

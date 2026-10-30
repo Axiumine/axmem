@@ -12,6 +12,27 @@ without the mark, with the commit that landed it, in the commit that lands it.
 
 ## [Unreleased]
 
+### Added
+
+- `scripts/smoke-release.sh [--keep] [--index testpypi|pypi] <version>`, the install check of a release: it installs the files
+  that an index serves for a version and uses the server they start. It reads the digests of `release-digests.json` at the
+  tag `v<version>` (the tag is signed, the index is not trusted), requires the JSON of the index to list exactly the manifest's
+  files, each on the files host of that index (`test-files.pythonhosted.org` or `files.pythonhosted.org`), over https only, and
+  compares the sha256 of the downloaded bytes. It installs the wheel by its path into a new Python 3.14 environment with
+  `https://pypi.nvidia.com` as the only extra index (TestPyPI is never an index of the install, and the shell's index variables
+  are cleared) and checks `uv pip check`, the version and `axmem --help`. It then starts a throwaway Qdrant container
+  (`qdrant/qdrant:v1.19.2`, a loopback port, a random key, memory-backed storage, the label `axmem-wheelsmoke=1`) and
+  `axmem serve --transport http` from the new environment, with a clean environment and static bearer-token authentication,
+  waits for `/health`, and drives the installed CLI as a client: lists the tools, is refused with a wrong token, saves four
+  memories, finds the first by a paraphrase with a rerank score, reads it back and is told that an unknown id is an error. The
+  server (SIGTERM) and the container are stopped and removed on every exit, an error or an interrupt included. It is advisory,
+  not a gate, uploads nothing, needs no credential and needs the NVIDIA GPU, Docker and the models of the machine, so it runs
+  by hand after the rehearsal (`--index testpypi`) and after the release (`--index pypi`); the `shellcheck` gate lints it, and
+  `tests/integration/test_release_smoke_script*.py` run the real script against fake `curl`, `uv`, `docker`, `nvidia-smi` and
+  `axmem` (the hosts, the image and the extra index are held to `scripts/release/facts.py`, `scripts/lib/project.sh`,
+  `tests/qdrant_support.py` and `pyproject.toml`, and each cleanup path is run). See
+  [docs/release.md](docs/release.md), "Install check of a release".
+
 ### Changed
 
 - The install notes say that Axmem is on PyPI: `0.6.0rc1`, a release candidate and the only version there, installs with

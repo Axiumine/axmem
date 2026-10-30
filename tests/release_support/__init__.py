@@ -7,6 +7,8 @@
 * ``fakes``: light fakes of ``gh``, ``curl`` and ``uv`` for the tests of the checks in ``scripts/release`` on their own;
   the ``curl`` and the publishing half of ``gh`` are the full fakes' own code.
 * ``script``: lifts the functions of ``scripts/release-pypi.sh`` and ``scripts/lib/release-flow.sh`` out of the text.
+* ``smoke_script``: ``SmokeWorld``, a scratch repository with a signed tag and fake ``curl``, ``uv``, ``docker``,
+  ``nvidia-smi`` and installed ``axmem`` in which the real ``scripts/smoke-release.sh`` runs.
 * ``upload_scan``: finds every upload command in the code of the repository.
 * ``real_uv``: the real ``uv``, to hold the fake ``uv`` build to it.
 """
