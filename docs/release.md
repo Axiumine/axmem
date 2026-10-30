@@ -37,11 +37,18 @@ conditions before the workflow is dispatched (and again inside `publish.yml`):
 5. the files that will be published, the signed ones downloaded from the GitHub release, are byte-identical to the
    manifest's digests and are the only files there.
 
+A fixed HIGH or CRITICAL finding of the dependency scan stops a release, at the CI check of the second condition and at the
+preflight gate of "Cutting a release"; [Dependency findings](quality-gates.md#dependency-findings) says which findings block,
+and what the maintainer checks by hand before a release.
+
 `release.yml` rebuilds the package from the tag at the epoch and the version that the manifest records, refuses to sign
 unless the rebuild is byte-identical to the manifest, checks that the package holds only Axmem's source (the `dist-check` of
 the [package gate](quality-gates.md#package-contents)), signs each file with cosign (keyless) and attests them with the
-SLSA-3 generator. The build backend is pinned to exact versions in `pyproject.toml` (`[build-system]`), so that the build on
-the maintainer's machine and the rebuild in CI agree (a test requires every entry to be an exact `==` pin). The dependencies
+SLSA-3 generator. The GitHub release that the files are attached to gets the section `## [v<version>]` of `CHANGELOG.md` at
+the tag, the one the script stamped from `## [Unreleased]`, as its notes, and the run stops before it builds anything when that
+section is missing, repeated, empty or longer than the 125,000 characters that GitHub accepts as a release body
+(`scripts/release/notes.py`). The build backend is pinned to exact versions in `pyproject.toml` (`[build-system]`), so that
+the build on the maintainer's machine and the rebuild in CI agree (a test requires every entry to be an exact `==` pin). The dependencies
 of the two packages are not pinned: should one of them change the bytes, the rebuild no longer equals the manifest and the
 signing run refuses, after the tag is pushed; PyPI holds nothing then, and the next version is released.
 
@@ -100,8 +107,10 @@ read the generator's release notes first); a test keeps the version and the tag 
   * a tag ruleset on `refs/tags/v*`: creation restricted to the maintainer (the Admin role is the only bypass actor), update,
     deletion and non-fast-forward blocked (`publish-ready` enforces it, bypass list included);
   * recommended: a branch ruleset that blocks the creation of `refs/heads/v*`, so no branch can be named like a tag;
-  * a ruleset on `main` without force push or deletion and with required status checks, with the maintainer as the only
-    bypass actor, because the script pushes to `main` (`publish-ready` only warns when it is missing).
+  * a ruleset on `main` without force push or deletion, with signed commits, a pull request with one code-owner approval,
+    resolved conversations and the required status checks (`lint (py3.14)`, `static (3.14)`, `trivy`, `smoke-test`,
+    `analyze (python)`, `analyze (actions)`), with the Admin role as the only bypass actor, because the script pushes to
+    `main` (`publish-ready` only warns when it is missing).
 * GitHub, Settings, Actions, General: when Allow select actions is on, allow `actions/*`, `astral-sh/setup-uv`,
   `sigstore/cosign-installer`, `softprops/action-gh-release`, `pypa/gh-action-pypi-publish` and the workflow of the
   `slsa-framework` generator. The default workflow token may stay read-only.
@@ -291,7 +300,8 @@ The steps, in order:
    `axmem --help` runs); write `release-digests.json`: the version,
    tag, epoch, tool versions and the sha256 of each file. Nothing is committed yet, so a re-run does it again: a failure
    anywhere between the stamp and the commit (a gate, the build, Ctrl-C) puts `CHANGELOG.md` and the manifest back to HEAD;
-7. the release commit (changelog and manifest; the hooks run), then the push to the remote's `main` (the pre-push gate runs).
+7. the release commit (changelog and manifest; the hooks run, and the integration tests among them refuse a stamped section that
+   would give no notes: empty, repeated or longer than a release body takes), then the push to the remote's `main` (the pre-push gate runs).
    A refused commit restores both paths to HEAD and stops; a re-run is a new release. A refused push keeps the local commit,
    and a re-run pushes it;
 8. wait for CI on the release commit, tag it `v0.6.0` (annotated), push the tag. A tag at the commit is done, a tag
@@ -431,8 +441,9 @@ are seen only by the first rehearsal.
 | `scripts/release/integrity.py` | the integrity check of every version on PyPI |
 | `scripts/release/superseded.py` | the reader of `release-superseded.json` |
 | `scripts/release/digests.py` | writes and verifies `release-digests.json` |
+| `scripts/release/notes.py` | cuts the section of a tag out of `CHANGELOG.md`, as the notes of its GitHub release |
 | `scripts/release/ci_green.py` | the CI check of a commit |
 | `scripts/release/sdist.py` | refuses an sdist with files that git does not track |
-| `.github/workflows/release.yml` | the rebuild, the digest check, the signing and the provenance; uploads nothing |
+| `.github/workflows/release.yml` | the release notes, the rebuild, the digest check, the signing and the provenance; uploads nothing |
 | `.github/workflows/publish.yml` | the verification of the signed files and the upload to PyPI; dispatched by the script on the tag |
 | `.github/workflows/publish-testpypi.yml` | `publish.yml` with the listed differences: the same verification and the upload to TestPyPI; dispatched by the rehearsal script on the tag |

@@ -203,6 +203,35 @@ def test_the_release_gets_the_wheel_the_sdist_and_a_bundle_for_each():
     assert attach["with"]["fail_on_unmatched_files"] is True
 
 
+def test_the_notes_of_the_release_are_the_changelog_section_of_the_tag_and_are_cut_before_anything_is_built():
+    step = _step("Extract the release notes from CHANGELOG.md")
+    names = _names()
+
+    assert step["id"] == "notes"
+    assert not {"if", "continue-on-error"} & set(step)  # it runs on every tag and a refusal fails the job
+    assert step["env"] == {"TAG_NAME": "${{ github.ref_name }}", "NOTES_FILE": "${{ runner.temp }}/release-notes.md"}
+    assert "${{" not in step["run"]  # the tag reaches the shell as a variable, never as text of the script
+    assert " ".join(step["run"].replace("\\", " ").split()).startswith(
+        'set -euo pipefail python3 -m scripts.release.notes --changelog CHANGELOG.md --tag "$TAG_NAME" '
+        '--output "$NOTES_FILE"',
+    )
+    assert 'echo "path=${NOTES_FILE}" >> "$GITHUB_OUTPUT"' in step["run"]
+    assert step["env"]["NOTES_FILE"].startswith("${{ runner.temp }}/")  # not in the workspace, so not in dist/
+    # after the manifest has proven that the tag is the release it names, before the build, the signing and the upload
+    assert names.index("Resolve SOURCE_DATE_EPOCH and the version from the release manifest") < names.index(step["name"])
+    assert names.index(step["name"]) < names.index("Build wheel + sdist")
+
+
+def test_the_release_body_is_the_file_of_the_notes_step_and_nothing_else():
+    attach = _step("softprops/action-gh-release")
+    names = _names()
+
+    assert attach["with"]["body_path"] == "${{ steps.notes.outputs.path }}"
+    for generated in ("body", "generate_release_notes", "append_body"):
+        assert generated not in attach["with"]  # no text of the workflow's own, no notes that GitHub writes
+    assert names.index("Extract the release notes from CHANGELOG.md") < names.index(attach["name"])
+
+
 def test_the_signing_job_hands_the_digests_of_what_it_signed_to_the_provenance_job():
     job = _job("sign-artefacts")
     subjects = _step("Compute SLSA provenance subjects")

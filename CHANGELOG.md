@@ -14,6 +14,19 @@ without the mark, with the commit that landed it, in the commit that lands it.
 
 ### Added
 
+- The GitHub release of a version carries the log of its changes as its notes. `release.yml` cuts the section `## [v<version>]`
+  of `CHANGELOG.md` at the tag (the one that `scripts/release-pypi.sh` stamps from `## [Unreleased]`) with the new
+  `scripts/release/notes.py` and gives the file to `softprops/action-gh-release` as `body_path`, so the notes are what the
+  changelog says about that version and nothing else. The step runs before anything is built, signed or attached and stops the
+  run when the changelog at the tag has no section of the tag or more than one, when the section holds no entry under its
+  headings, or when it is longer than the 125,000 characters that GitHub accepts as the body of a release (the section of
+  0.6.0rc1 is 111,302). A heading inside fenced code does not count as one. The action, its pin, the permissions of the jobs,
+  the tag of the SLSA generator and the dependencies are unchanged, and the wheel and the sdist are the same bytes. The release
+  of 0.6.0rc1 was made before this change. `tests/integration/test_release_notes.py`
+  runs the module on changelogs of several shapes (a missing, repeated and empty section, the limit to the character, a
+  section that is the last of the file, Windows line ends), on every released section of the repository's `CHANGELOG.md` and on
+  the heading that `stamp_changelog` writes; `tests/architecture/test_release_workflow.py` holds the step and `body_path` in
+  place. See [docs/release.md](docs/release.md).
 - `scripts/smoke-release.sh [--keep] [--index testpypi|pypi] <version>`, the install check of a release: it installs the files
   that an index serves for a version and uses the server they start. It reads the digests of `release-digests.json` at the
   tag `v<version>` (the tag is signed, the index is not trusted), requires the JSON of the index to list exactly the manifest's

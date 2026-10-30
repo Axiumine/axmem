@@ -345,6 +345,8 @@ execute_axmem_tool(
 
 Remove bidirectional link(s) between memories.
 
+**The link is deleted and this cannot be undone; both memories stay as they are. To get the link back, create it again with `link_memories`.**
+
 **Parameters:**
 - `source_id` (required, UUID string): Source memory ID (aliases: `memory_id`, `from_id`, `id`)
 - `target_id` (required, UUID string or List[UUID string]): Target memory ID(s) to unlink (aliases: `target_ids`, `related_id`, `related_ids`, `linked_ids`)
@@ -382,6 +384,8 @@ execute_axmem_tool(
 ### `mark_memory_obsolete`
 
 Soft delete a memory with audit trail and supersession tracking.
+
+**Nothing is deleted: the memory stays stored, is left out of normal queries and automatic links, and `unobsolete_memory` brings it back. No tool or REST route deletes a memory for good.**
 
 **Parameters:**
 - `memory_id` (required): Memory ID to mark obsolete

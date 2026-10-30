@@ -51,6 +51,8 @@ person reviews them today.
   key, not SMS.
 * Access is removed on request, when someone is inactive for a long time, and at once if an account
   may be compromised.
+* The credentials the project uses, who may use them and how they are stored, rotated and revoked are in
+  [Secrets and credentials](docs/security.md#secrets-and-credentials).
 
 ## If the lead is unavailable
 
@@ -78,7 +80,7 @@ The co-owner is an owner of the `Axiumine` organization and an admin of `Axiumin
 | The signing identity | Nothing personal. `release.yml` signs the files keyless in CI, and the identity is that workflow at the tag, not a person or a key. The script makes the release commit and the tag with the git identity of whoever runs it. | None. |
 | Secrets | The repository, the organization and the release environments hold no secret. | None. |
 | Security reports | They go to the contact named in [SECURITY.md](SECURITY.md). GitHub's private vulnerability reporting is enabled for the repository (read from the GitHub API on 2026-10-29). GitHub tells the administrators of the repository and the security managers of the organization about a new report; the organization has no security manager and no team, so today those are the two owners, the only administrators. Whether a person gets an e-mail depends on their own GitHub notification settings, which nobody else can read. The address in SECURITY.md is still the lead maintainer's alone. | Each owner checks that their notification settings deliver security alerts. Decide whether the co-owner is also named in SECURITY.md as a contact. |
-| The rules for `main` | They block deletion and force pushes. They do not require the checks of `ci.yml` and `quality.yml` or an approval, which [CONTRIBUTING.md](CONTRIBUTING.md#code-review) describes as the maintainers' rule. The release script pushes to `main`, so a rule that requires checks needs the maintainer as a bypass actor ([docs/release.md](docs/release.md#once-before-the-first-release)). | Decide whether to enforce the checks in the rules. |
+| The rules for `main` | They block deletion and force pushes and require signed commits, a pull request with one approval of a code owner (`CODEOWNERS`), resolved conversations and the checks `lint`, `smoke-test`, `static`, `trivy` and the two CodeQL analyses, green on the last commit. The Admin role is the only bypass actor, because the release script pushes to `main` ([docs/release.md](docs/release.md#once-before-the-first-release)). Both owners are admins, so either can merge without an approval, and the rules bind a contributor, not the maintainers. | A second maintainer who reviews the pull requests of the lead; until then the approval is a formality and the OpenSSF Scorecard check Code-Review stays at 0. |
 
 The release script keeps no state of its own: it reads git, GitHub and PyPI, so it can be run again from another checkout
 and continues at the first step that is not done ([docs/release.md](docs/release.md#when-it-stops)). That has not been tried

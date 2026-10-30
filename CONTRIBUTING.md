@@ -93,7 +93,8 @@ These are enforced by tools, so a change that breaks them cannot be merged. The 
 * **Dependencies.** Do not add or bump a dependency without agreeing it in an issue first. They are pinned in `uv.lock`
   and scanned by `trivy`. The exception is the pull requests that Dependabot opens (its configuration is
   [.github/dependabot.yml](.github/dependabot.yml)): they need no issue, and they are reviewed and must pass the same
-  checks as any other change.
+  checks as any other change. How a vulnerability or a license of a dependency is handled is in
+  [Dependency findings](docs/quality-gates.md#dependency-findings).
 * **Package contents.** The wheel and the sdist hold Axmem's source and nothing else. Model weights, TensorRT engines and
   the NVIDIA libraries have licenses of their own and are never added to the repository or to a package (the `package` gate
   refuses them).
@@ -155,9 +156,12 @@ request says what changed and why, and links the issue it closes.
 3. the maintainer has run the slow gates of the `pre-push` hook on the result (see
    [Making a change](#making-a-change)), because CI does not run the tests.
 
-These conditions are the maintainers' rule. The repository rules for `main` block deletion and force pushes and do not
-require the checks or an approval, so enforcing the conditions there is open work, listed in
-[GOVERNANCE.md](GOVERNANCE.md#if-the-lead-is-unavailable).
+The repository rules for `main` enforce the first two for a contributor: deletion and force pushes are blocked, commits must
+be signed, a change needs a pull request with one approval of a code owner, resolved conversations and the checks `lint`,
+`smoke-test`, `static`, `trivy` and the two CodeQL analyses green on the last commit. The third cannot be enforced, because
+the hosted CI has no GPU. The Admin role bypasses the rules, because the release script pushes to `main`; both owners are
+admins, so the rules do not hold the maintainers' own changes (see
+[GOVERNANCE.md](GOVERNANCE.md#if-the-lead-is-unavailable)).
 
 **The maintainers' own changes.** These are pushed to `main` directly after the git hooks have passed on the maintainer's
 machine: the `pre-commit` and `pre-push` hooks run the whole pipeline, including the tests that CI does not run. No second
