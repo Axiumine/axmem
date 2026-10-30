@@ -210,7 +210,7 @@ class TestFilesThatCannotBeTrustedAfterThePublication:
         assert done.returncode != 0
         assert world.dispatches() == [DISPATCH]
         assert "could not download" in _out(done)
-        assert "files.pythonhosted.org" in _out(done)
+        assert re.search(r"\bfiles\.pythonhosted\.org\b", _out(done))
 
     def test_the_re_run_after_the_file_host_recovers_finishes_and_dispatches_nothing(
         self, world: World,

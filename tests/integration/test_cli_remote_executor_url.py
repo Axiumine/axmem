@@ -37,9 +37,9 @@ from app.routes.cli.remote_executor import RemoteExecutor, normalize_server_url
 from app.routes.cli.render import emit_error, redact_urls_in_text
 from app.utils.url_helpers import redact_url
 
-SECRET = "s3cretPassw0rd"
+CANARY = "canary-0f3a"
 USER = "alice"
-URL_WITH_SECRET = f"http://{USER}:{SECRET}@127.0.0.1:18765"
+URL_WITH_CANARY = f"http://{USER}:{CANARY}@127.0.0.1:18765"
 GUARD_SECONDS = 20  # outer bound so a regression fails instead of hanging the suite
 
 
@@ -131,7 +131,7 @@ def test_mount_path_lands_in_the_path_not_the_query_or_fragment(raw, expected):
         "HTTPS://host.example.com",
         "localhost:8020",
         "https://host.example.com/custom/",
-        f"http://{USER}:{SECRET}@host.example.com:8020",
+        f"http://{USER}:{CANARY}@host.example.com:8020",
     ],
 )
 def test_normalize_is_idempotent(raw):
@@ -161,8 +161,8 @@ def test_stored_url_is_not_grown_by_renormalising_in_remote_executor():
 @pytest.mark.parametrize(
     ("url", "expected"),
     [
-        (URL_WITH_SECRET, "http://***:***@127.0.0.1:18765"),
-        (f"https://{SECRET}@host/mcp", "https://***:***@host/mcp"),
+        (URL_WITH_CANARY, "http://***:***@127.0.0.1:18765"),
+        (f"https://{CANARY}@host/mcp", "https://***:***@host/mcp"),
         ("http://localhost:8020/mcp", "http://localhost:8020/mcp"),
     ],
 )
@@ -174,11 +174,11 @@ def test_redact_url_masks_userinfo_only(url, expected):
     ("text", "expected"),
     [
         (
-            f"Client error '401 Unauthorized' for url '{URL_WITH_SECRET}/mcp'",
+            f"Client error '401 Unauthorized' for url '{URL_WITH_CANARY}/mcp'",
             "Client error '401 Unauthorized' for url 'http://***:***@127.0.0.1:18765/mcp'",
         ),
         (
-            f"redirected from {URL_WITH_SECRET}/a to https://{SECRET}@other/b",
+            f"redirected from {URL_WITH_CANARY}/a to https://{CANARY}@other/b",
             "redirected from http://***:***@127.0.0.1:18765/a to https://***:***@other/b",
         ),
         ("mail me at bob@example.com (no URL)", "mail me at bob@example.com (no URL)"),
@@ -192,19 +192,19 @@ def test_redact_urls_in_text_masks_every_embedded_userinfo(text, expected):
 
 @pytest.mark.parametrize("as_json", [False, True])
 def test_emit_error_redacts_url_credentials(as_json, capsys):
-    emit_error(f"failed for {URL_WITH_SECRET}/mcp", as_json)
+    emit_error(f"failed for {URL_WITH_CANARY}/mcp", as_json)
 
     err = capsys.readouterr().err
-    assert SECRET not in err
+    assert CANARY not in err
     assert USER not in err
     assert "127.0.0.1:18765/mcp" in err
 
 
 def test_unsupported_scheme_error_does_not_echo_credentials():
     with pytest.raises(ValueError, match="Unsupported server URL scheme") as excinfo:
-        normalize_server_url(f"ftp://{USER}:{SECRET}@example.com")
+        normalize_server_url(f"ftp://{USER}:{CANARY}@example.com")
 
-    assert SECRET not in str(excinfo.value)
+    assert CANARY not in str(excinfo.value)
     assert USER not in str(excinfo.value)
 
 
@@ -218,17 +218,17 @@ async def test_login_neither_persists_nor_echoes_url_credentials(tmp_path, capsy
         return StubClient()
 
     code = await auth_commands.login(
-        URL_WITH_SECRET,
+        URL_WITH_CANARY,
         env_file=env_file,
         client_factory=factory,
     )
 
     assert code == 0
     out = capsys.readouterr()
-    assert SECRET not in out.out + out.err
+    assert CANARY not in out.out + out.err
     assert USER not in out.out + out.err
     assert "Logged in to http://127.0.0.1:18765/mcp" in out.out
-    assert SECRET not in env_file.read_text()
+    assert CANARY not in env_file.read_text()
     assert env_file.read_text().splitlines() == [
         "LOG_LEVEL=DEBUG",
         "AXMEM_SERVER=http://127.0.0.1:18765/mcp",
@@ -254,20 +254,20 @@ async def test_login_failure_message_does_not_echo_credentials(tmp_path, capsys)
     failing = StubClient(error=RuntimeError("unauthorized for http://remote:8020/mcp"))
 
     code = await auth_commands.login(
-        f"http://{USER}:{SECRET}@remote:8020",
+        f"http://{USER}:{CANARY}@remote:8020",
         env_file=env_file,
         client_factory=lambda url, token: failing,
     )
 
     assert code == 1
     err = capsys.readouterr().err
-    assert SECRET not in err
+    assert CANARY not in err
     assert not env_file.exists()
 
 
 @pytest.fixture
 def status_env(monkeypatch):
-    monkeypatch.setattr(settings, "AXMEM_SERVER", URL_WITH_SECRET)
+    monkeypatch.setattr(settings, "AXMEM_SERVER", URL_WITH_CANARY)
     monkeypatch.delenv("AXMEM_TOKEN", raising=False)
 
 
@@ -284,15 +284,15 @@ async def test_status_redacts_url_credentials(status_env, monkeypatch, capsys):
 
     assert code == 0
     out = capsys.readouterr()
-    assert SECRET not in out.out + out.err
+    assert CANARY not in out.out + out.err
     assert USER not in out.out + out.err
     assert "Server: http://***:***@127.0.0.1:18765/mcp" in out.out
     # Connection behaviour is unchanged: only what is shown is masked.
-    assert seen == [f"{URL_WITH_SECRET}/mcp"]
+    assert seen == [f"{URL_WITH_CANARY}/mcp"]
 
 
 async def test_status_error_path_redacts_url_credentials(status_env, monkeypatch, capsys):
-    error = RuntimeError(f"Client error '401 Unauthorized' for url '{URL_WITH_SECRET}/mcp'")
+    error = RuntimeError(f"Client error '401 Unauthorized' for url '{URL_WITH_CANARY}/mcp'")
     monkeypatch.setattr(
         remote_executor, "_default_client_factory", lambda url, _t=None: StubClient(error=error),
     )
@@ -301,7 +301,7 @@ async def test_status_error_path_redacts_url_credentials(status_env, monkeypatch
 
     assert code == 1
     err = capsys.readouterr().err
-    assert SECRET not in err
+    assert CANARY not in err
     assert USER not in err
     assert "Server: http://***:***@127.0.0.1:18765/mcp" in err
     assert "401 Unauthorized" in err
@@ -321,13 +321,13 @@ async def test_tool_command_error_does_not_echo_url_credentials(
     )
 
     code = await _run_tool_command(
-        _args(["tools", "list", "--server", URL_WITH_SECRET, *extra]),
+        _args(["tools", "list", "--server", URL_WITH_CANARY, *extra]),
     )
 
     assert code == 1
     err = capsys.readouterr().err
     assert "401 Unauthorized" in err
-    assert SECRET not in err
+    assert CANARY not in err
     assert USER not in err
 
 

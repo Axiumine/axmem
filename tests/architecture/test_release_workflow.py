@@ -191,7 +191,7 @@ def test_the_signatures_are_verified_against_the_identity_of_this_workflow_at_th
 
     assert "cosign verify-blob" in verify["run"]
     assert "workflows/release.yml@refs/tags/${TAG_NAME}" in verify["run"]
-    assert "https://token.actions.githubusercontent.com" in verify["run"]
+    assert re.search(r'--certificate-oidc-issuer "https://token\.actions\.githubusercontent\.com"', verify["run"])
     assert names.index(verify["name"]) < names.index("Attach artefacts + signatures to release")
 
 
