@@ -70,7 +70,7 @@ dev = [
     "httpx2==2.16.0",
     "import-linter==2.15",
     # The tests that sign tokens (tests/jwt_support.py) import it; FastMCP verifies with it and installs it.
-    "joserfc==1.7.0",
+    "joserfc==1.7.6",
     "memray==1.20.0 ; sys_platform != 'win32'",
     "mutmut==3.8.0",
     "mypy==2.4.0",

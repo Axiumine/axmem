@@ -274,6 +274,7 @@ without the mark, with the commit that landed it, in the commit that lands it.
   tool results) and GHSA-xcq7-p3pf-p88h / CVE-2026-114603 (unbounded `tracestate` parsing in `opentelemetry-api`). The scan of
   the new `uv.lock` reports no issue. OpenSSF Scorecard's Vulnerabilities check counts such advisories, which is how they were
   found; the `trivy` gate had not stopped on them.
+- `joserfc` is pinned at 1.7.6 (was 1.7.0), the smallest release that carries the fixes of two advisories published on 2026-10-30: GHSA-jpxq-7h8p-2q76 (high: an unbounded `recipients` array in a JWE General JSON message leads to CPU exhaustion through repeated RSA private-key decryption, fixed in 1.7.5) and GHSA-9pg5-8c7x-5hfx (medium: the size guard for a compact JWS allocates the attacker-controlled segments before it rejects them). FastMCP verifies bearer tokens with `joserfc`, and `tests/jwt_support.py` signs them with it. OpenSSF Scorecard's Vulnerabilities check listed both for the old lock file the same day, before the `trivy` database had them; the scan of the new `uv.lock` reports no issue.
 - Operations note, not a change to any file: four security settings of the GitHub repository `Axiumine/axmem` are enabled, as the
   GitHub API reported on 2026-10-29: private vulnerability reporting (the private channel that `SECURITY.md` names), secret scanning,
   secret scanning push protection and Dependabot security updates. The first three were off in the audit that began this work.
