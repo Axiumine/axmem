@@ -225,6 +225,18 @@ came from (`QDRANT_URL` lists the same nodes in the same order; a node's snapsho
 check for leftover partial replicas. Aliases are not part of a snapshot. Details:
 [Configuration Guide](docs/configuration.md#qdrant-configuration).
 
+> **Warning: three operator commands replace data. Read this before you run them.**
+>
+> - **`axmem restore <dir> --yes` replaces the memories and links of every tenant in Qdrant with the snapshot's.** What was
+>   written after the snapshot was taken is no longer in the live data, and the command keeps no copy of it. Stop every server
+>   and take a fresh `axmem backup` (and `axmem export`) first. Without `--yes` it changes nothing.
+> - **`axmem export <file>` replaces a file that already has that name, and `<file>.partial`, without asking.** Give it a
+>   new name.
+> - **`axmem re-embed` starts at once, with no confirmation, and needs every server stopped.** It keeps the previous memory
+>   collection, but when the `QDRANT_SHARD_NUMBER`, `QDRANT_REPLICATION_FACTOR` or `QDRANT_WRITE_CONSISTENCY_FACTOR` settings
+>   changed it moves the links into a new collection and removes the old links collection. Run `--dry-run` first, and take
+>   an `axmem backup` if you want to be able to go back.
+
 ### Authentication and tenants
 
 Every request acts as one tenant. `AUTH_MODE` decides how the tenant is found, and the server will not start without it:
@@ -325,8 +337,8 @@ axmem memory search "wsl dns" -c "wsl networking" --json | jq '.primary_memories
 
 # Operator commands, run against Qdrant itself (see "Qdrant" above)
 axmem backup                     # snapshot every node into the backup directory
-axmem restore <backup-dir> --yes # stop the server first
-axmem export memories.jsonl      # portable, without vectors
+axmem restore <backup-dir> --yes # replaces every tenant's memories and links, see the warning above; stop every server first
+axmem export memories.jsonl      # portable, without vectors; replaces a file of that name
 axmem import memories.jsonl      # embeds each memory again
 axmem qdrant-check               # compare the nodes of a cluster, report only
 ```

@@ -8,7 +8,8 @@ name: Release
 # bundles of the push run with ones that publish.yml refuses. It uploads nothing to any index:
 # publish.yml, which the script dispatches on the same tag once the signing here has succeeded, is the only workflow that
 # does. A tag without the release-digests.json of the script is refused: the bytes PyPI will serve could not be proven to
-# be the bytes signed here. See docs/release.md.
+# be the bytes signed here. The GitHub release it attaches the files to gets the section of CHANGELOG.md of its version as
+# its notes, and a tag whose changelog has no such section, or an empty one, is refused as well. See docs/release.md.
 
 on:
   push:
@@ -108,6 +109,20 @@ jobs:
           echo "epoch=${epoch}" >> "$GITHUB_OUTPUT"
           echo "version=${version}" >> "$GITHUB_OUTPUT"
 
+      # The release carries the log of its own version: the section of CHANGELOG.md that scripts/release-pypi.sh stamped
+      # for this tag, as the body of the GitHub release (`body_path` below). Before anything is built or signed, so a
+      # changelog with no section of the tag, an empty one or one that GitHub would refuse stops the run here. The file
+      # is outside the workspace and dist/. See scripts/release/notes.py.
+      - name: Extract the release notes from CHANGELOG.md
+        id: notes
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+          NOTES_FILE: ${{ runner.temp }}/release-notes.md
+        run: |
+          set -euo pipefail
+          python3 -m scripts.release.notes --changelog CHANGELOG.md --tag "$TAG_NAME" --output "$NOTES_FILE"
+          echo "path=${NOTES_FILE}" >> "$GITHUB_OUTPUT"
+
       - name: Build wheel + sdist
         env:
           SOURCE_DATE_EPOCH: ${{ steps.manifest.outputs.epoch }}
@@ -172,6 +187,7 @@ jobs:
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           tag_name: ${{ github.ref_name }}
+          body_path: ${{ steps.notes.outputs.path }}
           files: |
             dist/*.whl
             dist/*.tar.gz

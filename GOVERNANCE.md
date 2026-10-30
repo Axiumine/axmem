@@ -51,6 +51,8 @@ person reviews them today.
   key, not SMS.
 * Access is removed on request, when someone is inactive for a long time, and at once if an account
   may be compromised.
+* The credentials the project uses, who may use them and how they are stored, rotated and revoked are in
+  [Secrets and credentials](docs/security.md#secrets-and-credentials).
 
 ## If the lead is unavailable
 

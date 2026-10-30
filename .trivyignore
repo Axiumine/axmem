@@ -1,3 +1,6 @@
-# Accepted findings: one ID per line, each with a reason and a review date.
+# Accepted findings. An entry is a reason in a comment on the line above, then the ID that trivy prints and its review date:
+#   <ID> exp:YYYY-MM-DD
+# Once that date has passed trivy no longer ignores the ID, so the gate fails again until the entry is renewed or removed.
+# The policy is in docs/quality-gates.md, "Dependency findings".
 # None at present. The previous entry (AVD-DS-0002, root user in the application image's Dockerfile)
 # went away with the container deployment; the test harness image runs as a non-root user.

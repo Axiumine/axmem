@@ -3,7 +3,8 @@
 Axmem stores what AI agents remember, often including private work, so a vulnerability can expose real data. This page says
 how to report a vulnerability, what to expect afterwards, and how disclosure works. What Axmem promises about its own security
 (and what it does not) is in [docs/security.md](docs/security.md); the argument that those promises hold is in
-[docs/assurance-case.md](docs/assurance-case.md).
+[docs/assurance-case.md](docs/assurance-case.md). How the project stores, uses and rotates its own credentials, and what it
+does if one leaks, is in [Secrets and credentials](docs/security.md#secrets-and-credentials).
 
 ## Supported versions
 
@@ -99,7 +100,8 @@ maintainer's: no response time is promised on the co-owner's behalf.
 
 * A vulnerability in a dependency, in Qdrant, in TensorRT, CUDA or the NVIDIA driver, in a model, or in a service that
   Axmem can be pointed at (an identity provider, an embeddings provider). Report it to that project. Tell us too if Axmem is
-  affected, so that we can update the lock file.
+  affected, so that we can update the lock file. How the project handles such a finding is in
+  [Dependency findings](docs/quality-gates.md#dependency-findings).
 * What [docs/security.md](docs/security.md) lists under "What Axmem does not guarantee": plain HTTP by default (the server
   serves TLS itself only when `SERVER_SSL_CERTFILE` and `SERVER_SSL_KEYFILE` are set, see
   [Serve TLS](docs/configuration.md#serve-tls); otherwise put a TLS-terminating proxy in front; the security headers are

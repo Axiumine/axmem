@@ -93,7 +93,8 @@ These are enforced by tools, so a change that breaks them cannot be merged. The 
 * **Dependencies.** Do not add or bump a dependency without agreeing it in an issue first. They are pinned in `uv.lock`
   and scanned by `trivy`. The exception is the pull requests that Dependabot opens (its configuration is
   [.github/dependabot.yml](.github/dependabot.yml)): they need no issue, and they are reviewed and must pass the same
-  checks as any other change.
+  checks as any other change. How a vulnerability or a license of a dependency is handled is in
+  [Dependency findings](docs/quality-gates.md#dependency-findings).
 * **Package contents.** The wheel and the sdist hold Axmem's source and nothing else. Model weights, TensorRT engines and
   the NVIDIA libraries have licenses of their own and are never added to the repository or to a package (the `package` gate
   refuses them).

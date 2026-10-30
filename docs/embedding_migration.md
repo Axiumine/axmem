@@ -28,6 +28,17 @@ If you only change non-embedding settings (auth, reranking, etc.), no re-embeddi
 
 ## Quick Start
 
+> **Warning: `axmem re-embed` starts the migration at once, with no confirmation, and it must run while nothing else writes.**
+>
+> - **Stop every server before you run it, and start them after it has finished.** The switch of the live collection and the
+>   rebuild of the links must happen while nothing is writing; a server left running refuses the writes that carry a
+>   vector with a 409 once the embedder changed (see [A server that keeps running](#a-server-that-keeps-running)).
+> - **When you changed `QDRANT_SHARD_NUMBER`, `QDRANT_REPLICATION_FACTOR` or `QDRANT_WRITE_CONSISTENCY_FACTOR`, the old
+>   links collection is removed** after its links were copied into a new one in the new layout, and the previous links are
+>   not kept. The previous memory collection is kept until you delete it.
+> - Take an `axmem backup` first if you want to be able to go back to the old layout or the old links, and use `--dry-run`
+>   to see what would happen before anything is changed.
+
 ```bash
 # 1. Update your .env with the new provider settings
 EMBEDDING_PROVIDER=OpenAI
@@ -305,6 +316,10 @@ before you start the server again, since startup refuses a collection whose widt
 `EMBEDDING_DIMENSIONS`, that another embedder made, or whose layout differs from the `QDRANT_*` settings (the links
 collection is not kept by a re-embed that changes the layout, so going back to the old layout takes another re-embed).
 
+**Warning: `axmem restore` replaces the memories and links of every tenant with the snapshot's, so everything written
+after that snapshot is no longer in the live data.** Stop every server and take a fresh `axmem backup` first (see the
+[warning in the Configuration Guide](./configuration.md#operating-a-cluster)).
+
 ### Cleanup
 
 The previous collection is retained after a successful migration. Delete it with the Qdrant API once you're satisfied:
@@ -312,6 +327,10 @@ The previous collection is retained after a successful migration. Delete it with
 ```bash
 curl -X DELETE -H "api-key: $QDRANT_API_KEY" "$QDRANT_URL/collections/<previous collection name>"
 ```
+
+**Warning: this deletes the collection, with its memories and vectors, for good.** Check that the name is the previous collection and not
+the one the alias `<prefix>_memories` points at. A backup taken after the migration holds the live generation only, so it
+does not hold the collection you delete here; a snapshot made before the migration does.
 
 ---
 

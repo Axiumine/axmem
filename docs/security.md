@@ -3,7 +3,8 @@
 What an operator or a user of Axmem can expect from its security, and what they cannot. Every requirement names the code that
 enforces it and the tests that prove it, so each can be checked. The argument that the requirements are met is in the
 [assurance case](assurance-case.md); a review of the requirements and of the security boundary, with its findings, is in the
-[security review](security-review.md); how to report a vulnerability is in [SECURITY.md](../SECURITY.md); the settings are in
+[security review](security-review.md); how to report a vulnerability is in [SECURITY.md](../SECURITY.md); how the project keeps,
+uses and rotates its own credentials is in [Secrets and credentials](#secrets-and-credentials); the settings are in
 the [configuration guide](configuration.md#authentication-configuration).
 
 Checked against the source on 2026-10-29 (version `0.6.0rc1` plus the unreleased changes). Paths are relative to the
@@ -105,7 +106,7 @@ version, and the text of a failed model check) and `/api/v1/auth/info` (whether 
 | SUP-7 | Dependabot proposes version updates every week, as pull requests, for the GitHub Actions of `.github/workflows`, for `pyproject.toml` and `uv.lock`, and, for the test harness only, for the Docker base image and the npm packages in `test_harness/docker` (the project has no container deployment). The pull requests run `ci.yml` and `quality.yml` like any other change, and a maintainer merges them: no workflow merges one by itself. The three TensorRT packages and the SLSA generator are left out on purpose and are bumped by hand. | `.github/dependabot.yml` | No test: it is a setting of GitHub's Dependabot service, read from the default branch |
 | SUP-8 | Two reports run on GitHub, outside the hooks: CodeQL analysis of the Python code and of the workflow files (`.github/workflows/codeql.yml`, on a push to `main` and on pull requests into it) and the OpenSSF Scorecard of the repository (`.github/workflows/scorecard.yml`, on a push to `main`). They are reports, not gates: no hook runs them, and an alert or a low score does not stop a push or a merge. A failed run of either on the release commit does stop a release until it is repeated. | `.github/workflows/codeql.yml`, `.github/workflows/scorecard.yml`, `scripts/release/ci_green.py` | `tests/architecture/test_workflows.py` (the shape of both workflows), `tests/integration/test_release_ci_green.py` |
 
-Four settings of the GitHub repository are enabled as well: private vulnerability reporting (how to use it is in [SECURITY.md](../SECURITY.md)), secret scanning, push protection for secrets, and Dependabot security updates. They are read from the GitHub API (2026-10-29) and are not files in the repository, so nothing here enforces them; they stay on only while the owners keep them on.
+Five settings of the GitHub repository are enabled as well: private vulnerability reporting (how to use it is in [SECURITY.md](../SECURITY.md)), secret scanning, push protection for secrets, and Dependabot alerts with Dependabot security updates. They are read from the GitHub API (2026-10-29) and are not files in the repository, so nothing here enforces them; they stay on only while the owners keep them on.
 
 ## What Axmem does not guarantee
 
@@ -206,3 +207,107 @@ These are known limits. Several are the operator's job; none is hidden.
 7. Rotate static tokens by replacing their hashes; verify the release you install ([Checking a release](release.md#checking-a-release)).
 
 More detail is in [Security Best Practices](configuration.md#security-best-practices).
+
+## Secrets and credentials
+
+This is the policy for the credentials the project uses itself, to check, build and release Axmem. The secrets an operator of a
+server handles (`AXMEM_TOKEN`, `QDRANT_API_KEY`, provider keys, static token hashes, the TLS key) are covered by
+[Secrets](#secrets) (SEC-1 to SEC-7), by [What Axmem does not guarantee](#what-axmem-does-not-guarantee) and by
+[Operating Axmem securely](#operating-axmem-securely), and are not repeated here. A leak of an operator's secret through a flaw
+in Axmem is a vulnerability: report it as [SECURITY.md](../SECURITY.md) says.
+
+One maintainer does the day-to-day work, so a rule is written only where one person can keep it. A rule that names a test, a gate
+or a setting is enforced by it. The others rest on the maintainer's habit and nothing checks them. Text marked
+**Target** is a goal, not a guarantee. The GitHub settings below were read with calls that only read, on 2026-10-30; they are
+not files of the repository, so nothing here enforces them.
+
+### What exists
+
+| Credential | Kept in | Who uses it, scope, expiry | Rotation and revocation |
+|---|---|---|---|
+| The GitHub account of each owner | At GitHub. The `Axiumine` organization requires two-factor authentication, and new write access goes only to accounts with a TOTP app, a passkey or a security key, not SMS ([GOVERNANCE.md](../GOVERNANCE.md#access)). | Its owner only. Both owners are owners of the organization and admins of the repository ([MAINTAINERS.md](../MAINTAINERS.md)). No expiry. | No schedule. On suspicion: change the password, end the sessions, delete the account's tokens and keys. The other owner removes its access to the organization and the repository, which [GOVERNANCE.md](../GOVERNANCE.md#access) requires at once when an account may be compromised. |
+| The fine-grained GitHub token of `gh auth login`, the one credential a release needs ([Once, before the first release](release.md#once-before-the-first-release)) | The login store of `gh`, and git's credential helper (`gh auth setup-git`), on the lead maintainer's release machine. No script of the repository reads or stores it. | The lead maintainer, through the release script. Limited to `Axiumine/axmem`: Contents, Actions and Workflows write, Administration read, and no more than what `publish-ready` reports as needed. It can do no more than its account can. A fine-grained token has an expiry date, chosen when it is made. **Target:** at most 90 days. | Make the new token before the old one expires, run `publish-ready` with it, then delete the old one in GitHub (Settings, Developer settings, fine-grained tokens) and `gh auth logout` of the old login. A missing or too narrow login stops a release before anything is changed. |
+| The SSH key and the commit signing key of a maintainer | On the maintainer's machine. The public keys are on their GitHub account. | The maintainer: git over SSH when the remote is SSH, and the signed commits that the rules for `main` require. No expiry. **Target:** protected by a passphrase or held on a hardware key. | No schedule. On suspicion or when the device is lost: remove the public key from the GitHub account and make a new pair. |
+| `QODANA_TOKEN` | The git-ignored dotenv file in the repository root of the machine that pushes, or the environment ([Quality gates](quality-gates.md#secrets)). | The `qodana` gate of the `pre-push` hook, on the developer machine only; no workflow reads it. It is a Qodana Cloud project token, which lets a scan upload its report to that project. The project sets no expiry that it checks. | **Target:** regenerated once a year, with the dotenv file updated. On suspicion: delete or regenerate it in the Qodana Cloud project. |
+| The LLM-provider login of the test harness (`auth.json` of the `opencode` client) | The `opencode` data directory on the maintainer's machine. The harness copies it into a private temporary directory (0700, files 0600), mounts it into the container of one run and deletes it when the run ends (`test_harness/container.py`); the operator's `QDRANT_API_KEY` is passed to the run's server too (`test_harness/server.py`). | The maintainer, for the UAT harness only; it is no part of the test suites, the gates or the release. Its scope and expiry are those the provider gave the login. | No schedule. On suspicion: `opencode auth logout` or revoke the login at the provider, and delete a temporary directory that a killed run left behind. |
+| The PyPI and TestPyPI accounts of the lead maintainer | At pypi.org and, if the rehearsal is used, at test.pypi.org: separate accounts, each with two-factor authentication (PyPI requires it). No API token is ever made ([Once, before the first release](release.md#once-before-the-first-release)). | The lead maintainer, to manage the project: the trusted publisher, yanking, owners. A release never logs in to PyPI. | No schedule. On suspicion: change the password and the second factor, end the sessions, and check the project's Publishing page and API tokens page: only `publish.yml` with the environment `pypi` may be listed, and no token. Delete what you did not make. |
+
+What does not exist, on purpose, because a credential that does not exist cannot leak:
+
+* **No PyPI or TestPyPI token in the release flow.** PyPI trusts a workflow file and an environment name (`publish.yml` and `pypi`;
+  `publish-testpypi.yml` and `testpypi` on TestPyPI). The one job that uploads gets an OIDC token (`id-token: write`) that the
+  index trades for a short-lived upload token. The environments take only the tags `v*.*.*`, need a reviewer, and do not let
+  administrators bypass them ([What protects the upload](release.md#what-protects-the-upload)). To revoke the right to
+  upload, delete the trusted publisher in the project's Publishing settings; to pause it, disable the workflow.
+* **No release signing key.** cosign signs keyless in CI. The identity is the release workflow at the tag, recorded in Rekor (SUP-3).
+* **No GitHub secret.** The repository, Dependabot, the organization and the environments `pypi` and `testpypi` hold no secret,
+  and the repository has no deploy key. No workflow uses `secrets.`; the architecture tests of `test_workflows.py`,
+  `test_publish_workflow.py` and `test_publish_testpypi_workflow.py` fail on it in the workflows they cover. A workflow gets the
+  `GITHUB_TOKEN` that GitHub makes for the run and ends with it. The default workflow permissions of the repository are
+  read-only, each workflow declares its own `permissions`, a job adds only what it needs (for example `id-token: write`), and
+  every checkout has `persist-credentials: false`.
+* **No real credential in the test suites.** The Qdrant containers of the test suites are started on a random loopback port with a
+  throwaway key (`tests/qdrant_support.py`) and removed at the end of the run, and `scripts/smoke-release.sh` makes a random
+  key and token with `openssl rand` for each run. The settings snapshots mask every field whose name ends in `KEY`, `SECRET`,
+  `TOKEN`, `PASSWORD`, `CLIENT_ID` or `HASHES` ([Quality gates](quality-gates.md)).
+
+### Storing
+
+* Nothing secret goes into the repository: not code, docs, tests, fixtures, snapshots, `qodana.yaml`, a workflow, a script, a
+  commit message, an issue or a pull request. `.env.example` lists names and placeholders only.
+* A secret lives in the process environment, in the git-ignored dotenv file in the repository root (`.gitignore` ignores `.env`
+  and `.env.*`, not `.env.example`), or in the login store of the tool that issued it (`gh`). The quality runner reads only the
+  keys a gate declares, takes the process environment first and never prints them.
+* A new GitHub secret, deploy key or token, or any other new place for a secret, is a change to this section in the same
+  change. Hosted CI runs only checks that need no secret ([Quality gates](quality-gates.md#where-the-gates-run)).
+
+### Accessing
+
+* A credential belongs to one person and one account. None is shared, and none is sent in an issue, a message or an e-mail. A
+  maintainer who needs one makes their own at the service that issues it.
+* A credential has the least scope that works: the token above is limited to one repository and the listed permissions, and a
+  change to them is a change to [docs/release.md](release.md) and to this table.
+* A credential sits only on the machine that needs it. Hosted CI gets none.
+* Today only the lead maintainer holds the release token, the Qodana token and the PyPI accounts. The co-owner holds none of
+  them; what is still to hand over is in [GOVERNANCE.md](../GOVERNANCE.md#what-needs-a-hand-over).
+
+### Rotating and revoking
+
+* On a schedule: the table above gives a target interval for the release token and the Qodana token; the others change on suspicion or when a person leaves. **Target:** once a year the lead maintainer repeats the
+  read-only checks (the lists of repository, Dependabot, organization and environment secrets and of deploy keys are empty, secret
+  scanning and push protection are on, the organization requires two-factor authentication) and updates the date in this section.
+  No tool of the project tracks these dates.
+* At once, on suspicion: revoke with the last column of the table. Do not wait to learn whether the credential was used.
+* At once, when a person leaves or loses access ([GOVERNANCE.md](../GOVERNANCE.md#access)): the owners remove the person from the
+  organization, the repository, `.github/CODEOWNERS` and [MAINTAINERS.md](../MAINTAINERS.md), from the reviewers of the
+  environments `pypi` and `testpypi`, and from the PyPI project. The person deletes their tokens, their keys and their dotenv file.
+  A fine-grained token can do no more than its account, so removing the account's access ends what the token can do in the
+  repository. If the lead maintainer is the one who leaves, the co-owner does this. They are not yet an owner of the PyPI
+  project, so they cannot remove access there; from GitHub they can disable the two publish workflows.
+
+### If a credential leaks
+
+1. **Revoke it first**, as the table says, before looking into it. Rewriting history does not revoke anything: `main` blocks force
+   pushes (except for the Admin role, [GOVERNANCE.md](../GOVERNANCE.md)), and a secret that was pushed has already been copied. Treat it as public.
+2. **Assess.** What could the credential do (its scope in the table), from when to when was it exposed, and was it used? Read the
+   account's security log and the repository's pushes, tags, releases and workflow runs, and compare the files PyPI serves with
+   `release-digests.json` (`scripts/smoke-release.sh --index pypi` includes that comparison,
+   [Install check of a release](release.md#install-check-of-a-release)).
+3. **Replace it** with a new credential, and run `publish-ready` after a token or a login changes.
+4. **Say so.** If users could be affected, because the credential could publish, tag, change a workflow or alter a release (the
+   release token, a GitHub account, a signing key, a PyPI account) and it was used or cannot be shown unused, publish a GitHub
+   security advisory as [SECURITY.md](../SECURITY.md#what-happens-next) describes, yank the affected release on PyPI when they may
+   be tampered with, and release a fix under a new version number, because PyPI never accepts a file name twice. If only a
+   development credential was exposed and nothing a user installs could have changed (the Qodana token), say what happened in the
+   commit or issue that replaces it, with no secret in it. Either way the other owner is told the same day.
+5. **Close the gap.** Find out how it got there, and add the check that would have caught it.
+
+### Finding a leak early
+
+* GitHub secret scanning and push protection are enabled for the repository (the person who pushes can bypass push protection
+  with a reason). Scanning of non-provider patterns and validity checks are off.
+* The `trivy` gate scans the working tree for secrets (HIGH and CRITICAL, `trivy.yaml`) in `pre-push` and in the hosted CI job
+  `trivy`. Ruff's `S` rules and bandit look for hard-coded passwords in the code; the tests, and the few files that `ruff.toml`
+  lists with a reason, are excepted.
+* None of these sees a credential pasted into an issue, a comment or a log. Whoever sees one hides it and asks its owner to
+  revoke it.

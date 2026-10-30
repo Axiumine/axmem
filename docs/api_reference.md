@@ -299,6 +299,8 @@ the same memory kept the update from being applied after a few attempts, or when
 
 Mark a memory as obsolete (soft delete).
 
+**Nothing is deleted: the memory stays stored and is left out of normal queries and automatic links. No REST route brings it back; the `unobsolete_memory` tool does. No tool or REST route deletes a memory for good.**
+
 **Request Body:** (optional)
 ```json
 {
@@ -403,6 +405,8 @@ Get memories linked to this memory.
 ### DELETE /api/v1/memories/{id}/links/{target_id}
 
 Remove a link between two memories (bidirectional).
+
+**The link is deleted and this cannot be undone; both memories stay as they are. To get the link back, create it again (`POST /api/v1/memories/{id}/links`).**
 
 **Response:**
 ```json

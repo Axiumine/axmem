@@ -173,7 +173,7 @@ name, split across jobs (`stage ci` runs the same set in one go on a developer m
 | `ci.yml` job `smoke-test` | the `package` gate and the `wheel` gate, see [The wheel gate](#the-wheel-gate); the checkout is shallow, because both gates build a copy without git history and pin the version themselves |
 | `publish.yml` job `verify` | on a dispatch on a `v<version>` tag: checks the signed files of the GitHub release again (digests, cosign identity of `release.yml`, the release guard) and runs `dist-check` on them (a package that holds model weights, engines, native libraries or other files than source is refused), before the job `publish` uploads them to PyPI; see [release.md](release.md) |
 | `publish-testpypi.yml` job `verify` | the rehearsal of the same upload on TestPyPI, advisory and not a gate: the checks of the job `verify` of `publish.yml`, step for step (a test builds one from the other with a closed table of differences), before its job `publish` uploads the files to TestPyPI in the environment `testpypi`; started by `scripts/release-testpypi.sh`, see [release.md](release.md) |
-| `release.yml` jobs `sign-artefacts` and `provenance-artefacts` | on a `v<version>` tag: rebuilds the package from the committed `release-digests.json`, refuses to sign unless the rebuild is byte-identical, runs `dist-check`, signs each file with cosign (keyless) and attests them (SLSA-3); started by `scripts/release-pypi.sh`, see [release.md](release.md) |
+| `release.yml` jobs `sign-artefacts` and `provenance-artefacts` | on a `v<version>` tag: rebuilds the package from the committed `release-digests.json`, refuses to sign unless the rebuild is byte-identical, runs `dist-check`, signs each file with cosign (keyless) and attests them (SLSA-3), and refuses a tag whose section of `CHANGELOG.md` is missing, repeated, empty or too long before it builds, because that section is the body of the GitHub release; started by `scripts/release-pypi.sh`, see [release.md](release.md) |
 | `scorecard.yml` job `analysis` | on a push to `main` and on a manual run: OpenSSF Scorecard of the repository, published to scorecard.dev and to code scanning; not a gate, and it checks no code of ours, see [OpenSSF Scorecard and Dependabot](#openssf-scorecard-and-dependabot) |
 | `codeql.yml` job `analyze` | on a push to `main` and on a pull request into `main`: CodeQL analysis of the Python code and of the workflow files (one run for each language, no build), the alerts sent to code scanning; not a gate, it has no local equivalent and needs nothing local, see [OpenSSF Scorecard and Dependabot](#openssf-scorecard-and-dependabot) |
 
@@ -332,7 +332,7 @@ wheel or the sdist.
 | `e2e-qdrant` | `tests/cluster` (`-m cluster`) against a real three-node Qdrant cluster (replication factor 3, write consistency 2, strong ordering, API key and internal authentication; the restore tests also start a four-node and a second three-node cluster), appending to the coverage data (fails without a GPU or without Docker) | `tests/cluster/conftest.py`, `tests/qdrant_support.py` |
 | `coverage` | combined **100 %** line and branch coverage of `app` and `main.py`, from the single-node and cluster runs together | `[tool.coverage.report]` |
 | `memray` | memory budgets (`@pytest.mark.limit_memory`) via pytest-memray, run as `pytest tests/e2e -m memory --memray` (Linux/macOS only) | `tests/e2e/test_memory_budget_e2e.py` |
-| `trivy` | HIGH/CRITICAL vulnerabilities (fixed ones), secrets and misconfigurations (`fs` scan); the binary named by `TRIVY_BIN` or on `PATH`, else the pinned Docker image; fails when neither is available; it skips `mutants/` (mutmut's untracked copy of the project, whose own `uv.lock` holds the old pins until the next mutation run) like `.venv` and `test_harness/runs` | `trivy.yaml`, `.trivyignore` |
+| `trivy` | HIGH/CRITICAL vulnerabilities (fixed ones), secrets and misconfigurations (`fs` scan); the binary named by `TRIVY_BIN` or on `PATH`, else the pinned Docker image; fails when neither is available; it skips `mutants/` (mutmut's untracked copy of the project, whose own `uv.lock` holds the old pins until the next mutation run) like `.venv` and `test_harness/runs`; what is done with a finding, and with the ones it does not report, is in [Dependency findings](#dependency-findings) | `trivy.yaml`, `.trivyignore` |
 | `qodana` | Qodana Ultimate Plus (`jetbrains/qodana-python`), token from `QODANA_TOKEN`; analyses a `git archive` export of `HEAD` (uncommitted changes are not seen) with `--image`; its `bootstrap` installs the locked environment without `actionlint-py` (an sdist that downloads its binary from GitHub when built; no module imports it, trivy scans it in `uv.lock`), so the bootstrap does not need GitHub; fails when the `qodana` CLI or the token is missing | `qodana.yaml` |
 | `mutation` | mutmut on changed `app/` modules; survivors above `MUTATION_MAX_SURVIVORS` fail, and so does any targeted mutant that was never tested (whatever the tolerance) and a results listing that cannot be read or holds no mutant; the run gets a data directory of its own (a mirror of the model cache), so no mutant writes in `~/.local/share/axmem`; one run may take 24 h (`MUTATION_TIMEOUT_S`). Runs in every `pre-push`, see below | `[tool.mutmut]` |
 | `gitnexus` | `detect-changes` on the staged diff (pre-commit) or against the upstream of the branch (pre-push; `origin/main`, then `HEAD~1`, without one); a partial or truncated answer is retried once, then fails. Skipped without a local index or `node` (local tooling a push does not depend on) | `.gitnexus/` (local index) |
@@ -544,6 +544,142 @@ branch that changes most of `app/` (dozens of modules, tens of thousands of muta
 rerun resumes: the mutants already tested stay in `mutants/` (git-ignored), and a rerun continues from them while the code
 and the files the tests read are unchanged; `rm -rf mutants` starts over.
 
+## Dependency findings
+
+This is the policy for findings of software composition analysis: a known vulnerability in a locked dependency, and the
+license of a dependency. It says which part is automated and which part is a duty of the maintainers, because the two
+differ. Vulnerabilities in the lock file are scanned by the `trivy` gate on every push; the licenses of dependencies are
+read by a person. The lead maintainer decides; the co-owner is consulted when a decision touches security, and takes over
+when the lead is unavailable ([GOVERNANCE.md](../GOVERNANCE.md#decisions)). The times below are the lead maintainer's
+targets, not guarantees, as in [SECURITY.md](../SECURITY.md#what-to-expect).
+
+### What is scanned
+
+The `trivy` gate runs `trivy fs` over the checkout with `trivy.yaml` and `.trivyignore`. Its vulnerability scanner reads the
+lock files: `uv.lock`, which locks every Python dependency, direct or transitive, to a version with hashes, and the
+`package-lock.json` of the test harness image. It reports HIGH and CRITICAL findings that have a fixed version, and no others
+(`severity` and `ignore-unfixed` in `trivy.yaml`). The database is fetched or refreshed at the start of a run, so a new
+advisory against an unchanged lock file turns the gate red on the next run that refreshes the database (always in CI; a local
+run reuses a database that is less than a day old). Three limits:
+
+* No workflow is scheduled (`test_no_workflow_is_scheduled`), so the gate runs on a push, a pull request or a manual run of
+  `quality.yml`. Between pushes the lock file is watched by Dependabot, whose security updates are enabled for the
+  repository, a setting that is not a file in it ([security](security.md#supply-chain)).
+* The scan does not cover the GitHub Actions, which are pinned to commits and updated through Dependabot pull requests, and
+  it does not see which versions an installer picks for the dependencies of a dependency when a user installs the wheel: the
+  wheel pins Axmem's own dependencies, not theirs.
+* It checks no license: `scan.scanners` of `trivy.yaml` lists `vuln`, `secret` and `misconfig`, and no license scanner.
+
+### Vulnerabilities
+
+The threshold is a finding of severity HIGH or CRITICAL that has a fixed version. From there up it blocks, and the gate
+enforces it. Below it, or without a fix, a person decides, as the table says. Severity is the one that the Trivy database
+gives the finding.
+
+| Finding | What the policy requires | Who checks |
+|---|---|---|
+| HIGH or CRITICAL, with a fixed version | It blocks. It is fixed before the change is merged and before any release: bump the dependency to the smallest release that carries the fix (`uv lock --upgrade-package <name>`), run the tests, and name the advisory in the Security section of [CHANGELOG.md](../CHANGELOG.md). There is no waiting period | Automated: the `trivy` gate. It refuses a push in the `pre-push` hook and turns the `trivy` job of `quality.yml` red. A contributor's pull request cannot merge while that job is red ([CONTRIBUTING.md](../CONTRIBUTING.md#code-review)); for the maintainers' own pushes the hook is the control, and `--no-verify` or `SKIP=trivy` skips it ([Bypassing, deliberately](#bypassing-deliberately)). A release stops on it (see [Before a release](#before-a-release)) |
+| MEDIUM, with a fixed version | It does not block. The lead maintainer reads the advisory within 30 days of the alert and decides whether Axmem is affected, that is, whether the vulnerable code can be reached through a documented use of Axmem. Affected: the bump is required and ships in the next release at the latest. Not affected: the bump is taken with the next regular update (Dependabot opens its pull requests weekly) and the reason is written in the issue or the pull request | Maintainer duty. Dependabot alerts and security updates, and the Vulnerabilities check of the Scorecard run on `main`, report these findings; no gate does |
+| HIGH or CRITICAL, without a fixed version | `trivy` does not report it. The lead maintainer reads the advisory within 14 days of learning of it, the time that [SECURITY.md](../SECURITY.md#what-to-expect) allows for deciding on a report, and decides whether Axmem is affected. Affected: it is handled as a vulnerability report ([SECURITY.md](../SECURITY.md#what-happens-next)), with a workaround written in the Security section of the changelog, and the release waits or names the finding there. Not affected: the reason is written in an issue, and the finding is read again when a fix is out, when it falls under the first row | Maintainer duty, from the same reports |
+| LOW, with a fixed version | It does not block and has no deadline: the bump is taken with the next regular update | Maintainer duty, from the same reports |
+| MEDIUM or LOW, without a fixed version | Nothing until a fix exists; then the second or the third row | Maintainer duty |
+
+This is how six MEDIUM advisories against `fastmcp`, `mcp` and `opentelemetry-api` were handled in October 2026: the Scorecard
+check and OSV-Scanner listed them and the gate had not stopped on them, so the lock file moved to the smallest releases that
+carry the fixes, and the Security section of the changelog names each advisory.
+
+**An exception.** A fixed HIGH or CRITICAL finding is ignored only when a bump cannot fix it now, or Axmem is not affected by
+it: the fix needs a release that breaks Axmem or the pinned TensorRT set (bumped by hand, see [GPU models](gpu-models.md)), or
+the finding is in code that Axmem never loads. That a bump is inconvenient is not a reason. The entry goes in `.trivyignore`,
+with the reason in a comment on the line above and the review date as the expiry of the entry:
+
+```
+# <package> <version>: why Axmem is not affected, or why the fix cannot be taken yet. Decided <date> by <maintainer>, issue #<n>.
+<ID> exp:YYYY-MM-DD
+```
+
+`<ID>` is the vulnerability ID that `trivy` prints. Once the date in `exp:` has passed, trivy no longer ignores the ID, so the
+gate fails again until a person looks: the dependency is bumped and the entry deleted, or the entry is renewed with a new reason and a
+new date. The date is at most 90 days after the day the entry is written. Trivy enforces the date; the reason and the limit
+of 90 days are checked in review. An entry weakens a gate, so the change that adds one states the reason, the lead
+maintainer decides and the co-owner is consulted. `.trivyignore` holds no entry at present.
+
+### Licenses
+
+Axmem is `AGPL-3.0-only`; the files derived from Forgetful keep their MIT notice ([Licensing headers](#licensing-headers)).
+A dependency is acceptable when Axmem can be used together with it under that license. The license of a dependency is the
+one in its package metadata (`License-Expression`, or the license classifier) and, when the metadata declares none, the
+license file that the package ships. A package that declares more than one license (`A AND B`) must satisfy the table for each of them, and one that offers a choice (`A OR B`)
+for the one that Axmem takes. A dependency of a dependency is checked when the lock file brings it in or changes its license. This is
+the project's rule for what it accepts, not legal advice.
+
+| License of the dependency | Rule |
+|---|---|
+| MIT, BSD-2-Clause, BSD-3-Clause, ISC, Apache-2.0, PSF-2.0, Zlib, 0BSD, Unlicense, CC0-1.0, public domain | Accepted |
+| MPL-2.0, LGPL-2.1-or-later, LGPL-3.0 | Accepted for a library that Axmem imports and does not modify |
+| GPL-3.0, GPL-2.0-or-later, AGPL-3.0 | Compatible with the AGPL-3.0, but accepted only after the issue that proposes the dependency has discussed it, because the license puts its own terms on the combined work |
+| GPL-2.0-only | Refused: it cannot be combined with a work under `AGPL-3.0-only` |
+| Any other license that the Open Source Initiative approves | Decided in the issue that proposes the dependency, after checking that the FSF lists it as compatible with the GPL-3.0 |
+| No license declared; a non-commercial, field-of-use or source-available license (for example CC-BY-NC, SSPL or BUSL); any other proprietary license | Refused, apart from the NVIDIA libraries below |
+
+The rule applies in full to the runtime dependencies of `pyproject.toml`, which Axmem imports and the wheel names as
+requirements. The `dev` and `harness` groups are tools that the maintainer and CI run, not part of any package (the `package`
+gate keeps them out of the wheel and the sdist), so a copyleft license does not bind Axmem there (`pylint` is
+`GPL-2.0-or-later`, for example); the refused licenses of the last row stay refused.
+
+**The NVIDIA libraries are the one exception.** `tensorrt-cu13`, `tensorrt-cu13-bindings` and `tensorrt-cu13-libs` are runtime
+dependencies under NVIDIA's proprietary license. Axmem does not redistribute them: they are not in the repository, the wheel
+or the sdist, and the `package` gate refuses a native library and a wheel that is not pure Python ([Package
+contents](#package-contents)). The person who installs Axmem fetches them from NVIDIA's package index
+(`https://pypi.nvidia.com`), with `uv sync` or with the `--extra-index-url` of the install command in the README, under
+NVIDIA's terms. The AGPL covers Axmem's code only. Their license, and the licenses of the models, are in
+[GPU models](gpu-models.md#licenses-of-the-models-and-libraries); an image or a wheel of your own that contains them needs
+NVIDIA's terms, and Axmem ships none.
+
+**How it is checked: by review, not by a gate.** No tool checks the license of a dependency. The `reuse` gate and
+`tests/architecture/test_licensing_headers.py` read the notices of Axmem's own files, and the `package` gate keeps third-party
+files out of the package; none of them reads the license of a package that Axmem depends on. A person checks it at two points:
+
+* when a dependency is agreed in an issue, as [CONTRIBUTING.md](../CONTRIBUTING.md#rules-for-code) requires before a
+  dependency is added: the issue states the license and where it was read, and the maintainer who agrees the dependency applies
+  the table. A dependency with a refused license is not added;
+* when a bump is reviewed, a Dependabot pull request or a hand-made one: the reviewer looks in the release notes of the
+  dependency for a change of license.
+
+A change of license that nobody reads about is not found until a later review. A locked dependency that turns out to carry a
+refused license is removed or replaced before the next release, and a release does not go out with one.
+
+### Before a release
+
+A release does not go out with a finding above the threshold, that is, with a fixed HIGH or CRITICAL finding in a lock file.
+The release flow ([release.md](release.md#cutting-a-release)) checks this three times, with nothing to switch off, and keeps
+the hooks from being skipped:
+
+1. `scripts/release-pypi.sh` refuses to cut a release when `SKIP` or `ONLY` is set, so the hooks it runs cannot leave `trivy`
+   out.
+2. CI must be green on `HEAD` before anything is built, and the `trivy` job of `quality.yml` is part of that CI: it runs on
+   every push to a branch, has no condition that could skip it, and a red job makes the run red.
+3. The preflight gate, `python -m scripts.quality stage ci`, runs `trivy` on the maintainer's machine, and the push of the
+   release commit runs the `pre-push` hook, which runs it again.
+4. The release guard requires every push-triggered CI run of `main` on the release commit to be completed and green: in the
+   release script before the dispatch, and in the job `verify` of `publish.yml` before the reviewers of the environment `pypi`
+   are asked (condition 2 of [What the release guarantees](release.md#what-the-release-guarantees)).
+
+A fixed HIGH or CRITICAL finding makes one of these stop the release before anything is uploaded to PyPI. The fix is a bump
+on `main`, as the first row of the table says, and then the release is run again.
+
+The release flow does not check the following, and the maintainer does before cutting a release; this is a duty, not a gate:
+
+* the open Dependabot alerts and the result of the Scorecard run on `main`, which list the MEDIUM, LOW and unfixed findings
+  that `trivy` does not (the table above says what to do with each); no script reads the alerts or the score;
+* the entries of `.trivyignore`: each is still justified. An expired date fails the gate, but only a person reads the reason;
+* the licenses of the dependencies added or bumped since the last release.
+
+The check is also only as recent as its last run: the release runs it in the preflight and in the hook, and CI ran it on the release
+commit, but `release.yml` and `publish.yml` run no scan, so an advisory published after those runs is seen by the next run, not by
+that release. A vulnerability found in a released version is fixed like
+any other: on `main`, shipped as a new version, with no backport ([SECURITY.md](../SECURITY.md#supported-versions)).
+
 ## Licensing headers
 
 Axmem is `AGPL-3.0-only`, copyright 2026 Giovanni Manzoni, and derived from Forgetful (copyright (c) 2025 Scott Raisbeck,
@@ -722,7 +858,8 @@ untested.
   `trivy_<version>_Linux-64bit.tar.gz` is in `trivy_<version>_checksums.txt` of the release). A test fails when the
   version of the workflow and of the gate differ. The vulnerability database is fetched on every run, so a new advisory
   against a locked dependency fails `trivy` without a code change: bump the dependency (`uv lock --upgrade-package <name>`),
-  do not ignore the advisory.
+  do not ignore the advisory. The one case for an entry in `.trivyignore`, and how it is recorded, is in
+  [Dependency findings](#dependency-findings).
 * Raise the Python version (`quality.yml`, `ci.yml`, `pyproject.toml`
   `requires-python`, classifiers and the mypy, pylint and ruff targets, `.python-version`, `flake.nix`,
   the test harness Dockerfile) together.
