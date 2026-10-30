@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The other ways a release stops, run on the real script against the scratch world.
 
 `test_release_pipeline.py` covers the stops the invariant names (commit, push, CI, signing run, bundles, digests, the

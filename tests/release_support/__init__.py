@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Support for the tests of the release flow: scratch worlds, fakes of ``gh``, ``curl``, ``uv`` and ``ssh``, scans.
 
 * ``world``: ``World``, a scratch repository and remote in which the real ``scripts/release-pypi.sh`` runs.

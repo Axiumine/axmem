@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Integration tests for the token counter's own behaviour and wording (app/utils/token_counter.py)
 
 The counter is the real tiktoken one. Failure paths are driven by making the load or the encoder fail, the way a
@@ -45,7 +48,10 @@ class _Abort(BaseException):
     """Something that is not an ``Exception`` and not an interrupt of the test run either."""
 
 
-def _unreadable(monkeypatch, error: BaseException = OSError("no tiktoken data on this host")):
+_NO_DATA = OSError("no tiktoken data on this host")
+
+
+def _unreadable(monkeypatch, error: BaseException = _NO_DATA):
     def refuse(model):
         raise error
 
@@ -84,7 +90,9 @@ def test_an_empty_text_has_no_tokens_and_a_special_token_literal_is_counted_as_t
     assert counter.count_tokens("<|endoftext|>") > 1
 
 
-@pytest.mark.parametrize(("text", "tokens"), [("a", 1), ("abc", 1), ("abcd", 1), ("abcdefg", 1), ("abcdefgh", 2), ("a" * 40, 10), ("a" * 43, 10)])
+@pytest.mark.parametrize(
+    ("text", "tokens"), [("a", 1), ("abc", 1), ("abcd", 1), ("abcdefg", 1), ("abcdefgh", 2), ("a" * 40, 10), ("a" * 43, 10)],
+)
 def test_without_an_encoding_a_token_is_estimated_as_four_characters_and_never_less_than_one(monkeypatch, logged, text, tokens):
     _unreadable(monkeypatch)
     counter = TokenCounter()

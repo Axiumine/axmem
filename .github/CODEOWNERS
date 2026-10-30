@@ -1,0 +1,21 @@
+# The maintainers listed in MAINTAINERS.md. GitHub asks a listed owner to review a pull request that changes a file the
+# owner owns; whether such a review is required before a merge is a rule of the repository, not a setting of this file.
+# The last matching pattern wins. The lines below the first repeat the owners on purpose: they name the paths that
+# guard the project and its releases, so that narrowing the default line later does not drop them.
+
+*                                 @giovannimanzoni @vivi7
+
+/.github/                         @giovannimanzoni @vivi7
+/SECURITY.md                      @giovannimanzoni @vivi7
+/MAINTAINERS.md                   @giovannimanzoni @vivi7
+/GOVERNANCE.md                    @giovannimanzoni @vivi7
+
+# Release: the process, the committed digests and superseded list, and the scripts that run it (its workflows are under /.github/).
+/docs/release.md                  @giovannimanzoni @vivi7
+/release-digests.json             @giovannimanzoni @vivi7
+/release-superseded.json          @giovannimanzoni @vivi7
+/scripts/release/                 @giovannimanzoni @vivi7
+/scripts/release-pypi.sh          @giovannimanzoni @vivi7
+/scripts/release-testpypi.sh      @giovannimanzoni @vivi7
+/scripts/smoke-release.sh         @giovannimanzoni @vivi7
+/scripts/lib/release-flow.sh      @giovannimanzoni @vivi7

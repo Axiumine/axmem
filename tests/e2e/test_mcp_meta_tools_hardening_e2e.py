@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """E2E hardening of the three MCP meta-tools.
 
 - store failures reach the client as short messages, never request details, stored text or tenant ids
@@ -5,6 +8,7 @@
 - every category advertised by discover_axmem_tools lists tools
 """
 
+import contextlib
 import io
 import logging
 import re
@@ -97,13 +101,15 @@ class TestExecuteErrorsAreSanitised:
 
         assert_no_leak(message, allowed_ids=(missing,))
         assert message.startswith("Failed to execute 'get_memory'")
-        assert missing in message and "not found" in message.lower()
+        assert missing in message
+        assert "not found" in message.lower()
 
     async def test_integer_id_is_rejected_as_not_a_uuid(self, mcp_client):
         message = await tool_error(mcp_client, "get_memory", {"memory_id": 10**30})
 
         assert_no_leak(message)
-        assert "memory_id" in message and "UUID" in message
+        assert "memory_id" in message
+        assert "UUID" in message
 
     async def test_domain_not_found_message_is_kept(self, mcp_client):
         missing = str(uuid.uuid4())
@@ -248,10 +254,8 @@ def assert_no_raw_control_characters(output: str, client_message: str) -> None:
 
 
 async def ignore_tool_error(client, name: str, arguments: dict) -> None:
-    try:
+    with contextlib.suppress(ToolError):
         await client.call_tool(name, arguments)
-    except ToolError:
-        pass
 
 
 class TestLogInjection:
@@ -343,15 +347,15 @@ class TestLogInjection:
     async def test_server_error_log_and_client_error_carry_no_raw_control_characters(
         self, mcp_client, every_logger_log, meta_tool, arguments, error_text,
     ):
-        """FastMCP logs every failed tool call with its traceback, and the traceback ends in the
-        ToolError text, so the caller-supplied name must be escaped inside that text as well."""
+        """FastMCP logs every failed tool call. Up to 3.2 the log held a traceback that ended in the
+        ToolError text, so the caller-supplied name had to be escaped inside that text as well; from 3.4
+        a ToolError is logged without its traceback. Either way the name must stay escaped."""
         with pytest.raises(ToolError) as caught:
             await mcp_client.call_tool(meta_tool, arguments)
 
         output = every_logger_log()
 
         assert "Error calling tool" in output, "precondition: FastMCP logged the failed call"
-        assert error_text in output, "precondition: the traceback shows the ToolError text"
         assert error_text in str(caught.value)
         assert_no_raw_control_characters(output, str(caught.value))
 
@@ -387,7 +391,6 @@ class TestLogInjection:
         output = every_logger_log()
 
         assert "Error calling tool" in output, "precondition: FastMCP logged the failed call"
-        assert error_text in output, "precondition: the traceback shows the ToolError text"
         assert error_text in str(caught.value)
         assert_no_raw_control_characters(output, str(caught.value))
 

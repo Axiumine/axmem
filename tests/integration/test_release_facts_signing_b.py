@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The signing facts, part two: a whole bundle per artefact, what each bundle signed, and the whole proof.
 
 Condition 4 of the release guard and the integrity check both ask ``facts.signing_problems``. These cases cover a bundle

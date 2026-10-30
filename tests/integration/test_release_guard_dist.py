@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Condition 5 of the release guard accepts the ``.gitignore`` that uv writes into ``dist/`` and nothing else.
 
 ``uv build`` writes ``dist/.gitignore`` (one byte, ``*``) on every build, and the guard refuses every entry of ``dist/``

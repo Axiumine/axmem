@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """Harness entrypoint: `uv run python -m test_harness [flags]`.
 
 Exit codes: 0 = every session completed (issues found are the product's problem, not the
@@ -45,7 +49,8 @@ def config_from_argv(argv: list[str]) -> HarnessConfig:
     parser.add_argument(
         "--rebuild-image", action="store_true",
         help="force a rebuild of the sandbox image without the layer cache, e.g. to pick "
-        "up a new opencode release (it also rebuilds itself when locked dependencies "
+        "up a new agent-shell-py release (it also rebuilds itself when the locked "
+        "dependencies, the Dockerfile or the pinned agent CLIs in docker/package.json "
         "change)",
     )
     args = parser.parse_args(argv)

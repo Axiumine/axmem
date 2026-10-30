@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The request body limit: a declared length is refused unread, a streamed body is counted as it arrives."""
 import json
 
@@ -100,8 +103,7 @@ async def test_an_application_that_keeps_reading_after_the_refusal_gets_disconne
     stream = [{"type": "http.request", "body": b"x" * 600, "more_body": True}] * 10
 
     async def app(scope, receive, send):
-        for _ in range(6):
-            seen.append((await receive())["type"])
+        seen.extend([(await receive())["type"] for _ in range(6)])
 
     async def receive():
         return stream.pop(0)

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The serve command refuses to start without a credential mode, before anything is bound.
 
 ``main._serve`` is the one place both transports start from. The guard runs first: the

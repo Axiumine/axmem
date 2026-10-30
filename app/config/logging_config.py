@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """Centralised logging configuration
 
 This module provides:
@@ -20,6 +24,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, date, datetime
 from queue import Queue
+from typing import Any, ClassVar, TextIO
 from uuid import UUID
 
 from app.config.settings import LOG_FORMATS, canonical_choice
@@ -49,7 +54,7 @@ class ConsoleFormatter(logging.Formatter):
     - CRITICAL: Magenta
     """
 
-    COLOURS = {
+    COLOURS: ClassVar[dict[str, str]] = {
         "DEBUG": "\033[36m",   # Cyan
         "INFO": "\033[32m",    # Green
         "WARNING": "\033[33m", # Yellow
@@ -58,7 +63,7 @@ class ConsoleFormatter(logging.Formatter):
      }
     RESET = "\033[0m"
 
-    def __init__(self, *args, colour: bool = True, **kwargs) -> None:
+    def __init__(self, *args: Any, colour: bool = True, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self.colour = colour
 
@@ -97,7 +102,7 @@ class SensitiveDataFilter(logging.Filter):
     "Token cache disabled" or "Validating Bearer token via X" is left alone.
     """
 
-    SENSITIVE_PATTERNS = [
+    SENSITIVE_PATTERNS: ClassVar[list[tuple[re.Pattern[str], str]]] = [
         # password=something or password="something" or "password":"something"
         (re.compile(r'password["\']?\s*[:=]\s*["\']?([^"\s,}]+)["\']?', re.IGNORECASE), "password=***"),
         # token=something or "token":"something"
@@ -170,7 +175,7 @@ class SensitiveDataFilter(logging.Filter):
         if record.exc_text:
             record.exc_text = self._mask_value(record.exc_text)
 
-    def _mask_value(self, value, depth: int = 0):
+    def _mask_value(self, value: Any, depth: int = 0) -> Any:
         """Mask a string, or the strings inside a list, tuple or dict; anything else is returned as it is"""
         if isinstance(value, str):
             value = self._shorten(value)
@@ -231,9 +236,13 @@ class JSONFormatter(logging.Formatter):
             "exc_text", "stack_info", "getMessage", "taskName",
         }
 
-        for key, value in record.__dict__.items():
-            if key not in standard_attrs and not key.startswith("_"):
-                log_data[key] = value
+        log_data.update(
+            {
+                key: value
+                for key, value in record.__dict__.items()
+                if key not in standard_attrs and not key.startswith("_")
+            },
+        )
 
         # Add contextvars (request_id, user_id) if available. Records that went through the
         # QueueHandler already carry them as attributes (the listener thread cannot see the
@@ -275,7 +284,7 @@ class RecordPreservingQueueHandler(logging.handlers.QueueHandler):
             prepared.__dict__.setdefault(key, value)
         return prepared
 
-def _serialise_log_value(obj):
+def _serialise_log_value(obj: Any) -> str:
     """Handle non-JSON-serialisable types"""
     if isinstance(obj, UUID):
         return str(obj)
@@ -288,7 +297,7 @@ def _serialise_log_value(obj):
 _queue_listener: logging.handlers.QueueListener | None = None
 
 
-def _stderr_handler(log_format: str) -> logging.StreamHandler:
+def _stderr_handler(log_format: str) -> logging.StreamHandler[TextIO]:
     """A handler that writes masked records to stderr, which never interferes with the stdio transport."""
     formatter: logging.Formatter
     if log_format == "json":
@@ -357,12 +366,12 @@ def configure_logging(
     slowdowns. The QueueListener runs in a separate thread, so I/O happens
     off the event loop.
     """
-    global _queue_listener
+    global _queue_listener  # noqa: PLW0603 - the one queue listener, stopped at exit
 
     log_format = canonical_choice("LOG_FORMAT", log_format, LOG_FORMATS)
 
     # Create queue for log records
-    log_queue: Queue = Queue(-1)  # Unlimited size
+    log_queue: Queue[logging.LogRecord] = Queue(-1)  # Unlimited size
 
     # Create console handler (writes to stderr to avoid interfering with stdio transport)
     console_handler = _stderr_handler(log_format)
@@ -400,16 +409,14 @@ def configure_logging(
     return _queue_listener
 
 
-def shutdown_logging():
+def shutdown_logging() -> None:
     """Shutdown the QueueListener gracefully.
 
     Call this during application shutdown to ensure all queued
     log records are flushed before exit.
 
     """
-    global _queue_listener
+    global _queue_listener  # noqa: PLW0603 - the one queue listener, stopped at exit
     if _queue_listener:
         _queue_listener.stop()
         _queue_listener = None
-
-

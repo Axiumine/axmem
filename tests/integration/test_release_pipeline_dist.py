@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The real release script builds like the real uv, and judges the signed files, not the build, before the dispatch.
 
 uv writes ``dist/.gitignore`` (one byte, ``*``) on every ``uv build``. The release builds once, to record the digests, and
@@ -47,7 +50,8 @@ class TestTheFakeBuildsLikeTheRealUv:
 
         marker = world.root / "dist" / ".gitignore"
         assert marker.read_bytes() == b"*"
-        assert marker.is_file() and not marker.is_symlink()
+        assert marker.is_file()
+        assert not marker.is_symlink()
 
     def test_the_manifest_names_the_wheel_and_the_sdist_and_not_the_marker(
         self, world: World,

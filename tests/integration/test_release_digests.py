@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """A signed file must be the file PyPI serves: the digest manifest, its checker and the order of the release script.
 
 ``scripts.release.digests`` records the sha256 of every file that the release script builds for PyPI, together with

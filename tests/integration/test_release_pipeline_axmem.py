@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """What is particular to Axmem in a release, run on the real script against the scratch world.
 
 The version of the package comes from the tag and is written nowhere, so the release commit holds the changelog and the

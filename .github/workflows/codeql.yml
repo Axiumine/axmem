@@ -1,0 +1,52 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
+name: CodeQL
+
+# CodeQL static analysis of the Python code and of the workflows themselves; the alerts go to code scanning of the repository.
+# It exists for the Scorecard check SAST, which looks in the workflows for a call of `github/codeql-action/analyze`: this is
+# the advanced setup (a workflow file), not the default setup of the repository settings.
+# CodeQL is not a quality gate: it has no local equivalent, publishes a report to GitHub and adds nothing to the hooks.
+# Hosted runner, no GPU, no build (`build-mode: none` reads the sources of both languages as they are), no secret.
+# Triggers: a push to main and a pull request into main.
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write  # uploads the SARIF file to code scanning (this job only)
+    strategy:
+      fail-fast: false
+      matrix:
+        language: ["python", "actions"]
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Set up CodeQL
+        uses: github/codeql-action/init@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: none
+
+      - name: Run the CodeQL analysis
+        uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        with:
+          category: "/language:${{ matrix.language }}"

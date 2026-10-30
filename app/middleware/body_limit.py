@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Refuses request bodies that are larger than ``REQUEST_BODY_MAX_BYTES``, before anything reads them whole.
 
 Every REST route reads its body into memory (``request.body()``), and so does the MCP endpoint. Without a limit

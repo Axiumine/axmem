@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """A server that keeps running while ``axmem re-embed`` moves the memories to another embedder refuses to write.
 
 ``ensure`` checks the embedder when a process starts. These tests change the live generation under a repository
@@ -104,7 +107,7 @@ async def test_a_targeted_rebuild_is_refused_when_the_memories_moved_to_another_
 
 
 async def test_an_import_is_refused_when_the_memories_moved_to_another_embedder(running, tensorrt_embedder, tmp_path):
-    stack, repo, tenant, _ = running
+    stack, repo, _tenant, _ = running
     adapter = QdrantArchiveAdapter(stack.store, stack.schema, lambda: tensorrt_embedder)
     path = tmp_path / "memories.jsonl"
     await adapter.export_memories(path)
@@ -395,7 +398,8 @@ async def test_the_record_of_a_generation_is_read_once_while_it_stays_live(runni
     await repo.create_memory(tenant, a_memory("Third"))
     await repo.create_memory(tenant, a_memory("Fourth"))
 
-    assert len(reads) == 1 and reads != [live]
+    assert len(reads) == 1
+    assert reads != [live]
 
 
 def test_the_refusal_is_a_conflict_so_clients_are_shown_its_text():

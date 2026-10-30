@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """End-to-end tests (real Qdrant node) for token cache lifetime and identity claims
 
 Drives the real REST routes with real verifiers (JWT signature checking, the FastMCP
@@ -228,7 +231,7 @@ async def test_a_revoked_introspected_token_is_refused_once_the_one_ttl_has_pass
 
 
 # ============================================
-# TOKEN_CACHE_MAX_SIZE=0
+# TOKEN_CACHE_MAX_SIZE is 0
 # ============================================
 
 

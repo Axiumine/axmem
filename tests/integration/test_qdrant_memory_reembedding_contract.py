@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Re-embedding in Qdrant: what the scan, the copy and the links rebuild ask of the node, exactly.
 
 The repository works through the store, so the tests note every call it makes there (a spy that passes each call on, and

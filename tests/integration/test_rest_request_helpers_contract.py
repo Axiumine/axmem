@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Integration tests for the request parsing the REST handlers share (app/routes/api/request_utils.py)
 
 Malformed client input has to end as a 4xx JSON error and never as an unhandled exception (a 500). The helpers are

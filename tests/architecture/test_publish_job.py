@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The job of ``publish.yml`` that uploads: what it takes from the job that verified, what it leaves out, and the upload itself.
 
 ``test_publish_workflow.py`` holds the shape of the whole workflow and the job ``verify``. The job ``publish`` (environment
@@ -68,7 +71,10 @@ def test_a_file_that_pypi_holds_already_is_left_out_of_the_upload_and_one_it_hol
     assert '"https://pypi.org/pypi/axmem/json"' in flat
     assert '404) : >"$json" ;;' in step["run"]  # a project PyPI does not know yet holds nothing
     assert '*) echo "::error::PyPI answered' in step["run"]
-    assert 'python3 -m scripts.release.guard pypi-missing --json "$json" --package axmem --version "${GITHUB_REF_NAME#v}" --dist dist' in flat
+    assert (
+        'python3 -m scripts.release.guard pypi-missing --json "$json" --package axmem --version "${GITHUB_REF_NAME#v}" --dist '
+        'dist'
+    ) in flat
     assert 'echo "remaining=$(find dist -type f | wc -l)" >>"$GITHUB_OUTPUT"' in step["run"]
     assert step["run"].count("exit 1") == 3
 

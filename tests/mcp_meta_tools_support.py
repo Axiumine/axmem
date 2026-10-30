@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """What the tests of the MCP meta-tools share: a registry with known tools, the mounted server and the log reader.
 
 The tool implementations behind the registry are stubs that note the keyword arguments they were called with; the

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Shared plumbing for the quality gates: context, results, subprocess and git helpers."""
 
 from __future__ import annotations
@@ -15,10 +18,10 @@ ROOT = Path(__file__).resolve().parents[2]
 HOOKS_DIR = ".githooks"
 
 # Static-analysis scopes. Tests are measured by radon (complexity/maintainability) only.
-SOURCE_PATHS = ["app", "main.py", "test_harness", "scripts"]
+SOURCE_PATHS = ["app", "main.py", "test_harness", "scripts", "fuzz"]
 RADON_PATHS = [*SOURCE_PATHS, "tests"]
-TYPED_PATHS = ["app", "main.py", "scripts"]
-PYLINT_PATHS = ["app", "main.py", "test_harness", "scripts"]
+TYPED_PATHS = ["app", "main.py", "scripts", "fuzz"]
+PYLINT_PATHS = ["app", "main.py", "test_harness", "scripts", "fuzz"]
 SUITES = ["tests/architecture", "tests/integration", "tests/e2e"]
 
 
@@ -91,7 +94,9 @@ def venv_binary(name: str) -> str:
     Outside a virtual environment the directory of the interpreter is a system one, whose tools are not the pinned ones.
     """
     if sys.prefix == sys.base_prefix:
-        raise MissingToolError(f"{name} is taken from the project environment, but {sys.executable} is not in a virtual environment (uv run ...)")
+        raise MissingToolError(
+            f"{name} is taken from the project environment, but {sys.executable} is not in a virtual environment (uv run ...)",
+        )
     exe = Path(sys.executable).with_name(name + (".exe" if os.name == "nt" else ""))
     if not exe.exists():
         raise MissingToolError(f"{name} is not installed in the project environment (uv sync --locked --all-extras --dev)")

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The names of the collections and the descriptions an operator reads: what a generation, an embedder and a layout say.
 
 Nothing here asks the node: the names, the identity of the embedder, the differences of a layout and the types of the

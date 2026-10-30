@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Symlink-safe host-side file I/O for the agent-writable run tree.
 
 `<run_dir>/skills` is bind-mounted read-write into the sandbox container, so the agent
@@ -67,7 +70,9 @@ def read_bytes(path: Path, root: Path | None = None) -> bytes:
         raise
     try:
         if not stat.S_ISREG(os.fstat(fd).st_mode):
-            raise UnsafePathError(f"{path} is not a regular file")
+            raise UnsafePathError(  # noqa: TRY301 - the handler below closes the fd
+                f"{path} is not a regular file",
+            )
     except BaseException:
         os.close(fd)
         raise

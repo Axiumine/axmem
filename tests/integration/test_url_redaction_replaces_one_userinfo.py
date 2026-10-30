@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Integration tests for the way a URL has its credentials hidden (app/utils/url_helpers.py)
 
 Only the first ``user:password@`` of a URL is replaced: the pattern is anchored to the start, so the replacement is asked

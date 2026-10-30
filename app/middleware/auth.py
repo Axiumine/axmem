@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """Authentication helpers: resolve the tenant behind each MCP and HTTP request
 
 A tenant is the isolation key of the data. It is taken from the validated credential, never
@@ -131,7 +135,7 @@ class TokenCache:
             self._cache.clear()
 
     @property
-    def stats(self) -> dict:
+    def stats(self) -> dict[str, Any]:
         """Return cache statistics for monitoring."""
         total = self._hits + self._misses
         return {
@@ -154,7 +158,9 @@ def _claim_text(name: str, value: Any) -> str | None:
         return None
     # Some IdPs emit a numeric sub; a bool or a container is never a tenant name
     if isinstance(value, bool) or not isinstance(value, str | int):
-        raise ValueError(f"Token claim '{name}' is not a valid tenant name")
+        raise ValueError(  # noqa: TRY004 - callers catch ValueError
+            f"Token claim '{name}' is not a valid tenant name",
+        )
     return str(value).strip() or None
 
 

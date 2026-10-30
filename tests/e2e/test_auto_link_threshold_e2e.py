@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """Auto-linking only connects memories with sufficient cosine similarity.
 
 The embedder is the real TensorRT one. The anchor and the related memory are clearly similar

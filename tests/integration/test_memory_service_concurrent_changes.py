@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """MemoryService when a memory changes under it.
 
 Covers the answers of ``update_memory`` / ``mark_memory_obsolete`` when the repository reports

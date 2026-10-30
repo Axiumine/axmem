@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The guard commands ``testpypi-state``, ``testpypi-urls`` and ``testpypi-missing`` of the TestPyPI rehearsal.
 
 None of them is a second implementation: they are ``pypi-state``, ``pypi-urls`` and ``pypi-missing`` with the key ``testpypi``

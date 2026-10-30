@@ -1,11 +1,15 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """Tool Metadata Registry - Registration helpers for tool metadata
 
 This module provides helper functions for registering tools with the registry,
 including detailed parameter metadata for discovery and documentation.
 """
+import logging
 from typing import Any
 
-from app.config.logging_config import logging
 from app.models.tool_registry_models import (
     ToolCategory,
     ToolDef,
@@ -15,6 +19,7 @@ from app.models.tool_registry_models import (
 from app.routes.mcp.tool_adapters import create_memory_adapters
 from app.routes.mcp.tool_registry import ToolRegistry
 from app.services.memory_service import MemoryService
+from app.services.re_embedding_service import ReEmbeddingService
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +82,7 @@ def register_simplified_tool(
 def register_memory_tools_metadata(
     registry: ToolRegistry,
     adapters: dict[str, Any],
-):
+) -> None:
     """Register memory tool metadata and implementations"""
     tools: list[ToolDef] = [
         {
@@ -123,7 +128,11 @@ def register_memory_tools_metadata(
                 {
                     "name": "importance",
                     "type": "int",
-                    "description": "Score 1-10. 9-10: Personal/foundational, 8-9: Critical solutions, 7-8: Useful patterns, 6-7: Milestones",
+                    "description": (
+                        "Score 1-10. 9-10: Personal/foundational, 8-9: "
+                        "Critical solutions, 7-8: Useful patterns, 6-7: "
+                        "Milestones"
+                    ),
                     "required": True,
                     "example": 9,
                 },
@@ -216,7 +225,10 @@ def register_memory_tools_metadata(
             ],
             "returns": "MemoryCreateResponse with id, title, linked_memory_ids, similar_memories, obsolete_matches",
             "examples": [
-                'execute_axmem_tool("create_memory", {"title": "FastAPI auth pattern", "content": "Use JWT with httponly cookies...", "context": "Security decision", "keywords": ["auth", "jwt"], "tags": ["security"], "importance": 9})',
+                (
+                    'execute_axmem_tool("create_memory", {"title": "FastAPI auth pattern", "content": "Use JWT with httponly cookies...", '
+                    '"context": "Security decision", "keywords": ["auth", "jwt"], "tags": ["security"], "importance": 9})'
+                ),
             ],
             "tags": ["memory", "create", "linking"],
         },
@@ -296,7 +308,10 @@ def register_memory_tools_metadata(
             "returns": "MemoryQueryResult with primary_memories, linked_memories, scores, total_count, token_count, truncated flag",
             "examples": [
                 'execute_axmem_tool("query_memory", {"query": "authentication patterns", "query_context": "building API login", "k": 5})',
-                'execute_axmem_tool("query_memory", {"query": "database design", "query_context": "schema review", "importance_threshold": 8, "k": 3})',
+                (
+                    'execute_axmem_tool("query_memory", {"query": "database design", "query_context": "schema review", '
+                    '"importance_threshold": 8, "k": 3})'
+                ),
             ],
             "tags": ["memory", "search", "semantic", "query"],
         },
@@ -450,14 +465,20 @@ def register_memory_tools_metadata(
             "returns": "Full Memory object after update",
             "examples": [
                 'execute_axmem_tool("update_memory", {"memory_id": "018f2c3e-0000-7000-8000-000000000042", "importance": 9})',
-                'execute_axmem_tool("update_memory", {"memory_id": "018f2c3e-0000-7000-8000-000000000042", "content": "Updated content", "tags": ["revised", "important"]})',
+                (
+                    'execute_axmem_tool("update_memory", {"memory_id": "018f2c3e-0000-7000-8000-000000000042", "content": "Updated '
+                    'content", "tags": ["revised", "important"]})'
+                ),
             ],
             "tags": ["memory", "update", "patch"],
         },
         {
             "name": "link_memories",
             "mutates": True,
-            "description": "Manually create bidirectional links between memories (symmetric linking). Accepts memory_id + related_ids (or aliases source_id + target_id/target_ids, memory_ids=[src, tgt])",
+            "description": (
+                "Manually create bidirectional links between memories (symmetric linking). Accepts memory_id + related_ids (or aliases "
+                "source_id + target_id/target_ids, memory_ids=[src, tgt])"
+            ),
             "parameters": [
                 {
                     "name": "memory_id",
@@ -471,7 +492,11 @@ def register_memory_tools_metadata(
                     "type": "List[str]",
                     "description": "List of target memory IDs to link (or a single id; aliases: target_id, target_ids, related_id)",
                     "required": True,
-                    "example": ["018f2c3e-0000-7000-8000-000000000010", "018f2c3e-0000-7000-8000-000000000015", "018f2c3e-0000-7000-8000-000000000020"],
+                    "example": [
+                        "018f2c3e-0000-7000-8000-000000000010",
+                        "018f2c3e-0000-7000-8000-000000000015",
+                        "018f2c3e-0000-7000-8000-000000000020",
+                    ],
                 },
                 {
                     "name": "ctx",
@@ -480,18 +505,33 @@ def register_memory_tools_metadata(
                     "required": True,
                 },
             ],
-            "returns": "Dict with linked_memory_ids: the target memory IDs that were newly linked (a target that does not exist for the tenant, the source itself and a link that exists already are skipped)",
+            "returns": (
+                "Dict with linked_memory_ids: the target memory IDs that were newly linked (a target that does not exist for the "
+                "tenant, the source itself and a link that exists already are skipped)"
+            ),
             "examples": [
-                'execute_axmem_tool("link_memories", {"memory_id": "018f2c3e-0000-7000-8000-000000000042", "related_ids": ["018f2c3e-0000-7000-8000-000000000010", "018f2c3e-0000-7000-8000-000000000015"]})',
-                'execute_axmem_tool("link_memories", {"source_id": "018f2c3e-0000-7000-8000-000000000042", "target_id": "018f2c3e-0000-7000-8000-000000000057"})',
-                'execute_axmem_tool("link_memories", {"memory_ids": ["018f2c3e-0000-7000-8000-000000000042", "018f2c3e-0000-7000-8000-000000000057"]})',
+                (
+                    'execute_axmem_tool("link_memories", {"memory_id": "018f2c3e-0000-7000-8000-000000000042", "related_ids": '
+                    '["018f2c3e-0000-7000-8000-000000000010", "018f2c3e-0000-7000-8000-000000000015"]})'
+                ),
+                (
+                    'execute_axmem_tool("link_memories", {"source_id": "018f2c3e-0000-7000-8000-000000000042", "target_id": '
+                    '"018f2c3e-0000-7000-8000-000000000057"})'
+                ),
+                (
+                    'execute_axmem_tool("link_memories", {"memory_ids": ["018f2c3e-0000-7000-8000-000000000042", '
+                    '"018f2c3e-0000-7000-8000-000000000057"]})'
+                ),
             ],
             "tags": ["memory", "linking", "relationships"],
         },
         {
             "name": "unlink_memories",
             "mutates": True,
-            "description": "Remove bidirectional link(s) between memories. Accepts source_id + target_id (or aliases memory_id + related_id, target_ids, related_ids, memory_ids=[src, tgt, ...])",
+            "description": (
+                "Remove bidirectional link(s) between memories. Accepts source_id + target_id (or aliases memory_id + related_id, "
+                "target_ids, related_ids, memory_ids=[src, tgt, ...])"
+            ),
             "parameters": [
                 {
                     "name": "source_id",
@@ -516,10 +556,22 @@ def register_memory_tools_metadata(
             ],
             "returns": "Dict with 'success' boolean (True if all requested links were removed, False if any link didn't exist)",
             "examples": [
-                'execute_axmem_tool("unlink_memories", {"source_id": "018f2c3e-0000-7000-8000-000000000042", "target_id": "018f2c3e-0000-7000-8000-000000000057"})',
-                'execute_axmem_tool("unlink_memories", {"memory_id": "018f2c3e-0000-7000-8000-000000000042", "related_id": "018f2c3e-0000-7000-8000-000000000057"})',
-                'execute_axmem_tool("unlink_memories", {"memory_id": "018f2c3e-0000-7000-8000-000000000042", "related_ids": ["018f2c3e-0000-7000-8000-000000000057", "018f2c3e-0000-7000-8000-000000000058"]})',
-                'execute_axmem_tool("unlink_memories", {"memory_ids": ["018f2c3e-0000-7000-8000-000000000042", "018f2c3e-0000-7000-8000-000000000057", "018f2c3e-0000-7000-8000-000000000058"]})',
+                (
+                    'execute_axmem_tool("unlink_memories", {"source_id": "018f2c3e-0000-7000-8000-000000000042", "target_id": '
+                    '"018f2c3e-0000-7000-8000-000000000057"})'
+                ),
+                (
+                    'execute_axmem_tool("unlink_memories", {"memory_id": "018f2c3e-0000-7000-8000-000000000042", "related_id": '
+                    '"018f2c3e-0000-7000-8000-000000000057"})'
+                ),
+                (
+                    'execute_axmem_tool("unlink_memories", {"memory_id": "018f2c3e-0000-7000-8000-000000000042", "related_ids": '
+                    '["018f2c3e-0000-7000-8000-000000000057", "018f2c3e-0000-7000-8000-000000000058"]})'
+                ),
+                (
+                    'execute_axmem_tool("unlink_memories", {"memory_ids": ["018f2c3e-0000-7000-8000-000000000042", '
+                    '"018f2c3e-0000-7000-8000-000000000057", "018f2c3e-0000-7000-8000-000000000058"]})'
+                ),
             ],
             "tags": ["memory", "unlink", "graph", "linking"],
         },
@@ -584,9 +636,15 @@ def register_memory_tools_metadata(
                     "example": "018f2c3e-0000-7000-8000-000000000100",
                 },
             ],
-            "returns": 'Dict {"success": true} once the memory is marked obsolete; a memory that is not found, is already obsolete or would be superseded by itself is an error, never false',
+            "returns": (
+                'Dict {"success": true} once the memory is marked obsolete; a memory that is not found, is already obsolete or would be '
+                'superseded by itself is an error, never false'
+            ),
             "examples": [
-                'execute_axmem_tool("mark_memory_obsolete", {"memory_id": "018f2c3e-0000-7000-8000-000000000042", "reason": "Outdated approach", "superseded_by": "018f2c3e-0000-7000-8000-000000000100"})',
+                (
+                    'execute_axmem_tool("mark_memory_obsolete", {"memory_id": "018f2c3e-0000-7000-8000-000000000042", "reason": "Outdated '
+                    'approach", "superseded_by": "018f2c3e-0000-7000-8000-000000000100"})'
+                ),
             ],
             "tags": ["memory", "delete", "obsolete", "lifecycle"],
         },
@@ -609,7 +667,10 @@ def register_memory_tools_metadata(
                     "required": True,
                 },
             ],
-            "returns": 'Dict {"success": true} once the memory is active again; a memory that is not found or is not obsolete is an error, never false',
+            "returns": (
+                'Dict {"success": true} once the memory is active again; a memory that is not found or is not obsolete is an error, '
+                'never false'
+            ),
             "examples": [
                 'execute_axmem_tool("unobsolete_memory", {"memory_id": "018f2c3e-0000-7000-8000-000000000042"})',
             ],
@@ -752,7 +813,10 @@ def register_memory_tools_metadata(
                 "An unknown project scope is rejected with VALIDATION_ERROR"
             ),
             "examples": [
-                'execute_axmem_tool("rebuild_embeddings", {"memory_ids": ["018f2c3e-0000-7000-8000-000000000123", "018f2c3e-0000-7000-8000-000000000124"]})',
+                (
+                    'execute_axmem_tool("rebuild_embeddings", {"memory_ids": ["018f2c3e-0000-7000-8000-000000000123", '
+                    '"018f2c3e-0000-7000-8000-000000000124"]})'
+                ),
                 'execute_axmem_tool("rebuild_embeddings", {"project": "axmem"})',
                 'execute_axmem_tool("rebuild_embeddings", {})',
             ],
@@ -784,8 +848,8 @@ def register_memory_tools_metadata(
 def register_all_tools_metadata(
     registry: ToolRegistry,
     memory_service: MemoryService,
-    re_embedding_service,
-):
+    re_embedding_service: ReEmbeddingService,
+) -> None:
     """Register all tool metadata and implementations
 
     Args:

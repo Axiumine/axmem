@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The contract of the model files: which repositories are accepted, what is downloaded, what the manifest holds and what an
 operator reads when a file is missing, damaged or replaced.
 
@@ -311,7 +314,7 @@ def test_a_manifest_that_cannot_be_moved_into_place_is_reported_and_leaves_no_sc
 
 def test_a_manifest_that_cannot_even_be_written_is_reported_the_same_way(offline_model, monkeypatch):
     """Nothing was made, so there is no scratch file to remove, and removing it must not hide the cause."""
-    model_dir, root = offline_model
+    model_dir, _root = offline_model
     write_text = Path.write_text
 
     def refuse(path, *args, **kwargs):
@@ -402,7 +405,7 @@ def test_a_manifest_that_cannot_be_read_is_named_with_the_reason_and_the_directo
 
 
 def test_a_manifest_that_the_process_may_not_read_is_named_the_same_way(offline_model, monkeypatch):
-    model_dir, root = offline_model
+    model_dir, _root = offline_model
     fetch_model(REPOSITORY, model_dir)
     read_text = Path.read_text
 

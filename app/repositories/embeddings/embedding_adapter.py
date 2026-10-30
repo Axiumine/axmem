@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """Embedding Adapter to abstract provider specific implementation details"""
 import asyncio
 import logging
@@ -72,7 +76,7 @@ class AzureOpenAIAdapter(_OneTextPerRequest):
 
     provider = "Azure OpenAI"
 
-    def __init__(self):
+    def __init__(self) -> None:
         logger.info("Initialising Azure Open AI embeddings adapter", extra={
             "embedding_model": settings.EMBEDDING_MODEL,
             "supports_dimensions": settings.AZURE_SUPPORTS_DIMENSIONS,
@@ -114,7 +118,7 @@ class AzureOpenAIAdapter(_OneTextPerRequest):
                 **kwargs,
             )
         except Exception:
-            logger.error("Error generating embeddings", exc_info=True, extra={
+            logger.exception("Error generating embeddings", extra={
                 "embedding provider": "Azure",
                 "embedding model": self.model,
             })
@@ -131,7 +135,7 @@ class GoogleEmbeddingsAdapter(_OneTextPerRequest):
 
     provider = "Google"
 
-    def __init__(self):
+    def __init__(self) -> None:
         logger.info("Initialising Google Generative AI embeddings adapter", extra={
             "embedding_model": settings.EMBEDDING_MODEL,
         })
@@ -159,7 +163,7 @@ class GoogleEmbeddingsAdapter(_OneTextPerRequest):
                 ),
             )
         except Exception:
-            logger.error("Error generating embeddings", exc_info=True, extra={
+            logger.exception("Error generating embeddings", extra={
                 "embedding_provider": "google",
                 "embedding_model": self.model,
             })
@@ -200,7 +204,7 @@ class OpenAIEmbeddingsAdapter(_OneTextPerRequest):
 
     provider = "OpenAI"
 
-    def __init__(self):
+    def __init__(self) -> None:
         base_url: str | None = settings.OPENAI_BASE_URL or None
         self.supports_dimensions = settings.OPENAI_SUPPORTS_DIMENSIONS
 
@@ -236,7 +240,7 @@ class OpenAIEmbeddingsAdapter(_OneTextPerRequest):
                 **kwargs,
             )
         except Exception:
-            logger.error("Error generating embeddings", exc_info=True, extra={
+            logger.exception("Error generating embeddings", extra={
                 "embedding_provider": "openai",
                 "embedding_model": self.model,
             })
@@ -253,7 +257,7 @@ class OllamaEmbeddingsAdapter(_OneTextPerRequest):
 
     provider = "Ollama"
 
-    def __init__(self):
+    def __init__(self) -> None:
         from ollama import AsyncClient
 
         logger.info("Initialising Ollama embeddings adapter", extra={
@@ -274,7 +278,7 @@ class OllamaEmbeddingsAdapter(_OneTextPerRequest):
                 dimensions=settings.EMBEDDING_DIMENSIONS,
             )
         except Exception:
-            logger.error("Error generating embeddings", exc_info=True, extra={
+            logger.exception("Error generating embeddings", extra={
                 "embedding_provider": "ollama",
                 "embedding_model": self.model,
             })

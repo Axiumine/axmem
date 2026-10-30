@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """What the tests of the memory tool adapters share: the call context, the log reader and the memories to find.
 
 The adapters are driven over the real ``MemoryService`` and ``ReEmbeddingService``; each is wrapped in a spy that

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Integration tests for the harness's host-side file handling and fixture repo.
 
 Everything the agent writes (report.json, events.jsonl, anything under the rw-mounted
@@ -68,7 +71,7 @@ class ScriptedAgent:
     report_text: str | None = None
     outcome: SessionOutcome = field(default_factory=lambda: SessionOutcome(kind="ran"))
 
-    async def run_session(self, *, skill, skill_dir, workspace, prompt, timeout):
+    async def run_session(self, *, skill, skill_dir, workspace, prompt, timeout):  # noqa: ASYNC109 - the SessionRunner protocol
         (skill_dir / "events.jsonl").write_text(self.events_text)
         if self.report_text is not None:
             (workspace / "report.json").write_text(self.report_text)
@@ -351,7 +354,7 @@ def test_fixture_repo_survives_the_env_git_gives_a_linked_worktree_hook(
     config_before = (main_repo / ".git" / "config").read_text()
     gitdir = git("rev-parse", "--absolute-git-dir", cwd=worktree)
     monkeypatch.setenv("GIT_DIR", gitdir)
-    monkeypatch.setenv("GIT_INDEX_FILE", os.path.join(gitdir, "index"))
+    monkeypatch.setenv("GIT_INDEX_FILE", str(Path(gitdir) / "index"))
     monkeypatch.setenv("GIT_AUTHOR_NAME", "Someone Else")
 
     # Act
@@ -435,7 +438,7 @@ class PlantingAgent:
     during: str
     plant: Callable[[Path], None]
 
-    async def run_session(self, *, skill, skill_dir, workspace, prompt, timeout):
+    async def run_session(self, *, skill, skill_dir, workspace, prompt, timeout):  # noqa: ASYNC109 - the SessionRunner protocol
         (skill_dir / "events.jsonl").write_text(json.dumps(OK_RESULT) + "\n")
         if skill == self.during:
             self.plant(self.mount)
@@ -640,8 +643,8 @@ def make_fake_container(tmp_path):
     run_dir = tmp_path / "run"
     (run_dir / "skills" / FIRST).mkdir(parents=True)
     container = AgentContainer(HarnessConfig(), run_dir, server_url=THROWAWAY_URL)
-    container._client = SimpleNamespace(api=api)  # noqa: SLF001
-    container._container = SimpleNamespace(id="container-1")  # noqa: SLF001
+    container._client = SimpleNamespace(api=api)
+    container._container = SimpleNamespace(id="container-1")
     return container, run_dir / "skills" / FIRST
 
 
@@ -650,7 +653,7 @@ def test_session_log_is_written_to_a_regular_file(tmp_path):
     container, skill_dir = make_fake_container(tmp_path)
 
     # Act
-    exit_code, _ = container._exec(["true"], skill_dir / "session.log")  # noqa: SLF001
+    exit_code, _ = container._exec(["true"], skill_dir / "session.log")
 
     # Assert
     assert exit_code == 0
@@ -665,7 +668,7 @@ def test_symlinked_session_log_does_not_overwrite_a_host_file(tmp_path, outside)
     plant_symlink(skill_dir / "session.log", victim)
 
     # Act
-    container._exec(["true"], skill_dir / "session.log")  # noqa: SLF001
+    container._exec(["true"], skill_dir / "session.log")
 
     # Assert
     assert victim.read_text() == "ssh-rsa ORIGINAL\n"

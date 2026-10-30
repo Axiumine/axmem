@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Integration tests for what a runtime built by the composition root holds and says (app/bootstrap.py)
 
 ``build_runtime`` wires one repository, on the connections of one stack, to the real TensorRT models, hands the same

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """A start that goes wrong or is held up: the exact words of each refusal, and the steps that are repeated.
 
 Each refusal of a start is a sentence an operator reads. A request that fails ambiguously (a consensus timeout of the

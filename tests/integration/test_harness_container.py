@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """Integration tests for the container plumbing (test_harness/container.py).
 
 Everything here is pure host-side mechanics — env fencing, exec command shape,
@@ -12,6 +16,7 @@ from pathlib import Path
 
 import pytest
 
+from test_harness import container as container_mod
 from test_harness.config import HarnessConfig
 from test_harness.container import (
     DECOY_QDRANT_URL,
@@ -19,8 +24,8 @@ from test_harness.container import (
     SKILLS_MOUNT,
     build_container_env,
     exec_command,
+    image_inputs_hash,
     provision_agent,
-    requirements_hash,
     staged_mount,
 )
 from test_harness.server import HarnessInfraError
@@ -63,7 +68,8 @@ def test_exec_command_wraps_runner_in_os_level_timeout():
 
     # Assert
     assert cmd[:3] == ["timeout", "--kill-after=30s", "900"]
-    assert "python" in cmd and "-u" in cmd
+    assert "python" in cmd
+    assert "-u" in cmd
     assert f"{HARNESS_MOUNT}/runner.py" in cmd
     assert cmd[-1] == f"{SKILLS_MOUNT}/axmem-recall"
 
@@ -132,7 +138,66 @@ def test_harness_opencode_config_is_strict_json():
     assert parsed["autoupdate"] is False
 
 
-def test_requirements_hash_tracks_content():
-    # Arrange / Act / Assert: same content -> same tag; any dep change -> new tag
-    assert requirements_hash("a==1\n") == requirements_hash("a==1\n")
-    assert requirements_hash("a==1\n") != requirements_hash("a==2\n")
+def test_image_inputs_hash_tracks_the_requirements():
+    # Arrange / Act / Assert: same content -> same digest; any dep change -> new digest
+    assert image_inputs_hash("a==1\n") == image_inputs_hash("a==1\n")
+    assert image_inputs_hash("a==1\n") != image_inputs_hash("a==2\n")
+
+
+@pytest.fixture
+def docker_dir(tmp_path, monkeypatch):
+    """A stand-in build context holding the inputs the hash reads."""
+    for name in container_mod._IMAGE_INPUTS:
+        (tmp_path / name).write_text(f"{name} v1\n")
+    monkeypatch.setattr(container_mod, "_DOCKER_DIR", tmp_path)
+    return tmp_path
+
+
+@pytest.mark.parametrize("name", container_mod._IMAGE_INPUTS)
+def test_image_inputs_hash_tracks_every_file_the_image_build_reads(docker_dir, name):
+    # Arrange
+    before = image_inputs_hash("a==1\n")
+
+    # Act: the node digest in the Dockerfile, the opencode pin and its lock are not in requirements.lock
+    (docker_dir / name).write_text(f"{name} v2\n")
+
+    # Assert
+    assert image_inputs_hash("a==1\n") != before
+
+
+def test_image_inputs_hash_does_not_mix_up_where_one_file_ends(docker_dir):
+    # Arrange: the same bytes split differently between two files must not give the same digest
+    (docker_dir / "Dockerfile").write_text("ab")
+    (docker_dir / "package.json").write_text("c")
+    before = image_inputs_hash("")
+
+    # Act
+    (docker_dir / "Dockerfile").write_text("a")
+    (docker_dir / "package.json").write_text("bc")
+
+    # Assert
+    assert image_inputs_hash("") != before
+
+
+def test_image_inputs_hash_with_a_missing_input_is_an_infra_error(docker_dir):
+    # Arrange
+    (docker_dir / "package-lock.json").unlink()
+
+    # Act / Assert: a broken checkout is a harness failure (exit 2), not a traceback
+    with pytest.raises(HarnessInfraError, match=r"package-lock.json"):
+        image_inputs_hash("a==1\n")
+
+
+def test_the_hashed_inputs_cover_every_file_the_dockerfile_copies():
+    # Arrange: requirements.lock is written from the hashed `uv export`, so it is covered by the requirements
+    dockerfile = (Path(container_mod._DOCKER_DIR) / "Dockerfile").read_text(encoding="utf-8")
+    copied: set[str] = set()
+    for line in dockerfile.splitlines():
+        if line.startswith("COPY "):
+            *sources, _destination = (word for word in line.split()[1:] if not word.startswith("--"))
+            copied.update(sources)
+
+    # Act / Assert
+    assert copied == {"requirements.lock", "package.json", "package-lock.json"}
+    assert copied - {"requirements.lock"} <= set(container_mod._IMAGE_INPUTS)
+    assert "Dockerfile" in container_mod._IMAGE_INPUTS

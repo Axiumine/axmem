@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """Containerized agent execution: the OS-level write barrier around the walkthrough.
 
 Tool scoping is not a sandbox (agent-shell enforces nothing under auto-approve), so the
@@ -7,16 +11,18 @@ writable credential mounts, one long-lived container driven by execs, an in-cont
 `timeout --kill-after` wrapper as the real wall-clock guard, and stop/remove plus
 staged-dir cleanup on the way out.
 
-The image bakes the locked dependency tree (rebuilt automatically when the lock
-drifts); the working tree itself is installed as a wheel at container start, so every
-run walks the current checkout without an image rebuild. Docker imports stay lazy:
-this module is importable without the `harness` dependency group.
+The image bakes the locked dependency tree and the agent CLIs that docker/package.json
+and package-lock.json pin (rebuilt automatically when the lock, either of those files or
+the Dockerfile changes); the working tree itself is installed as a wheel at container
+start, so every run walks the current checkout without an image rebuild. Docker imports
+stay lazy: this module is importable without the `harness` dependency group.
 
 The container runs as the invoking host user, so the bind mounts (staged credentials,
 the rw skills tree) stay private to that user and writable by the process that needs
 them whatever the host uid is; the image is built writable for an arbitrary uid.
 """
 import asyncio
+import contextlib
 import hashlib
 import math
 import os
@@ -35,7 +41,9 @@ from test_harness.walkthrough import SessionOutcome
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _DOCKER_DIR = Path(__file__).resolve().parent / "docker"
-_HASH_LABEL = "axmem.harness.requirements-hash"
+_HASH_LABEL = "axmem.harness.requirements-hash"  # holds image_inputs_hash(): the lock and the other build inputs
+# The files of _DOCKER_DIR that the image build reads besides requirements.lock (written from `uv export`).
+_IMAGE_INPUTS = ("Dockerfile", "package.json", "package-lock.json")
 _OPENCODE_AUTH = Path("~/.local/share/opencode/auth.json")
 _INSTALL_TIMEOUT = 300
 _HEALTH_TIMEOUT = 180
@@ -108,7 +116,7 @@ def staged_mount(
     staging = Path(tempfile.mkdtemp(prefix="uat-mount-"))  # mkdtemp itself creates it 0o700
     for source in files:
         shutil.copy2(source, staging / source.name)
-        os.chmod(staging / source.name, 0o600)
+        (staging / source.name).chmod(0o600)
     staged.append(staging)
     return {str(staging): {"bind": container_dir, "mode": "rw"}}
 
@@ -151,7 +159,7 @@ def _run_tool(cmd: list[str], **kwargs) -> subprocess.CompletedProcess:
     a traceback with exit code 1, which the CLI reserves for "partial UAT".
     """
     try:
-        return subprocess.run(cmd, **kwargs)  # nosec B603 - callers pass constant uv/docker argv lists, no shell
+        return subprocess.run(cmd, **kwargs)  # nosec B603 - callers pass constant uv/docker argv lists, no shell  # noqa: PLW1510 - check is in kwargs
     except subprocess.CalledProcessError as exc:
         detail = (exc.stderr or "").strip()
         raise HarnessInfraError(
@@ -174,8 +182,24 @@ def export_requirements() -> str:
     return result.stdout
 
 
-def requirements_hash(requirements: str) -> str:
-    return hashlib.sha256(requirements.encode()).hexdigest()[:16]
+def image_inputs_hash(requirements: str) -> str:
+    """Digest of everything the image build reads: the exported requirements and the files of `docker/`.
+
+    The Dockerfile names the base image by digest and the apt/uv steps, `package.json` and `package-lock.json` pin the
+    agent CLIs that `npm ci` installs; a change to any of them must give a new digest, or `ensure_image` would keep an
+    image that was baked from the old file. `runner.py` and `opencode.json` are mounted at run time, not baked.
+    """
+    parts = {"requirements.lock": requirements.encode()}
+    for name in _IMAGE_INPUTS:
+        try:
+            parts[name] = (_DOCKER_DIR / name).read_bytes()
+        except OSError as exc:
+            raise HarnessInfraError(f"cannot read {name} of the harness image ({exc})") from exc
+    digest = hashlib.sha256()
+    for name, content in parts.items():
+        digest.update(f"{name}\0{len(content)}\0".encode())  # framed, so one file cannot spill into the next
+        digest.update(content)
+    return digest.hexdigest()[:16]
 
 
 def docker_sdk():
@@ -206,14 +230,16 @@ def _docker_client():
 
 
 def ensure_image(rebuild: bool = False, log: Callable[[str], None] = print) -> None:
-    """Build the harness image when it is absent or its baked dependency tree no
-    longer matches the lock file - stale images have burned real runs before
-    (eval-harness mem 1622), so the lock hash is checked, not assumed. A forced rebuild
-    also bypasses the layer cache: the image's floating installs (opencode-ai@latest,
-    agent-shell-py>=) keep their instruction text, so a cached build would re-stamp the
-    label and keep the old versions."""
+    """Build the harness image when it is absent or was baked from other inputs than
+    the current ones - stale images have burned real runs before (eval-harness mem 1622),
+    so the hash is checked, not assumed. The inputs are the locked dependencies (`uv
+    export`), the Dockerfile (base image digest included) and the pinned agent CLIs of
+    `package.json` / `package-lock.json`. A forced rebuild also bypasses the layer cache:
+    the image's floating installs (agent-shell-py>=, the uv installer) keep their
+    instruction text, so a cached build would re-stamp the label and keep the old
+    versions."""
     requirements = export_requirements()
-    digest = requirements_hash(requirements)
+    digest = image_inputs_hash(requirements)
     if not rebuild:
         docker = docker_sdk()
         try:
@@ -286,10 +312,8 @@ class AgentContainer:
         self._abort_if_stopping()
 
         name = f"axmem-uat-{self.run_dir.name}"
-        try:
+        with contextlib.suppress(docker.errors.NotFound):
             self._client.containers.get(name).remove(force=True)
-        except docker.errors.NotFound:
-            pass
 
         environment = {
             **build_container_env(self.server_url),
@@ -365,7 +389,9 @@ class AgentContainer:
             raise HarnessInfraError(f"agent unhealthy in container:\n{output.strip()}")
 
     async def run_session(
-        self, *, skill: str, skill_dir: Path, workspace: Path, prompt: str, timeout: float,
+        self, *, skill: str, skill_dir: Path,
+        workspace: Path, prompt: str,  # noqa: ARG002 - SessionRunner protocol
+        timeout: float,  # noqa: ASYNC109 - handed to the in-container timeout
     ) -> SessionOutcome:
         cmd = exec_command(timeout, skill)
         try:
@@ -398,7 +424,7 @@ class AgentContainer:
         finally:
             # docker-py leaves the underlying response open; without this a GC race
             # throws "I/O operation on closed file" at interpreter exit (mem 1645)
-            stream._response.close()  # noqa: SLF001
+            stream._response.close()  # noqa: SLF001 - docker-py has no public way
         if log_path is not None:
             write_text(log_path, buffer, self.run_dir / "skills")
         return self._client.api.exec_inspect(exec_id)["ExitCode"], buffer
@@ -441,7 +467,7 @@ class AgentContainer:
         ):
             try:
                 action()
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - a failed stop is reported
                 print(
                     f"warning: could not {step} container "
                     f"axmem-uat-{self.run_dir.name}: {exc}",

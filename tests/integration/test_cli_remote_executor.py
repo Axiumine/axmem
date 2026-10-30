@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """Integration tests for RemoteExecutor, executor selection, and auth commands (phase 4)
 
 The fastmcp client is the one external boundary the CLI has, so it is replaced with a
@@ -110,7 +114,7 @@ async def test_close_suppresses_client_teardown_errors():
 
 
 def test_server_url_normalization_appends_mcp_path():
-    factory = lambda url, token: StubClient()  # noqa: E731
+    factory = lambda url, token: StubClient()  # noqa: E731 - a one-line stub of the client factory
 
     bare = RemoteExecutor("http://example.com:8020", client_factory=factory)
     trailing = RemoteExecutor("http://example.com:8020/", client_factory=factory)
@@ -304,7 +308,10 @@ async def test_auth_login_bad_scheme_exits_one_with_clean_error(monkeypatch, tmp
 @pytest.mark.parametrize(
     ("error", "shown"),
     [
-        (PermissionError(errno.EACCES, "Permission denied", "/home/user/.config/axmem/env"), "Permission denied: /home/user/.config/axmem/env"),
+        (
+            PermissionError(errno.EACCES, "Permission denied", "/home/user/.config/axmem/env"),
+            "Permission denied: /home/user/.config/axmem/env",
+        ),
         (OSError(errno.ENOSPC, "No space left on device"), "No space left on device"),
     ],
     ids=["read-only-settings-file", "full-disk"],

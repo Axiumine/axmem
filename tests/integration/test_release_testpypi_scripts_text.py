@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The scripts of the TestPyPI rehearsal hold no release, and the shell, the workflow and the Python hold the same facts.
 
 ``scripts/release-testpypi.sh`` and ``scripts/lib/testpypi-flow.sh`` are read as text: they hold no commit, tag, push, build or stamp, no
@@ -129,6 +132,10 @@ class TestTheScriptsHoldNoRelease:
         assert "release-pypi.lock" not in _code(LIB) + _code(SCRIPT)
 
     def test_the_last_line_is_the_one_that_tells_the_operator_to_approve_the_environment_pypi(self) -> None:
-        assert _code(SCRIPT).rstrip().splitlines()[-1] == 'echo "TestPyPI rehearsal complete: now approve environment ${PUBLISH_ENVIRONMENT}"'
+        assert _code(SCRIPT).rstrip().splitlines()[-1] == (
+            'echo "TestPyPI rehearsal complete: now '
+            'approve environment '
+            '${PUBLISH_ENVIRONMENT}"'
+        )
         assert _constants(REPO_ROOT / "scripts" / "lib" / "project.sh")["PUBLISH_ENVIRONMENT"] == "pypi"
         assert GITHUB_REPO == "Axiumine/axmem"

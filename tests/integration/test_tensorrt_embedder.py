@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The TensorRT embeddings adapter on the real GPU: vectors, batching, truncation, refusals, concurrency.
 
 The model is the real bge-small-en-v1.5, run in strict fp32 by TensorRT. The golden vectors and
@@ -349,7 +352,7 @@ def test_the_configured_width_comes_from_the_settings(tensorrt_embedder):
 def test_a_model_that_is_not_a_repository_id_is_refused_naming_the_setting(model, monkeypatch):
     monkeypatch.setattr(settings, "EMBEDDING_MODEL", model)
 
-    with pytest.raises(TensorRTStartupError, match="EMBEDDING_MODEL=.* is not a Hugging Face repository id") as raised:
+    with pytest.raises(TensorRTStartupError, match=r"EMBEDDING_MODEL=.* is not a Hugging Face repository id") as raised:
         TensorRTEmbeddingsAdapter()
 
     assert raised.value.cause == "model-unavailable"
@@ -429,8 +432,8 @@ def test_tf32_and_directories_are_read_from_the_environment(monkeypatch, tmp_pat
     configured = Settings(_env_file=None)
 
     assert configured.EMBEDDING_TF32 is True
-    assert configured.EMBEDDING_MODEL_DIR == str(tmp_path / "models")
-    assert configured.EMBEDDING_ENGINE_CACHE_DIR == str(tmp_path / "engines")
+    assert str(tmp_path / "models") == configured.EMBEDDING_MODEL_DIR
+    assert str(tmp_path / "engines") == configured.EMBEDDING_ENGINE_CACHE_DIR
     assert configured.EMBEDDING_MODEL == "Xenova/bge-small-en-v1.5"
 
 

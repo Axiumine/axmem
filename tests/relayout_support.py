@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The state a ``re-embed`` leaves when it stops while it moves the links into a collection of another layout.
 
 The links pass through a staging collection: copied there, the old collection removed, a new one made in the new

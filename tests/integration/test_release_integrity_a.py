@@ -1,8 +1,12 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The release integrity check: a version on PyPI has a pushed tag and a signed release, or it is refused.
 
 A version that reaches PyPI without a tag and a signature stays there, and PyPI refuses a file name for good, so the
 release script reads PyPI before it builds anything. These cases give the check the PyPI project JSON, a bare remote
-with tags, a scripted ``gh`` and a ``release-superseded.json``, and show which versions it passes and which it refuses by name with the reason
+with tags, a scripted ``gh`` and a ``release-superseded.json``, and show which versions it passes and which it refuses
+by name with the reason
 (no tag, no release, a red or missing signing run, a missing bundle, no provenance). The remote can have any name (Axmem's
 is ``axiumine``), and the module runs as a program. The proof that PyPI serves what was signed is in
 ``test_release_integrity_b.py``; the listed versions, the release being resumed and what cannot be read are in
@@ -176,6 +180,7 @@ class TestTheRemoteHasAnyName:
         assert "ls-remote" in capsys.readouterr().err
 
 
+# The test runs the module a second time as __main__ on purpose (runpy), and runpy warns that it is already in sys.modules
 @pytest.mark.filterwarnings("ignore:'scripts.release.integrity' found in sys.modules:RuntimeWarning")
 def test_the_module_runs_as_a_plain_program(world, monkeypatch, capsys):
     world.version("0.3.9")

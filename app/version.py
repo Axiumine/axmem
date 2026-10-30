@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """Version retrieval for Axmem."""
 
 from importlib.metadata import PackageNotFoundError, version
@@ -12,7 +16,6 @@ def get_version() -> str:
     except PackageNotFoundError:
         try:
             from app._version import __version__
-
-            return __version__
         except ImportError:
             return "0.0.0-dev"
+        return __version__

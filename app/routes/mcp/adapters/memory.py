@@ -1,5 +1,10 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """Memory tool adapters: wrap MemoryService calls as registry-compatible callables."""
 
+import logging
 from collections.abc import Callable
 from functools import partial
 from typing import Any, cast
@@ -7,7 +12,6 @@ from typing import Any, cast
 from fastmcp import Context
 from fastmcp.exceptions import ToolError
 
-from app.config.logging_config import logging
 from app.middleware.auth import get_tenant_from_auth
 from app.models.memory_models import (
     Memory,
@@ -56,7 +60,7 @@ class MemoryToolAdapters:
         self.memory_service = memory_service
         self.re_embedding_service = re_embedding_service
 
-    async def create_memory(
+    async def create_memory(  # noqa: PLR0913, PLR0917 - tool schema, passed by name
         self,
         title: str,
         content: str,
@@ -177,11 +181,11 @@ class MemoryToolAdapters:
 
         return result
 
-    async def update_memory(
+    async def update_memory(  # noqa: PLR0913, PLR0917 - tool schema, passed by name
         self,
         ctx: Context,
         memory_id: str | None = None,
-        id: str | None = None,
+        id: str | None = None,  # noqa: A002 - alias that tool callers send by name
         title: str | None = None,
         content: str | None = None,
         context: str | None = None,
@@ -237,7 +241,7 @@ class MemoryToolAdapters:
 
         return _as_memory(refreshed_memory)
 
-    async def link_memories(
+    async def link_memories(  # noqa: PLR0913, PLR0917 - tool schema, passed by name
         self,
         ctx: Context,
         memory_id: str | None = None,
@@ -254,11 +258,11 @@ class MemoryToolAdapters:
         to_memory_id: str | None = None,
         memory_ids: list[str] | None = None,
         ids: list[str] | None = None,
-        id: str | None = None,
+        id: str | None = None,  # noqa: A002 - alias that tool callers send by name
         linked_ids: list[str] | str | None = None,
         related_memory_ids: list[str] | str | None = None,
         **kwargs: Any,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Adapter for link_memories tool with alias resilience"""
         reject_unknown_args("link_memories", kwargs)
         src, cleaned_related_ids = resolve_link_arguments(
@@ -304,7 +308,7 @@ class MemoryToolAdapters:
 
         return {"linked_memory_ids": links_created}
 
-    async def unlink_memories(
+    async def unlink_memories(  # noqa: PLR0913, PLR0917 - tool schema, passed by name
         self,
         ctx: Context,
         source_id: str | None = None,
@@ -321,11 +325,11 @@ class MemoryToolAdapters:
         to_id: str | None = None,
         from_memory_id: str | None = None,
         to_memory_id: str | None = None,
-        id: str | None = None,
+        id: str | None = None,  # noqa: A002 - alias that tool callers send by name
         linked_ids: list[str] | str | None = None,
         related_memory_ids: list[str] | str | None = None,
         **kwargs: Any,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Adapter for unlink_memories tool with alias resilience"""
         reject_unknown_args("unlink_memories", kwargs)
         src, cleaned_targets = resolve_link_arguments(
@@ -379,7 +383,7 @@ class MemoryToolAdapters:
         self,
         ctx: Context,
         memory_id: str | None = None,
-        id: str | None = None,
+        id: str | None = None,  # noqa: A002 - alias that tool callers send by name
         **kwargs: Any,
     ) -> Memory:
         """Adapter for get_memory tool"""
@@ -403,12 +407,12 @@ class MemoryToolAdapters:
         self,
         ctx: Context,
         memory_id: str | None = None,
-        id: str | None = None,
+        id: str | None = None,  # noqa: A002 - alias that tool callers send by name
         *,
         reason: str,
         superseded_by: str | None = None,
         **kwargs: Any,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Adapter for mark_memory_obsolete tool"""
         reject_unknown_args("mark_memory_obsolete", kwargs)
         mid = resolve_memory_id("mark_memory_obsolete", memory_id, id)
@@ -430,9 +434,9 @@ class MemoryToolAdapters:
         self,
         ctx: Context,
         memory_id: str | None = None,
-        id: str | None = None,
+        id: str | None = None,  # noqa: A002 - alias that tool callers send by name
         **kwargs: Any,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Adapter for unobsolete_memory tool"""
         reject_unknown_args("unobsolete_memory", kwargs)
         mid = resolve_memory_id("unobsolete_memory", memory_id, id)
@@ -459,7 +463,7 @@ class MemoryToolAdapters:
         tags: list[str] | None = None,
         importance_min: int | None = None,
         created_since: str | None = None,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Adapter for get_recent_memories tool"""
         tenant = await get_tenant_from_auth(ctx)
         limit, offset = clamp_list_pagination(

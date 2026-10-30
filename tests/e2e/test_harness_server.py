@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """E2E test for the harness's throwaway Axmem server (test_harness/server.py).
 
 Boots the real `axmem serve` console script as an OS subprocess (the harness's agent
@@ -5,6 +9,8 @@ is a separate process, so in-process shortcuts prove nothing here), the test Qdr
 of its own, AUTH_MODE=none on the loopback bind. Readiness is /health -> 200; harness-side calls go
 through the CLI's own RemoteExecutor against the meta-tool path.
 """
+import asyncio
+
 import httpx
 import pytest
 
@@ -32,7 +38,7 @@ async def test_throwaway_server_boots_serves_tool_calls_and_tears_down(tmp_path)
     # Act
     server.start()
     try:
-        health = httpx.get(f"{server.url}/health", timeout=5)
+        health = await asyncio.to_thread(httpx.get, f"{server.url}/health", timeout=5)
         created = await server.execute("create_memory", MEMORY)
         found = await server.execute("get_memory", {"memory_id": created["id"]})
     finally:
@@ -42,8 +48,12 @@ async def test_throwaway_server_boots_serves_tool_calls_and_tears_down(tmp_path)
     assert health.status_code == 200
     assert found["title"] == MEMORY["title"]
     assert server.process.poll() is not None, "server process must be gone after stop()"
-    left = httpx.get(
-        f"{settings.qdrant_urls[0]}/collections", headers={"api-key": settings.QDRANT_API_KEY.get_secret_value()}, timeout=10,
-    ).json()["result"]["collections"]
+    listing = await asyncio.to_thread(
+        httpx.get,
+        f"{settings.qdrant_urls[0]}/collections",
+        headers={"api-key": settings.QDRANT_API_KEY.get_secret_value()},
+        timeout=10,
+    )
+    left = listing.json()["result"]["collections"]
     assert [c["name"] for c in left if c["name"].startswith(server.collection_prefix)] == []
     assert (run_dir / "server.log").read_text()

@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Fake ``gh``: CI runs, release.yml and publish.yml runs, release assets and bundles, the GitHub settings, as the test's config scripts them.
 
 Config keys (``config.json`` in the state directory): ``ci_base`` / ``ci_release`` (states of the CI runs of the

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """Authentication mode selection for FastMCP v3, failing closed.
 
 ``AUTH_MODE`` names how requests are authenticated:
@@ -113,7 +117,9 @@ def _build_introspection() -> AuthProvider:
         audience=(settings.FASTMCP_SERVER_AUTH_INTROSPECTION_AUDIENCE or "").strip() or None,
         introspection_url=_required(settings.FASTMCP_SERVER_AUTH_INTROSPECTION_URL, "FASTMCP_SERVER_AUTH_INTROSPECTION_URL"),
         client_id=_required(settings.FASTMCP_SERVER_AUTH_INTROSPECTION_CLIENT_ID, "FASTMCP_SERVER_AUTH_INTROSPECTION_CLIENT_ID"),
-        client_secret=_required(settings.FASTMCP_SERVER_AUTH_INTROSPECTION_CLIENT_SECRET, "FASTMCP_SERVER_AUTH_INTROSPECTION_CLIENT_SECRET"),
+        client_secret=_required(
+            settings.FASTMCP_SERVER_AUTH_INTROSPECTION_CLIENT_SECRET, "FASTMCP_SERVER_AUTH_INTROSPECTION_CLIENT_SECRET",
+        ),
         required_scopes=_scopes(settings.FASTMCP_SERVER_AUTH_INTROSPECTION_REQUIRED_SCOPES),
         # TOKEN_CACHE_ENABLED=false must also switch off the verifier's own cache (None = no caching)
         cache_ttl_seconds=settings.TOKEN_CACHE_TTL_SECONDS if settings.TOKEN_CACHE_ENABLED else None,

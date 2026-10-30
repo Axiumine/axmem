@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Every version on PyPI has a pushed tag and a signed release.
 
 A release that fails after its upload leaves a version on PyPI that no tag and no signature match, and

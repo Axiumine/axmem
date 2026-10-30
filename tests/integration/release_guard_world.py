@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The scratch repository the tests of the release guard run in (not a test module).
 
 ``World`` is a repository on ``main`` with one release commit (the digest manifest), pushed to a bare remote together
@@ -67,8 +70,8 @@ class World:
         self.git("add", MANIFEST)
         self.git("commit", "-m", f"release {VERSION}")
         self.git("tag", "-a", TAG, "-m", "release")
-        subprocess.run(  # noqa: S603
-            ["git", "init", "--bare", "-b", "main", str(self.origin)],  # noqa: S607
+        subprocess.run(  # noqa: S603 - a program of the test setup, run without a shell
+            ["git", "init", "--bare", "-b", "main", str(self.origin)],  # noqa: S607 - a program of the test setup, run without a shell
             env=self.env,
             check=True,
             capture_output=True,
@@ -79,8 +82,8 @@ class World:
         self.script()
 
     def git(self, *args):
-        done = subprocess.run(  # noqa: S603
-            ["git", "-C", str(self.repo), *args],  # noqa: S607
+        done = subprocess.run(  # noqa: S603 - a program of the test setup, run without a shell
+            ["git", "-C", str(self.repo), *args],  # noqa: S607 - a program of the test setup, run without a shell
             env=self.env,
             check=True,
             capture_output=True,
@@ -89,8 +92,8 @@ class World:
         return done.stdout.strip()
 
     def origin_git(self, *args):
-        subprocess.run(  # noqa: S603
-            ["git", "--git-dir", str(self.origin), *args],  # noqa: S607
+        subprocess.run(  # noqa: S603 - a program of the test setup, run without a shell
+            ["git", "--git-dir", str(self.origin), *args],  # noqa: S607 - a program of the test setup, run without a shell
             env=self.env,
             check=True,
             capture_output=True,

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """Harness configuration: init kwargs (CLI flags) > TEST_HARNESS_* env > defaults.
 
 The walkthrough order is fixed by data dependencies — cli-setup verifies the connection

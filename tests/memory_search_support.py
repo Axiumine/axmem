@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """What the tests of a search of memories in Qdrant share: the spies on the store and the reranker, and the memories to find.
 
 The repository searches through the store and the reranker, so the tests note every call it makes on them (spies that

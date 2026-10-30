@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """Integration tests for /api/v1/auth/info endpoint
 
 Tests auth mode detection logic with mocked FastMCP instances.
@@ -18,7 +22,7 @@ class MockFastMCP:
         self.auth = auth_provider
         self._routes = []
 
-    def custom_route(self, path: str, methods: list[str] = None):
+    def custom_route(self, path: str, methods: list[str] | None = None):
         """Decorator that captures route handlers"""
         def decorator(func):
             self._routes.append((path, methods or ["GET"], func))

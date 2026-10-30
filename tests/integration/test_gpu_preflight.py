@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The GPU preflight of the GPU suites: it ends the pytest run, it never skips.
 
 The refusal is exercised with a real pytest run in a subprocess whose environment has no GPU.
@@ -66,7 +69,7 @@ def test_a_failed_preflight_ends_the_pytest_run_without_skipping(tmp_path, envir
     ))
     (tmp_path / "test_needs_gpu.py").write_text("def test_it():\n    assert True\n")
 
-    result = subprocess.run(  # noqa: S603
+    result = subprocess.run(  # noqa: S603 - a program of the test setup, run without a shell
         [sys.executable, "-m", "pytest", str(tmp_path), "-p", "no:cacheprovider", "-c", os.devnull,
          "--rootdir", str(tmp_path)],
         cwd=ROOT,
@@ -93,7 +96,7 @@ SUITE_FILES = [
 
 @pytest.mark.parametrize(("path", "marker"), SUITE_FILES, ids=lambda value: value if isinstance(value, str) else "")
 def test_every_suite_of_the_pre_push_gates_ends_the_run_when_no_gpu_is_visible(path, marker):
-    result = subprocess.run(  # noqa: S603
+    result = subprocess.run(  # noqa: S603 - a program of the test setup, run without a shell
         [sys.executable, "-m", "pytest", path, "-p", "no:cacheprovider", *marker],
         cwd=ROOT,
         env={**os.environ, "CUDA_VISIBLE_DEVICES": "-1"},

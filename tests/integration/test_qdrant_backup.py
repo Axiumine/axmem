@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The restore side of the snapshot adapter, for the answers a real node does not give on cue.
 
 The manifest of a backup set is input: a restore reads it before it uploads anything, and refuses one that names
@@ -212,7 +215,10 @@ async def test_a_refusal_after_some_files_were_restored_says_how_many_and_that_t
     backup = _backup(tmp_path, {"files": _entries(2)}, nodes=2)
     schema = RecordingSchema(pool)
 
-    with pytest.raises(OperatorCommandError, match=r"snapshot node2-links\.snapshot: HTTP 503 \(bad snapshot\)\. 3 of 4 files were already restored: .*run the restore again"):
+    with pytest.raises(
+        OperatorCommandError,
+        match=r"snapshot node2-links\.snapshot: HTTP 503 \(bad snapshot\)\. 3 of 4 files were already restored: .*run the restore again",
+    ):
         await QdrantBackupAdapter(pool, schema=schema).restore_backup(backup)
 
     assert schema.made_live == []  # the collection does not go live on a half restore
@@ -267,7 +273,9 @@ async def test_a_later_file_that_leaves_replicas_inactive_says_how_many_files_we
     pool.replica_states = [["Active"], ["Active"], []]  # the third file's collection reports no replica at all
     backup = _backup(tmp_path, {"files": _entries(2)}, nodes=2)
 
-    with pytest.raises(OperatorCommandError, match=r"states: none reported\)\. .*run the restore again\. 2 of 4 files were already restored"):
+    with pytest.raises(
+        OperatorCommandError, match=r"states: none reported\)\. .*run the restore again\. 2 of 4 files were already restored",
+    ):
         await _adapter(pool).restore_backup(backup)
 
 
@@ -276,7 +284,9 @@ async def test_a_node_that_will_not_report_its_replicas_stops_the_restore(tmp_pa
     pool.report_status = 500
     backup = _backup(tmp_path, {"files": _entries(1)})
 
-    with pytest.raises(OperatorCommandError, match=r"Qdrant at http://node-1 would not report the replicas of axmem_memories_\w+: HTTP 500"):
+    with pytest.raises(
+        OperatorCommandError, match=r"Qdrant at http://node-1 would not report the replicas of axmem_memories_\w+: HTTP 500",
+    ):
         await _adapter(pool).restore_backup(backup)
 
 
@@ -530,7 +540,9 @@ async def test_a_manifest_that_names_a_file_outside_the_set_is_refused_before_an
 async def test_a_manifest_that_names_a_collection_of_another_deployment_is_refused(tmp_path, role, collection):
     pool = RecordingPool(status=200)
     entries = [_entry("memories", MEMORIES), _entry("links", NAMES.links)]
-    entries[0 if role == "memories" else 1] = _entry(role, collection, file="node1-memories.snapshot" if role == "memories" else "node1-links.snapshot")
+    entries[0 if role == "memories" else 1] = _entry(
+        role, collection, file="node1-memories.snapshot" if role == "memories" else "node1-links.snapshot",
+    )
     backup = _backup(tmp_path, {"files": entries})
 
     with pytest.raises(ValueError, match="does not belong to this deployment"):

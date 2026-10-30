@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The workflow that uploads a release to PyPI proves the signed files, and only then lets PyPI have them.
 
 ``publish.yml`` is the only workflow that uploads to PyPI and the one PyPI knows as the trusted publisher of axmem. It
@@ -318,7 +321,7 @@ def test_the_workflow_is_a_hosted_one_without_a_container_a_gpu_or_the_tests_of_
     assert not {"container", "services"} & {key for job in _workflow()["jobs"].values() for key in job}
 
 
-def test_no_other_workflow_than_the_signing_and_the_two_publishing_ones_asks_for_an_identity_token():
+def test_no_other_workflow_than_the_signing_the_two_publishing_and_the_scorecard_ones_asks_for_an_identity_token():
     asking = set()
     for path in sorted(WORKFLOWS.glob("*.yml")):
         document = _load(path)
@@ -326,4 +329,5 @@ def test_no_other_workflow_than_the_signing_and_the_two_publishing_ones_asks_for
         if any(isinstance(grant, dict) and grant.get("id-token") == "write" for grant in grants):
             asking.add(path.name)
 
-    assert asking == {"release.yml", "publish.yml", "publish-testpypi.yml"}
+    assert asking == {"release.yml", "publish.yml", "publish-testpypi.yml", "scorecard.yml"}
+    assert "id-token" not in (_load(WORKFLOWS / "scorecard.yml").get("permissions") or {})  # its one job holds it, not the top

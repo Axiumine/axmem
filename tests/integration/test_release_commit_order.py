@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The release commit comes first, the dispatch of the publish workflow comes last, and a refused commit stops the release.
 
 A release that dispatched first and committed afterwards could leave a version on PyPI that no commit and no tag names:
@@ -119,7 +122,7 @@ def _environment(repo: Path) -> dict[str, str]:
 
 def _git(repo: Path, *args: str) -> str:
     done = subprocess.run(  # noqa: S603 - fixed argv, a temporary repository
-        ["git", "-C", str(repo), *args],  # noqa: S607
+        ["git", "-C", str(repo), *args],  # noqa: S607 - a program of the test setup, run without a shell
         capture_output=True,
         text=True,
         check=True,

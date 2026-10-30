@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """Integration tests for REST API authentication (get_identity_from_request)
 
 Tests the HTTP auth path: the bearer token is verified by the auth provider and the tenant is

@@ -1,11 +1,15 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """Tool Registry for Meta-tools
 
 This module provides a registry system for storing tool metadata and implementations,
 enabling the meta-tools.
 """
+import logging
 from typing import Any
 
-from app.config.logging_config import logging
 from app.models.tool_registry_models import (
     ToolCategory,
     ToolImplementation,
@@ -19,7 +23,7 @@ logger = logging.getLogger(__name__)
 class ToolRegistry:
     """Central registry for all tools with metadata and implementations"""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize an empty tool registry"""
         self._tools: dict[str, ToolImplementation] = {}
 
@@ -111,7 +115,7 @@ class ToolRegistry:
         """
         return name in self._tools
 
-    def get_permitted_tools(self, permitted: set) -> list[ToolMetadata]:
+    def get_permitted_tools(self, permitted: set[str]) -> list[ToolMetadata]:
         """List tools filtered to only those in the permitted set.
 
         Args:
@@ -126,7 +130,7 @@ class ToolRegistry:
             if impl.metadata.name in permitted
         ]
 
-    def get_permitted_by_category(self, category: ToolCategory, permitted: set) -> list[ToolMetadata]:
+    def get_permitted_by_category(self, category: ToolCategory, permitted: set[str]) -> list[ToolMetadata]:
         """List tools filtered by category AND permitted set.
 
         ``ToolCategory.LINKING`` is a cross-cutting filter: link tools are registered under
@@ -152,7 +156,7 @@ class ToolRegistry:
             if impl.metadata.category == category and impl.metadata.name in permitted
         ]
 
-    def get_permitted_categories(self, permitted: set) -> dict[str, int]:
+    def get_permitted_categories(self, permitted: set[str]) -> dict[str, int]:
         """List categories with counts, filtered to permitted tools only.
 
         Args:
@@ -168,7 +172,7 @@ class ToolRegistry:
                 categories[cat_name] = categories.get(cat_name, 0) + 1
         return categories
 
-    def is_permitted(self, name: str, permitted: set) -> bool:
+    def is_permitted(self, name: str, permitted: set[str]) -> bool:
         """Check if a tool exists and is in the permitted set.
 
         Args:
@@ -184,7 +188,7 @@ class ToolRegistry:
         self,
         name: str,
         arguments: dict[str, Any],
-        **context,
+        **context: Any,
     ) -> Any:
         """Execute a tool by name with provided arguments
 
@@ -210,7 +214,9 @@ class ToolRegistry:
             # Execute the tool implementation with arguments and context
             result = await tool.implementation(**arguments, **context)
             logger.debug("Tool %r executed successfully", name)
-            return result
         except Exception as e:
-            logger.error("Tool %r execution failed: %r", name, e, exc_info=True)
+            logger.exception(
+                "Tool %r execution failed: %r", name, e,  # noqa: TRY401 - tests pin this text
+            )
             raise
+        return result

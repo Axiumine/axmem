@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """query_memory token budgeting through the full stack on real Qdrant (REST and MCP)."""
 import pytest
 

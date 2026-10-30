@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The payload of a memory point and of a link point, and the conversion to and from the models.
 
 Every field a filter, an ordering or a conditional write reads is written on every point with its exact

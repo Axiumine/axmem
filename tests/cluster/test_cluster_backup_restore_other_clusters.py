@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Backup and restore on a four-node cluster, and a restore into another cluster than the one the backup came from.
 
 ``test_cluster_backup_restore`` runs the documented three-node cluster in every replication layout. Two things stay

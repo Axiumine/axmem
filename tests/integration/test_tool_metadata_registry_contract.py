@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The tool catalogue is what a client reads: names, descriptions, parameters, defaults, examples, tags, the write flag.
 
 ``discover_tools`` and ``how_to_use`` answer with the metadata that ``tool_metadata_registry`` registers, and the scope

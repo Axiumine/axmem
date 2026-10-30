@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The package gate refuses a wheel or an sdist that holds anything but Axmem's source.
 
 The model weights, the TensorRT engines and the NVIDIA libraries are not part of the AGPL release. These tests build
@@ -228,7 +231,7 @@ def test_the_dist_check_command_reports_a_clean_dist_and_refuses_a_dirty_one(tmp
 
 
 def _git(root, *args):
-    subprocess.run(["git", *args], cwd=root, check=True, capture_output=True)  # noqa: S603, S607
+    subprocess.run(["git", *args], cwd=root, check=True, capture_output=True)  # noqa: S603, S607 - a program of the test setup, run without a shell
 
 
 def a_repository(directory):

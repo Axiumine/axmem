@@ -1,9 +1,17 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """Configuration Management For the Service
 """
+import os
 import re
+from collections.abc import Mapping
 from pathlib import Path
+from typing import cast
 from urllib.parse import urlsplit
 
+from dotenv import dotenv_values
 from platformdirs import user_config_dir, user_data_dir
 from pydantic import (
     Field,
@@ -13,7 +21,12 @@ from pydantic import (
     field_validator,
     model_validator,
 )
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import (
+    BaseSettings,
+    DotEnvSettingsSource,
+    PydanticBaseSettingsSource,
+    SettingsConfigDict,
+)
 from pydantic_settings.exceptions import SettingsError
 
 from app.version import get_version
@@ -30,6 +43,12 @@ _default_data_dir = Path(user_data_dir("axmem", ensure_exists=False))
 _default_config_dir = Path(user_config_dir("axmem", ensure_exists=False))
 # The settings file of the user, and the only one besides the one in the working directory that Axmem reads
 USER_CONFIG_FILE = _default_config_dir / ".env"
+# The settings file of the working directory. It can arrive with a cloned repository, so it is not trusted to name
+# a server for the CLI to send its token and memories to
+WORKING_DIR_ENV_FILE = Path(".env")
+# Settings that name a server the CLI talks to; the file of the working directory may not set them (finding SR-1).
+# `axmem serve` run in that directory still takes every other setting from it.
+CLIENT_DESTINATION_SETTINGS = frozenset({"AXMEM_SERVER"})
 
 
 # Accepted values of the enumerated settings; the first entry is the default. Matching is
@@ -88,6 +107,17 @@ def _field_name(info: ValidationInfo) -> str:
     return info.field_name  # type: ignore[return-value]
 
 
+class _TrustedDotEnvSource(DotEnvSettingsSource):
+    """The dotenv source, except that the file of the working directory cannot name the server the CLI talks to."""
+
+    def _read_env_file(self, file_path: Path) -> Mapping[str, str | None]:
+        values = super()._read_env_file(file_path)
+        if file_path != WORKING_DIR_ENV_FILE:
+            return values
+        # Dropped after parsing, so export, quotes, any case and ${} expansion cannot get a destination past this line
+        return {name: value for name, value in values.items() if name.upper() not in CLIENT_DESTINATION_SETTINGS}
+
+
 class Settings(BaseSettings):
     # Application Info
     SERVICE_NAME: str = "Axmem"
@@ -112,6 +142,13 @@ class Settings(BaseSettings):
     # Host names besides localhost and loopback addresses that a server running AUTH_MODE=none answers to
     # (for example host.docker.internal, for a client in a container on this machine). See loopback_guard.
     AXMEM_ALLOWED_HOSTS: list[str] = []
+
+    # TLS of the HTTP transport, served by this process (see app/config/tls.py). Both files or neither: one of them,
+    # or a password without them, ends the start with an error instead of serving plain HTTP. Empty (the default)
+    # serves plain HTTP, as before; a reverse proxy can terminate TLS instead.
+    SERVER_SSL_CERTFILE: str = ""   # PEM file holding the certificate (and the chain) of the server
+    SERVER_SSL_KEYFILE: str = ""    # PEM file holding its private key
+    SERVER_SSL_KEYFILE_PASSWORD: SecretStr = SecretStr("")  # credential; only for a private key that is encrypted
 
     # Qdrant: the only datastore. Memories, their links and their vectors all live in it.
     # One URL for a single node, or several comma separated URLs for the nodes of a cluster
@@ -384,7 +421,7 @@ class Settings(BaseSettings):
             raise ValueError(f"{field_name} must be at most {limit} characters (got {len(value)})")
         return value
 
-    """Pydantic Configuration"""
+    # Pydantic Configuration
 
     model_config = SettingsConfigDict(
         env_file=[
@@ -396,6 +433,25 @@ class Settings(BaseSettings):
         # Settings hold credentials (API keys, token hashes): validation errors must not echo them
         hide_input_in_errors=True,
     )
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        """The usual order, with the settings files read by a source that ignores the CLI's server in ``./.env``."""
+        files = cast(DotEnvSettingsSource, dotenv_settings)
+        trusted = _TrustedDotEnvSource(
+            settings_cls,
+            env_file=files.env_file,
+            env_file_encoding=files.env_file_encoding,
+            case_sensitive=files.case_sensitive,
+        )
+        return init_settings, env_settings, trusted, file_secret_settings
 
 
 
@@ -417,6 +473,28 @@ def describe_settings_failure(exc: Exception) -> str:
     if isinstance(exc, UnicodeError):
         return "a settings file is not valid UTF-8; save it as UTF-8"
     return str(exc)
+
+
+def _names_set_in(path: Path) -> dict[str, str | None]:
+    """``{NAME: value}`` of a settings file as ``Settings`` reads names (upper-cased); a missing file sets nothing."""
+    return {name.upper(): value for name, value in dotenv_values(path, encoding="utf-8").items()}
+
+
+def ignored_server_notice() -> str | None:
+    """The one-line note for a CLI that falls back to local mode because ``./.env`` names a server, else None.
+
+    Call it only when no ``--server`` or ``--local`` was given and ``AXMEM_SERVER`` resolved to nothing. It stays
+    silent when the setting is not in ``./.env``, is blank there, or exists in the environment or in the user's
+    file (a blank value counts: whoever wrote it chose the mode). The note never repeats the ignored value.
+    """
+    if not (_names_set_in(WORKING_DIR_ENV_FILE).get("AXMEM_SERVER") or "").strip():
+        return None
+    if any(key.upper() == "AXMEM_SERVER" for key in os.environ) or "AXMEM_SERVER" in _names_set_in(USER_CONFIG_FILE):
+        return None
+    return (
+        "Note: ./.env sets AXMEM_SERVER, which the CLI ignores in the settings file of the working directory. "
+        f"Use --server, the AXMEM_SERVER environment variable or {USER_CONFIG_FILE} (written by `axmem auth login`)."
+    )
 
 
 def load_settings() -> Settings:

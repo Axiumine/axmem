@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Integration tests for where the CLI keeps the settings of the user and what an in-process tool call is told about its caller.
 
 ``axmem auth login`` saves AXMEM_SERVER to ``~/.config/axmem/.env`` (the file ``settings.py`` already reads), found through

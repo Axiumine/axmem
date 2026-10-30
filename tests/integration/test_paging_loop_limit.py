@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The limit on page reads per test (``paging_loop_ends_the_test`` in tests/integration/conftest.py): a loop that never ends fails."""
 import pytest
 

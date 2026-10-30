@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Integration tests for the 400 response of a request that fails model validation (app/routes/api/validation.py)
 
 A pydantic ``ValidationError`` cannot be handed to a JSON response as it is: the error of a custom validator holds

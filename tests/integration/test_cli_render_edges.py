@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Integration tests for CLI output conversion.
 
 Covers values that are not natively JSON and a stdout that refuses to be reconfigured.

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """A scratch world for ``scripts/smoke-release.sh``: a signed tag, a fake index and fake tools, and nothing real.
 
 ``SmokeWorld`` builds a git repository that holds a copy of the real script, a ``release-digests.json`` and the tag
@@ -341,8 +344,8 @@ class SmokeWorld:
 
     def git(self, *args: str) -> None:
         """A git command in the scratch repository."""
-        subprocess.run(  # noqa: S603
-            ["git", "-C", str(self.root), *args], check=True, capture_output=True, env=self.env(),  # noqa: S607
+        subprocess.run(  # noqa: S603 - a program of the test setup, run without a shell
+            ["git", "-C", str(self.root), *args], check=True, capture_output=True, env=self.env(),  # noqa: S607 - a program of the test setup, run without a shell
         )
 
     def _build_repository(self, tag: bool, manifest: dict[str, Any] | bool) -> None:
@@ -387,7 +390,7 @@ class SmokeWorld:
 
     def run(self, *args: str, cwd: Path | None = None, **env: str) -> subprocess.CompletedProcess[str]:
         """The real script, as an executable, with exactly these arguments, from ``cwd`` (default: outside the repository)."""
-        return subprocess.run(  # noqa: S603
+        return subprocess.run(  # noqa: S603 - a program of the test setup, run without a shell
             [str(self.script), *args],
             cwd=cwd or self.tmp,
             env=self.env(**env),
@@ -399,7 +402,7 @@ class SmokeWorld:
 
     def start(self, *args: str, **env: str) -> subprocess.Popen[str]:
         """The script running beside the test, which signals it; the world stops what is left of it."""
-        process = subprocess.Popen(  # noqa: S603
+        process = subprocess.Popen(  # noqa: S603 - a program of the test setup, run without a shell
             [str(self.script), *args],
             cwd=self.tmp,
             env=self.env(**env),

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The build of a plan from ONNX models of a few nodes, made by hand: what the runner accepts and what it refuses in words."""
 
 import numpy as np

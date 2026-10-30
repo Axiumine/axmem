@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The release integrity check proves that what PyPI serves is what was signed, not only that a tag and a run exist.
 
 A tag, a green run and bundle file names alone proved nothing about PyPI's bytes. For every version the check also
@@ -77,13 +80,13 @@ class TestWhatPyPIServesIsWhatWasSigned:
         argv = world.args()
         elsewhere = world.base / "elsewhere"
         elsewhere.mkdir()
-        subprocess.run(  # noqa: S603
-            ["git", "init", "-q", "-b", "main", str(elsewhere)],  # noqa: S607
+        subprocess.run(  # noqa: S603 - a program of the test setup, run without a shell
+            ["git", "init", "-q", "-b", "main", str(elsewhere)],  # noqa: S607 - a program of the test setup, run without a shell
             env=world.env,
             check=True,
         )
-        subprocess.run(  # noqa: S603
-            ["git", "-C", str(elsewhere), "remote", "add", "origin", str(world.origin)],  # noqa: S607
+        subprocess.run(  # noqa: S603 - a program of the test setup, run without a shell
+            ["git", "-C", str(elsewhere), "remote", "add", "origin", str(world.origin)],  # noqa: S607 - a program of the test setup, run without a shell
             env=world.env,
             check=True,
         )

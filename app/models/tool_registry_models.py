@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """Models used for tool registry
 """
 from collections.abc import Awaitable, Callable
@@ -161,5 +165,3 @@ class ToolImplementation:
     """Stores tool metadata alongside its callable implementation"""
     metadata: ToolMetadata
     implementation: Callable[..., Awaitable[Any]]
-
-

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """What QdrantStore sends to Qdrant when it writes and what it says when it refuses, exactly.
 
 The write options are what the verified cluster profile needs (a write that waits, strong ordering, an explicit
@@ -130,7 +133,9 @@ async def test_a_replace_guarded_on_version_zero_is_a_guard_like_any_other(stack
     unversioned = new_point(TENANT, 0, version=0, title="kept")
     await stack.store.insert(scope, collection, [unversioned])
 
-    await stack.store.replace(scope, collection, NewPoint(unversioned.id, vector(1), {**unversioned.payload, "title": "taken"}), expected_version=0)
+    await stack.store.replace(
+        scope, collection, NewPoint(unversioned.id, vector(1), {**unversioned.payload, "title": "taken"}), expected_version=0,
+    )
 
     [found] = await stack.store.get(scope, collection, [unversioned.id])
     assert found.payload["title"] == "taken"

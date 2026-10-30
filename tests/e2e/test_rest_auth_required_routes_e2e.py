@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """E2E: REST routes of the memories family reject requests that carry no credentials.
 
 With an auth provider attached to the server, every memory route must answer ``401`` with

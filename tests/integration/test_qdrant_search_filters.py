@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The filters and orderings of search and of linked-memory lookups, on a real Qdrant node.
 
 A filter that matched everything, or an ordering that was never applied, would still return plausible results

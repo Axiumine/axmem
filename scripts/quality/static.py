@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Static-analysis gates: lint, boundaries, security lint, dead code, complexity, types."""
 
 from __future__ import annotations
@@ -36,6 +39,11 @@ SHELLCHECK_CONFIG = ".shellcheckrc"
 NO_AMBIENT_SHELLCHECK = {"SHELLCHECK_OPTS": ""}
 WORKFLOWS_DIR = ".github/workflows/"
 ACTIONLINT_CONFIG = (".github/actionlint.yaml", ".github/actionlint.yml")
+# Files per call of `reuse lint-file`: a command line is limited (32,767 characters on Windows), the project has some 700 files
+REUSE_BATCH = 200
+# reuse picks the library that detects the encoding of a file from what is installed (libmagic first, which a runner may lack)
+# and translates its messages; the gate must not differ by machine
+NO_AMBIENT_REUSE = {"REUSE_ENCODING_MODULE": "charset_normalizer", "LANGUAGE": "C", "LC_ALL": "C"}
 
 
 def gate_ruff(ctx: Ctx) -> tuple[bool, str]:
@@ -210,3 +218,21 @@ def gate_actionlint(ctx: Ctx) -> tuple[bool, str]:
     # actionlint lints the `run:` blocks with the shellcheck it finds, so the pinned one goes first on the PATH
     path = os.pathsep.join([str(Path(shellcheck).parent), os.environ.get("PATH", "")])
     return check([venv_binary("actionlint"), "-shellcheck", shellcheck, *workflows], env={**NO_AMBIENT_SHELLCHECK, "PATH": path})
+
+
+def gate_reuse(_ctx: Ctx) -> tuple[bool, str]:
+    """Every file that git sees has a copyright notice and a license, in the file or in REUSE.toml, and the text of
+    the license is in LICENSES/.
+
+    Always the whole project: a new file, a changed REUSE.toml or a removed license text can break any other file. ``lint-file``
+    over the files that git lists, not ``lint``: ``lint`` walks the directory, and a directory that git has never seen holds
+    the ignored files it makes (``__pycache__``) in plain view.
+    """
+    files = repo_files()
+    reuse = venv_binary("reuse")
+    failures = []
+    for start in range(0, len(files), REUSE_BATCH):
+        ok, out = check([reuse, "lint-file", *files[start : start + REUSE_BATCH]], env=NO_AMBIENT_REUSE)
+        if not ok:
+            failures.append(out)
+    return not failures, "".join(failures)

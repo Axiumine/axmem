@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """E2E tests (real Qdrant node) for the argument errors of the memory tools.
 
 Drives ``execute_axmem_tool`` through the real stack and checks the message an
@@ -40,6 +43,14 @@ async def test_memory_tool_without_any_memory_id_names_the_missing_argument(
 
 @pytest.mark.parametrize("created_since", [20260801, True, ["2026-08-01T00:00:00Z"], {"at": "2026-08-01"}])
 async def test_recent_memories_rejects_a_created_since_that_is_not_a_string(mcp_client, created_since):
+    with pytest.raises(ToolError) as caught:
+        await _exec(mcp_client, "get_recent_memories", {"created_since": created_since})
+
+    assert str(caught.value) == "created_since must be an ISO 8601 timestamp with a timezone"
+
+
+@pytest.mark.parametrize("created_since", ["0001-01-01T00:00:00+01:00", "9999-12-31T23:59:59-01:00"])
+async def test_recent_memories_rejects_a_created_since_with_no_instant_in_utc(mcp_client, created_since):
     with pytest.raises(ToolError) as caught:
         await _exec(mcp_client, "get_recent_memories", {"created_since": created_since})
 

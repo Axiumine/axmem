@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """E2E test that a slow embedding provider does not freeze the server.
 
 Full stack: MCP client -> execute_axmem_tool -> MemoryService -> Qdrant
@@ -83,7 +86,7 @@ async def test_create_memory_keeps_the_event_loop_free(mcp_client, embedding_gat
         },
     }))
 
-    while not embedding_gate.started.is_set():
+    while not embedding_gate.started.is_set():  # noqa: ASYNC110 - polls a threading.Event set by a worker thread
         await asyncio.sleep(0.001)
     embedding_gate.release.set()
     result = await create

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """One line that says which service failed and what to check, for the failures of the services Axmem talks to.
 
 ``operator_failure`` (``app/bootstrap.py``) turns an error that an operator can fix into the line a terminal shows.

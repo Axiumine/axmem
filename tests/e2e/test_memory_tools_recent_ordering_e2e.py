@@ -1,4 +1,8 @@
-"""End-to-end tests for MCP memory tools: get_recent_memories ordering 
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
+"""End-to-end tests for MCP memory tools: get_recent_memories ordering
 
 Covers importance and creation-time filters applied before pagination,
 deterministic tie-breaking, rejection of invalid filters and obsolete/sort options.
@@ -129,7 +133,7 @@ async def test_get_recent_memories_importance_ties_use_creation_time(mcp_client,
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("arguments, message", [
+@pytest.mark.parametrize(("arguments", "message"), [
     ({"importance_min": 0}, "importance_min must be"),
     ({"importance_min": 11}, "importance_min must be"),
     ({"importance_min": True}, "importance_min must be"),

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The exact contract of the memory links: the cap, the order, what is stored for a link and what is logged about it.
 
 ``test_qdrant_search_filters.py`` and ``test_qdrant_links_rebuild.py`` check that linked memories come back most
@@ -27,7 +30,9 @@ def memory(title: str, importance: int = 5) -> MemoryCreate:
 
 async def hub_with_neighbours(repo, tenant, importances: tuple[int, ...]):
     """A memory linked to one neighbour of each importance given; the hub and the neighbours, in that order."""
-    neighbours = [await repo.create_memory(tenant, memory(f"Neighbour {number}", importance)) for number, importance in enumerate(importances)]
+    neighbours = [
+        await repo.create_memory(tenant, memory(f"Neighbour {number}", importance)) for number, importance in enumerate(importances)
+    ]
     hub = await repo.create_memory(tenant, memory("Hub"))
     await repo.create_links_batch(tenant, hub.id, [neighbour.id for neighbour in neighbours])
     return hub, neighbours
@@ -101,7 +106,7 @@ async def test_a_memory_is_never_among_its_own_linked_memories_and_the_excluded_
 
 async def test_a_lookup_that_one_request_can_answer_reads_the_whole_memories_at_once(memory_repository, monkeypatch):
     tenant = uuid4()
-    hub, neighbours = await hub_with_neighbours(memory_repository, tenant, (3, 9, 6))
+    hub, _neighbours = await hub_with_neighbours(memory_repository, tenant, (3, 9, 6))
     store = StoreCalls(memory_repository.store, monkeypatch, "scroll", "get")
 
     linked = await memory_repository.get_linked_memories(tenant, hub.id, None, 2)
@@ -116,13 +121,15 @@ async def test_a_lookup_that_one_request_can_answer_reads_the_whole_memories_at_
 async def test_a_lookup_over_several_requests_reads_a_number_per_memory_and_the_best_ones_in_full(memory_repository, monkeypatch):
     monkeypatch.setattr(links_module, "LINK_CHUNK", 2)
     tenant = uuid4()
-    hub, neighbours = await hub_with_neighbours(memory_repository, tenant, (3, 9, 6, 1, 8))
+    hub, _neighbours = await hub_with_neighbours(memory_repository, tenant, (3, 9, 6, 1, 8))
     store = StoreCalls(memory_repository.store, monkeypatch, "scroll", "get")
 
     linked = await memory_repository.get_linked_memories(tenant, hub.id, None, 2)
 
     assert [found.importance for found in linked] == [9, 8]
-    numbers = [kwargs["limit"] for _args, kwargs in store.of("scroll", memory_repository.memories) if kwargs["with_payload"] == ["importance"]]
+    numbers = [
+        kwargs["limit"] for _args, kwargs in store.of("scroll", memory_repository.memories) if kwargs["with_payload"] == ["importance"]
+    ]
     assert numbers == [2, 2, 1]  # the neighbours in requests of the size of a chunk
     [(args, kwargs)] = store.of("get", memory_repository.memories)
     assert (args[0], list(args[2])) == (Scope.of(tenant), [found.id for found in linked])
@@ -298,13 +305,15 @@ async def test_a_link_is_removed_whichever_memory_names_it_first_and_the_removal
     identifier = link_id(tenant, hub.id, neighbour.id)
     assert (removed, again) == (True, False)
     assert await memory_repository.get_linked_memories(tenant, hub.id, None) == []
-    [(args, kwargs), (args_again, _kwargs)] = store.of("get", memory_repository.links)
+    [(args, kwargs), (_args_again, _kwargs)] = store.of("get", memory_repository.links)
     assert (args[0], list(args[2]), kwargs) == (Scope.of(tenant), [identifier], {"with_payload": False, "quorum": True})
     assert [(args[0], args[1], list(args[2])) for _name, args, _kwargs in store.calls if _name == "delete"] == [
         (Scope.of(tenant), memory_repository.links, [identifier]),
     ]
     first_record, second_record = records_of(caplog, "Memory link removed")
-    assert [(record.user_id, record.source_id, record.target_id, record.deleted, record.levelno) for record in (first_record, second_record)] == [
+    assert [
+        (record.user_id, record.source_id, record.target_id, record.deleted, record.levelno) for record in (first_record, second_record)
+    ] == [
         (str(tenant), str(first.id), str(second.id), True, logging.INFO),
         (str(tenant), str(first.id), str(second.id), False, logging.INFO),
     ]

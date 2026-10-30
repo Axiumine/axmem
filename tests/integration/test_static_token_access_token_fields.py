@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Integration tests for the access token that a static bearer token is turned into (app/middleware/static_token.py)
 
 The access token names the tenant, never expires and carries the hash of the presented token, never the token itself.

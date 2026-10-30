@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Hard-failing GPU preflight for every suite that needs the NVIDIA GPU.
 
 The local embedder and reranker have no CPU path, so a suite that needs them cannot be skipped or

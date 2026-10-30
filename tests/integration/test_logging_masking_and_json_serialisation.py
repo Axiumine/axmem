@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Log masking of non-tuple argument shapes and JSON rendering of rich ``extra`` values.
 
 ``SensitiveDataFilter`` must mask secrets however a record carries its arguments (positional
@@ -85,7 +88,7 @@ def test_json_formatter_rejects_extra_values_it_cannot_serialise():
 
 def _record_with_exception(message: str = "failed") -> logging.LogRecord:
     try:
-        raise ValueError("boom")
+        raise ValueError("boom")  # noqa: TRY301 - the test needs a live exception to take its info from
     except ValueError:
         return logging.LogRecord(
             "axmem.test", logging.ERROR, __file__, 1, message, None, sys.exc_info(),

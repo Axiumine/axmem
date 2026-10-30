@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 from datetime import UTC, datetime
 from typing import Annotated, Any
 from uuid import UUID
@@ -192,7 +196,7 @@ VALID_SORT_ORDER: tuple[str, ...] = ("asc", "desc")
 
 class MemoryCreate(BaseModel):
     """Request model for creating a memory
-    
+
     Follows atomic memory principles (Zettlekasten)
     - ONE concept per memory (easily titled, understood at first glance)
     - for detailed analysis > 300 words, split it into several atomic memories
@@ -200,11 +204,14 @@ class MemoryCreate(BaseModel):
 
     Examples:
         Good (atomic): "TTS engine preferences: XTTS-v2"
-        Bad (mega): "Complete TTS evaluation with all pros/cons/results" 
+        Bad (mega): "Complete TTS evaluation with all pros/cons/results"
     """
     title: _Title = Field(
         ...,
-        description="Concise, scannable title (5-50 words). Examples: 'Python QueueHandler prevents asyncio blocking', 'TTS preference: XTTS-v2'",
+        description=(
+            "Concise, scannable title (5-50 words). Examples: 'Python QueueHandler prevents asyncio blocking', 'TTS preference: "
+            "XTTS-v2'"
+        ),
     )
     content: _Content = Field(
         ...,
@@ -213,7 +220,10 @@ class MemoryCreate(BaseModel):
     context: str = Field(
         ...,
         max_length=settings.MEMORY_CONTEXT_MAX_LENGTH,
-        description="WHY this matters, HOW it relates to other concepts, WHAT implications. Enables intelligent auto-linking and semantic retrieval.",
+        description=(
+            "WHY this matters, HOW it relates to other concepts, WHAT implications. Enables intelligent auto-linking and semantic "
+            "retrieval."
+        ),
     )
     keywords: list[_Keyword] = Field(
         ...,
@@ -229,7 +239,10 @@ class MemoryCreate(BaseModel):
         7,
         ge=1,
         le=10,
-        description="Importance 1-10 (default 7): 9-10=personal facts/foundational patterns, 8-9=critical solutions/decisions, 7-8=useful patterns/preferences, 6-7=milestones/solutions, <6=discourage.",
+        description=(
+            "Importance 1-10 (default 7): 9-10=personal facts/foundational patterns, 8-9=critical solutions/decisions, 7-8=useful "
+            "patterns/preferences, 6-7=milestones/solutions, <6=discourage."
+        ),
     )
     project: _Scope | None = Field(
         default=None,
@@ -289,7 +302,7 @@ class MemoryCreate(BaseModel):
 
     @field_validator("keywords", "tags")
     @classmethod
-    def validate_lists(cls, v):
+    def validate_lists(cls, v: list[str]) -> list[str]:
         """Ensure the list doesn't contain empty strings
 
         The maximum count is enforced by the field's max_length, which is checked first.
@@ -298,7 +311,7 @@ class MemoryCreate(BaseModel):
 
     @field_validator("source_files")
     @classmethod
-    def validate_source_files(cls, v):
+    def validate_source_files(cls, v: list[str] | None) -> list[str] | None:
         """Clean empty strings from source_files list"""
         if v is None:
             return None
@@ -332,7 +345,10 @@ class MemoryUpdate(BaseModel):
         None,
         ge=1,
         le=10,
-        description="New importance 1-10: 9-10=personal/foundational, 8-9=critical, 7-8=useful, 6-7=milestones, <6=discourage. Unchanged if null.",
+        description=(
+            "New importance 1-10: 9-10=personal/foundational, 8-9=critical, 7-8=useful, 6-7=milestones, <6=discourage. Unchanged if "
+            "null."
+        ),
     )
     project: _ScopeOrClear | None = Field(
         None,
@@ -401,7 +417,7 @@ class MemoryUpdate(BaseModel):
 
     @field_validator("keywords", "tags")
     @classmethod
-    def validate_lists(cls, v):
+    def validate_lists(cls, v: list[str]) -> list[str]:
         """Ensure the list doesn't contain empty strings
 
         The maximum count is enforced by the field's max_length, which is checked first.
@@ -410,7 +426,7 @@ class MemoryUpdate(BaseModel):
 
     @field_validator("source_files")
     @classmethod
-    def validate_source_files(cls, v):
+    def validate_source_files(cls, v: list[str]) -> list[str]:
         """Clean empty strings from source_files list"""
         return [item.strip() for item in v if item.strip()]
 
@@ -590,11 +606,8 @@ class MemoryLinkRequest(BaseModel):
 
     @field_validator("related_ids")
     @classmethod
-    def validate_related_ids(cls, v, info):
+    def validate_related_ids(cls, v: list[UUID], info: ValidationInfo) -> list[UUID]:
         """Ensure memory is not linking to itself"""
         if "memory_id" in info.data and info.data["memory_id"] in v:
             raise ValueError("Cannot link memory to itself")
         return v
-
-
-

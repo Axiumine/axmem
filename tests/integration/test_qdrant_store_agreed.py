@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """How QdrantStore reads from a majority of the replicas and reads back the outcome of a write, exactly.
 
 Replicas that disagree are simulated by a recorder between the pool and its real clients, which leaves points out of

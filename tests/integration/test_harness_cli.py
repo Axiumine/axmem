@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """Integration tests for the harness CLI argument mapping (test_harness/__main__.py).
 
 Only flags the user actually passed reach HarnessConfig, so unset flags fall through to

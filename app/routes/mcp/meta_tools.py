@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """MCP - Meta-Tools
 This module implements the meta-tools pattern as an alternative to bloating the context window of an LLM with all the tools available
 within the MCP service. Instead of loading all tool definitions upfront, we only expose 3 meta-tools.
@@ -11,16 +15,19 @@ Docstrings for discover and execute are built at registration time from the desc
 (MCP_DESCRIPTOR_MODE).
 """
 
+import inspect
+import logging
+from collections.abc import Callable
 from typing import Any
 
 from fastmcp import Context
 from fastmcp.exceptions import ToolError
 
-from app.config.logging_config import logging
 from app.config.settings import settings
 from app.models.tool_registry_models import ToolCategory
 from app.routes.mcp.scope_resolver import get_effective_scopes, get_required_scope
 from app.routes.mcp.tool_errors import client_error_detail
+from app.routes.mcp.tool_registry import ToolRegistry
 from app.routes.server_state import AxmemMCP, server_of
 
 logger = logging.getLogger(__name__)
@@ -72,7 +79,7 @@ _EXECUTE_CORE_EXAMPLES = """\
     - Obsolete: execute_axmem_tool("mark_memory_obsolete", {"memory_id": "018f2c3e-0000-7000-8000-000000000042", "reason": "Outdated approach", "superseded_by": "018f2c3e-0000-7000-8000-000000000100"})
 
     **Project scope:**
-    - Query within a scope: execute_axmem_tool("query_memory", {"query": "search terms", "query_context": "why searching", "project": "my-project"})"""
+    - Query within a scope: execute_axmem_tool("query_memory", {"query": "search terms", "query_context": "why searching", "project": "my-project"})"""  # noqa: E501 - the text of a tool description, pinned by test_mcp_meta_tools_descriptions.py and the snapshots
 
 
 # ============================================================================
@@ -210,7 +217,7 @@ Execute any registered tool dynamically. Axmem is a semantic memory system for L
 
     Returns:
         Tool execution result (format depends on the specific tool)
-    """)
+    """)  # noqa: E501 - the text of a tool description, pinned by test_mcp_meta_tools_descriptions.py and the snapshots
 
     return "".join(parts)
 
@@ -222,17 +229,17 @@ Execute any registered tool dynamically. Axmem is a semantic memory system for L
 # ============================================================================
 
 
-def build_discovery_payload(registry, permitted: set, category: str | None = None) -> dict[str, Any]:
+def build_discovery_payload(registry: ToolRegistry, permitted: set[str], category: str | None = None) -> dict[str, Any]:
     """Build the discover_axmem_tools payload for a permitted tool set."""
     if category:
         try:
             cat_enum = ToolCategory(category.lower())
-        except ValueError:
+        except ValueError as exc:
             valid_categories = [c.value for c in ToolCategory]
             raise ToolError(
                 f"Invalid category {category!r}. "
                 f"Available categories: {', '.join(valid_categories)}",
-            )
+            ) from exc
         tools_metadata = registry.get_permitted_by_category(cat_enum, permitted)
         filtered_by = category
     else:
@@ -258,7 +265,7 @@ def build_discovery_payload(registry, permitted: set, category: str | None = Non
     }
 
 
-def build_tool_documentation(registry, permitted: set, tool_name: str) -> dict[str, Any]:
+def build_tool_documentation(registry: ToolRegistry, permitted: set[str], tool_name: str) -> dict[str, Any]:
     """Build the how_to_use_axmem_tool payload, enforcing existence and scope."""
     tool = registry.get_tool(tool_name)
     if not tool:
@@ -307,7 +314,7 @@ def reject_invalid_argument_names(tool_name: str, arguments: dict[str, Any]) -> 
     )
 
 
-def ensure_tool_executable(registry, permitted: set, tool_name: str) -> None:
+def ensure_tool_executable(registry: ToolRegistry, permitted: set[str], tool_name: str) -> None:
     """Raise ToolError unless tool_name exists and is permitted (execute-path checks)."""
     if not registry.tool_exists(tool_name):
         available_tools = [m.name for m in registry.get_permitted_tools(permitted)[:10]]
@@ -329,7 +336,18 @@ def ensure_tool_executable(registry, permitted: set, tool_name: str) -> None:
 # ============================================================================
 
 
-def register(mcp: AxmemMCP):
+def _register_with_whole_docstring(mcp: AxmemMCP, tool: Callable[..., Any]) -> None:
+    """Register ``tool`` with its docstring, all of it, as the description a client reads.
+
+    From 3.4 FastMCP keeps only the first text block of a docstring that has an ``Args:`` section as the
+    description (the catalog of tools and the workflow, which come after it, would be dropped) and moves the
+    argument texts to the input schema. The description is what an agent is told about the surface, so it is
+    given as it is written; the argument texts still reach the input schema.
+    """
+    mcp.tool(description=inspect.cleandoc(tool.__doc__ or ""))(tool)
+
+
+def register(mcp: AxmemMCP) -> None:
     """Register meta-tools with the provided FastMCP instance - registry accessed via ctx pattern"""
 
     # Build the docstrings for the configured descriptor mode
@@ -354,21 +372,22 @@ def register(mcp: AxmemMCP):
             result = build_discovery_payload(registry, permitted, category)
 
             logger.info("discover_axmem_tools: returned %d tools", result["total_count"])
-            return result
 
         except ToolError:
             raise
         except Exception as e:
-            logger.error("discover_axmem_tools failed: %r", e, exc_info=True)
-            raise ToolError(f"Failed to discover tools: {client_error_detail(e)}")
+            logger.exception(
+                "discover_axmem_tools failed: %r", e,  # noqa: TRY401 - tests pin this text
+            )
+            raise ToolError(f"Failed to discover tools: {client_error_detail(e)}") from e
+        return result
 
     discover_axmem_tools.__doc__ = discover_doc
-    mcp.tool()(discover_axmem_tools)
+    _register_with_whole_docstring(mcp, discover_axmem_tools)
 
     # -- how_to_use_axmem_tool --
     # Static docstring, no dynamic content needed
 
-    @mcp.tool()
     async def how_to_use_axmem_tool(
         tool_name: str,
         ctx: Context,
@@ -392,15 +411,19 @@ def register(mcp: AxmemMCP):
 
             detailed_info = build_tool_documentation(registry, permitted, tool_name)
             logger.info("how_to_use_axmem_tool: returned docs for %r", tool_name)
-            return detailed_info
 
         except ToolError:
             raise
         except Exception as e:
-            logger.error("how_to_use_axmem_tool failed for %r: %r", tool_name, e, exc_info=True)
+            logger.exception(
+                "how_to_use_axmem_tool failed for %r: %r", tool_name, e,  # noqa: TRY401 - tests pin this text
+            )
             raise ToolError(
                 f"Failed to get documentation for {tool_name!r}: {client_error_detail(e)}",
-            )
+            ) from e
+        return detailed_info
+
+    _register_with_whole_docstring(mcp, how_to_use_axmem_tool)
 
     # -- execute_axmem_tool --
     # Defined without @mcp.tool() so we can set docstring before registration
@@ -431,13 +454,15 @@ def register(mcp: AxmemMCP):
             )
 
             logger.info("execute_axmem_tool: %r executed successfully", tool_name)
-            return result
 
         except ToolError:
             raise
         except Exception as e:
-            logger.error("execute_axmem_tool failed for %r: %r", tool_name, e, exc_info=True)
-            raise ToolError(f"Failed to execute {tool_name!r}: {client_error_detail(e)}")
+            logger.exception(
+                "execute_axmem_tool failed for %r: %r", tool_name, e,  # noqa: TRY401 - tests pin this text
+            )
+            raise ToolError(f"Failed to execute {tool_name!r}: {client_error_detail(e)}") from e
+        return result
 
     execute_axmem_tool.__doc__ = execute_doc
-    mcp.tool()(execute_axmem_tool)
+    _register_with_whole_docstring(mcp, execute_axmem_tool)

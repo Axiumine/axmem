@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Integration tests for CLI server URL normalisation and credential redaction.
 
 Covers regressions around the remote CLI server URL:
@@ -391,7 +394,11 @@ def html_server():
     )
     port = _free_port()
     server = uvicorn.Server(
-        uvicorn.Config(app, host="127.0.0.1", port=port, log_level="error"),
+        # The sans-IO websockets implementation, as main.py selects it: the default one imports
+        # the deprecated websockets.legacy.
+        uvicorn.Config(
+            app, host="127.0.0.1", port=port, log_level="error", ws="websockets-sansio",
+        ),
     )
     thread = threading.Thread(target=server.run, daemon=True)
     thread.start()
@@ -416,7 +423,7 @@ async def _fails_within_bound(awaitable):
         await asyncio.wait_for(awaitable, timeout=GUARD_SECONDS)
     except TimeoutError:
         pytest.fail(f"still blocked after {GUARD_SECONDS}s: no client timeout applied")
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - the failure is the result
         return exc, time.monotonic() - started
     pytest.fail("expected the handshake against a non-MCP server to fail")
 

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Gate registry and stage pipelines (cheapest checks first, fail fast)."""
 
 from __future__ import annotations
@@ -14,6 +17,10 @@ GATES: dict[str, tuple[GateFn, str]] = {
     "semgrep": (static.gate_semgrep, "semgrep custom (+registry) rules"),
     "shellcheck": (static.gate_shellcheck, "shellcheck over the shell scripts and the Git hooks"),
     "actionlint": (static.gate_actionlint, "actionlint over the workflows, with the pinned shellcheck on their run blocks"),
+    "reuse": (
+        static.gate_reuse,
+        "reuse lint-file: a copyright notice and a license in every file (REUSE.toml for the ones that cannot carry one)",
+    ),
     "vulture": (static.gate_vulture, "dead code"),
     "radon-cc": (static.gate_radon_cc, "cyclomatic complexity, no function below B"),
     "radon-mi": (static.gate_radon_mi, "maintainability index, all files grade A"),
@@ -34,7 +41,7 @@ GATES: dict[str, tuple[GateFn, str]] = {
     "mutation": (testing.gate_mutation, "mutmut mutation testing of the app/ modules the push changes"),
 }
 
-_STATIC = ["ruff", "imports", "bandit", "semgrep", "vulture", "radon-cc", "radon-mi", "shellcheck", "actionlint"]
+_STATIC = ["ruff", "imports", "bandit", "semgrep", "vulture", "radon-cc", "radon-mi", "shellcheck", "actionlint", "reuse"]
 
 # What needs neither a GPU nor Docker: the static gates, trivy, the type checks, the architecture tests and the package.
 # Hosted CI runs exactly these (by name, split across jobs), and `stage ci` runs them in one go on a developer machine.

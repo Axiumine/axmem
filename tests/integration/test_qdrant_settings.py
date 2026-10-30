@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Validation of the Qdrant settings: a wrong value stops start-up with a message that names the setting.
 
 Settings are built from environment variables with Settings(_env_file=None), as startup does.
@@ -42,7 +45,7 @@ def test_a_node_address_that_is_not_http_stops_start_up(monkeypatch, url, messag
 
 @pytest.mark.parametrize("prefix", ["axmem", "Axmem-2_test", "9lives", "a" * 64])
 def test_a_collection_prefix_of_letters_digits_underscores_and_hyphens_is_accepted(monkeypatch, prefix):
-    assert build(monkeypatch, QDRANT_COLLECTION_PREFIX=prefix).QDRANT_COLLECTION_PREFIX == prefix
+    assert prefix == build(monkeypatch, QDRANT_COLLECTION_PREFIX=prefix).QDRANT_COLLECTION_PREFIX
 
 
 @pytest.mark.parametrize("prefix", ["", "_leading", "-leading", "has space", "dot.ted", "a" * 65, "slash/ed"])

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Integration tests for the content type check of the REST routes
 
 A web page can send a ``text/plain`` body cross-origin without a preflight, and the body parsers read the bytes

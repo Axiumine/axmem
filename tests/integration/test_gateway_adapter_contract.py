@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The embeddings gateway adapter, word for word: the lines an operator reads, the wire format and the refusals.
 
 The adapter runs against an in-process gateway (``httpx.MockTransport``); the tests pin the exact texts of the errors

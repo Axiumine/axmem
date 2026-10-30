@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The API key and the snapshot backup on a real three-node cluster."""
 import json
 from uuid import uuid4

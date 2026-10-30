@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Axmem works alone: one server process, the GPU, the model files on disk and a Qdrant node, and nothing else.
 
 The real server (``main.py serve --transport http``) runs in a subprocess with:
@@ -113,7 +116,7 @@ def tiktoken_cache_dir() -> str:
     """
     try:
         tiktoken.encoding_for_model("gpt-4")
-    except Exception as error:
+    except Exception as error:  # noqa: BLE001 - whatever stops the download fails the test, with its text
         pytest.fail(
             f"the tiktoken vocabulary is not on disk and could not be downloaded ({error}): "
             "this test lets the server make no outbound connection, so it must be available beforehand",
@@ -121,7 +124,7 @@ def tiktoken_cache_dir() -> str:
     return (
         os.environ.get("TIKTOKEN_CACHE_DIR")
         or os.environ.get("DATA_GYM_CACHE_DIR")
-        or os.path.join(tempfile.gettempdir(), "data-gym-cache")
+        or str(Path(tempfile.gettempdir()) / "data-gym-cache")
     )
 
 

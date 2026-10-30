@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The exit codes of a failed GPU preflight: 2 for everybody, 1 inside a mutmut worker.
 
 A failed preflight ends the pytest run, and mutmut books exit code 2 as "check was interrupted by user", which no test

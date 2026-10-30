@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """MemoryService obsolescence on the real Qdrant repository: marking, restoring and the warning about obsolete matches.
 
 The service runs against the production repository and the real embedder. A pass-through spy (``spy``) records the

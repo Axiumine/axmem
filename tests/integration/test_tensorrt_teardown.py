@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Releasing the GPU after a failure: a slot or an engine that cannot be made, a release step that fails, a refused start.
 
 The engines are the real ones on the real GPU. The failures are injected at the CUDA wrapper calls of
@@ -43,7 +46,8 @@ class FaultyCuda:
     """The ``cuda.bindings.runtime`` module, with the memory calls recorded and chosen calls made to report an error.
 
     ``fail`` lists ``(call, number)`` pairs, or ``(call, number, error)``: the ``number``-th invocation of ``call`` (1 is
-    the first, ``None`` is every one) reports ``error``, or the error of its own. ``cudaFree(0)``, which binds a thread to the CUDA context, counts as the call
+    the first, ``None`` is every one) reports ``error``, or the error of its own. ``cudaFree(0)``, which binds a
+    thread to the CUDA context, counts as the call
     ``"cudaFree(0)"`` and is never taken for a release. A failed ``cudaMalloc`` or ``cudaStreamCreate`` allocates
     nothing. With ``perform`` a failed ``cudaFree``, ``cudaStreamDestroy`` or ``cudaStreamSynchronize`` does its work
     first and reports the error afterwards. With ``poison`` the first failure makes every later call report the error,
@@ -288,7 +292,7 @@ def test_a_release_step_that_reports_an_error_does_not_stop_the_close(embedder_p
     assert message.count("cudaErrorIllegalAddress") == 1  # the reason they share is named once
     assert message.count("destroying the stream") == 1
     assert message.count("freeing the buffer of") == 2
-    assert engine._engine is None and engine._runtime is None
+    assert (engine._engine, engine._runtime) == (None, None)
     assert abs(held_bytes() - baseline) <= TOLERANCE
     assert slot.release() == []  # a slot that was released is not released again
     attempts = dict(cuda.invocations)
@@ -309,7 +313,8 @@ def test_every_release_step_is_attempted_once_even_when_all_of_them_fail(embedde
     assert cuda.invocations["cudaFree"] == 2 * BUFFERS_PER_SLOT
     (record,) = error_records(caplog)
     assert f"{2 * (BUFFERS_PER_SLOT + 1)} release step(s) failed" in record.getMessage()
-    assert engine._engine is None and engine._runtime is None
+    assert engine._engine is None
+    assert engine._runtime is None
     cuda.free_leaks()
 
 

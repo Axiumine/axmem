@@ -32,9 +32,185 @@ without the mark, with the commit that landed it, in the commit that lands it.
   `axmem` (the hosts, the image and the extra index are held to `scripts/release/facts.py`, `scripts/lib/project.sh`,
   `tests/qdrant_support.py` and `pyproject.toml`, and each cleanup path is run). See
   [docs/release.md](docs/release.md), "Install check of a release".
+- `.github/workflows/scorecard.yml`: [OpenSSF Scorecard](https://github.com/ossf/scorecard) runs on the repository on every
+  push to `main` and on `workflow_dispatch`, publishes the result to scorecard.dev (the Scorecard badge of the README reads
+  it; the badge shows an error until the first run on `main` has published one) and uploads the SARIF file to code
+  scanning. Scorecard rates the settings and the history of the repository, not our code, so the workflow is not a quality
+  gate and no hook runs it. The token is read-only at the top of the file; the one job adds `id-token: write` (the action
+  signs the result with it) and `security-events: write`; there is no secret, no personal access token and no schedule.
+  `ossf/scorecard-action` is a Docker container action that the hosted runner starts itself, so the workflow has no Docker
+  step of its own. `tests/architecture/test_workflows.py` applies its rules to the file (hosted runner, read-only token,
+  `persist-credentials: false`, actions pinned to a commit, concurrency group) and holds the shape that scorecard.dev accepts
+  for a published result (no `env` or `defaults`, no write permission at the top, `id-token` in the Scorecard job only, only
+  the four actions it needs). A push-triggered run of `main` joins the runs that the release guard (`scripts.release.ci_green`)
+  requires to be green on the release commit. See [docs/quality-gates.md](docs/quality-gates.md), "OpenSSF Scorecard and
+  Dependabot".
+- `.github/dependabot.yml`: Dependabot version updates for the `github-actions`, `uv`, `docker` and `npm` ecosystems, weekly, at
+  most three open pull requests each, minor and patch updates of an ecosystem in one pull request, commit prefix `chore(deps)`.
+  The last two watch `test_harness/docker`: the `node` base image of its Dockerfile and the agent CLIs that its `package.json`
+  and `package-lock.json` pin. Three things are left out on purpose and the file says why: the
+  `slsa-framework/slsa-github-generator` reference of `release.yml`, which is changed together with `SLSA_GENERATOR_VERSION` and
+  `SLSA_GENERATOR_COMMIT`, the three TensorRT packages, which are bumped by hand as [docs/gpu-models.md](docs/gpu-models.md)
+  describes, and major versions of the `node` image, because the Dockerfile follows the Node 24 line on purpose. It is a
+  setting of GitHub's Dependabot service, not a workflow.
+  `.github/CODEOWNERS` names the maintainers of `MAINTAINERS.md` as the owners of every file and of the release files.
+- Coverage-guided fuzzing: three [Atheris](https://github.com/google/atheris) harnesses in `fuzz/` (`fuzz_token_claims.py`,
+  `fuzz_request_arguments.py`, `fuzz_terminal_text.py`, with the helper `shared.py`) feed generated input to the functions that
+  read data a client or an identity provider controls: the scopes and the tenant taken from token claims, the coercion of tool
+  and query arguments (`parse_created_since` among them: the harness fails on the unfixed code, see Fixed), and the cleaning of
+  terminal text and URLs. A harness fails on an exception its contract does not name
+  or on a property that does not hold (no scope that the claims do not spell, no control character in printed text, no password
+  in a redacted URL). Each runs offline, with no GPU and no Qdrant, and `tests/integration/test_fuzz_targets.py` runs every
+  harness for 300 inputs with a fixed seed, so a harness cannot rot; a longer run is a command the contributor starts
+  (`uv run python fuzz/fuzz_token_claims.py -max_total_time=60`). `atheris==3.1.0` joins the `dev` group for Linux x86_64, the
+  one platform for which it publishes a build for Python 3.14. `fuzz/` is checked by the `ruff`, `mypy`, `pylint`, `bandit`,
+  `semgrep`, `vulture` and `radon` gates, is outside the coverage report, and is in neither the wheel nor the sdist. See
+  [docs/fuzzing.md](docs/fuzzing.md).
+- `SECURITY.md` (how to report a vulnerability, which versions receive fixes, how a fix and its disclosure proceed),
+  `docs/security.md` (the security requirements of Axmem, each numbered, with the code that enforces it and the tests that
+  prove it, and what Axmem does not guarantee), `docs/assurance-case.md` (threat model, trust boundaries, the argument that
+  the requirements are met, the secure design principles, the OWASP Top 10 and CWE Top 25 tables, the residual risks) and
+  `docs/roadmap.md` (what the project intends to do in the twelve months to October 2027 and what it does not). The README
+  links them, and `CONTRIBUTING.md`, `GOVERNANCE.md` and `MAINTAINERS.md` now state the coding standards, the review and merge
+  conditions, and what the co-owner can and cannot do if the lead is unavailable (`GOVERNANCE.md#if-the-lead-is-unavailable`).
+- `.bestpractices.json`: proposed answers for the [OpenSSF Best Practices](https://www.bestpractices.dev/) badge form, each with
+  a justification that points to a file of the repository. The badge form reads them as proposals; the maintainer reviews every
+  answer. It is not part of the wheel or the sdist. See [docs/quality-gates.md](docs/quality-gates.md), "OpenSSF Scorecard and
+  Dependabot".
+- Security headers on every answer of the HTTP server (`SecurityHeadersMiddleware`, `app/middleware/security_headers.py`, the
+  outermost middleware of `main._http_middleware`): `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`,
+  `Referrer-Policy: no-referrer`, `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'`,
+  `Cache-Control: no-store` and `Cross-Origin-Resource-Policy: same-origin` (left out when `CORS_ENABLED`, because the operator
+  has then invited other origins in). They have no setting. They are on the refusals too (the `421` and `403` of the loopback
+  guard, the `413` of the body limit, the `401` and `403` of the routes and of the MCP authentication). A header that the
+  application sets itself is kept, so the MCP event stream keeps its own `Cache-Control` and is still not buffered. The
+  answer to an unhandled exception is sent by Starlette outside every middleware and carries none of them (a test pins this).
+  Every client of Axmem is a program that reads JSON or an event stream, so none should notice; a browser that is pointed at an
+  address of the server now gets a response that it will not frame, sniff or cache. `tests/integration/test_security_headers.py`
+  and `tests/e2e/test_security_headers_e2e.py`. See [docs/configuration.md](docs/configuration.md), "Security headers of the
+  HTTP server".
+- TLS from the server itself: `SERVER_SSL_CERTFILE` and `SERVER_SSL_KEYFILE` (PEM files; both or neither) make the HTTP
+  transport serve HTTPS, and `SERVER_SSL_KEYFILE_PASSWORD` (a secret, never logged or repeated in an error) opens an encrypted
+  key (`app/config/tls.py`). The server offers TLS 1.2 or later; for TLS 1.2 only ECDHE with AES-GCM or ChaCha20-Poly1305,
+  because uvicorn's own cipher string drops every AES-GCM suite and keeps CBC and SHA-1 suites. It fails closed: one file
+  without the other, a password without the files, a file that cannot be read, or a certificate and key that do not belong
+  together end the start with one `Error:` line and exit code 1 before anything is bound, and never fall back to plain HTTP.
+  With a certificate the answers also carry `Strict-Transport-Security: max-age=31536000`, except to a loopback `Host` (a
+  browser pins a host name whatever the port), and without `includeSubDomains` or `preload`. A server that serves plain HTTP
+  on an address beyond loopback now logs one warning at start that says bearer tokens and memories cross the network in clear
+  text. **Nothing changes by default**: with neither setting the server serves plain HTTP as before, on the same address, and
+  the warning is the only difference. Stdio ignores the settings. The `axmem` CLI verifies the certificate; `SSL_CERT_FILE`
+  names the authority to trust for a private one. `tests/integration/test_tls_settings.py`, `test_tls_server.py` and
+  `tests/e2e/test_tls_serve_e2e.py` use a real certificate authority and a real server in a child process. See
+  [docs/configuration.md](docs/configuration.md), "Serve TLS", and `.env.example`.
+- A copyright and license notice in every source file, and a `reuse` quality gate that holds it. The Python files (tests
+  included), the shell scripts, the Git hooks, the workflows, `.github/dependabot.yml` and the Dockerfile start with SPDX tags,
+  after a shebang line or a `# syntax=` directive: `SPDX-FileCopyrightText: 2026 Giovanni Manzoni` and
+  `SPDX-License-Identifier: AGPL-3.0-only`, or, for a file derived from Forgetful, also `SPDX-FileCopyrightText: 2025 Scott
+  Raisbeck` and `AGPL-3.0-only AND MIT`. A file is derived when a commit by an author of Forgetful is in its history or when it
+  holds code taken from a Forgetful file: one Forgetful file holds at least 5 of its code lines and they are 25 percent or
+  more of its code lines (ten files that only the maintainer committed, and three more at 15 to 20 percent that take the
+  second form all the same, as the cautious choice). `REUSE.toml` covers the files that cannot hold a comment (documents,
+  data, configuration, lock files, images), by type of file and never by directory, so a new source file without a header fails
+  the gate; `LICENSES/` holds `AGPL-3.0-only.txt` (byte for byte `LICENSE`) and `MIT.txt` (the SPDX text). The `reuse` gate
+  (`reuse[charset-normalizer]==6.2.0` in the `dev` group, five new locked packages) runs `reuse lint-file` over the files git
+  sees, in `pre-commit`, `pre-push` and the `ci` stage and as a step of the `static` job of `quality.yml`, in about two
+  seconds, offline. `tests/integration/test_quality_reuse_gate.py` runs the real tool on scratch repositories and
+  `tests/architecture/test_licensing_headers.py` checks the two header forms, the texts in `LICENSES/` and that the set of
+  licenses is the same in the headers, `REUSE.toml` and `pyproject.toml`. The `wheel` gate is **not relaxed**: no
+  `check-wheel-contents` code is added to its ignore list. The twelve `app/**/__init__.py` package markers were empty and would
+  have become identical with the same header, which the tool reports as duplicate files (`W002`); each now has a docstring of
+  its own after the header, so no two files of the wheel are identical. **No behaviour changes**; the wheel and the sdist hold
+  the same files with a header and a docstring added. `.playwright-mcp/` (the page snapshots of a browser session) is git-ignored. See
+  [docs/quality-gates.md](docs/quality-gates.md), "Licensing headers".
+- `.github/workflows/codeql.yml`: [CodeQL](https://codeql.github.com/) code scanning on every push to `main` and every pull
+  request into `main`, one job per language (`python`, and `actions` for the workflow files; a matrix, each with its own
+  category) in the advanced setup, `build-mode: none`. The token is `contents: read`, and the one job adds `security-events:
+  write` to upload the result to code scanning. Actions are pinned to a commit like every other workflow. Like Scorecard it is a
+  report to read on GitHub, not a quality gate, and no hook runs it. `tests/architecture/test_workflows.py` applies the rules
+  of the workflows to the file and holds its shape, and `JOBS_OF` names its job. See
+  [docs/quality-gates.md](docs/quality-gates.md), "OpenSSF Scorecard and Dependabot".
+- `docs/security-review.md`: a review of the security requirements and of the security boundary, dated 2026-10-29 (commit
+  `e2cc68b` and the uncommitted tree of that day), with sixteen numbered findings. It was prepared by an AI coding agent working
+  for the lead maintainer, says so on its first page, and is not an independent human review: the maintainer has to read it and
+  adopt or redo it, and a second human reviewer is an open item. Two findings are already fixed in the tree (the TLS option and
+  the security headers, above), one is rated Medium (a `.env` file in the working directory could set `AXMEM_SERVER`, and
+  the CLI then sent `AXMEM_TOKEN` there; fixed in the tree, see Security below) and SR-16 (the same file still names the Qdrant node and the
+  provider URLs of a local-mode CLI) is recorded as accepted; none of the other code findings has been fixed. `docs/security.md` and
+  `docs/assurance-case.md` now cover TLS and the headers (requirements `NET-7` to `NET-11` and `SEC-6`, goals G4 and G5, a new
+  residual risk for the open findings), and no longer list "no TLS" and "no security headers" among the things Axmem does not
+  guarantee. They also record the limit of the working-directory `.env`, and `docs/security.md` has rows for Dependabot,
+  CodeQL and Scorecard (`SUP-7`, `SUP-8`).
 
 ### Changed
 
+- The `ruff` gate now runs every rule group except a few that `ruff.toml` lists as off, each with its reason and the count of
+  its findings (was 16 groups: `F`, `I`, `Q`, `COM`, `C4`, `ISC`, `ICN`, `PIE`, `PGH`, `TID`, `YTT`, `FA`, `LOG`, `T10`, `UP`, `S`).
+  Added: `E`, `W`, `N`, `A`, `B`, `BLE`, `ASYNC`, `DTZ`, `ERA`, `EXE`, `FIX`, `FLY`, `FURB`, `G`, `INT`, `PERF`, `PTH`, `PYI`,
+  `RET`, `RSE`, `RUF`, `SIM`, `SLOT`, `TD`, `TRY`, `ARG`, `SLF`, `PLC`, `PLE`, `PLW`, `PLR`, `C90`, `PT` and the framework
+  groups `AIR`, `DJ`, `FAST`, `NPY`, `PD`. Ruff enforces 140 columns (`E501`) and pylint 100 under `fail-under` 8.0;
+  `pre-commit` runs pylint on the staged files without the convention checks, so the 100 columns are counted only by the
+  project-wide run in `pre-push` and `ci`. Four lines over 140 columns carry a `# noqa: E501 - reason`. Off inside them:
+  `TRY003`, `PT011`, `G004` (the log masking filter treats the message and its arguments apart) and `PLC0415` (the lazy
+  imports are deliberate); `ARG`, `SLF001` and `PLR2004` (assertions compare with literal expected values) are off in
+  `tests/`, and the 16 `PLR2004` findings outside `tests/` use a named constant. Still not on: `ANN`, `D`, `EM`, `FBT`, `TC`,
+  `T20`, `INP`, and the preview rules `CPY` and `DOC`. The size limits of `PLR` are those of `[tool.pylint.design]`. The
+  findings were fixed without a change of what the server does:
+  exceptions raised inside `except` carry their cause (`raise ... from`), the error logs of the three meta-tools, the tool
+  registry and the embedding adapters call `logger.exception` (same level, same text), the temporary files of the atomic
+  writes use `pathlib`, a few unused variables and trailing blanks went, `scripts/release/ci_green.py` and `sdist.py` lost
+  their executable bit (they run as `python -m`), and about 55 more lines than before carry a `# noqa: <code> - reason` (209 in all).
+- The `mypy` gate now runs in `strict` mode (was `check_untyped_defs`, `warn_unused_ignores`, `warn_redundant_casts`,
+  `no_implicit_optional` and `strict_equality`), with `warn_unreachable`, `disallow_any_unimported` and nine optional error
+  codes (`ignore-without-code`, `possibly-undefined`, `unused-awaitable`, `redundant-self`, `mutable-override`, `deprecated`,
+  `exhaustive-match`, `narrowed-type-not-subtype`, `unimported-reveal`) that the code base already satisfied. Strict mode found
+  165 errors in 33 files: 83 functions without annotations, 34 calls to them, 28 bare generics, 11 returns of `Any`, 8 imports of
+  `logging` through `app.config.logging_config` (they import it from the standard library now) and one base class of
+  `tensorrt`. They are fixed with annotations and local variable types; what the server does is unchanged. Two lines gain a
+  `# type: ignore[<code>]` with a reason (the TensorRT logger base class and the tokenizer return type: both packages ship
+  no type information; a third, in `app/config/settings.py`, was there before). Measured and still off: `redundant-expr` (3) and `truthy-bool` (2), which flag defensive checks, and
+  `explicit-override` (18); `test_harness` is not type-checked (33 errors, some of them real).
+  The `pylint` gate loads eleven more extensions that the code base satisfies completely (`check_elif`,
+  `comparison_placement`, `consider_refactoring_into_while_condition`, `dict_init_mutate`, `dunder`, `eq_without_hash`,
+  `for_any_all`, `private_import`, `redefined_loop_name`, `redefined_variable_type`, `typing`); its threshold stays at 8.0
+  because the score is 8.00 and 1785 of the findings are lines over 100 columns.
+- The test runs turn every warning into an error (`filterwarnings = error` in `pytest.ini`), so a deprecated call, an unawaited
+  coroutine or a leaked resource fails the test that causes it. One `ignore` line follows, limited to one message, one category
+  and one module: the `DeprecationWarning` for `typing._UnionGenericAlias` that `google.genai.types` (google-genai 1.66.0)
+  raises at import, which only a newer release of the library removes. `httpx2==2.16.0` joins the `dev` group because
+  `starlette.testclient` warns that `httpx` is deprecated for it; the package and its runtime dependencies do not change.
+  `docs/quality-gates.md` has a new section, "Warnings", that lists for `ruff`, `mypy`, `pylint` and `pytest` what is on and
+  what is off, with the reason and the count of findings. Nothing changes for a user of the server, the CLI or the package.
+- `fastmcp` is locked at 3.4.10 (was 3.2.2); the relock moves `mcp` to 1.30.0 (was 1.29.0) and `opentelemetry-api` to 1.45.1
+  (was 1.39.1), adds `fastmcp-slim` and `griffelib`, and drops `importlib-metadata` and `zipp`. FastMCP 3.4 keeps only the first
+  paragraph of a docstring that has an `Args:` section as a tool description, which would have dropped the catalog and the
+  workflow from `discover_axmem_tools`; the three meta-tools are registered with their whole docstring (`app/routes/mcp/meta_tools.py`),
+  so their descriptions are byte for byte what they were. What an MCP client sees differently is that the input schemas of
+  `discover_axmem_tools`, `how_to_use_axmem_tool` and `execute_axmem_tool` now carry a `description` for each argument
+  (the signature snapshot gained those four lines and nothing else). From 3.4 FastMCP logs a failed tool call (`ToolError`)
+  without its traceback; the caller-supplied name is still escaped in the log line. FastMCP no longer has `JsonWebToken`,
+  so the tests that sign tokens use `tests/jwt_support.py` on `joserfc`, which joins the `dev` group at 1.7.0 because the tests
+  import it directly. Why: see Security below.
+- The image of the UAT walkthrough harness (`test_harness/docker/Dockerfile`) is reproducible: the base is `node:24` by digest
+  (the comment says how to move it), and `opencode` is installed from `package.json` and `package-lock.json` (`opencode-ai`
+  1.19.5, `npm ci`) instead of `npm install -g opencode-ai@latest`. The unused `OPENCODE_VERSION` argument is gone. The
+  harness rebuilds its image when any of those inputs changes: the hash that it stores in the image label
+  (`axmem.harness.requirements-hash`, same name) now covers the exported lock and the `Dockerfile`, `package.json` and
+  `package-lock.json`, where it covered the lock alone, so a new base digest or a new `opencode` no longer leaves a stale image
+  in use (`requirements_hash` became `image_inputs_hash`; an unreadable input stops the run with a harness error). An image
+  built before this change has the old hash and is rebuilt once. `--rebuild-image` and `test_harness/README.md` no longer say
+  that `opencode` floats.
+- Every requirement of `pyproject.toml` is an exact `==` pin. `memray`, `pytest-memray` (the `dev` group) and `docker` (the
+  `harness` group) were `>=`; they are now `==1.20.0`, `==1.11.0` and `==7.2.0`, the versions that `uv.lock` already held, so the
+  lock changes by those three specifier lines only. New requirements are pinned the same way: `atheris==3.1.0`,
+  `joserfc==1.7.0`, `reuse[charset-normalizer]==6.2.0` and `cryptography==50.0.0`, which the TLS tests import to make their own
+  certificate authority and which was a locked transitive dependency already. Nothing changes for a user of the package.
+- The hardware policy of `CONTRIBUTING.md` (and the matching lines of the README, `GOVERNANCE.md`, `docs/gpu-models.md`
+  and `docs/contributors.md`) no longer contradicts itself: it turned away requests for Apple-silicon and CPU-only support
+  but accepted a pull request with code that works natively on macOS, which on a Mac without an NVIDIA GPU can only be one of
+  them. The one exception is now a pull request that adds Apple silicon with an MLX backend; a backend on Core ML, Metal,
+  PyTorch MPS, ONNX Runtime or the CPU, and an Intel Mac, are not accepted. The section is now `## Hardware`
+  (anchor `#hardware`).
 - The install notes say that Axmem is on PyPI: `0.6.0rc1`, a release candidate and the only version there, installs with
   `uv tool install --extra-index-url https://pypi.nvidia.com axmem` or `pip install --extra-index-url https://pypi.nvidia.com axmem`
   (the flag takes the three TensorRT packages from NVIDIA's index, see the README), and `uvx axmem` runs it without installing,
@@ -43,6 +219,54 @@ without the mark, with the commit that landed it, in the commit that lands it.
   `axmem-cli-setup` and `axmem-mcp-setup` skills, the connectivity guide, the Gemini CLI, OpenCode and Copilot CLI guides with
   their `axmem-setup` commands and the roadmap no longer say that the package is not published or must be installed from a
   checkout first; the checkout, Git URL and wheel routes stay as alternatives for development.
+
+### Fixed
+
+- `get_recent_memories` refused a `created_since` that has no instant in UTC with an unhandled `OverflowError`, which the
+  client received as a generic tool error, not the message that tells an agent what to send. The value is an ISO 8601
+  timestamp with a timezone, and `0001-01-01T00:00:00+01:00` (year 1 moved forward past the range) or
+  `9999-12-31T23:59:59-01:00` (year 9999 moved back) parsed but could not be converted. Both now give the same `ToolError` as
+  any other value that is not a timestamp with a timezone: `created_since must be an ISO 8601 timestamp with a timezone`
+  (`parse_created_since` in `app/routes/mcp/adapters/memory_arguments.py`). A timestamp inside the range is unchanged. The
+  `created_since` tests moved to `tests/integration/test_mcp_created_since_argument.py` (the contract file had no room left
+  under the `radon-mi` limit), `tests/e2e/test_mcp_memory_argument_errors_e2e.py` has both inputs, and the argument fuzz
+  harness now covers the function.
+- The docs and `.env.example` said that `AUTH_MODE=none` needs `127.0.0.1` or `::1`; the server accepts, as 0.6.0rc1 does, any
+  address of `127.0.0.0/8` and `::1` (and no host name, `localhost` included). The text now says what the code does. No behaviour
+  changed.
+
+### Security
+
+- **Breaking for anyone who chose the CLI's server in a `.env` of the working directory.** The CLI no longer takes
+  `AXMEM_SERVER` from the `.env` file of the directory where it runs (finding SR-1 of `docs/security-review.md`, Medium): a
+  repository cloned there could name a server of its own, and the CLI then sent that server `AXMEM_TOKEN` and every memory it
+  saved or searched, and showed the answer to an agent. The filter drops the setting after the file is parsed, so `export`,
+  quotes, any letter case and `${}` expansion do not get it through, and a symlinked `.env` is filtered like any other. The server
+  now comes from `--server`, the `AXMEM_SERVER` environment variable or the user's settings file (`axmem auth login --server URL`
+  writes it), as `docs/configuration.md` already listed. When the working directory's `.env` names a server and none of those does,
+  the command runs in local mode and prints one line on stderr (also with `--json`; stdout is the result), `Note: ./.env sets
+  AXMEM_SERVER, which the CLI ignores ...`, which does not repeat the ignored value; `axmem auth status` prints it too. A user who
+  relied on that file moves the line to the environment, to `--server` or to the user's file (`axmem auth login --server URL`).
+  Every other setting of the working directory's `.env` is read as before, `axmem serve` included; `QDRANT_URL` and the provider
+  URLs there still steer a local-mode CLI, as they steer `axmem serve`. New requirement `SEC-7` in `docs/security.md`, tested by
+  `tests/integration/test_cli_server_origin.py`; `docs/security.md`, `docs/assurance-case.md`, `docs/configuration.md`,
+  `.env.example` and the `axmem-cli-setup` skill say the same.
+- `fastmcp` is locked at 3.4.10 (was 3.2.2), `mcp` at 1.30.0 (was 1.29.0) and `opentelemetry-api` at 1.45.1 (was 1.39.1), the
+  smallest releases that carry the fixes of six advisories that `osv-scanner` 2.0.3 listed for `uv.lock`, all rated medium in
+  the GitHub advisory database: GHSA-7xgj-8392-5q4r (FastMCP: post-transform component authorization is skipped on direct
+  calls), GHSA-w4fh-qvv9-3v23 / CVE-2026-116684 (MCP Python SDK: server bearer-token authentication accepts tokens issued for
+  a different resource server), GHSA-84m7-p3x7-pcfv / CVE-2026-59951 (unbounded session accumulation in the StreamableHTTP
+  transport), GHSA-5h93-6whr-6q8j / CVE-2026-116685 (HTTP client transports followed cross-origin redirects carrying custom
+  headers and bodies), GHSA-rwrf-2pqf-9j8j / CVE-2026-116686 (the client fetched server-chosen `$ref` URLs while validating
+  tool results) and GHSA-xcq7-p3pf-p88h / CVE-2026-114603 (unbounded `tracestate` parsing in `opentelemetry-api`). The scan of
+  the new `uv.lock` reports no issue. OpenSSF Scorecard's Vulnerabilities check counts such advisories, which is how they were
+  found; the `trivy` gate had not stopped on them.
+- Operations note, not a change to any file: four security settings of the GitHub repository `Axiumine/axmem` are enabled, as the
+  GitHub API reported on 2026-10-29: private vulnerability reporting (the private channel that `SECURITY.md` names), secret scanning,
+  secret scanning push protection and Dependabot security updates. The first three were off in the audit that began this work.
+  Dependabot version updates are configured by `.github/dependabot.yml` and code scanning by `.github/workflows/codeql.yml`
+  (above); Dependabot, CodeQL and Scorecard are reports to read, not gates. The same API reported no security advisory, no issue
+  and no Dependabot alert on that date.
 
 ## [v0.6.0rc1] - 2026-10-28
 

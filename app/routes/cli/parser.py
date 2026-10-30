@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """Argparse tree and dispatch for the Axmem CLI subcommands.
 
 main.cli() routes argv here only when argv[0] is a KNOWN subcommand; anything else
@@ -8,8 +12,11 @@ import argparse
 import asyncio
 import functools
 import json
+from collections.abc import Callable, Coroutine
+from typing import Any
 from uuid import UUID
 
+from app.protocols.executor import ToolExecutor
 from app.version import get_version
 
 # Tokens that route to the subcommand tree. Bare invocations and legacy flags
@@ -22,12 +29,12 @@ KNOWN = {"serve", "re-embed", "tools", "call", "auth", "memory", "backup", "rest
 _flags_parent_parser = functools.partial(argparse.ArgumentParser, add_help=False)
 
 
-def _json_object(value: str) -> dict:
+def _json_object(value: str) -> dict[str, Any]:
     """argparse type for --args: must parse as a JSON object."""
     try:
         parsed = json.loads(value)
     except json.JSONDecodeError as exc:
-        raise argparse.ArgumentTypeError(f"must be valid JSON ({exc})")
+        raise argparse.ArgumentTypeError(f"must be valid JSON ({exc})") from exc
     if not isinstance(parsed, dict):
         raise argparse.ArgumentTypeError("must be a JSON object of tool arguments")
     return parsed
@@ -37,16 +44,16 @@ def uuid_value(value: str) -> UUID:
     """argparse type for a memory id: a UUID."""
     try:
         return UUID(value)
-    except ValueError:
-        raise argparse.ArgumentTypeError(f"invalid memory id: {value!r} (ids are UUIDs)")
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"invalid memory id: {value!r} (ids are UUIDs)") from exc
 
 
 def positive_int(value: str) -> int:
     """argparse type for sizes and counts: an integer >= 1."""
     try:
         parsed = int(value)
-    except ValueError:
-        raise argparse.ArgumentTypeError(f"invalid int value: {value!r}")
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"invalid int value: {value!r}") from exc
     if parsed < 1:
         raise argparse.ArgumentTypeError(f"must be a positive integer (got {parsed})")
     return parsed
@@ -238,14 +245,17 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-async def _build_executor(args):
+async def _build_executor(args: argparse.Namespace) -> ToolExecutor:
     """Construct the ToolExecutor: --local > --server > AXMEM_SERVER > local default.
 
     AXMEM_SERVER merges shell env and the user config file with the right
-    precedence via pydantic-settings; AXMEM_TOKEN (the bearer token sent to a remote
-    server) is shell env only, deliberately kept out of config files.
+    precedence via pydantic-settings; the settings file of the working directory
+    cannot set it (a cloned repository must not choose where the token goes).
+    AXMEM_TOKEN (the bearer token sent to a remote server) is shell env only,
+    deliberately kept out of config files.
     """
     from app.config.settings import settings
+    from app.routes.cli.render import emit_ignored_server_notice
 
     if not getattr(args, "local", None):
         server_url = getattr(args, "server", None) or settings.AXMEM_SERVER
@@ -257,12 +267,14 @@ async def _build_executor(args):
 
             return RemoteExecutor(server_url, token=bearer_token_from_env())
 
+        emit_ignored_server_notice()
+
     from app.routes.cli.local_executor import LocalExecutor
 
     return await LocalExecutor.create()
 
 
-async def _run_tool_command(args) -> int:
+async def _run_tool_command(args: argparse.Namespace) -> int:
     """Execute a tools/call command and map failures onto exit code 1."""
     from app.routes.cli.render import emit_error, ensure_safe_stdout, render_result
 
@@ -270,7 +282,7 @@ async def _run_tool_command(args) -> int:
     as_json = getattr(args, "json", False)
     try:
         executor = await _build_executor(args)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - CLI boundary: any failure is exit code 1
         emit_error(str(exc), as_json)
         return 1
 
@@ -288,15 +300,20 @@ async def _run_tool_command(args) -> int:
         else:
             result = await executor.execute(args.tool, args.args)
         print(render_result(result, as_json))
-        return 0
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - CLI boundary: any failure is exit code 1
         emit_error(str(exc), as_json)
         return 1
     finally:
         await executor.close()
+    return 0
 
 
-def dispatch(argv, *, serve_runner, reembed_runner):
+def dispatch(
+    argv: list[str],
+    *,
+    serve_runner: Callable[..., int | None],
+    reembed_runner: Callable[[argparse.Namespace], Coroutine[Any, Any, None]],
+) -> int | None:
     """Parse a KNOWN-subcommand argv and route it to the injected runners."""
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -315,7 +332,7 @@ def dispatch(argv, *, serve_runner, reembed_runner):
     return asyncio.run(_run_auth_command(args))
 
 
-async def _run_auth_command(args) -> int:
+async def _run_auth_command(args: argparse.Namespace) -> int:
     """Route auth subcommands; a rejected server URL (ValueError from
     normalize_server_url) or a settings file that cannot be read or written (OSError: permission, a full
     disk, a directory in its place) becomes a clean error and exit 1, matching how

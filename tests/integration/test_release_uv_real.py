@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The fake ``uv`` of the release tests agrees with the real one where the release depends on it.
 
 The hermetic release tests replace ``uv`` with a script. A fake that writes less than the real tool lets a guard that

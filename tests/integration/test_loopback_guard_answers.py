@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Integration tests for the answers of the loopback guard and what it hands on (app/middleware/loopback_guard.py)
 
 The wording of a refusal is what a developer meets in the browser console when a page is turned away, and the

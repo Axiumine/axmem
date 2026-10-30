@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Portable export and import of every memory and link as JSON lines, without vectors.
 
 The file is the second line of defence next to the collection snapshots: it survives a change of embedding
@@ -131,7 +134,7 @@ class QdrantArchiveAdapter:
                     }))
                     summary.links += 1
             if summary.memories < held_at_start:
-                raise OperatorCommandError(
+                raise OperatorCommandError(  # noqa: TRY301 - caught below to drop the partial file
                     f"The export would hold {summary.memories} memories but {live} held {held_at_start} when it began, "
                     "so it would be missing some. Nothing was written; run the export again, with the writers stopped",
                 )
@@ -232,7 +235,7 @@ class QdrantArchiveAdapter:
             memory = Memory.model_validate(record["memory"])
             stored = StoredMemory(memory=memory, tenant_id=_uuid(record["tenant_id"]), version=max(int(record["version"]), 1))
             if not build_embedding_text(memory).strip():
-                raise ValueError  # no message: the handler below drops it
+                raise ValueError  # noqa: TRY301 - no message; the handler below drops it
             json.dumps(memory.model_dump(mode="json"), **_TEXT_AS_IS).encode()  # a lone surrogate cannot be sent on
         except (KeyError, ValueError, TypeError, OverflowError, ValidationError):
             self._skip(number, summary, "invalid memory")

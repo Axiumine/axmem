@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """REST API endpoints for Memory operations.
 
 Phase 1 of the Web UI foundation (Issue #3).
@@ -37,9 +41,22 @@ logger = logging.getLogger(__name__)
 # Valid values for query parameters
 VALID_SORT_BY = {"created_at", "updated_at", "importance"}
 VALID_SORT_ORDER = {"asc", "desc"}
+# The largest page a client may ask for, and the highest importance a memory has
+_MAX_PAGE_LIMIT = 100
+_MAX_IMPORTANCE = 10
 
 
-def register(mcp: AxmemMCP):
+def _uuid_or_none(value: object) -> UUID | None:
+    """The UUID that a JSON value spells, or None when it is not a string that holds one."""
+    if not isinstance(value, str):
+        return None
+    try:
+        return UUID(value)
+    except ValueError:
+        return None
+
+
+def register(mcp: AxmemMCP) -> None:  # noqa: C901, PLR0915 - route closures, each its own unit
     """Register memory REST routes with FastMCP"""
 
     @rest_route(mcp, "GET", "/api/v1/memories")
@@ -67,7 +84,7 @@ def register(mcp: AxmemMCP):
             return JSONResponse({"error": str(e)}, status_code=400)
 
         # Validate limit range
-        if limit < 1 or limit > 100:
+        if limit < 1 or limit > _MAX_PAGE_LIMIT:
             return JSONResponse(
                 {"error": "limit must be between 1 and 100"},
                 status_code=400,
@@ -80,7 +97,7 @@ def register(mcp: AxmemMCP):
                 status_code=400,
             )
 
-        if importance_min is not None and not 1 <= importance_min <= 10:
+        if importance_min is not None and not 1 <= importance_min <= _MAX_IMPORTANCE:
             return JSONResponse(
                 {"error": "importance_min must be between 1 and 10"},
                 status_code=400,
@@ -161,7 +178,7 @@ def register(mcp: AxmemMCP):
             memory_data = MemoryCreate(**body)
         except ValidationError as e:
             return validation_error_response(e)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - any bad body is a 400
             return JSONResponse({"error": f"Invalid request body: {e!s}"}, status_code=400)
 
         memory, similar_memories = await mcp.memory_service.create_memory(
@@ -194,7 +211,7 @@ def register(mcp: AxmemMCP):
             update_data = MemoryUpdate(**body)
         except ValidationError as e:
             return validation_error_response(e)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - any bad body is a 400
             return JSONResponse({"error": f"Invalid request body: {e!s}"}, status_code=400)
 
         try:
@@ -222,15 +239,12 @@ def register(mcp: AxmemMCP):
             superseded_by = body.get("superseded_by")
         except ClientDisconnect:  # the body was cut off (over the size limit, or the client left): nothing was asked
             return JSONResponse({"error": "The request body was not received"}, status_code=400)
-        except Exception:
+        except Exception:  # noqa: BLE001 - any bad body is a 400
             reason = "Marked obsolete via API"
             superseded_by = None
 
         if superseded_by is not None:
-            try:
-                superseded_by = UUID(superseded_by) if isinstance(superseded_by, str) else None
-            except ValueError:
-                superseded_by = None
+            superseded_by = _uuid_or_none(superseded_by)
             if superseded_by is None:
                 return JSONResponse({"error": "superseded_by must be a UUID memory id"}, status_code=400)
 
@@ -263,7 +277,7 @@ def register(mcp: AxmemMCP):
             query_request = MemoryQueryRequest(**body)
         except ValidationError as e:
             return validation_error_response(e)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - any bad body is a 400
             return JSONResponse({"error": f"Invalid request body: {e!s}"}, status_code=400)
 
         result = await mcp.memory_service.query_memory(
@@ -281,7 +295,7 @@ def register(mcp: AxmemMCP):
         try:
             body = await request.json()
             related_ids = body.get("related_ids", [])
-        except Exception:
+        except Exception:  # noqa: BLE001 - any bad body is a 400
             return JSONResponse({"error": "Invalid request body"}, status_code=400)
 
         if not related_ids:

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The mutation gate: the base a push is compared with, the modules it mutates, and what it says when mutmut cannot finish."""
 
 import os
@@ -43,8 +46,8 @@ def _mutmut(monkeypatch, run_result, results_text, results_code=0):
 
 
 def _git(repo, *args):
-    subprocess.run(  # noqa: S603
-        ["git", "-c", "user.name=t", "-c", "user.email=t@example.org", "-C", str(repo), *args],  # noqa: S607
+    subprocess.run(  # noqa: S603 - a program of the test setup, run without a shell
+        ["git", "-c", "user.name=t", "-c", "user.email=t@example.org", "-C", str(repo), *args],  # noqa: S607 - a program of the test setup, run without a shell
         check=True, capture_output=True,
     )
 
@@ -318,7 +321,7 @@ def test_a_command_in_its_own_session_leaves_no_worker_behind_when_it_times_out(
     pidfile = tmp_path / "worker.pid"
 
     code, out = core.run(
-        ["sh", "-c", f"sleep 300 & echo $! > {pidfile}; wait"], timeout=2, own_session=True,  # noqa: S604
+        ["sh", "-c", f"sleep 300 & echo $! > {pidfile}; wait"], timeout=2, own_session=True,
     )
 
     assert code == 124
@@ -481,7 +484,7 @@ def _tree(root):
     """Every path under ``root``: a directory, the target of a link, or the content of a file (nothing a run changes is missed)."""
     return {
         str(path.relative_to(root)): (
-            ("link", os.readlink(path)) if path.is_symlink() else "dir" if path.is_dir() else path.read_bytes()
+            ("link", str(path.readlink())) if path.is_symlink() else "dir" if path.is_dir() else path.read_bytes()
         )
         for path in sorted(root.rglob("*"))
     }
@@ -574,7 +577,7 @@ def test_what_a_mutant_writes_and_removes_in_its_data_home_leaves_the_cache_of_t
         (models / "embedder/BAAI--bge/manifest.json").write_text("rewritten")
         (models / "tensorrt/BAAI--bge/.lock").write_text("held")
         (models / "embedder/BAAI--bge/onnx/model.onnx.tmp").write_bytes(BIG)
-        os.replace(models / "embedder/BAAI--bge/onnx/model.onnx.tmp", models / "embedder/BAAI--bge/onnx/model.onnx")
+        (models / "embedder/BAAI--bge/onnx/model.onnx.tmp").replace(models / "embedder/BAAI--bge/onnx/model.onnx")
 
     _a_run_that(monkeypatch, mutant)
 

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """``scripts/smoke-release.sh`` takes the bytes of the index chosen, installs the wheel, starts the server and uses it.
 
 A complete run, against the fake TestPyPI and the fake PyPI of ``tests/release_support/smoke_script.py``, with no GPU, Docker or

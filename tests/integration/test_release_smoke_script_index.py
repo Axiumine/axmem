@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """``scripts/smoke-release.sh`` believes the signed tag and not the index: it installs nothing the manifest does not record.
 
 Run against a fake TestPyPI and a fake PyPI (``tests/release_support/smoke_script.py``), the script stops, with nothing installed

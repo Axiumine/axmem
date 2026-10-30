@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """Per-skill walkthrough orchestration.
 
 The session runner is injected (anything with `run_session()`'s shape): the real one
@@ -60,7 +64,8 @@ class SessionOutcome:
 
 class SessionRunner(Protocol):
     async def run_session(
-        self, *, skill: str, skill_dir: Path, workspace: Path, prompt: str, timeout: float,
+        self, *, skill: str, skill_dir: Path, workspace: Path, prompt: str,
+        timeout: float,  # noqa: ASYNC109 - handed to the in-container timeout
     ) -> SessionOutcome: ...
 
 

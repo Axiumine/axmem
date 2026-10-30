@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Hardening of MCP tool error text and category discovery.
 
 Covers, with stubbed services and no Qdrant node:
@@ -188,7 +191,7 @@ class TestMemoryToolErrors:
         server = _memory_tools_server(ConflictError("A memory with this title already exists."))
 
         async with Client(server) as client:
-            with pytest.raises(ToolError, match="A memory with this title already exists."):
+            with pytest.raises(ToolError, match=r"A memory with this title already exists."):
                 await _execute(client, "mark_memory_obsolete", {"memory_id": MEMORY_ID, "reason": "r"})
 
 
@@ -342,9 +345,9 @@ class TestUnknownNamesAreQuoted:
     def test_ordinary_names_keep_their_message(self):
         registry = _registry_with_link_tools()
 
-        with pytest.raises(ToolError, match="Invalid category 'nothing'. Available categories: "):
+        with pytest.raises(ToolError, match=r"Invalid category 'nothing'. Available categories: "):
             build_discovery_payload(registry, set(), "nothing")
-        with pytest.raises(ToolError, match="Tool 'nothing' not found in registry. "):
+        with pytest.raises(ToolError, match=r"Tool 'nothing' not found in registry. "):
             build_tool_documentation(registry, set(), "nothing")
-        with pytest.raises(ToolError, match="Tool 'nothing' not found in registry. "):
+        with pytest.raises(ToolError, match=r"Tool 'nothing' not found in registry. "):
             ensure_tool_executable(registry, set(), "nothing")

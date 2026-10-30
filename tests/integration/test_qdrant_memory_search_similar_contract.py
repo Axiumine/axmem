@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Searching memories in Qdrant for the ones like a stored memory: the live ones, and the obsolete ones.
 
 Four memories are stored (a subject and three others, of which the nearest two are told apart by more than the

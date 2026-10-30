@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The mutmut sandbox (mutants/) holds every repository path that the tests it runs read, and mutation stays local.
 
 mutmut copies ``source_paths``, ``also_copy`` and a few built-in paths into mutants/ and runs the selected tests there.

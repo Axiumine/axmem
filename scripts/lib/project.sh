@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 # scripts/lib/project.sh — the per-repository settings of the release scripts. Sourced, never executed.
 # shellcheck shell=bash disable=SC2034 # every variable is read by the scripts that source this file
 #

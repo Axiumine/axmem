@@ -1,6 +1,10 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Vulture whitelist: names that look unused but are used dynamically.
 
-Each group needs a comment saying who consumes the names (framework hook, pydantic field ...). Prefer deleting genuinely dead code over listing it here, and prefer
+Each group needs a comment saying who consumes the names (framework hook, pydantic field ...). Prefer deleting
+genuinely dead code over listing it here, and prefer
 ``[tool.vulture]`` in pyproject.toml for hook names that apply to a whole class of code
 (validators, route decorators, stdlib hooks). Vulture does not scan
 ``tests/``, so a name only the tests read cannot be a vulture "use".
@@ -31,6 +35,10 @@ Settings.ENCODING_VERSION
 Settings.AGENT_ID
 Settings.AGENT_VERSION
 Settings.AGENT_MODEL
+
+# --- pydantic-settings hook, called by BaseSettings when it builds the sources ---------------
+# settings_customise_sources keeps the working directory's settings file from naming the CLI's server (SR-1).
+Settings.settings_customise_sources
 
 # --- pydantic model fields, serialised in REST / MCP responses and report files -------
 # The test_harness report models are validated from the agent-written report.json.

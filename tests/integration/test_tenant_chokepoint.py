@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Every repository method reaches Qdrant through the tenant chokepoint.
 
 An API key admits every tenant, so tenant isolation is Axmem's job alone (app/repositories/qdrant/store.py

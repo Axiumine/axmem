@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Re-embedding for the Qdrant memory repository: new generations of the memory collection and targeted rebuilds.
 
 Embedding every memory with another model means vectors of another width, which a collection cannot hold
@@ -272,7 +275,7 @@ class QdrantMemoryReembeddingMixin(QdrantMemoryBase):
             try:
                 if await self._refresh(scope, generation, point, vector):
                     result.written.append(memory_id)
-            except Exception:  # noqa: BLE001 - one memory that cannot be written must not stop the others
+            except Exception:  # one memory that cannot be written must not stop the others
                 logger.exception("embedding write failed", extra={"memory_id": str(memory_id), "user_id": str(user_id)})
                 result.failed.append(memory_id)
         return result

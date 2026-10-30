@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Scans taken on a real three-node cluster while writers rewrite the same memories.
 
 A majority read returns a point only while the replicas it asks hold the same version of it, so a scan that is taken
@@ -12,6 +15,7 @@ import asyncio
 import json
 import time
 from collections import Counter
+from typing import Self
 from uuid import uuid4
 
 import pytest
@@ -57,7 +61,7 @@ class Writers:
             for seed in range(WRITERS)
         ]
 
-    async def __aenter__(self) -> Writers:
+    async def __aenter__(self) -> Self:
         self.start()
         return self
 

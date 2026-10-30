@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """E2E tests for CLI remote mode (docs/dev/cli_plan.md phase 4)
 
 Starts the real Axmem server (main.mcp) in-process on an ephemeral HTTP port with
@@ -59,6 +63,9 @@ def running_server():
     config = uvicorn.Config(
         main.mcp.http_app(), host="127.0.0.1", port=port, log_level="error",
         timeout_graceful_shutdown=2,
+        # The sans-IO implementation, as main.py selects it: the default one imports the deprecated
+        # websockets.legacy.
+        ws="websockets-sansio",
     )
     server = uvicorn.Server(config)
     thread = threading.Thread(target=server.run, daemon=True)

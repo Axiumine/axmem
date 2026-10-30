@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """What is dispatched, what is read and what the repository must be set up for, and the things that must not run twice.
 
 The release dispatches ``publish.yml`` on exactly its own tag, with nothing ambient, and PyPI is only ever read with ``GET``
@@ -51,7 +54,7 @@ def _out(done: object) -> str:
 
 def _call(world: World, *argv: str) -> subprocess.CompletedProcess[str]:
     """Run one command of the fakes (``gh``, ``uv``, ``curl``) in the world, as the release script would."""
-    return subprocess.run(  # noqa: S603
+    return subprocess.run(  # noqa: S603 - a program of the test setup, run without a shell
         argv, cwd=world.root, env=world._env(), capture_output=True, text=True, check=False,
     )
 

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """A server that cannot run the TensorRT embedder or reranker refuses to start, says why, and never falls back.
 
 Each case starts the real program in a subprocess whose environment really lacks something:
@@ -48,7 +51,7 @@ def run_program(code=None, argv=None, stdin=None, **env):
         **env,
     }
     command = [sys.executable, "-c", code] if code else [sys.executable, "main.py", *argv]
-    return subprocess.run(  # noqa: S603
+    return subprocess.run(  # noqa: S603 - a program of the test setup, run without a shell
         command, cwd=ROOT, env=environment, capture_output=True, text=True, timeout=120, check=False, stdin=stdin,
     )
 

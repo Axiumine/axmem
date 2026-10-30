@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Text builders used for memory embeddings and reranking.
 
 Covers which parts of a memory reach the embedding text and the rerank text when optional

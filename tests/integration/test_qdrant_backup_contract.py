@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The exact files, requests, log lines and refusals of the snapshot backup and restore.
 
 ``test_qdrant_backup.py`` shows which manifests are refused and in what order the nodes are restored. This file pins
@@ -482,9 +485,18 @@ def second_entry(document: dict[str, Any]) -> dict[str, Any]:
 @pytest.mark.parametrize(
     ("change", "message"),
     [
-        (lambda document: document["files"].__setitem__(1, "node1-links.snapshot"), "{manifest} is not a valid manifest: an entry does not name its node"),
-        (lambda document: second_entry(document).pop("sha256"), "{manifest} is not a valid manifest: an entry lacks its role, collection, file or checksum"),
-        (lambda document: second_entry(document).update(file="../links.snapshot"), "The manifest names a file that is not a snapshot of this backup set: '../links.snapshot'"),
+        (
+            lambda document: document["files"].__setitem__(1, "node1-links.snapshot"),
+            "{manifest} is not a valid manifest: an entry does not name its node",
+        ),
+        (
+            lambda document: second_entry(document).pop("sha256"),
+            "{manifest} is not a valid manifest: an entry lacks its role, collection, file or checksum",
+        ),
+        (
+            lambda document: second_entry(document).update(file="../links.snapshot"),
+            "The manifest names a file that is not a snapshot of this backup set: '../links.snapshot'",
+        ),
         (
             lambda document: second_entry(document).update(collection="other_links"),
             (
@@ -492,11 +504,25 @@ def second_entry(document: dict[str, Any]) -> dict[str, Any]:
                 "(QDRANT_COLLECTION_PREFIX='axmem'): refusing to restore it"
             ),
         ),
-        (lambda document: second_entry(document).update(file="node1-memories.snapshot"), "{manifest} is not a valid manifest: the file 'node1-memories.snapshot' is not the links snapshot of node 1"),
-        (lambda document: document["files"].pop(1), "{manifest} is not a valid manifest: node 1 needs exactly one memories and one links snapshot"),
+        (
+            lambda document: second_entry(document).update(file="node1-memories.snapshot"),
+            "{manifest} is not a valid manifest: the file 'node1-memories.snapshot' is not the links snapshot of node 1",
+        ),
+        (
+            lambda document: document["files"].pop(1),
+            "{manifest} is not a valid manifest: node 1 needs exactly one memories and one links snapshot",
+        ),
         (lambda document: document.update(files={}), "{manifest} is not a valid manifest: it has no list of files"),
     ],
-    ids=["entry-without-node", "entry-without-checksum", "file-outside-the-set", "foreign-collection", "wrong-file", "missing-links", "no-list"],
+    ids=[
+        "entry-without-node",
+        "entry-without-checksum",
+        "file-outside-the-set",
+        "foreign-collection",
+        "wrong-file",
+        "missing-links",
+        "no-list",
+    ],
 )
 async def test_a_manifest_that_cannot_be_trusted_is_refused_with_a_message_that_names_the_manifest_and_the_fault(tmp_path, change, message):
     directory = backup_set(tmp_path, entries())

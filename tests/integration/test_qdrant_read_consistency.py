@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Reads that decide a write, or that copy data away, ask a majority of the replicas.
 
 A read from one replica can miss a write that another replica has taken, and acting on that read is wrong in a
@@ -297,7 +300,7 @@ async def test_a_memory_that_does_not_exist_is_reported_missing_after_one_majori
 def disagreeing_after(undecided, monkeypatch):
     """Call it with the name of a conditional write of the store and a number: once that write is done, the replicas are
     undecided for that many majority reads (a writer that overtook this one has just rewritten the point)."""
-    disagree, repo, tenant, memory, other, scrolls = undecided
+    disagree, repo, tenant, memory, other, _scrolls = undecided
 
     def after(write: str, reads: int) -> None:
         real = getattr(repo.store, write)
@@ -344,7 +347,7 @@ async def test_a_write_whose_read_back_never_gets_an_agreed_answer_has_an_unknow
     after("replace", 1000)
     before = await version_of(repo, tenant, memory)
 
-    with pytest.raises(OutcomeUnknownError, match="cannot be told.*kept holding different versions.*repeat the change"):
+    with pytest.raises(OutcomeUnknownError, match=r"cannot be told.*kept holding different versions.*repeat the change"):
         await repo.update_memory(tenant, memory.id, MemoryUpdate(title="Alpha, edited"))
 
     disagree(0)  # the replicas settle: the write had landed, and only once

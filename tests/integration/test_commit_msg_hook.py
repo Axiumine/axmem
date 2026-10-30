@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The commit-msg hook accepts the project's message format and rejects AI attribution."""
 
 import shutil
@@ -22,8 +25,8 @@ def _run(tmp_path, message, skip=None):
     env = {"PATH": "/usr/bin:/bin"}
     if skip:
         env["SKIP"] = skip
-    return subprocess.run(  # noqa: S603
-        ["bash", str(HOOK), str(msg_file)],  # noqa: S607
+    return subprocess.run(  # noqa: S603 - a program of the test setup, run without a shell
+        ["bash", str(HOOK), str(msg_file)],  # noqa: S607 - a program of the test setup, run without a shell
         capture_output=True, text=True, env=env, check=False,
     )
 

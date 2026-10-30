@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """Throwaway Axmem server: a real `axmem serve` subprocess the agent can reach.
 
 The Qdrant node the harness itself is configured for, in collections under a prefix made for the run
@@ -73,7 +77,7 @@ def _direct_http_client(
     )
 
 
-def _plain_client_factory(url: str, token: str | None):
+def _plain_client_factory(url: str, token: str | None):  # noqa: ARG001 - factory signature
     from fastmcp import Client
     from fastmcp.client.transports import StreamableHttpTransport
 
@@ -200,7 +204,7 @@ class ThrowawayAxmem:
             try:
                 if httpx.get(
                     f"{self.url}/health", timeout=2, trust_env=False,
-                ).status_code == 200:
+                ).status_code == httpx.codes.OK:
                     return
             except httpx.HTTPError:
                 pass

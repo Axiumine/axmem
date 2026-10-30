@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """E2E test fixtures: the whole application in-process on a real Qdrant node and the real GPU models
 
 Spins up the FastMCP service with the production composition (Qdrant repository, services, tool

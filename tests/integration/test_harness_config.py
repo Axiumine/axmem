@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """Integration tests for the UAT harness configuration (test_harness/config.py).
 
 Precedence is init kwargs (CLI flags) > TEST_HARNESS_* env > defaults. The walkthrough

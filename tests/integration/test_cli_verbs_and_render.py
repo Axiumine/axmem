@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Integration tests for the CLI project scope and human-output rendering
 
 Covers the -p scope string (passed to the tool as typed, never resolved or dropped),

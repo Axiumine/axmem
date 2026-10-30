@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The shellcheck and actionlint gates lint every shell script and every workflow, with the pinned tools.
 
 The pass and fail cases run the real tools that the ``dev`` group installs, on a scratch repository; the stand-in
@@ -34,7 +37,7 @@ def repo(tmp_path, monkeypatch):
     """A scratch repository that the gates see as the project."""
     for name in [key for key in os.environ if key.startswith("GIT_")]:
         monkeypatch.delenv(name)
-    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)  # noqa: S603, S607
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)  # noqa: S603, S607 - a program of the test setup, run without a shell
     monkeypatch.setattr(core, "ROOT", tmp_path)
     monkeypatch.setattr(static, "ROOT", tmp_path)
     return tmp_path

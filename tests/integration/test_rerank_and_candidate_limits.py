@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """HTTP reranker adapter regressions: URL, result order and timeout.
 
 Network-free: HTTP traffic is served by httpx mock transports or a throw-away loopback server.

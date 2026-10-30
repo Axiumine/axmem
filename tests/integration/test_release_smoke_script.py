@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """``scripts/smoke-release.sh`` installs the files of a release from an index and uses the server they start, and leaves nothing behind.
 
 The real script runs in a scratch world (``tests/release_support/smoke_script.py``): a repository with the tag ``v0.2.0`` and
@@ -241,7 +244,7 @@ class TestTheRefusalsBeforeAnythingStarts:
     ) -> None:
         elsewhere = world.tmp / "elsewhere"
         elsewhere.mkdir()
-        subprocess.run(["git", "-C", str(elsewhere), "init", "-q"], check=True, env=world.env())  # noqa: S603, S607
+        subprocess.run(["git", "-C", str(elsewhere), "init", "-q"], check=True, env=world.env())  # noqa: S603, S607 - a program of the test setup, run without a shell
 
         done = world.run(VERSION, cwd=elsewhere)
 

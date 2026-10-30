@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The dispatch of ``publish.yml`` is judged by the rules of the real ``gh workflow run`` and by what GitHub and PyPI hold.
 
 The release uploads nothing: its one publication step asks GitHub to run the workflow on the tag, and the workflow's job in
@@ -101,8 +104,8 @@ class TestTheContractOfTheDispatch:
         assert world.release(VERSION).returncode == 0
         before = world.dispatches()
 
-        done = subprocess.run(  # noqa: S603
-            ["gh", *argv[:3], "-R", GITHUB_REPO, *argv[3:]],  # noqa: S607
+        done = subprocess.run(  # noqa: S603 - a program of the test setup, run without a shell
+            ["gh", *argv[:3], "-R", GITHUB_REPO, *argv[3:]],  # noqa: S607 - a program of the test setup, run without a shell
             cwd=world.tmp,
             env=world._env(),
             capture_output=True,
@@ -117,8 +120,8 @@ class TestTheContractOfTheDispatch:
     def test_a_dispatch_the_fake_accepts_is_the_one_the_script_makes(self, world: World) -> None:
         assert world.release(VERSION).returncode == 0
 
-        done = subprocess.run(  # noqa: S603
-            ["gh", "workflow", "run", "publish.yml", "-R", GITHUB_REPO, "--ref", TAG, "-f", f"tag={TAG}"],  # noqa: S607
+        done = subprocess.run(  # noqa: S603 - a program of the test setup, run without a shell
+            ["gh", "workflow", "run", "publish.yml", "-R", GITHUB_REPO, "--ref", TAG, "-f", f"tag={TAG}"],  # noqa: S607 - a program of the test setup, run without a shell
             cwd=world.tmp,
             env=world._env(),
             capture_output=True,

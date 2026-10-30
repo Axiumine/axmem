@@ -2,67 +2,116 @@ line-length = 88
 target-version = "py314"
 
 [lint]
-# Incremental approach: start with rules we pass, add more as we fix.
-# Groups are ordered by ruff documentation category.
+# Warnings as strict as is practical (Best Practices criterion warnings_strict). Every ruff group (`uv run ruff linter`
+# lists them) is in one of three places: on in `select`; in the "Not on" list at the end of `select`, with the count of
+# findings that made it impractical; or, as a single rule inside a group that is on, in `ignore`, with the reason and a
+# count. Recount with `uv run ruff check --no-cache --extend-select <GROUP> --statistics` (add `--preview` for a preview
+# rule such as CPY and DOC); the counts are findings now, in all code / in app / in main.py.
 select = [
-    # --- Already passing (Tier 1) ---
-    "F",       # Pyflakes — unused imports, undefined names
-    "I",       # isort — import ordering
-    "Q",       # flake8-quotes — consistent quoting
-    "COM",     # flake8-commas — trailing commas
-    "C4",      # flake8-comprehensions — unnecessary list/dict calls
-    "ISC",     # flake8-implicit-str-concat — implicit string concatenation
-    "ICN",     # flake8-import-conventions — import alias conventions
-    "PIE",     # flake8-pie — misc lints (no-unnecessary-pass, etc.)
-    "PGH",     # pygrep-hooks — blanket type: ignore, eval usage
-    "TID",     # flake8-tidy-imports — banned imports, relative imports
-    "YTT",     # flake8-2020 — sys.version misuse
-    "FA",      # flake8-future-annotations — future annotations
-    "LOG",     # flake8-logging — logging module misuse
-    "T10",     # flake8-debugger — debugger breakpoints
-    "UP",      # pyupgrade — Python 3.14+ syntax (built-in generics, etc.)
+    # --- Pyflakes, imports, style ---
+    "F",       # Pyflakes: unused imports, undefined names
+    "E",       # pycodestyle errors (E501 line length is 140, see [lint.pycodestyle])
+    "W",       # pycodestyle warnings: trailing whitespace, invalid escapes
+    "I",       # isort: import ordering
+    "N",       # pep8-naming
+    "Q",       # flake8-quotes: consistent quoting
+    "COM",     # flake8-commas: trailing commas
+    "ISC",     # flake8-implicit-str-concat: implicit string concatenation
+    "ICN",     # flake8-import-conventions: import alias conventions
+    "PIE",     # flake8-pie: misc lints (no-unnecessary-pass, etc.)
+    "FLY",     # flynt: an f-string in place of str.join or % formatting of constants
+    "TID",     # flake8-tidy-imports: banned imports, relative imports
+    "FA",      # flake8-future-annotations
+    "UP",      # pyupgrade: Python 3.14+ syntax (built-in generics, etc.)
+    "A",       # flake8-builtins: shadowed builtins
+    "INT",     # flake8-gettext
+    "EXE",     # flake8-executable: a shebang matches the executable bit
+    "PYI",     # flake8-pyi
+    "SLOT",    # flake8-slots
+    "PTH",     # flake8-use-pathlib
+    "FURB",    # refurb
+    "PERF",    # perflint
+    "SIM",     # flake8-simplify
+    "RET",     # flake8-return
+    "RUF",     # ruff-specific rules (RUF100 also reports a noqa that no longer suppresses anything)
+    "ERA",     # eradicate: commented-out code
+    "FIX",     # flake8-fixme
+    "TD",      # flake8-todos
 
-    # --- Next targets (low error count, fix and enable) ---
-    # "A",     # flake8-builtins — 4 errors (shadowing builtins)
-    # "N",     # pep8-naming — 9 errors
-    # "PERF",  # perflint — 2 errors
-    # "DTZ",   # flake8-datetimez — 2 errors (naive datetimes)
-    # "FURB",  # refurb — 1 error
-    # "RSE",   # flake8-raise — 1 error
-    # "TC",    # flake8-type-checking — 1 error
-    # "SIM",   # flake8-simplify — 14 errors
-    # "ASYNC", # flake8-async — 9 errors
+    # --- Bugs, correctness, security ---
+    "B",       # flake8-bugbear
+    "BLE",     # flake8-blind-except
+    "ASYNC",   # flake8-async: blocking calls in coroutines
+    "PGH",     # pygrep-hooks: blanket type: ignore, eval usage
+    "YTT",     # flake8-2020: sys.version misuse
+    "DTZ",     # flake8-datetimez: naive datetimes
+    "T10",     # flake8-debugger: debugger breakpoints
+    "S",       # flake8-bandit: security checks (S105/S106 ignored in tests)
+    "LOG",     # flake8-logging: logging module misuse
+    "G",       # flake8-logging-format (G004 is in `ignore`)
+    "RSE",     # flake8-raise
+    "TRY",     # tryceratops: exception handling (TRY003 is in `ignore`)
+    "ARG",     # flake8-unused-arguments (ARG is off in tests/, see per-file-ignores)
+    "SLF",     # flake8-self: private member access (SLF001 is off in tests/, see per-file-ignores)
+    "PLC",     # pylint convention (PLC0415 is in `ignore`)
+    "PLE",     # pylint errors
+    "PLW",     # pylint warnings
+    "PLR",     # pylint refactor (PLR2004 is off in tests/, see per-file-ignores; the size limits are in [lint.pylint])
+    "C4",      # flake8-comprehensions: unnecessary list/dict calls
+    "C90",     # mccabe: complexity (default limit 10)
+    "PT",      # flake8-pytest-style (PT011 is in `ignore`)
+    "AIR",     # airflow: nothing to check here, on so that it stays so
+    "DJ",      # flake8-django: same
+    "FAST",    # FastAPI: route declarations
+    "NPY",     # NumPy-specific rules
+    "PD",      # pandas-vet: nothing to check here, on so that it stays so
 
-    # --- Medium effort ---
-    # "W",     # pycodestyle warnings — 39 errors (whitespace)
-    # "ERA",   # eradicate — 21 errors (commented-out code)
-    "S",       # flake8-bandit — security checks (S105/S106 ignored in tests)
-    # "PT",    # flake8-pytest-style — 66 errors
-    # "ARG",   # flake8-unused-arguments — 72 errors
-    # "RET",   # flake8-return — 56 errors
-    # "RUF",   # ruff-specific — 126 errors
-
-    # --- Large effort ---
-    # "E",     # pycodestyle errors — 1715 errors (mostly E501 line length)
-    # "D",     # pydocstyle — 1763 errors (docstring formatting)
-    # "ANN",   # flake8-annotations — 337 errors (type annotations)
-    # "TRY",   # tryceratops — 443 errors (exception handling)
-    # "EM",    # flake8-errmsg — 342 errors (exception messages)
-    # "G",     # flake8-logging-format — 253 errors (f-strings in logging)
-    # "PLC",   # pylint convention — 225 errors (imports not at top-level)
-    # "B",     # flake8-bugbear — 146 errors
-    # "BLE",   # flake8-blind-except — 46 errors
-    # "FBT",   # flake8-boolean-trap — 71 errors
-    # "C90",   # mccabe — 33 errors (complexity)
-    # "SLF",   # flake8-self — 37 errors (private member access)
-    # "PLR",   # pylint refactor — 51 errors
-    # "T20",   # flake8-print — 46 errors
-    # "TD",    # flake8-todos — 34 errors
+    # --- Not on: too costly or the fix would change behaviour (findings now: all / app / main.py) ---
+    # "ANN",   # flake8-annotations: 15865 / 90 / 1; mypy checks the typed paths, the tests are not annotated
+    # "D",     # pydocstyle: 5877 / 317 / 6; the docstring policy is not enforced, pylint disables the same checks
+    # "EM",    # flake8-errmsg: 384 / 198 / 0; a message held in a variable first changes nothing a user sees
+    # "FBT",   # flake8-boolean-trap: 120 / 41 / 0; keyword-only booleans would change tool and function signatures
+    # "TC",    # flake8-type-checking: 230 / 136 / 11; pydantic, FastAPI and the MCP tools need those types at runtime
+    # "T20",   # flake8-print: 185 / 32 / 30 (scripts 98); the output of the CLI and of the scripts is print
+    # "INP",   # flake8-no-pep420: 393 / 0 / 0 (tests 388); the test directories are not packages, an __init__.py would change collection
+    # "CPY",   # flake8-copyright: preview rule (554 / 98 / 1 with --preview); the files carry an SPDX header that the reuse gate checks
+    # "DOC",   # pydoclint: preview rule (1229 / 408 / 17 with --preview); the docstring policy is not enforced, see D
 ]
+
+# Rules that are off inside an otherwise enabled group. A narrower exception is a per-line noqa or a per-file ignore below.
+ignore = [
+    # Long message in raise: 356 findings (app 177, tests 86, other code 93). The messages are the inline text that users
+    # and tests read; a constant or an exception class per message would change nothing a user sees.
+    "TRY003",
+    # pytest.raises(X) without match=: 87 findings, all in tests. Each needs the exact message pinned first.
+    "PT011",
+    # f-string in a logging call: 28 findings. LogMaskingFilter masks the message and the %-arguments one by one, so a
+    # message with a placeholder would be masked differently from the same message written as one f-string.
+    "G004",
+    # Import outside top level: 207 findings. The lazy imports are deliberate (start-up cost, optional providers) and
+    # pylint disables the same check (import-outside-toplevel in pyproject.toml).
+    "PLC0415",
+]
+
+[lint.pycodestyle]
+# Ruff enforces 140 columns (E501) and pylint 100 (C0301, max-line-length in pyproject.toml) under fail-under 8.0, so a line
+# over 100 and up to 140 is tolerated by the score. `pre-commit` runs pylint on the staged files without the convention and
+# refactor checks (`--disable=C,R`, scripts/quality/static.py), so the 100 columns are counted only by the project-wide run
+# of the `pre-push` and `ci` stages. line-length = 88 above is the formatter value, and nothing runs the formatter.
+# max-line-length also sets how long a conditional expression may be before SIM108 asks for one in place of an if-else block.
+max-line-length = 140
+
+[lint.pylint]
+# The same limits as [tool.pylint.design] in pyproject.toml (max-locals has no ruff counterpart in stable rules).
+max-args = 10
+max-positional-args = 10
+max-returns = 10
+max-statements = 80
+max-branches = 20
 
 [lint.per-file-ignores]
 "__init__.py" = ["F401", "F403", "F405"]
-"tests/**/*" = ["S101", "S105", "S106", "S110", "S311", "S324"]
+"tests/**/*" = ["S101", "S105", "S106", "S110", "S311", "S324", "ARG", "SLF001", "PLR2004"]  # ARG: fixtures requested for their effect and stub callbacks; SLF001: tests reach into internals on purpose; PLR2004: assertions compare with literal expected values
 "app/config/settings.py" = ["S104", "S105"]  # Default values, not real secrets
 "app/repositories/backup_adapter.py" = ["S603", "S607"]  # Trusted subprocess calls
 "app/routes/mcp/scope_resolver.py" = ["S105"]  # Test token constants
@@ -75,6 +124,7 @@ select = [
 "tests/integration/test_harness_walkthrough.py" = ["S607"]  # Trusted subprocess: git inspection
 "scripts/quality/*.py" = ["S603", "S607"]  # Trusted subprocess: quality-gate orchestration
 "scripts/release/*.py" = ["S603", "S607"]  # Trusted subprocess: git, gh and uv, run without a shell
+"vulture_whitelist.py" = ["B018", "SLF001"]  # vulture reads these bare names (private ones too): they are the content of the file
 "tests/integration/test_harness_fixture_and_report.py" = ["S603", "S607"]  # Trusted subprocess: git inspection
 
 [lint.pydocstyle]

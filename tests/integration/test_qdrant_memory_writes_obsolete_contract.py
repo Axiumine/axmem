@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Marking a memory obsolete and restoring it in Qdrant: what each toggle writes, how often it tries, and when it stamps.
 
 A toggle is one conditional patch, read back to learn whether it won. The repository writes through the store, so the

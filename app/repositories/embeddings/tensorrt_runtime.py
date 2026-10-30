@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Run an ONNX model directly on TensorRT: probe the GPU, build a plan, load it and execute it.
 
 The embedder and the reranker both run on this module. There is no ONNX Runtime here, no CPU
@@ -70,7 +73,7 @@ class PlanRejectedError(TensorRTStartupError):
     """TensorRT refused to deserialize a plan (damaged file, or built by another TensorRT version)."""
 
 
-class _TrtLogger(trt.ILogger):
+class _TrtLogger(trt.ILogger):  # type: ignore[misc,no-any-unimported]  # tensorrt ships no type information, so ILogger is Any
     """Send TensorRT's messages to ``logging`` and remember the last error for exception texts."""
 
     def __init__(self) -> None:
@@ -104,7 +107,8 @@ def cuda_check(result: tuple[Any, ...]) -> Any:
 
 
 def _error_text(error: Any) -> str:
-    return cudart.cudaGetErrorString(error)[1].decode(errors="replace")
+    text: str = cudart.cudaGetErrorString(error)[1].decode(errors="replace")  # cuda-python has no type information
+    return text
 
 
 def device_failure(error: Any) -> TensorRTStartupError:

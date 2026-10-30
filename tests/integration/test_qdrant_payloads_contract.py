@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The payload a memory point holds, field by field, and the models read back from it.
 
 Filters, orderings and conditional writes read these payload fields, so each one is checked by name and by exact

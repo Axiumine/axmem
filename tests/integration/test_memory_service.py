@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """Integration tests for MemoryService on a real Qdrant node with the real embedder
 
 Tests critical memory workflows end to end below the REST and MCP layers.
@@ -369,7 +373,7 @@ async def test_list_memories_with_project_filter(test_memory_service):
         importance=7,
         project="alpha",
     )
-    memory1, _ = await test_memory_service.create_memory(user_id, memory1_data)
+    _memory1, _ = await test_memory_service.create_memory(user_id, memory1_data)
 
     memory2_data = MemoryCreate(
         title="Project B Memory",
@@ -391,7 +395,7 @@ async def test_list_memories_with_project_filter(test_memory_service):
         importance=7,
         project="alpha",
     )
-    memory3, _ = await test_memory_service.create_memory(user_id, memory3_data)
+    _memory3, _ = await test_memory_service.create_memory(user_id, memory3_data)
 
     # Get recent memories for project "alpha" only
     recent_project_a, total = await test_memory_service.list_memories(

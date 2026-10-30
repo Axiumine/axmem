@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Regression tests on a real Qdrant node for embedding writes.
 
 Covers:
@@ -299,7 +302,7 @@ async def test_rebuild_embeddings_rejects_nonexistent_project(stack):
 
 
 async def test_rebuild_embeddings_rejects_foreign_project_without_rebuilding(stack):
-    repo, raw, embedder, user_id = stack
+    repo, raw, embedder, _user_id = stack
     owner_memory = await repo.create_memory(uuid4(), _memory("owner content", "owner project"))
     before = await _vector(raw, owner_memory.id)
     ctx, adapters = _tool_adapters(repo, embedder)

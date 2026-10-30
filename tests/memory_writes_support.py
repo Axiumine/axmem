@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """What the tests of the writes of memories to Qdrant share: the spy on the store, the clock and the point read back.
 
 A write is one conditional request, read back to learn whether it won. The repository writes through the store, so the

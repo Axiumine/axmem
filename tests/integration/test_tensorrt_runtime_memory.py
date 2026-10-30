@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The memory of the GPU, the optimisation profile, the version of TensorRT and the logger that TensorRT writes to."""
 import logging
 import os

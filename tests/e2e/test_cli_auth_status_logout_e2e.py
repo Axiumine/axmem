@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """E2E tests for CLI auth status / login against the real in-process server.
 
 Reuses the server fixtures of the CLI remote suite and drives
@@ -8,8 +11,8 @@ import pytest
 
 from app.config.settings import settings
 from app.routes.cli import paths
-from tests.e2e.test_cli_remote import cli_remote_env as cli_remote_env
-from tests.e2e.test_cli_remote import http_server_url as http_server_url
+from tests.e2e.test_cli_remote import cli_remote_env as cli_remote_env  # noqa: PLC0414 - re-exported fixture
+from tests.e2e.test_cli_remote import http_server_url as http_server_url  # noqa: PLC0414 - re-exported fixture
 from tests.e2e.test_cli_remote import invoke_cli
 
 SECRET = "s3cr3t-token-VALUE-123"

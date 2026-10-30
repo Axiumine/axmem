@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The scratch repository the tests of the release integrity check run in (not a test module).
 
 ``World`` is a repository with one commit per version, tags ``v<version>`` on a bare remote, the JSON of the PyPI project
@@ -72,8 +75,8 @@ class World:
         fakes.install(base / "bin")
         self.repo.mkdir()
         self.git("init", "-b", "main", ".")
-        subprocess.run(  # noqa: S603
-            ["git", "init", "--bare", "-b", "main", str(self.origin)],  # noqa: S607
+        subprocess.run(  # noqa: S603 - a program of the test setup, run without a shell
+            ["git", "init", "--bare", "-b", "main", str(self.origin)],  # noqa: S607 - a program of the test setup, run without a shell
             env=self.env,
             check=True,
             capture_output=True,
@@ -87,8 +90,8 @@ class World:
         self.superseded = []
 
     def git(self, *args):
-        done = subprocess.run(  # noqa: S603
-            ["git", "-C", str(self.repo), *args],  # noqa: S607
+        done = subprocess.run(  # noqa: S603 - a program of the test setup, run without a shell
+            ["git", "-C", str(self.repo), *args],  # noqa: S607 - a program of the test setup, run without a shell
             env=self.env,
             check=True,
             capture_output=True,

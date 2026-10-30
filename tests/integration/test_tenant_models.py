@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The tenant id: a name maps to the same id on every instance, and stored data and exports carry it.
 
 Every Qdrant-backed test replaces ``TENANT_NAMESPACE`` with a random one, so only these tests pin the real derivation.

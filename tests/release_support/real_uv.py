@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The real ``uv``, to hold the fake ``uv`` of the release tests to it.
 
 The release tests replace ``uv`` with a script. Where the fake assumes something about the tool it stands for, a test runs
@@ -74,7 +77,7 @@ def clean_env(base: Path) -> dict[str, str]:
 def run_uv(args: list[str], base: Path, cwd: Path) -> subprocess.CompletedProcess[str]:
     """Run the real ``uv`` with ``args`` in ``cwd`` and ``clean_env``; the caller reads the result."""
     assert UV is not None
-    return subprocess.run(  # noqa: S603
+    return subprocess.run(  # noqa: S603 - a program of the test setup, run without a shell
         [UV, *args],
         cwd=cwd,
         env=clean_env(base),

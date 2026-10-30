@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Settings of earlier versions are ignored, and the start-up says so instead of staying silent.
 
 ``Settings`` ignores names it does not know. An environment or dotenv file that still names the SQL store, the

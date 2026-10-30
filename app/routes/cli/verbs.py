@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """Curated CLI verbs: friendly flags mapped onto registry tool arguments.
 
 Every verb goes through the ToolExecutor seam, so it works identically against the
@@ -5,6 +9,7 @@ in-process runtime and a remote deployment by construction. Payloads are normali
 with to_jsonable first because local execution returns pydantic models while remote
 execution returns plain dicts.
 """
+import argparse
 from typing import Any
 
 from app.protocols.executor import ToolExecutor
@@ -18,7 +23,7 @@ from app.routes.cli.render import (
 DEFAULT_SAVE_CONTEXT = "Saved from the Axmem CLI"
 
 
-async def run(executor: ToolExecutor, args) -> tuple[Any, str]:
+async def run(executor: ToolExecutor, args: argparse.Namespace) -> tuple[Any, str]:
     """Execute a curated verb; returns (json payload, human rendering)."""
     handler = {
         "search": _memory_search,
@@ -29,7 +34,7 @@ async def run(executor: ToolExecutor, args) -> tuple[Any, str]:
     return await handler(executor, args)
 
 
-async def _memory_search(executor: ToolExecutor, args) -> tuple[Any, str]:
+async def _memory_search(executor: ToolExecutor, args: argparse.Namespace) -> tuple[Any, str]:
     arguments: dict[str, Any] = {
         "query": args.query,
         "query_context": args.context,
@@ -43,7 +48,7 @@ async def _memory_search(executor: ToolExecutor, args) -> tuple[Any, str]:
     return payload, render_memory_lines(payload.get("primary_memories", []))
 
 
-async def _memory_save(executor: ToolExecutor, args) -> tuple[Any, str]:
+async def _memory_save(executor: ToolExecutor, args: argparse.Namespace) -> tuple[Any, str]:
     arguments: dict[str, Any] = {
         "title": args.title,
         "content": args.content,
@@ -59,12 +64,12 @@ async def _memory_save(executor: ToolExecutor, args) -> tuple[Any, str]:
     return payload, f"Created memory {payload['id']}: {sanitize_line(payload['title'])}"
 
 
-async def _memory_get(executor: ToolExecutor, args) -> tuple[Any, str]:
+async def _memory_get(executor: ToolExecutor, args: argparse.Namespace) -> tuple[Any, str]:
     payload = to_jsonable(await executor.execute("get_memory", {"memory_id": str(args.memory_id)}))
     return payload, render_memory_detail(payload)
 
 
-async def _memory_recent(executor: ToolExecutor, args) -> tuple[Any, str]:
+async def _memory_recent(executor: ToolExecutor, args: argparse.Namespace) -> tuple[Any, str]:
     arguments: dict[str, Any] = {"limit": args.limit}
     if args.project is not None:
         arguments["project"] = args.project

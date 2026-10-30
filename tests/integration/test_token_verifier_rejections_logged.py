@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Integration tests for the log lines of the token verifiers (app/middleware/token_verifiers.py)
 
 A token that FastMCP's own verifiers would have accepted, and that these two refuse, leaves one line for the operator:
@@ -10,13 +13,14 @@ import time
 
 import httpx
 import pytest
-from fastmcp.server.auth.providers.jwt import JsonWebToken, RSAKeyPair
+from fastmcp.server.auth.providers.jwt import RSAKeyPair
 
 from app.middleware.token_verifiers import (
     AudienceIntrospectionVerifier,
     ExpiringJWTVerifier,
     logger,
 )
+from tests.jwt_support import sign_rs256
 
 ISSUER = "https://idp.example.test"
 AUDIENCE = "axmem-api"
@@ -34,7 +38,7 @@ def _signed(keys: RSAKeyPair, **claims) -> str:
     payload = {"sub": "alice", "client_id": "axmem-cli", "iss": ISSUER, "aud": AUDIENCE, "exp": int(time.time()) + 3600}
     payload.update(claims)
     payload = {name: value for name, value in payload.items() if value is not None}
-    return JsonWebToken(["RS256"]).encode({"alg": "RS256"}, payload, keys.private_key.get_secret_value()).decode()
+    return sign_rs256(keys, payload)
 
 
 def _introspecting(document: dict, audience: str | None = AUDIENCE) -> AudienceIntrospectionVerifier:

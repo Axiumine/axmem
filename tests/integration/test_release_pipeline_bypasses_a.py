@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The ways past the release guard that go through the signing evidence, each closed and proved on the real script.
 
 A red team tried to reach the dispatch of ``publish.yml`` with one of the five conditions of the invariant false. These

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The release workflow signs wheels and sdists as Sigstore bundles, with a cosign that is not vulnerable.
 
 Format: ``cosign sign-blob`` emits one ``.sigstore.json`` (signature, Fulcio chain and Rekor proof) instead of the old
@@ -115,7 +118,7 @@ def test_the_guard_looks_for_the_bundle_suffix_the_workflow_writes():
 
 def test_the_guard_looks_for_the_workflow_file_that_signs():
     assert (WORKFLOWS / facts.RELEASE_WORKFLOW).is_file()
-    assert facts.RELEASE_WORKFLOW == RELEASE.name
+    assert RELEASE.name == facts.RELEASE_WORKFLOW
 
 
 def test_the_provenance_file_has_the_suffix_the_guard_accepts_for_history(release):

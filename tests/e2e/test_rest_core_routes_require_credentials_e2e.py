@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """End-to-end test: the memory REST routes need credentials.
 
 With an auth provider configured, every endpoint must answer 401 with a JSON error before

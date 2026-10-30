@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Operator commands (backup, restore, export, import, qdrant-check) from parsed arguments to the Qdrant stack.
 
 They open the stack the settings describe, never a server, print a short report and return the exit code.
@@ -12,8 +15,8 @@ from uuid import uuid4
 import pytest
 from pydantic import SecretStr
 
-import app.config.logging_config as logging_config
 from app import bootstrap
+from app.config import logging_config
 from app.config.settings import settings
 from app.exceptions import QdrantStartupError
 from app.models.memory_models import MemoryCreate
@@ -367,7 +370,8 @@ async def test_a_command_that_copies_the_links_away_refuses_while_they_wait_in_s
 
     assert exit_code == 1
     captured = capsys.readouterr()
-    assert "Error: " in captured.err and "_links_relayout holds the links" in captured.err
+    assert "Error: " in captured.err
+    assert "_links_relayout holds the links" in captured.err
     assert "Run `axmem re-embed` again" in captured.err
     assert not target.exists()  # no set that leaves the links out
     assert not (tmp_path / "backups").exists()

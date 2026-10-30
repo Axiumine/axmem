@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The CUDA calls of the TensorRT runner: how an error is read, explained and handed on, and how the first GPU is described.
 
 The CUDA runtime module or NVML is replaced by ``ScriptedCuda`` or ``FakeNvml`` where a failure cannot be had from the GPU on demand.

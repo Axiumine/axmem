@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Refuse a release whose exact commit has not passed CI on GitHub.
 
 The release script runs the local gate, but the local gate cannot see what only GitHub Actions runs. This asks

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Integration tests for the contract of the memory tool adapters: link_memories and unlink_memories.
 
 The adapters call the real ``MemoryService`` behind a spy; see ``tests/mcp_adapter_support.py``. A test checks the

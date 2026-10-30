@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Condition 5 of the release guard takes only plain files: no link, of either kind, stands in for an artefact.
 
 A ``dist/`` of signed files whose wheel is a symlink, or a second name of the same inode, to a copy with the manifest's

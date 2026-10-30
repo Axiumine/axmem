@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Integration tests for the CLI command tree as an operator meets it: help text, defaults and usage errors.
 
 The parser is what `axmem --help`, a shell completion and a script read, so the help of every command, the
@@ -176,7 +179,7 @@ options:
                         Importance 1-10 (default: 5)
   -p, --project PROJECT
                         Project scope (a free-form label) to save the memory in
-""",
+""",  # noqa: E501 - the expected CLI help text, pinned character for character
     ("memory", "get"): f"""usage: axmem memory get [-h] [--json] [--server URL] [--local] memory_id
 
 positional arguments:
@@ -255,10 +258,10 @@ def test_version_flag_prints_the_program_name_and_version(capsys):
 def test_known_subcommands_are_exactly_the_commands_of_the_tree():
     top_level = HELP[()].split("positional arguments:\n  {")[1].split("}")[0].split(",")
 
-    assert KNOWN == set(top_level)
-    assert KNOWN == {
+    assert set(top_level) == KNOWN
+    assert {
         "serve", "re-embed", "tools", "call", "auth", "memory", "backup", "restore", "export", "import", "qdrant-check",
-    }
+    } == KNOWN
 
 
 @pytest.mark.parametrize(

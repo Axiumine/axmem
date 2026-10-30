@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Where snapshots are written and who may read them, against real files and a real Qdrant node.
 
 The snapshots and exports hold every tenant's data, so the directories and files must be readable by
@@ -20,7 +23,7 @@ posix_only = pytest.mark.skipif(sys.platform == "win32", reason="POSIX permissio
 
 
 def mode(path: Path) -> int:
-    return stat.S_IMODE(os.stat(path).st_mode)
+    return stat.S_IMODE(path.stat().st_mode)
 
 
 @pytest.fixture

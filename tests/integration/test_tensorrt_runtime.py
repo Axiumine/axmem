@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The TensorRT runner on the real GPU: CUDA helpers, GPU probe, engine execution and failure reporting.
 
 Nothing here is a stub. The engine is built from the real model on the NVIDIA GPU of the machine;
@@ -342,7 +345,7 @@ def test_build_rejects_a_file_that_is_not_onnx(tmp_path):
     broken = tmp_path / "model.onnx"
     broken.write_text("this is not an ONNX model")
 
-    with pytest.raises(TensorRTStartupError, match="cannot parse .* as an ONNX model") as raised:
+    with pytest.raises(TensorRTStartupError, match=r"cannot parse .* as an ONNX model") as raised:
         build_plan(broken, PROFILE, tf32=False)
 
     assert raised.value.cause == "build-failed"
@@ -365,7 +368,7 @@ def test_build_rejects_an_invalid_profile(model_onnx):
 def test_build_reports_the_error_tensorrt_logged_when_no_engine_can_be_made(model_onnx):
     beyond_the_model = OptimizationProfile(min_shape=(1, 2), opt_shape=(1, 4096), max_shape=(1, 4096))
 
-    with pytest.raises(TensorRTStartupError, match="could not build an engine.*4096 != 512") as raised:
+    with pytest.raises(TensorRTStartupError, match=r"could not build an engine.*4096 != 512") as raised:
         build_plan(model_onnx, beyond_the_model, tf32=False)
 
     assert raised.value.cause == "build-failed"

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Integration tests for the PATCH helper that drops None values (app/utils/pydantic_helper.py)
 
 A PATCH changes only what the client set, so ``None`` means "not given" while an empty string, zero, false and an empty

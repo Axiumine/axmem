@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The remote embeddings providers answer with the width of their model, which must be EMBEDDING_DIMENSIONS.
 
 Each adapter runs on its real client library against an in-process server (``FakeEmbeddingProvider``), so the

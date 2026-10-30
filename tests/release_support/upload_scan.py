@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Find every way a file of the repository could put a package on an index, whatever it is spelled like.
 
 The first scan of the upload-guard test was one regular expression per line over `scripts/` and `.github/`. A red team
@@ -38,7 +41,7 @@ _VARIABLE = r"(?:^|[;&|]\s*|\b(?:then|do|else|exec|command|sudo)\s+)\$\{?\w+\}?\
 #: curl that sends a file: -T, a form (what twine sends to an index), a body read from a file, a PUT
 _CURL = r"\bcurl\b[^;&|]*(?:\s-T\b|--upload-file|\s-X ?PUT\b|\s-F\b|--form\b|--data-binary|\s-d ?@|--data(?:-raw)? ?@)"
 _OTHER = r"pypi-publish|file_upload|:action"
-UPLOAD = re.compile("|".join((_PUBLISHERS, _UPLOADERS, _VARIABLE, _CURL, _OTHER)))
+UPLOAD = re.compile(f"{_PUBLISHERS}|{_UPLOADERS}|{_VARIABLE}|{_CURL}|{_OTHER}")
 _PUNCTUATION = re.compile(r"""["'`,\[\]()]""")
 #: a piece that prints a message (`echo`, `printf`, the scripts' `err`), possibly behind a `case` label or `then`
 _MESSAGE = re.compile(r"\s*(?:(?:then|do|else)\s+)?(?:[\w*|]+\)\s*)?(?:echo|printf|err|warn|die)\b")
@@ -107,7 +110,7 @@ def uploads_in(text: str, suffix: str = "") -> list[str]:
 def tracked_code_files() -> list[Path]:
     """Every file git tracks or would track that is code, by path: not documentation, not a test, not binary, not huge."""
     names = subprocess.run(  # noqa: S603 - fixed argv
-        ["git", "-C", str(REPO_ROOT), "ls-files", "-z", "--cached", "--others", "--exclude-standard"],  # noqa: S607
+        ["git", "-C", str(REPO_ROOT), "ls-files", "-z", "--cached", "--others", "--exclude-standard"],  # noqa: S607 - a program of the test setup, run without a shell
         capture_output=True,
         text=True,
         check=True,

@@ -1,20 +1,26 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
+from typing import Any
+
 from pydantic import BaseModel
 
 
-def get_changed_fields(input_model: BaseModel, existing_model: BaseModel) -> dict[str, tuple]:
+def get_changed_fields(input_model: BaseModel, existing_model: BaseModel) -> dict[str, tuple[Any, Any]]:
     """Compares two pydantic models and returns a list of fields the old and new values of the fields that are different.
 
     Args:
         input_model: BaseModel of the new incoming model
         existing_model: BaseModel of the existing data that is already in the system
-        
+
     Returns:
         dict[str, tuple]
     """
     input_data = input_model.model_dump(exclude_unset=True)
     existing_data = existing_model.model_dump()
 
-    changes = {}
+    changes: dict[str, tuple[Any, Any]] = {}
 
     for field_name, new_value in input_data.items():
         if field_name in existing_data:
@@ -24,7 +30,7 @@ def get_changed_fields(input_model: BaseModel, existing_model: BaseModel) -> dic
 
     return changes
 
-def filter_none_values(**kwargs):
+def filter_none_values(**kwargs: Any) -> dict[str, Any]:
     """Filters out None values from keyword arguments for PATCH operations.
 
     This helper enables proper PATCH semantics by ensuring only explicitly

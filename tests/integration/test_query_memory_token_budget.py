@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """query_memory token budgeting: special tokens, offline tokenizer, request threshold, truncation flag, link quota."""
 import asyncio
 import time

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """Integration tests for ReEmbeddingService on a real Qdrant node.
 
 The repository is the production one; the embedder is the real TensorRT model behind call-recording
@@ -419,7 +423,7 @@ async def test_rebuild_targeted_records_embedding_failures(shared_repo, embeddin
     assert embedding_spy.generate_embedding.await_count == 3
     failed_id = result.failed[0]["memory_id"]
     assert [failure["reason"] for failure in result.failed] == ["embedding_failed"]
-    assert sorted(result.rebuilt_ids + [failed_id]) == sorted(memory.id for memory in memories)
+    assert sorted([*result.rebuilt_ids, failed_id]) == sorted(memory.id for memory in memories)
 
 
 @pytest.mark.parametrize(
@@ -522,7 +526,7 @@ async def test_rebuild_targeted_stops_at_the_call_that_meets_a_cuda_error(shared
 
 
 async def test_rebuild_targeted_embeds_a_batch_in_one_call(shared_repo, embedding_spy):
-    user_id, memories = await _seed(shared_repo, 3)
+    user_id, _memories = await _seed(shared_repo, 3)
 
     result = await ReEmbeddingService(shared_repo, embedding_spy, batch_size=20).rebuild_targeted(user_id=user_id)
 
@@ -581,7 +585,7 @@ async def test_rebuild_targeted_writes_nothing_when_no_memory_could_be_embedded(
 
 
 async def test_rebuild_targeted_attributes_a_failed_write_to_that_memory(shared_repo, embedding_spy):
-    user_id, memories = await _seed(shared_repo, 2)
+    user_id, _memories = await _seed(shared_repo, 2)
 
     async def one_vector_of_the_wrong_width(texts):
         vectors = await embedding_spy.real.generate_embeddings(texts)

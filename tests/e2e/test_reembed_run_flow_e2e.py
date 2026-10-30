@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The re-embed run on a real Qdrant node: new collection, dry run and recovery.
 
 The embedder is the real TensorRT one, behind two wrappers: ``NarrowedEmbedder`` cuts its vector to the
@@ -234,7 +237,7 @@ async def start_child(mode, encoding="utf-8"):
     )
 
 
-async def finish_child(process, encoding="utf-8", timeout=60):
+async def finish_child(process, encoding="utf-8", timeout=60):  # noqa: ASYNC109 - handed to wait_for below
     try:
         stdout, stderr = await asyncio.wait_for(process.communicate(), timeout)
     finally:
@@ -248,7 +251,7 @@ class TestRecovery:
     @pytest.mark.parametrize("sent", [signal.SIGINT, signal.SIGTERM], ids=["SIGINT", "SIGTERM"])
     async def test_signal_during_the_run_leaves_the_live_collection_alone(self, seeded, sent):
         # Arrange: three memories with vectors, then a child stuck on its second embedding.
-        stack, repo, user_id, originals = seeded
+        _stack, repo, user_id, originals = seeded
         live_before = await repo.live_generation()
         process = await start_child("signal")
         started = []
@@ -278,7 +281,7 @@ class TestRecovery:
 
     async def test_unencodable_error_text_is_reported_and_the_live_collection_stays(self, seeded):
         # Arrange: a console that cannot print the provider's error message (Windows pipe).
-        stack, repo, user_id, originals = seeded
+        _stack, repo, user_id, originals = seeded
         process = await start_child("unencodable", encoding="cp1252")
 
         # Act

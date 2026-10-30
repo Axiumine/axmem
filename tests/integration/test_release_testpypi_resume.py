@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """``scripts/release-testpypi.sh`` continues from what TestPyPI and GitHub hold, and follows the run it dispatched.
 
 A re-run reads GitHub and TestPyPI first: a version TestPyPI holds whole is verified with no dispatch, a half upload is finished by a
@@ -67,7 +70,7 @@ class TestWhatTestPyPIHoldsDecides:
         (released.state / "testpypi").mkdir(exist_ok=True)
         wanted = {entry["name"] for entry in released.manifest()["artifacts"]}
         built = released.state / "built"
-        name = sorted(wanted)[0]
+        name = min(wanted)
         (released.state / "testpypi" / name).write_bytes((built / name).read_bytes())
 
         done = rehearse()

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Argument normalisation specific to the memory tools.
 
 Covers the memory id aliases, the recent-memories filters and the alias-tolerant
@@ -16,6 +19,9 @@ from app.routes.mcp.adapters.arguments import coerce_memory_id, coerce_memory_id
 
 _CREATED_SINCE_ERROR = "created_since must be an ISO 8601 timestamp with a timezone"
 _IMPORTANCE_MIN_ERROR = "importance_min must be an integer between 1 and 10"
+_MAX_IMPORTANCE = 10
+# A link names a source and at least one target
+_MIN_LINK_IDS = 2
 
 
 def resolve_memory_id(tool_name: str, memory_id: Any, alias_id: Any) -> UUID:
@@ -31,7 +37,7 @@ def check_importance_min(importance_min: Any) -> None:
     if importance_min is not None and (
         isinstance(importance_min, bool)
         or not isinstance(importance_min, int)
-        or not 1 <= importance_min <= 10
+        or not 1 <= importance_min <= _MAX_IMPORTANCE
     ):
         raise ToolError(_IMPORTANCE_MIN_ERROR)
 
@@ -43,12 +49,15 @@ def parse_created_since(created_since: Any) -> datetime | None:
     if not isinstance(created_since, str):
         raise ToolError(_CREATED_SINCE_ERROR)
     try:
-        since = datetime.fromisoformat(created_since.replace("Z", "+00:00"))
+        since = datetime.fromisoformat(created_since.replace("Z", "+00:00"))  # noqa: FURB162 - the parser gets an explicit offset, as the test pins
     except ValueError as exc:
         raise ToolError(_CREATED_SINCE_ERROR) from exc
     if "T" not in created_since or since.tzinfo is None or since.utcoffset() is None:
         raise ToolError(_CREATED_SINCE_ERROR)
-    return since.astimezone(UTC)
+    try:
+        return since.astimezone(UTC)
+    except OverflowError as exc:  # the instant lies outside the years 1 to 9999 once moved to UTC
+        raise ToolError(_CREATED_SINCE_ERROR) from exc
 
 
 @dataclass(frozen=True)
@@ -103,7 +112,7 @@ def _require_id_pair(tool: str, name: str, ids: Any) -> None:
 
     The first id is the source, so a set (no order, no first item) is refused like any other value that is not a list.
     """
-    if not isinstance(ids, (list, tuple)) or len(ids) < 2:
+    if not isinstance(ids, (list, tuple)) or len(ids) < _MIN_LINK_IDS:
         raise ValueError(f"{tool} {name} must contain at least 2 IDs [source, target, ...]")
 
 

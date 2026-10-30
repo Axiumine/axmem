@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Run the functions of `scripts/release-pypi.sh` and `scripts/lib/release-flow.sh` without running a release.
 
 The script is one linear program that fetches, gates, builds, pushes and dispatches the publish workflow, so a test cannot
@@ -36,12 +39,12 @@ def function_source(name: str, script: str | None = None) -> str:
         else [path.read_text(encoding="utf-8") for path in (RELEASE_FLOW, RELEASE_SCRIPT)]
     )
     for text in texts:
-        start = re.search(rf"^{re.escape(name)}\(\) \{{.*$", text, re.M)
+        start = re.search(rf"^{re.escape(name)}\(\) \{{.*$", text, re.MULTILINE)
         if start is None:
             continue
         if start.group(0).endswith("}"):
             return start.group(0) + "\n"
-        end = re.compile(r"^\}$", re.M).search(text, start.end())
+        end = re.compile(r"^\}$", re.MULTILINE).search(text, start.end())
         assert end, f"the function {name} has no closing brace on a line of its own"
         return text[start.start() : end.end()] + "\n"
     raise AssertionError(
@@ -60,7 +63,7 @@ def run_functions(
     definitions = "".join(function_source(name) for name in ("err", *names))
     program = f"set -euo pipefail\n{definitions}{call}\n"
     return subprocess.run(  # noqa: S603 - fixed argv, a temporary repository
-        ["bash", "-c", program, ARGV0],  # noqa: S607
+        ["bash", "-c", program, ARGV0],  # noqa: S607 - a program of the test setup, run without a shell
         cwd=cwd,
         env=env,
         capture_output=True,

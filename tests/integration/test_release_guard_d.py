@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The reads the release flow makes through the guard: ``find-release``, and the entry points.
 
 ``find-release`` names the release commit that a re-run resumes from, only when the manifest committed there is this
@@ -46,14 +49,14 @@ class TestFindRelease:
 
     def test_a_history_without_a_manifest_is_not_a_release(self, world):
         empty = world.repo.parent / "empty"
-        subprocess.run(  # noqa: S603
-            ["git", "init", "-b", "main", str(empty)],  # noqa: S607
+        subprocess.run(  # noqa: S603 - a program of the test setup, run without a shell
+            ["git", "init", "-b", "main", str(empty)],  # noqa: S607 - a program of the test setup, run without a shell
             env=world.env,
             check=True,
             capture_output=True,
         )
-        subprocess.run(  # noqa: S603
-            ["git", "-C", str(empty), "commit", "--allow-empty", "-m", "x"],  # noqa: S607
+        subprocess.run(  # noqa: S603 - a program of the test setup, run without a shell
+            ["git", "-C", str(empty), "commit", "--allow-empty", "-m", "x"],  # noqa: S607 - a program of the test setup, run without a shell
             env=world.env,
             check=True,
             capture_output=True,
@@ -99,6 +102,7 @@ class TestMain:
         assert stop.value.code == 2
 
 
+# The test runs the module a second time as __main__ on purpose (runpy), and runpy warns that it is already in sys.modules
 @pytest.mark.filterwarnings("ignore:'scripts.release.guard' found in sys.modules:RuntimeWarning")
 def test_the_module_runs_as_a_plain_program(world, monkeypatch, capsys):
     argv = ["guard", "check", "--repo", REPO, "--sha", world.sha, "--tag", TAG]

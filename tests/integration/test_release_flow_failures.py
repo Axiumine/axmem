@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Two reads of the release flow that fail on a network, and the stop each one ends in.
 
 ``rf_tag`` asks the remote whether the tag exists, and ``rf_verify_pypi`` downloads the files of the version from PyPI's file
@@ -24,7 +27,7 @@ URL = f"https://files.pythonhosted.org/packages/{SDIST}"
 def _repo(tmp_path: Path) -> Path:
     repo = tmp_path / "repo"
     repo.mkdir()
-    subprocess.run(["git", "init", "-q", str(repo)], check=True, capture_output=True)  # noqa: S603, S607
+    subprocess.run(["git", "init", "-q", str(repo)], check=True, capture_output=True)  # noqa: S603, S607 - a program of the test setup, run without a shell
     return repo
 
 
@@ -51,7 +54,7 @@ def _environment(repo: Path, tmp_path: Path, **more: str) -> dict[str, str]:
 def test_a_remote_that_cannot_be_asked_for_the_tag_stops_the_release_with_the_way_back(tmp_path: Path) -> None:
     repo = _repo(tmp_path)
     remote = ["git", "-C", str(repo), "remote", "add", "axiumine", str(tmp_path / "missing.git")]
-    subprocess.run(remote, check=True)  # noqa: S603
+    subprocess.run(remote, check=True)  # noqa: S603 - a program of the test setup, run without a shell
 
     done = run_functions(("rf_stop", "rf_net", "rf_tag"), "rf_tag", _environment(repo, tmp_path), repo)
 

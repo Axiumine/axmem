@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Refuses requests that a web page could send to a server that has no credential.
 
 ``AUTH_MODE=none`` is accepted on a loopback bind only, and the bind address is then the whole of its
@@ -60,6 +63,12 @@ def normalise_hosts(hosts: Collection[str]) -> frozenset[str]:
 def _host_is_acceptable(host_header: str, allowed_hosts: Collection[str]) -> bool:
     name = _hostname(f"//{host_header}")
     return is_loopback_name(name) or (name is not None and name.lower().rstrip(".") in allowed_hosts)
+
+
+def names_loopback_host(scope: Scope) -> bool:
+    """Whether the request has one ``Host`` header and it names ``localhost`` or a loopback address."""
+    hosts = _header_values(scope, b"host")
+    return len(hosts) == 1 and is_loopback_name(_hostname(f"//{hosts[0]}"))
 
 
 def refusal_for(

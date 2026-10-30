@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """JSON schema that ToolMetadata derives for a tool's parameters (shown by how_to_use)."""
 import pytest
 

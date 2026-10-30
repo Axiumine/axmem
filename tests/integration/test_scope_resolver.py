@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """Integration tests for the ScopeResolver module.
 
 Tests scope parsing, validation, resolution, and the effective scopes logic.
@@ -224,7 +228,7 @@ class TestGetEffectiveScopes:
             registry=registry_with_tools,
         )
 
-        permitted, scopes = get_effective_scopes(ctx)
+        permitted, _scopes = get_effective_scopes(ctx)
         # Should only contain read tools
         assert "query_memory" in permitted
         assert "create_memory" not in permitted
@@ -252,7 +256,7 @@ class TestGetEffectiveScopes:
             registry=registry_with_tools,
         )
 
-        permitted, scopes = get_effective_scopes(ctx)
+        permitted, _scopes = get_effective_scopes(ctx)
         assert permitted == {"create_memory", "update_memory"}
 
 
@@ -276,4 +280,4 @@ class TestCategoryMapping:
             parse_scopes(f"read:{removed}")
 
     def test_memories_is_the_only_scope_category(self):
-        assert VALID_CATEGORIES == frozenset({"memories"})
+        assert frozenset({"memories"}) == VALID_CATEGORIES

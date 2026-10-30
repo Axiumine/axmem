@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """get_changed_fields: which fields of an update differ from the stored record."""
 from pydantic import BaseModel
 

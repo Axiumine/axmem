@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """What QdrantStore asks of Qdrant when it reads by filter, by id and by vector, exactly: filter, page, order and fields.
 
 A recorder sits between the pool and its real clients and notes each request, so that an option dropped or changed
@@ -111,7 +114,9 @@ async def test_a_lookup_by_id_names_each_id_once_and_asks_for_no_more_points_tha
     assert call[2]["with_payload"] == [VERSION_KEY]
     assert call[2]["with_vectors"] is True
     assert call[2]["consistency"] == qm.ReadConsistencyType.QUORUM
-    assert [type(condition).__name__ for condition in call[2]["scroll_filter"].must] == ["FieldCondition", "FieldCondition", "HasIdCondition"]
+    assert [type(condition).__name__ for condition in call[2]["scroll_filter"].must] == [
+        "FieldCondition", "FieldCondition", "HasIdCondition",
+    ]
 
 
 async def test_a_lookup_of_no_ids_sends_no_request(stack, collection, calls):

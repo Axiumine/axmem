@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """Integration tests for CLI dispatch (docs/dev/cli_plan.md phase 2)
 
 main.cli() must keep every documented legacy invocation working (bare -> stdio server,

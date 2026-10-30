@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """``scripts/smoke-release.sh`` leaves nothing behind: whatever stops the run, the server it started is gone and the container removed.
 
 The run is made to fail at each step that comes after something was started, with the fakes of

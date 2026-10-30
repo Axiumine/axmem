@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """What the tool catalogue says a tool returns is what the adapter returns.
 
 The catalogue once said that ``mark_memory_obsolete`` and ``unobsolete_memory`` return a Boolean and that

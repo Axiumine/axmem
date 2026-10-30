@@ -1,6 +1,11 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The workflow that signs a release is the one that scripts/release-pypi.sh and scripts/release/ wait for.
 
-``release.yml`` signs and attests and uploads nothing to an index (``publish.yml`` does, see test_publish_workflow.py). It rebuilds the files of a release tag at the epoch and the version of the committed manifest, refuses to
+``release.yml`` signs and attests and uploads nothing to an index (``publish.yml`` does, see
+test_publish_workflow.py). It rebuilds the files of a release tag at the epoch and the version of the committed
+manifest, refuses to
 sign anything that is not byte-identical to the manifest, signs each file with cosign (keyless) and attests them with the
 SLSA-3 generator. The release script and the release guard find that run, and the bundles it attaches, by name: these
 tests keep the two sides together. ``test_workflows.py`` keeps the hosted-runner and permission rules of every workflow.

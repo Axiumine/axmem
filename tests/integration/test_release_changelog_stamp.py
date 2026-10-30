@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """``stamp_changelog`` turns the unreleased section into the release's section and nothing else.
 
 ``scripts/release-pypi.sh`` renames ``## [Unreleased]`` to ``## [<tag>] - <date>`` and opens a fresh empty
@@ -97,7 +100,7 @@ def _stamped(path: Path) -> tuple[str, dt.date]:
     after = dt.datetime.now().astimezone().date()
     assert status == 0, err
     text = path.read_text(encoding="utf-8")
-    found = re.findall(rf"^## \[{re.escape(TAG)}\] - (\d{{4}}-\d{{2}}-\d{{2}})$", text, re.M)
+    found = re.findall(rf"^## \[{re.escape(TAG)}\] - (\d{{4}}-\d{{2}}-\d{{2}})$", text, re.MULTILINE)
     assert len(found) == 1, text
     stamp = dt.date.fromisoformat(found[0])
     assert before <= stamp <= after
@@ -166,7 +169,7 @@ class TestWhatTheStampDoes:
         status, _, err = _stamp(path, tag)
 
         assert status == 0, err
-        assert len(re.findall(rf"^## \[{re.escape(tag)}\] - \d{{4}}-\d{{2}}-\d{{2}}$", path.read_text(), re.M)) == 1
+        assert len(re.findall(rf"^## \[{re.escape(tag)}\] - \d{{4}}-\d{{2}}-\d{{2}}$", path.read_text(), re.MULTILINE)) == 1
 
     def test_no_temporary_file_is_left_behind(self, tmp_path: Path) -> None:
         _stamp(_changelog(tmp_path))
@@ -195,7 +198,7 @@ class TestStampingTwice:
 
         assert status == 0, err
         assert "Stamped CHANGELOG section [v1.2.4]" in out
-        sections = re.findall(r"^## \[([^\]]+)\]", path.read_text(encoding="utf-8"), re.M)
+        sections = re.findall(r"^## \[([^\]]+)\]", path.read_text(encoding="utf-8"), re.MULTILINE)
         assert sections == ["Unreleased", "v1.2.4", TAG, "v1.0.0", "0.0.1"]
 
     def test_a_tag_a_release_already_holds_is_not_stamped_again_over_new_entries(

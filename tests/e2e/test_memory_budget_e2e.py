@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Memory budgets for hot paths, enforced with pytest-memray (``--memray``, Linux/macOS).
 
 Without ``--memray`` these run as ordinary smoke tests. Budgets are generous multiples of the

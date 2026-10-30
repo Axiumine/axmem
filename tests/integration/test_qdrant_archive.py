@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Export and import of the archive file on a real Qdrant node: the format, the refusals and what an import skips.
 
 The round trip across fresh collections is in tests/e2e/test_backup_restore_e2e.py. Here the file is edited
@@ -163,7 +166,7 @@ async def test_a_link_is_skipped_unless_both_memories_exist_for_its_tenant_and_d
 
 
 async def test_a_memory_that_is_already_stored_is_left_exactly_as_it_is(donor, tmp_path):
-    stack, repo, adapter, user_id, originals, lines = donor
+    _stack, repo, adapter, user_id, originals, lines = donor
     path = write(tmp_path / "again.jsonl", lines)
     await repo.update_memory(user_id, originals[0].id, MemoryUpdate(title="Edited after the export"))
 

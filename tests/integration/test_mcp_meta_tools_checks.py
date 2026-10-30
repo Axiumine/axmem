@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Contract of the three MCP meta-tools: the discovery payload, the documentation and the checks before a call.
 
 The payloads and error texts are what an agent reasons from, and the log lines are what an operator searches. Each

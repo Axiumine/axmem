@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """What the tests of the Qdrant collection layout share: nodes that note, fail or do not answer, and a changed embedder.
 
 The recorder notes the requests that look at or change the collections; the node is the real one and a mismatch is made

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Editing a memory in Qdrant: what an edit writes, how many times it tries, what it says, and when it is stamped.
 
 An edit is one conditional write, read back to learn whether it won. The repository writes through the store, so the tests

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """E2E tests for Memory REST API endpoints.
 
 Each test works as a tenant of its own, so the tests do not see each other's memories.

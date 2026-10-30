@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """End-to-end tests for the tenant of a tool call, on a real Qdrant node
 
 Tests the complete flow: FastMCP -> auth middleware -> tenant -> Qdrant. A tenant has no record: it is

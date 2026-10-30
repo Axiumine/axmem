@@ -1,19 +1,26 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """FastAPI application for a python service
 """
 import argparse
 import asyncio
 import atexit
+import contextlib
 
 # NOTE: Logging is configured inside lifespan() to avoid STDIO pollution
 # before MCP handshake completes. Do NOT add module-level logging here.
 import logging
 import signal
 import sys
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from starlette.requests import Request
 from starlette.responses import JSONResponse
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.bootstrap import (
     build_runtime,
@@ -26,6 +33,7 @@ from app.bootstrap import (
 )
 from app.config.auth import AuthConfigError, build_auth_provider
 from app.config.settings import settings
+from app.protocols.memory_protocol import ValidationResult
 from app.routes.api import (
     auth,
     health,
@@ -34,6 +42,20 @@ from app.routes.api import (
 from app.routes.mcp import meta_tools
 from app.routes.server_state import AxmemMCP
 from app.version import get_version
+
+if TYPE_CHECKING:
+    # Imported for the annotations only: fastmcp reads the working directory's settings file when it is imported, and
+    # that must happen after app.config.settings has refused an unreadable one.
+    from fastmcp import FastMCP
+    from fastmcp.server.auth import AuthProvider
+    from starlette.middleware import Middleware
+
+    from app.protocols.embedding_protocol import EmbeddingsAdapter
+    from app.repositories.qdrant.memory_repository import (
+        QdrantMemoryRepository,
+        QdrantStack,
+    )
+    from app.services.re_embedding_service import ReEmbeddingService, ReEmbedResult
 
 # Global references - initialized in lifespan()
 _queue_listener = None
@@ -47,10 +69,10 @@ class StartupRefusedError(RuntimeError):
 
 
 @asynccontextmanager
-async def lifespan(app):
+async def lifespan(app: FastMCP[Any]) -> AsyncIterator[None]:  # noqa: ARG001 - the lifespan signature
     """Manages application lifecycle.
     """
-    global _queue_listener
+    global _queue_listener  # noqa: PLW0603 - set by the lifespan, read by serve
 
     from app.config.logging_config import configure_logging, shutdown_logging
     _queue_listener = configure_logging(
@@ -61,7 +83,7 @@ async def lifespan(app):
 
     logger.info("Starting session", extra={"service": settings.SERVICE_NAME})
 
-    global _startup_refusal
+    global _startup_refusal  # noqa: PLW0603 - set by the lifespan, read by serve
     try:
         runtime = await build_runtime()
     except Exception as exc:
@@ -95,8 +117,8 @@ async def lifespan(app):
         logger.info("REST token cache not used (disabled, or the introspection verifier caches its own answers)")
 
     mcp.registry = runtime.registry
-    mcp._instance_permitted_tools = runtime.permitted_tools
-    mcp._instance_scopes = runtime.instance_scopes
+    mcp._instance_permitted_tools = runtime.permitted_tools  # noqa: SLF001 - state of the server
+    mcp._instance_scopes = runtime.instance_scopes  # noqa: SLF001 - state of the server
     logger.info("Registry and scope ceiling attached to FastMCP instance")
 
     yield
@@ -107,7 +129,7 @@ async def lifespan(app):
     logger.info("Session shutdown complete")
 
 
-def _auth_provider_or_refusal():
+def _auth_provider_or_refusal() -> tuple[AuthProvider | None, AuthConfigError | None]:
     """The auth provider that FastMCP takes in its constructor, or the reason why the mode cannot build one.
 
     The provider is built when this module is imported, which every command does. A mode whose settings are
@@ -132,7 +154,7 @@ mcp = AxmemMCP(settings.SERVICE_NAME, lifespan=lifespan, auth=_auth_provider)
 
 
 @mcp.custom_route("/", methods=["GET"])
-async def root(request: Request) -> JSONResponse:
+async def root(request: Request) -> JSONResponse:  # noqa: ARG001 - route signature
     """Root endpoint with basic service information."""
     logger.info("Root endpoint accessed")
     return JSONResponse({
@@ -152,11 +174,11 @@ memories.register(mcp)
 meta_tools.register(mcp)
 
 
-def _print_counts(total):
+def _print_counts(total: int) -> None:
     print(f"  Memories to process: {total}")
 
 
-def _tolerate_unencodable_output():
+def _tolerate_unencodable_output() -> None:
     """Escape, instead of failing on, characters the console codec cannot encode.
 
     Provider errors, paths and model names can hold any text. A legacy codec (cp1252 on a
@@ -168,11 +190,15 @@ def _tolerate_unencodable_output():
         reconfigure(errors="backslashreplace")
 
 
-def _no_reconfigure(**_options):
+def _no_reconfigure(**_options: Any) -> None:
     """Stand-in for streams that cannot be reconfigured (nothing to do)."""
 
 
-def _install_stop_handlers(loop, on_stop, signals=(signal.SIGINT, signal.SIGTERM)):
+def _install_stop_handlers(
+    loop: asyncio.AbstractEventLoop,
+    on_stop: Callable[[], None],
+    signals: tuple[signal.Signals, ...] = (signal.SIGINT, signal.SIGTERM),
+) -> Callable[[], None]:
     """Call on_stop on the event loop when one of the signals arrives; return an undo callable.
 
     A plain signal.signal handler runs on the main thread while the loop is running, where it
@@ -186,19 +212,17 @@ def _install_stop_handlers(loop, on_stop, signals=(signal.SIGINT, signal.SIGTERM
         except NotImplementedError:
             signal.signal(sig, lambda _signum, _frame: loop.call_soon_threadsafe(on_stop))
 
-    def restore():
+    def restore() -> None:
         for sig, handler in previous.items():
-            try:
+            with contextlib.suppress(NotImplementedError):
                 loop.remove_signal_handler(sig)
-            except NotImplementedError:
-                pass
             if handler is not None:
                 signal.signal(sig, handler)
 
     return restore
 
 
-def _print_reembed_configuration(batch_size):
+def _print_reembed_configuration(batch_size: int) -> None:
     """Step 1: show the configuration the re-embed will run with."""
     print("\n[1/4] Validating configuration...")
     model_display = {
@@ -215,7 +239,7 @@ def _print_reembed_configuration(batch_size):
     print(f"  Batch size: {batch_size}")
 
 
-async def _dry_run_reembed(stack, repository):
+async def _dry_run_reembed(stack: QdrantStack, repository: QdrantMemoryRepository) -> None:
     """Report what a re-embed would process, without creating or changing anything in Qdrant."""
     total = await repository.count_all_memories() if await stack.schema.live_exists() else 0
     _print_counts(total)
@@ -226,36 +250,37 @@ async def _dry_run_reembed(stack, repository):
 class _ReembedRun:
     """State shared between the re-embed run and the stop signal handler."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         # A signal cancels this task; the re-embedding service discards the unfinished collection on the
         # way out. Created inside the running re-embed coroutine, so there is always a current task.
         self.task = cast(asyncio.Task[Any], asyncio.current_task())
         self.interrupted = False
 
-    def request_stop(self):
+    def request_stop(self) -> None:
         """Signal handler: cancel the run once."""
         if not self.interrupted:
             self.interrupted = True
             self.task.cancel()
 
 
-def _print_progress(processed, total_count):
+def _print_progress(processed: int, total_count: int) -> None:
     pct = int((processed / total_count) * 100) if total_count > 0 else 100
     bar_filled = int(pct / 4)
-    bar = "#" * bar_filled + "-" * (25 - bar_filled)
-    print(f"\r  [{bar}] {processed}/{total_count} memories ({pct}%)", end="", flush=True)
+    gauge = "#" * bar_filled + "-" * (25 - bar_filled)
+    print(f"\r  [{gauge}] {processed}/{total_count} memories ({pct}%)", end="", flush=True)
 
 
-def _print_validation(result):
+def _print_validation(result: ReEmbedResult) -> None:
     """Step 4: show the outcome of each validation check."""
+    validation = cast(ValidationResult, result.validation)  # a finished re-embed always carries its validation
     print(f"  Count check: {result.total_memories} memories, "
           f"{result.total_processed} embeddings "
-          f"{'OK' if result.validation.count_ok else 'FAILED'}")
-    print(f"  Dimension check: {'OK' if result.validation.dimensions_ok else 'FAILED'}")
-    print(f"  Search check: {'OK' if result.validation.search_ok else 'FAILED'}")
+          f"{'OK' if validation.count_ok else 'FAILED'}")
+    print(f"  Dimension check: {'OK' if validation.dimensions_ok else 'FAILED'}")
+    print(f"  Search check: {'OK' if validation.search_ok else 'FAILED'}")
 
 
-def _print_reembed_success(result):
+def _print_reembed_success(result: ReEmbedResult) -> None:
     print(f"\n  Successfully re-embedded {result.total_processed} memories")
     print(f"  The live collection is now {result.generation}")
     if result.links_rebuilt:
@@ -264,7 +289,7 @@ def _print_reembed_success(result):
     print("  delete it with the Qdrant API when satisfied with the results.")
 
 
-def _what_became_of_the_new_collection(service) -> str:
+def _what_became_of_the_new_collection(service: ReEmbeddingService) -> str:
     """The sentence for a run that stopped: the new collection is only discarded while it was not made live yet."""
     if service.switch_started is None:
         return "The new collection was discarded; the live collection was not changed."
@@ -276,7 +301,7 @@ def _what_became_of_the_new_collection(service) -> str:
     )
 
 
-async def _rebuild_vectors(service):
+async def _rebuild_vectors(service: ReEmbeddingService) -> ReEmbedResult:
     """Step 3: copy every memory, embedded again, into a new collection and make it the live one.
 
     A signal stops the copy; the service discards the unfinished collection and the live one stays as it was.
@@ -287,7 +312,6 @@ async def _rebuild_vectors(service):
     try:
         result = await service.re_embed_all(progress_callback=_print_progress)
         print()  # newline after progress bar
-        return result
     except Exception as exc:
         print(f"\n  ERROR: {exc}")
         print(f"  {_what_became_of_the_new_collection(service)}")
@@ -300,9 +324,10 @@ async def _rebuild_vectors(service):
         sys.exit(1)
     finally:
         restore_signal_handlers()
+    return result
 
 
-async def _reembed(stack, embeddings_adapter, args):
+async def _reembed(stack: QdrantStack, embeddings_adapter: EmbeddingsAdapter, args: argparse.Namespace) -> None:
     from app.services.re_embedding_service import ReEmbeddingService
 
     repository = stack.memory_repository(embeddings_adapter)
@@ -324,13 +349,13 @@ async def _reembed(stack, embeddings_adapter, args):
 
     print("\n[4/4] Validating...")
     _print_validation(result)
-    if not result.validation.all_passed:
+    if not cast(ValidationResult, result.validation).all_passed:  # see _print_validation
         print("\n  Validation FAILED! The new collection was discarded; the live collection was not changed.")
         sys.exit(1)
     _print_reembed_success(result)
 
 
-async def _run_reembed(args):
+async def _run_reembed(args: argparse.Namespace) -> None:
     """Run the re-embedding workflow"""
     _tolerate_unencodable_output()
     from app.config.logging_config import configure_logging, shutdown_logging
@@ -363,9 +388,12 @@ async def _run_reembed(args):
         await stack.close()
 
 
-def _http_middleware():
+def _http_middleware() -> list[Middleware]:
     """The Starlette middleware of the HTTP app, outermost first.
 
+    - The security headers, on every answer: the ``421``/``403`` of the loopback guard, the ``413`` of the body limit and
+      the ``401``/``403`` of the routes and of the MCP authentication included, since they are produced further in. With
+      ``SERVER_SSL_CERTFILE`` (this process serves TLS) they include ``Strict-Transport-Security``.
     - ``AUTH_MODE=none`` (a loopback bind with no credential): the loopback guard, so that a web page
       cannot reach the server by DNS rebinding or a cross-origin request. With ``CORS_ENABLED`` the origins
       that ``CORS_ORIGINS`` lists by name pass it too (a ``*`` never does), and so do the hosts that
@@ -376,9 +404,11 @@ def _http_middleware():
     """
     from starlette.middleware import Middleware
 
+    from app.config.tls import serves_tls
     from app.middleware.body_limit import BodyLimitMiddleware
+    from app.middleware.security_headers import SecurityHeadersMiddleware
 
-    middleware = []
+    middleware = [Middleware(SecurityHeadersMiddleware, tls=serves_tls(), cors=settings.CORS_ENABLED)]
     if settings.AUTH_MODE == "none":
         from app.middleware.loopback_guard import LoopbackGuardMiddleware
 
@@ -408,20 +438,23 @@ def _http_middleware():
     return middleware
 
 
-def _configuration_refusal(transport, host) -> str | None:
-    """Why the configuration must not serve (no authentication mode, an incomplete one, an old scope ceiling), if so."""
+def _configuration_refusal(transport: str, host: str) -> str | None:
+    """Why the configuration must not serve (no authentication mode, an incomplete one, an old scope ceiling, a TLS
+    configuration that is half set or unusable), if so."""
     from app.config.auth import AuthConfigError, ensure_startup_allowed
     from app.config.legacy_settings import (
         LegacySettingsError,
         ensure_legacy_scopes_replaced,
     )
+    from app.config.tls import TlsConfigError, ensure_tls_usable
 
     try:
         ensure_startup_allowed(transport, host)
         if _auth_refusal is not None:
             raise _auth_refusal
         ensure_legacy_scopes_replaced()
-    except (AuthConfigError, LegacySettingsError) as exc:
+        ensure_tls_usable(transport)
+    except (AuthConfigError, LegacySettingsError, TlsConfigError) as exc:
         return str(exc)
     return None
 
@@ -460,7 +493,7 @@ def _kept_startup_refusal() -> str | None:
     return _startup_refusal
 
 
-def _refusals_without_traceback(app):
+def _refusals_without_traceback(app: ASGIApp) -> ASGIApp:
     """The app, with a refusal of the lifespan reported to uvicorn without the text of its traceback.
 
     Starlette answers a lifespan that raised with ``lifespan.startup.failed`` and the traceback as its message, which
@@ -468,8 +501,8 @@ def _refusals_without_traceback(app):
     prints that after uvicorn has stopped, so the message is left empty. Any other failure keeps its traceback.
     """
 
-    async def guarded(scope, receive, send):
-        async def quiet(message):
+    async def guarded(scope: Scope, receive: Receive, send: Send) -> None:
+        async def quiet(message: Message) -> None:
             if message["type"] == "lifespan.startup.failed" and _startup_refusal is not None:
                 message = {**message, "message": ""}
             await send(message)
@@ -479,7 +512,7 @@ def _refusals_without_traceback(app):
     return guarded
 
 
-def _run_server(transport, host, port):
+def _run_server(transport: str, host: str, port: int) -> None:
     if transport == "stdio":
         import warnings
         warnings.filterwarnings("ignore", category=DeprecationWarning)
@@ -493,6 +526,8 @@ def _run_server(transport, host, port):
     import fastmcp
     import uvicorn
 
+    from app.config.tls import uvicorn_tls_options
+
     uvicorn.run(
         _refusals_without_traceback(mcp.http_app(middleware=_http_middleware())),
         host=host,
@@ -501,10 +536,11 @@ def _run_server(transport, host, port):
         lifespan="on",
         ws="websockets-sansio",
         log_level=fastmcp.settings.log_level.lower(),
+        **uvicorn_tls_options(),  # nothing without SERVER_SSL_CERTFILE: the options of plain HTTP are the same
     )
 
 
-def _serve(transport, host, port):
+def _serve(transport: str, host: str, port: int) -> int | None:
     """Run the MCP server on the given transport (shared by legacy and new spellings).
 
     Fails closed first: a server without a configured authentication mode, one whose mode lacks its
@@ -516,13 +552,17 @@ def _serve(transport, host, port):
     ready: a server that cannot count tokens, embed or rerank, or reach Qdrant, refuses to start and says why. A
     failure that still happens inside the lifespan (a node that went away since) ends the same way.
     """
-    global _startup_refusal
+    global _startup_refusal  # noqa: PLW0603 - set by the lifespan, read by serve
     _startup_refusal = None
     refusal = _configuration_refusal(transport, host)
     if refusal is None:
         from app.config.logging_config import logging_while_starting
+        from app.config.tls import plaintext_exposure_warning
 
         with logging_while_starting(settings.LOG_LEVEL, settings.LOG_FORMAT):
+            plaintext_warning = plaintext_exposure_warning(transport, host)
+            if plaintext_warning is not None:
+                logger.warning(plaintext_warning)
             refusal = _start_refusal()
     if refusal is not None:
         print(f"Error: {refusal}", file=sys.stderr)
@@ -540,7 +580,7 @@ def _serve(transport, host, port):
     return None
 
 
-def _legacy_launcher(argv):
+def _legacy_launcher(argv: list[str]) -> int | None:
     """Pre-subcommand argument surface, kept working indefinitely."""
     from app.routes.cli.parser import positive_int
 
@@ -633,7 +673,7 @@ def _legacy_launcher(argv):
     return _serve(transport=args.transport, host=args.host, port=args.port)
 
 
-def cli():
+def cli() -> int | None:
     """Command-line entry point: subcommand dispatch with a permanent legacy fallback."""
     argv = sys.argv[1:]
 

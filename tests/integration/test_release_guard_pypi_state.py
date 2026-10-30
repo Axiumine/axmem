@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The readers of the release guard over the PyPI JSON: ``pypi-state``, ``pypi-urls`` and ``pypi-last``.
 
 The release script saves ``https://pypi.org/pypi/axmem/json`` to a file (a 404 as an empty file) and asks the guard what it

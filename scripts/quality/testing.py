@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Test-driven gates: fast tests, snapshots, coverage, Qdrant cluster e2e, memory, mutation."""
 
 from __future__ import annotations
@@ -8,6 +11,7 @@ import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
+from typing import Any
 
 from .core import (
     SUITES,
@@ -22,12 +26,16 @@ from .core import (
     venv_tool,
 )
 
-CODE_PREFIXES = ("app/", "tests/", "main.py", "scripts/", "test_harness/")
+CODE_PREFIXES = ("app/", "tests/", "main.py", "scripts/", "test_harness/", "fuzz/")
 PYTEST = ["-q", "-p", "no:cacheprovider"]
 # What the tests of tests/architecture read: a commit that stages none of it cannot change their result.
 ARCHITECTURE_INPUTS = (
     "app/", "scripts/", "tests/architecture/", ".github/", ".githooks/", "test_harness/docker/",
     "main.py", "pyproject.toml", "uv.lock", "architecture.md", ".python-version", "flake.nix", "tests/integration/",
+    # test_licensing_headers.py reads the notice of every source file and the license texts. A staged test of tests/e2e or
+    # tests/cluster is not listed, and the reuse gate (always the whole project) sees its missing notice; the form of the
+    # notice is checked in the next push.
+    "fuzz/", "test_harness/", "REUSE.toml", "LICENSE", "LICENSES/",
 )
 # What the integration tests read besides code: the documents, the settings example and the release inputs. A docs-only
 # commit that breaks one of them would otherwise pass pre-commit and fail first at pre-push.
@@ -42,6 +50,8 @@ MUTATION_TIMEOUT_S_MAX = 2147483
 # Every mutmut worker is a pytest process that holds the TensorRT embedder and reranker on the GPU (about 4.6 GiB, see
 # tests/gpu_preflight.py); mutmut starts one per CPU unless told otherwise, and a card holds a handful of them
 MUTATION_WORKERS = 3
+# The exit code that run() reports for a command it stopped at the timeout (the one timeout(1) uses)
+TIMED_OUT_EXIT_CODE = 124
 # The tests load the models and the TensorRT engines from the data directory of the user (~/.local/share/axmem/models), and a
 # mutant that changes a path constant builds another path there: a directory of another name for a model (with the 128 MB
 # download and the engine built from it), another fingerprint directory for an engine. The engine cache also prunes every
@@ -53,7 +63,7 @@ MODELS_DIR = "models"
 SMALL_FILE_BYTES = 1 << 20
 
 
-def check_tests(argv: list[str], **kwargs) -> tuple[bool, str]:
+def check_tests(argv: list[str], **kwargs: Any) -> tuple[bool, str]:
     """Run a test command without the ``GIT_*`` variables a Git hook exports.
 
     Tests create temporary repositories; inheriting ``GIT_DIR``/``GIT_INDEX_FILE`` would make their
@@ -210,7 +220,7 @@ def gate_mutation(ctx: Ctx) -> tuple[bool, str]:
     command = [*venv_tool("mutmut"), "run", "--max-children", str(MUTATION_WORKERS), *targets]
     with private_data_home() as sandbox:
         code, out = run(command, timeout=timeout, env=sandbox, scrub_git=True, own_session=True)
-    if code == 124:
+    if code == TIMED_OUT_EXIT_CODE:
         return False, (
             f"mutation exceeded {timeout} s over {len(targets)} module patterns and was stopped, "
             "with the test workers it started. Raise the cap (MUTATION_TIMEOUT_S, in seconds), name fewer modules "

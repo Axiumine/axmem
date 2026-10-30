@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """A snapshot request that fails leaves no snapshot on the node, even one the node finishes after the client gave up.
 
 The snapshot call waits for the node under a long timeout of its own. A request can still end without a name: the
@@ -98,7 +101,8 @@ async def test_a_refusal_that_made_no_snapshot_is_not_waited_on(node, pool, capl
         await pool.create_snapshot(0, COLLECTION)
 
     assert time.monotonic() - started < 5  # the node answered: it is not still making one
-    assert node.deleted == [] and not warnings_of(caplog, "may still be making")
+    assert node.deleted == []
+    assert not warnings_of(caplog, "may still be making")
 
 
 async def test_an_answer_without_a_name_does_not_leave_the_snapshot_behind(node, pool):
@@ -114,7 +118,7 @@ async def test_a_cancelled_snapshot_request_looks_once_and_does_not_wait(node, p
     node.create_delay = 60.0
     task = asyncio.create_task(pool.create_snapshot(0, COLLECTION))
     # A task that has already ended without sending the request would keep this loop spinning for ever
-    while ("POST", f"/collections/{COLLECTION}/snapshots") not in node.requests and not task.done():
+    while ("POST", f"/collections/{COLLECTION}/snapshots") not in node.requests and not task.done():  # noqa: ASYNC110 - polls the request log of a node that runs in a thread
         await asyncio.sleep(0.01)
 
     task.cancel()

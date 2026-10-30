@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Integration tests for the exact lines `axmem auth login` and `axmem auth status` print.
 
 The fastmcp client, the one external boundary, is replaced with a recording stub injected through the client-factory

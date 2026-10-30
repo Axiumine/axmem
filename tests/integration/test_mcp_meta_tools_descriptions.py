@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Contract of the three MCP meta-tools: the descriptions a client reads.
 
 The tool descriptions are what an agent is told about the surface. Each is pinned word for word through the
@@ -177,8 +180,13 @@ async def test_a_client_is_shown_the_three_tools_with_their_descriptions(monkeyp
     assert tools["discover_axmem_tools"].description == inspect.cleandoc(discover)
     assert tools["how_to_use_axmem_tool"].description == HOW_TO_USE_DESCRIPTION
     assert tools["execute_axmem_tool"].description == inspect.cleandoc(execute)
+    # FastMCP 3.4 copies the text of each argument from the docstring into the input schema
     assert tools["discover_axmem_tools"].inputSchema["properties"] == {
-        "category": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": None},
+        "category": {
+            "anyOf": [{"type": "string"}, {"type": "null"}],
+            "default": None,
+            "description": "Optional category filter (memory, linking)",
+        },
     }
     assert tools["how_to_use_axmem_tool"].inputSchema["required"] == ["tool_name"]
     assert tools["execute_axmem_tool"].inputSchema["required"] == ["tool_name", "arguments"]

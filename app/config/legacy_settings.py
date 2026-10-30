@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Settings of earlier versions that are ignored now, and what the start-up does about them.
 
 ``Settings`` ignores names it does not know, so an environment or a dotenv file written for an earlier

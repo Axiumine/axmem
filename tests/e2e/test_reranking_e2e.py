@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """End-to-end tests for cross-encoder reranking functionality
 
 Tests verify that the cross-encoder reranks results based on query context,
@@ -23,7 +27,8 @@ def _assert_reranked(result):
     assert len(memories) == len(scores) == 2
     assert [score["memory_id"] for score in scores] == [memory["id"] for memory in memories]
     reranks = [score["rerank_score"] for score in scores]
-    assert reranks and all(score is not None for score in reranks)
+    assert reranks
+    assert all(score is not None for score in reranks)
     assert reranks == sorted(reranks, reverse=True)
 
 
@@ -40,7 +45,10 @@ async def test_reranking_orders_by_score(mcp_client):
     result1 = await mcp_client.call_tool("execute_axmem_tool", {
         "tool_name": "create_memory", "arguments": {
             "title": "PostgreSQL Database",
-            "content": "PostgreSQL is a powerful relational database with ACID compliance, complex query support, and strong data integrity. Ideal for applications requiring transactions and complex joins.",
+            "content": (
+                "PostgreSQL is a powerful relational database with ACID compliance, complex query support, and strong data integrity. "
+                "Ideal for applications requiring transactions and complex joins."
+            ),
             "context": "Database technology overview",
             "keywords": ["postgresql", "database", "relational", "sql", "acid"],
             "tags": ["database", "backend"],
@@ -53,7 +61,10 @@ async def test_reranking_orders_by_score(mcp_client):
     result2 = await mcp_client.call_tool("execute_axmem_tool", {
         "tool_name": "create_memory", "arguments": {
             "title": "MongoDB Database",
-            "content": "MongoDB is a document-oriented NoSQL database with flexible schemas and horizontal scaling. Good for applications with evolving data models and unstructured data.",
+            "content": (
+                "MongoDB is a document-oriented NoSQL database with flexible schemas and horizontal scaling. Good for applications with "
+                "evolving data models and unstructured data."
+            ),
             "context": "Database technology overview",
             "keywords": ["mongodb", "database", "nosql", "document", "flexible"],
             "tags": ["database", "backend"],
@@ -66,7 +77,10 @@ async def test_reranking_orders_by_score(mcp_client):
     result3 = await mcp_client.call_tool("execute_axmem_tool", {
         "tool_name": "create_memory", "arguments": {
             "title": "Redis Database",
-            "content": "Redis is an in-memory data store optimized for caching and real-time applications. Provides sub-millisecond latency and is perfect for session storage, leaderboards, and rate limiting.",
+            "content": (
+                "Redis is an in-memory data store optimized for caching and real-time applications. Provides sub-millisecond latency "
+                "and is perfect for session storage, leaderboards, and rate limiting."
+            ),
             "context": "Database technology overview",
             "keywords": ["redis", "database", "cache", "in-memory", "fast"],
             "tags": ["database", "caching"],
@@ -106,7 +120,10 @@ async def test_reranking_with_different_contexts(mcp_client):
     result1 = await mcp_client.call_tool("execute_axmem_tool", {
         "tool_name": "create_memory", "arguments": {
             "title": "Python Programming",
-            "content": "Python is excellent for data science, machine learning, and AI applications. Has rich ecosystem with NumPy, Pandas, TensorFlow, and PyTorch.",
+            "content": (
+                "Python is excellent for data science, machine learning, and AI applications. Has rich ecosystem with NumPy, Pandas, "
+                "TensorFlow, and PyTorch."
+            ),
             "context": "Programming language comparison",
             "keywords": ["python", "programming", "data-science", "ml", "ai"],
             "tags": ["language", "backend"],
@@ -118,7 +135,10 @@ async def test_reranking_with_different_contexts(mcp_client):
     result2 = await mcp_client.call_tool("execute_axmem_tool", {
         "tool_name": "create_memory", "arguments": {
             "title": "JavaScript Programming",
-            "content": "JavaScript is essential for web development, both frontend and backend with Node.js. React, Vue, and Angular are popular frontend frameworks.",
+            "content": (
+                "JavaScript is essential for web development, both frontend and backend with Node.js. React, Vue, and Angular are "
+                "popular frontend frameworks."
+            ),
             "context": "Programming language comparison",
             "keywords": ["javascript", "programming", "web", "frontend", "nodejs"],
             "tags": ["language", "web"],
@@ -130,7 +150,10 @@ async def test_reranking_with_different_contexts(mcp_client):
     result3 = await mcp_client.call_tool("execute_axmem_tool", {
         "tool_name": "create_memory", "arguments": {
             "title": "Rust Programming",
-            "content": "Rust provides memory safety and high performance for systems programming. Ideal for building fast, reliable software without garbage collection.",
+            "content": (
+                "Rust provides memory safety and high performance for systems programming. Ideal for building fast, reliable software "
+                "without garbage collection."
+            ),
             "context": "Programming language comparison",
             "keywords": ["rust", "programming", "systems", "performance", "safety"],
             "tags": ["language", "systems"],

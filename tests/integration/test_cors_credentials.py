@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """CORS never sends credentials to every origin: only to origins that are named, and only when asked.
 
 The middleware used to be built with ``allow_credentials=True`` whatever ``CORS_ORIGINS`` said, and the default of
@@ -140,11 +143,11 @@ def test_every_other_combination_is_accepted(origins, credentials):
     loaded = Settings(_env_file=None, CORS_ALLOW_CREDENTIALS=credentials, CORS_ORIGINS=origins)
 
     assert loaded.CORS_ALLOW_CREDENTIALS is credentials
-    assert loaded.CORS_ORIGINS == origins
+    assert origins == loaded.CORS_ORIGINS
 
 
 def test_the_command_line_refuses_the_combination_with_one_line_and_exit_code_1(tmp_path):
-    result = subprocess.run(  # noqa: S603 - this interpreter and a fixed program
+    result = subprocess.run(  # this interpreter and a fixed program
         [sys.executable, "-c", "import app.config.settings"],
         cwd=ROOT,
         env={

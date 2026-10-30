@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """E2E tests for the memory link routes.
 
 Covers GET/POST /api/v1/memories/{id}/links: limit validation, related_ids

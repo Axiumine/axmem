@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """MemoryService.query_memory on the real Qdrant repository: what it asks of the repository, what it answers, what it logs.
 
 The service runs against the production repository and the real embedder. A pass-through spy (``spy``) records the
@@ -129,7 +132,7 @@ async def test_linked_memories_are_fetched_only_when_links_are_on_and_at_least_o
     service, memory_repository, monkeypatch, no_auto_links, include_links, max_links, asked,
 ):
     user_id = uuid4()
-    anchor, related = await linked_pair(service, user_id)
+    _anchor, related = await linked_pair(service, user_id)
     neighbours = spy(monkeypatch, memory_repository, "get_linked_memories")
     request = MemoryQueryRequest(
         query=ANCHOR[0], query_context="links", k=1, include_links=include_links, max_links_per_primary=max_links,

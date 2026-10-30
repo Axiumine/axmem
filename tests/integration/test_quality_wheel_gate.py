@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The wheel gate installs and uses the built wheel, and never touches the repository's ``dist/`` or ``.venv``.
 
 The checks run against stand-ins for the tools (a recorded command list and a canned resolution), so the order, the
@@ -85,7 +88,7 @@ def world(tmp_path, monkeypatch):
     (dist / "axmem-0.0.0-py3-none-any.whl").write_bytes(b"wheel")
     (dist / "axmem-0.0.0.tar.gz").write_bytes(b"sdist")
     tools = Tools()
-    monkeypatch.setattr(wheel, "run", lambda *a, **k: tools.run(*a, **k))
+    monkeypatch.setattr(wheel, "run", tools.run)
     monkeypatch.setattr(wheel, "venv_binary", lambda name: f"/venv/bin/{name}")
     monkeypatch.setattr(wheel, "ROOT", tmp_path / "repository")
     return tools, project, dist, work
@@ -245,7 +248,7 @@ def test_a_commit_that_stages_nothing_of_the_wheel_skips_the_gate():
 
 
 def test_a_missing_tool_fails_the_check_instead_of_the_wheel(world, monkeypatch):
-    tools, project, dist, work = world
+    _tools, project, dist, work = world
 
     def missing(name):
         raise core.MissingToolError(f"{name} is not installed in the project environment")

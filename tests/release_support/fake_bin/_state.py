@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """State shared by the fake ``gh``, ``uv`` and ``curl`` of a release test.
 
 The test names a directory in ``FAKE_STATE``. ``config.json`` in it says what the fakes answer (the light fakes of

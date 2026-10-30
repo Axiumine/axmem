@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Integration tests for the exact way the small helpers read text, headers and caches
 
 The helpers decode, encode, trim and look up with fixed arguments that decide what a client can get through: the codec of
@@ -47,6 +50,7 @@ def test_a_bearer_token_is_hashed_from_its_utf8_bytes():
     encodings = []
 
     class Token(str):
+        __slots__ = ()
         def encode(self, encoding="utf-8", errors="strict"):
             encodings.append(encoding)
             return super().encode(encoding, errors)
@@ -59,6 +63,7 @@ def test_the_text_of_a_memory_is_checked_for_utf8():
     encodings = []
 
     class Text(str):
+        __slots__ = ()
         def encode(self, encoding="utf-8", errors="strict"):
             encodings.append(encoding)
             return super().encode(encoding, errors)
@@ -94,6 +99,7 @@ def name():
     stripped = []
 
     class Name(str):
+        __slots__ = ()
         def lower(self):
             return Name(super().lower())
 
@@ -169,7 +175,7 @@ async def test_a_server_is_trusted_local_only_when_it_says_so(monkeypatch, flag,
 async def test_the_authorization_header_is_asked_for_by_name_and_is_empty_when_missing():
     headers = _Headers()
 
-    with pytest.raises(ValueError, match="^Missing or invalid Authorization header$"):
+    with pytest.raises(ValueError, match=r"^Missing or invalid Authorization header$"):
         await get_identity_from_request(SimpleNamespace(headers=headers), SimpleNamespace(auth=object(), token_cache=None))
 
     assert headers.asked == [("Authorization", "")]
@@ -200,6 +206,7 @@ def test_a_content_type_is_cut_at_its_first_semicolon_only():
     splits = []
 
     class Media(str):
+        __slots__ = ()
         def split(self, sep=None, maxsplit=-1):
             splits.append((sep, maxsplit))
             return super().split(sep, maxsplit)

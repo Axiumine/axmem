@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """E2E tests for the curated CLI verbs (docs/dev/cli_plan.md phase 5)
 
 Full-stack cli() invocations against a real Qdrant node: memory save/get/

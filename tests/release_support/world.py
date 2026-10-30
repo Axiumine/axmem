@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """A scratch world the real ``scripts/release-pypi.sh`` runs in, without touching GitHub or PyPI.
 
 ``World`` builds a git repository whose ``scripts/`` is a copy of this repository's (without the quality runner), a
@@ -17,8 +20,10 @@ that tracks the remote's main, whatever it is called, and pushes to the remote's
 
 Every fake, stub and hook appends one line to ``events.log`` in the state directory, so a test reads what the release
 ran and in which order: the ``gh workflow-run`` lines (``dispatches``) are the publications, and ``uv publish`` (which no
-release makes) is in ``uv_publishes``. ``release_testpypi`` runs ``scripts/release-testpypi.sh`` in the same world, after a release that stopped at the
-approval of the environment ``pypi``; its ``publish-testpypi.yml`` runs put the files on the fake TestPyPI (``state/testpypi``, read with ``testpypi``).
+release makes) is in ``uv_publishes``. ``release_testpypi`` runs ``scripts/release-testpypi.sh`` in the same world,
+after a release that stopped at the
+approval of the environment ``pypi``; its ``publish-testpypi.yml`` runs put the files on the fake TestPyPI
+(``state/testpypi``, read with ``testpypi``).
 """
 
 from __future__ import annotations
@@ -142,7 +147,7 @@ class World:
         return self._git(["git", "--git-dir", str(self.origin), *args])
 
     def _git(self, argv: list[str]) -> str:
-        done = subprocess.run(argv, capture_output=True, text=True, check=True, env=self._env())  # noqa: S603
+        done = subprocess.run(argv, capture_output=True, text=True, check=True, env=self._env())  # noqa: S603 - a program of the test setup, run without a shell
         return done.stdout.strip()
 
     def configure(self, **updates: Any) -> None:
@@ -169,8 +174,8 @@ class World:
 
     def _build_repository(self) -> None:
         self.root.mkdir()
-        subprocess.run(  # noqa: S603
-            ["git", "init", "-q", "--bare", "-b", REMOTE_BRANCH, str(self.origin)],  # noqa: S607
+        subprocess.run(  # noqa: S603 - a program of the test setup, run without a shell
+            ["git", "init", "-q", "--bare", "-b", REMOTE_BRANCH, str(self.origin)],  # noqa: S607 - a program of the test setup, run without a shell
             check=True,
             env=self._env(),
         )
@@ -265,7 +270,8 @@ class World:
         return log.read_text(encoding="utf-8").splitlines() if log.exists() else []
 
     def dispatches(self) -> list[str]:
-        """The dispatches that the fake ``gh`` accepted, each ``gh workflow-run <workflow> tag=T``: ``publish.yml``'s, and ``publish-testpypi.yml``'s once a rehearsal ran."""
+        """The dispatches that the fake ``gh`` accepted, each ``gh workflow-run <workflow> tag=T``: ``publish.yml``'s,
+        and ``publish-testpypi.yml``'s once a rehearsal ran."""
         return [line for line in self.events() if line.startswith("gh workflow-run ")]
 
     def uv_publishes(self) -> list[str]:
@@ -286,8 +292,8 @@ class World:
 
     def run_script(self, *args: str, **env: str) -> subprocess.CompletedProcess[str]:
         """Run the release script with exactly these arguments; ``env`` adds environment variables."""
-        return subprocess.run(  # noqa: S603
-            ["bash", str(self.root / "scripts" / "release-pypi.sh"), *args],  # noqa: S607
+        return subprocess.run(  # noqa: S603 - a program of the test setup, run without a shell
+            ["bash", str(self.root / "scripts" / "release-pypi.sh"), *args],  # noqa: S607 - a program of the test setup, run without a shell
             cwd=self.root,
             env=self._env(**env),
             capture_output=True,
@@ -298,8 +304,8 @@ class World:
 
     def release_testpypi(self, *args: str, **env: str) -> subprocess.CompletedProcess[str]:
         """Run the real TestPyPI rehearsal script (``release-testpypi.sh``) with exactly these arguments; ``env`` adds variables."""
-        return subprocess.run(  # noqa: S603
-            ["bash", str(self.root / "scripts" / "release-testpypi.sh"), *args],  # noqa: S607
+        return subprocess.run(  # noqa: S603 - a program of the test setup, run without a shell
+            ["bash", str(self.root / "scripts" / "release-testpypi.sh"), *args],  # noqa: S607 - a program of the test setup, run without a shell
             cwd=self.root,
             env=self._env(**env),
             capture_output=True,

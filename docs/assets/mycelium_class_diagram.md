@@ -3750,7 +3750,7 @@ classDiagram
         +staged_mount(files: list[Path], container_dir: str, staged: list[Path]) Type109
         +provision_agent(agent_type: str, staged: list[Path], auth_path: Path) Type109
         +export_requirements() str
-        +requirements_hash(requirements: str) str
+        +image_inputs_hash(requirements: str) str
         -_docker_client() unknown
         +ensure_image(rebuild: bool, log: unknown) None
         -_prepare_harness_mount(run_dir: Path) Path
@@ -7747,7 +7747,7 @@ classDiagram
 - c0280 ..> c0031: `ensure_image() calls get()`
 - c0280 ..> c0280: `ensure_image() calls _docker_client()`
 - c0280 ..> c0280: `ensure_image() calls export_requirements()`
-- c0280 ..> c0280: `ensure_image() calls requirements_hash()`
+- c0280 ..> c0280: `ensure_image() calls image_inputs_hash()`
 - c0280 ..> c0280: `provision_agent() calls staged_mount()`
 - c0280 ..> c0292: `_docker_client() constructs HarnessInfraError`
 - c0280 ..> c0292: `_prepare_harness_mount() constructs HarnessInfraError`

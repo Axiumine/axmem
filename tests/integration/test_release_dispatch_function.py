@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """``publish_release`` dispatches the publish workflow only after a passing guard, once, and the waits keep their own bounds.
 
 The dispatch of ``publish.yml`` is the one step of a release that cannot be undone: PyPI refuses a second upload of a file

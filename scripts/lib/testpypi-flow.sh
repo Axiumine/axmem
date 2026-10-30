@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 # testpypi-flow.sh — the steps of scripts/release-testpypi.sh that are not those of the PyPI release.
 # SOURCED ONLY (after scripts/lib/project.sh and scripts/lib/release-flow.sh): defines functions and constants, runs nothing.
 #

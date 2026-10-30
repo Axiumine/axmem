@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """What an operator reads when a setting is wrong: the choice resolver, the one-line cause and the exit of the start-up.
 
 ``canonical_choice`` resolves the enumerated settings, ``describe_settings_failure`` turns whatever stopped the
@@ -105,14 +108,14 @@ def test_the_errors_are_asked_for_without_the_input_the_context_and_the_document
     """The value of a setting can be a credential: pydantic is told to leave it out, not only this function to skip it."""
     asked = {}
 
-    class Recorded(Exception):
+    class RecordedError(Exception):
         def errors(self, **options):
             asked.update(options)
             return [{"loc": ("QDRANT_API_KEY",), "msg": "Input should be a valid string"}]
 
-    monkeypatch.setattr(settings_module, "ValidationError", Recorded)
+    monkeypatch.setattr(settings_module, "ValidationError", RecordedError)
 
-    assert describe_settings_failure(Recorded()) == "QDRANT_API_KEY: Input should be a valid string"
+    assert describe_settings_failure(RecordedError()) == "QDRANT_API_KEY: Input should be a valid string"
     assert asked == {"include_url": False, "include_context": False, "include_input": False}
 
 

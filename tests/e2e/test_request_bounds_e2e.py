@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """End-to-end tests: every request field that reaches the embedder or the store has a bound, and so has the body.
 
 A search query goes through the single embedder and the reranker, a memory is stored whole, a reason is stored

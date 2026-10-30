@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Which tool each REST route stands for, and the check that a request may use it.
 
 The three MCP meta-tools refuse a tool that the instance ceiling (``AXMEM_SCOPES``) or the scopes of the

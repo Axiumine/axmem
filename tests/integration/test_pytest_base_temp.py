@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """A test that patches ``atexit.register`` does not break the creation of pytest's temp directory.
 
 pytest registers the clean-up of its base temp directory with ``atexit`` when the first test asks for a temp

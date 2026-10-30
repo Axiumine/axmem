@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Integration tests for the exact URLs, requests and messages of the remote side of the CLI.
 
 The server URL an operator types is turned into the URL the client connects to, the discovery requests carry no empty

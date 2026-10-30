@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """What the re-embedding tests of the Qdrant repository share: the spy on its store and the memories they plant.
 
 The repository works through the store, so the tests note every call it makes there (a spy that passes each call on,

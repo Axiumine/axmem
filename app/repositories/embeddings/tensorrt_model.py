@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Fetch a TensorRT model (the embedder or the cross-encoder) once from Hugging Face and keep a record of it.
 
 A model directory holds ``onnx/model.onnx`` (the original ONNX export, never converted to a
@@ -94,7 +97,7 @@ def _record(manifest: Path, repository: str, digests: dict[str, str]) -> None:
     scratch = manifest.with_name(f"{manifest.name}.{os.getpid()}.tmp")
     try:
         scratch.write_text(json.dumps(record, indent=2, sort_keys=True))
-        os.replace(scratch, manifest)
+        scratch.replace(manifest)
     except OSError as exc:
         scratch.unlink(missing_ok=True)
         raise TensorRTStartupError(
@@ -110,7 +113,7 @@ def _recorded_digests(manifest: Path) -> dict[str, str]:
         recorded = json.loads(manifest.read_text())["sha256"]
         if isinstance(recorded, dict):
             return recorded
-        raise ValueError("the sha256 entry is not an object")
+        raise ValueError("the sha256 entry is not an object")  # noqa: TRY301 - caught just below
     except (OSError, ValueError, KeyError, TypeError) as exc:
         raise TensorRTStartupError(
             "model-unavailable",
@@ -149,11 +152,11 @@ def fetch_model(repository: str, model_dir: str | Path, setting: str = "EMBEDDIN
     return ModelFiles(paths[ONNX_FILE], paths[TOKENIZER_FILE], digests[ONNX_FILE], root)
 
 
-def load_tokenizer(path: Path) -> tuple[Tokenizer, int]:
+def load_tokenizer(path: Path) -> tuple[Tokenizer, int]:  # type: ignore[no-any-unimported]  # tokenizers ships no type information
     """The tokenizer (truncating a text, or a query and document pair, to 512 tokens; no padding) and its pad id."""
     try:
         tokenizer = Tokenizer.from_file(str(path))
-    except Exception as exc:  # noqa: BLE001 - the tokenizers library raises a bare Exception for a file it cannot parse
+    except Exception as exc:  # the tokenizers library raises a bare Exception for a file it cannot parse
         raise TensorRTStartupError(
             "model-unavailable",
             f"the tokenizer in {path} cannot be parsed ({type(exc).__name__}: {exc}). "

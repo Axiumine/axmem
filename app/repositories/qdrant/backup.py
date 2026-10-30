@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Backups of the Qdrant collections as snapshots, one set per node.
 
 A snapshot holds the shards its node stores locally, and is consistent with that node's write-ahead log
@@ -330,7 +333,9 @@ def _manifest_files(manifest_path: Path) -> list[Any]:
         raise ValueError(f"{manifest_path} is not a valid manifest: {exc}") from exc
     listed = document.get("files") if isinstance(document, dict) else None
     if not isinstance(listed, list):
-        raise ValueError(f"{manifest_path} is not a valid manifest: it has no list of files")
+        raise ValueError(  # noqa: TRY004 - callers catch ValueError
+            f"{manifest_path} is not a valid manifest: it has no list of files",
+        )
     return listed
 
 

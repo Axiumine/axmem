@@ -9,7 +9,9 @@ isolated because their dependency trees conflict with the application pins.
 `scripts/quality/registry.py`, and the `pre-commit` and `pre-push` hooks reach it through `stage <name>`. None
 exists only as a command to remember, as a step of a workflow or as a line of a script that no hook runs. A new check
 is added as a gate, with its tool pinned in the `dev` group, and to a stage in the same change. The flake defines no
-check of its own (see [Nix](nix.md)): `.githooks/` is the only mechanism.
+check of its own (see [Nix](nix.md)): `.githooks/` is the only mechanism. The narrow exception is the two analysis
+services that exist only on GitHub and have no local equivalent, OpenSSF Scorecard (`scorecard.yml`) and CodeQL
+(`codeql.yml`): they publish a report, are not gates, and `tests/architecture/test_workflows.py` fixes their names.
 
 Two things are not run by every hook, on purpose, and each says so when it is left out: `gitnexus` reports `SKIP` on a
 clone without a local GitNexus index or `node`, because that index is local tooling that no clone has until it builds
@@ -35,8 +37,8 @@ uv run python -m scripts.quality wheel-check dist   # the checks of the wheel ga
 uv run python -m scripts.quality uninstall   # unset core.hooksPath
 ```
 
-The `dev` group also holds the command-line tools of the `shellcheck`, `actionlint` and `wheel` gates (`shellcheck-py`,
-`actionlint-py`, `twine`, `check-wheel-contents`), so the sync above installs them and the gates take them from the
+The `dev` group also holds the command-line tools of the `shellcheck`, `actionlint`, `reuse` and `wheel` gates (`shellcheck-py`,
+`actionlint-py`, `reuse`, `twine`, `check-wheel-contents`), so the sync above installs them and the gates take them from the
 environment, never from a global install or from `uvx`: a hand run and the hook use the same version. Sync the project
 environment with `--all-extras --dev` and without `--no-install-package`: the hosted workflows leave out
 `tensorrt-cu13-libs` (3.8 GB that no hosted check loads), but a sync of `.venv` that does would remove the GPU libraries.
@@ -117,13 +119,13 @@ each test's setup into seconds; the nodes of the shared cluster use the containe
 The cluster suite always starts its own nodes: three for the shared cluster, and a four-node cluster and a second three-node cluster for the restore tests of `tests/cluster/test_cluster_backup_restore_other_clusters.py`. These gates do not report `SKIP` without a GPU or without Docker: The `e2e-qdrant` gate gets 3 hours instead of the 30 every other gate gets (`E2E_QDRANT_TIMEOUT_SECONDS` in `scripts/quality/testing.py`), because the suite starts three clusters and waits for their replicas.
 they fail. See
 [GPU models](gpu-models.md) for the host requirements. The static gates (ruff, imports, bandit, semgrep,
-vulture, radon, shellcheck, actionlint, mypy, pylint), `tests/architecture`, `package` and `wheel` need no GPU.
+vulture, radon, shellcheck, actionlint, reuse, mypy, pylint), `tests/architecture`, `package` and `wheel` need no GPU.
 
 | Stage | Pipeline |
 |---|---|
-| `pre-commit` (staged files) | ruff, imports, bandit, semgrep, vulture, radon-cc, radon-mi, shellcheck, actionlint → mypy, pylint, architecture, package → snapshots, tests-fast → gitnexus |
-| `pre-push` (whole project) | ruff, imports, bandit, semgrep, vulture, radon-cc, radon-mi, shellcheck, actionlint, trivy → mypy, pylint, architecture, package, wheel → tests → e2e-qdrant → coverage → memray → qodana → mutation → gitnexus |
-| `ci` (the gates hosted CI runs) | ruff, imports, bandit, semgrep, vulture, radon-cc, radon-mi, shellcheck, actionlint, trivy → mypy, pylint, architecture, package, wheel |
+| `pre-commit` (staged files) | ruff, imports, bandit, semgrep, vulture, radon-cc, radon-mi, shellcheck, actionlint, reuse → mypy, pylint, architecture, package → snapshots, tests-fast → gitnexus |
+| `pre-push` (whole project) | ruff, imports, bandit, semgrep, vulture, radon-cc, radon-mi, shellcheck, actionlint, reuse, trivy → mypy, pylint, architecture, package, wheel → tests → e2e-qdrant → coverage → memray → qodana → mutation → gitnexus |
+| `ci` (the gates hosted CI runs) | ruff, imports, bandit, semgrep, vulture, radon-cc, radon-mi, shellcheck, actionlint, reuse, trivy → mypy, pylint, architecture, package, wheel |
 
 `pre-push` puts the cheap gates first (trivy needs a few seconds and the network, the suites need minutes), so a
 finding there refuses the push before the GPU suites start. `coverage` comes after `tests` and `e2e-qdrant`, whose
@@ -135,7 +137,11 @@ requirements (`hatchling`, `hatch-vcs`) unless the uv cache holds them: a first 
 skips) without it. A commit that stages only a workflow, a hook, `pyproject.toml` or `uv.lock` still meets the
 `architecture` gate, which runs when a staged file is one that the architecture tests read (`app/`, `scripts/`,
 `tests/architecture/`, `.github/`, `.githooks/`, `test_harness/docker/`, `main.py`, `pyproject.toml`, `uv.lock`,
-`architecture.md`, `.python-version`, `flake.nix`, `tests/integration/`: `test_mutation_sandbox.py` reads the integration tests).
+`architecture.md`, `.python-version`, `flake.nix`, `tests/integration/`: `test_mutation_sandbox.py` reads the integration tests;
+`test_licensing_headers.py` reads the notice of every source file and the license texts, so `fuzz/`, `test_harness/`,
+`REUSE.toml`, `LICENSE` and `LICENSES/` count too; a staged test of `tests/e2e` or `tests/cluster` does not run the gate, and
+the `reuse` gate, which always runs, catches a file without a notice at the commit, so that the form of the notice is first
+checked in the push).
 `tests-fast` also runs when a staged file is one that the integration tests read besides code (`docs/`, `README.md`,
 `CHANGELOG.md`, `.env.example`, `release-superseded.json`, `.github/`), so a docs-only commit meets the reference-document
 tests at the commit and not first at the push. A commit that only deletes files is not an empty one: the removed paths count
@@ -144,7 +150,8 @@ in a file that is gone.
 
 `pre-commit` scopes ruff, bandit, semgrep, radon and pylint to the staged files, `shellcheck` and `actionlint` to the
 shell scripts and the workflows (they lint every one of them when one is staged: `-x` follows `source` into the others,
-and it takes under a second). mypy, vulture,
+and it takes under a second). `reuse` checks every file that git sees on every run (about two seconds): a new file, a changed
+`REUSE.toml` or a removed license text can leave any other file without a notice. mypy, vulture,
 import-linter and the tests always run over the whole project (a changed signature breaks unchanged
 callers) but are skipped when nothing relevant is staged. `QUALITY_FULL=1` makes `pre-commit` check the
 whole project. So does staging the configuration of a gate (`pyproject.toml`, `uv.lock`, `ruff.toml`, `radon.cfg`,
@@ -160,13 +167,15 @@ name, split across jobs (`stage ci` runs the same set in one go on a developer m
 
 | Workflow and job | What runs |
 |---|---|
-| `quality.yml` job `static` | ruff, imports, bandit, semgrep (with `p/python p/security-audit`, the default of the gate), shellcheck, actionlint, vulture, radon-cc, radon-mi, mypy, pylint |
+| `quality.yml` job `static` | ruff, imports, bandit, semgrep (with `p/python p/security-audit`, the default of the gate), shellcheck, actionlint, reuse, vulture, radon-cc, radon-mi, mypy, pylint |
 | `quality.yml` job `trivy` | `trivy`, with the pinned release binary downloaded and checked against its SHA-256 (no Docker image) |
 | `ci.yml` job `lint` | the `architecture` gate (`tests/architecture`: the import contracts, the rule proofs and the rules of these workflow files) and the `ruff` gate |
 | `ci.yml` job `smoke-test` | the `package` gate and the `wheel` gate, see [The wheel gate](#the-wheel-gate); the checkout is shallow, because both gates build a copy without git history and pin the version themselves |
 | `publish.yml` job `verify` | on a dispatch on a `v<version>` tag: checks the signed files of the GitHub release again (digests, cosign identity of `release.yml`, the release guard) and runs `dist-check` on them (a package that holds model weights, engines, native libraries or other files than source is refused), before the job `publish` uploads them to PyPI; see [release.md](release.md) |
 | `publish-testpypi.yml` job `verify` | the rehearsal of the same upload on TestPyPI, advisory and not a gate: the checks of the job `verify` of `publish.yml`, step for step (a test builds one from the other with a closed table of differences), before its job `publish` uploads the files to TestPyPI in the environment `testpypi`; started by `scripts/release-testpypi.sh`, see [release.md](release.md) |
 | `release.yml` jobs `sign-artefacts` and `provenance-artefacts` | on a `v<version>` tag: rebuilds the package from the committed `release-digests.json`, refuses to sign unless the rebuild is byte-identical, runs `dist-check`, signs each file with cosign (keyless) and attests them (SLSA-3); started by `scripts/release-pypi.sh`, see [release.md](release.md) |
+| `scorecard.yml` job `analysis` | on a push to `main` and on a manual run: OpenSSF Scorecard of the repository, published to scorecard.dev and to code scanning; not a gate, and it checks no code of ours, see [OpenSSF Scorecard and Dependabot](#openssf-scorecard-and-dependabot) |
+| `codeql.yml` job `analyze` | on a push to `main` and on a pull request into `main`: CodeQL analysis of the Python code and of the workflow files (one run for each language, no build), the alerts sent to code scanning; not a gate, it has no local equivalent and needs nothing local, see [OpenSSF Scorecard and Dependabot](#openssf-scorecard-and-dependabot) |
 
 A workflow step calls a gate by its name (`uv run --frozen python -m scripts.quality gate <name>`) and holds no check
 of its own: a command that guards the project is a gate first. `tests/architecture/test_workflows.py` fails when a gate
@@ -181,11 +190,13 @@ Every `uv sync` of these workflows uses `--locked` and leaves out `tensorrt-cu13
 Docker, from the workflow steps themselves.
 
 `tests/architecture/test_workflows.py` fails when a workflow breaks the rules: every job on a hosted `ubuntu-*`
-runner, no container or service, no schedule, no `pull_request_target`; in `ci.yml` and `quality.yml` no secret, a
-read-only token and `persist-credentials: false` on every checkout, only the gates above by name (never `tests`, `e2e-qdrant`,
+runner, no container or service, no schedule, no `pull_request_target`; in `ci.yml`, `quality.yml`, `scorecard.yml` and
+`codeql.yml` (the workflows that run on a push to a branch or on a pull request) no secret, a
+read-only token at the top and `persist-credentials: false` on every checkout; in `ci.yml` and `quality.yml` only the gates above by name (never `tests`, `e2e-qdrant`,
 `coverage`, `memray`, `qodana`, `mutation`), the environment installed without the TensorRT libraries, a concurrency
-group of `${{ github.workflow }}-${{ github.ref }}` that cancels the older run of the same ref, and the trivy version in
-`quality.yml` equal to `TRIVY_VERSION` in `scripts/quality/security.py`. Because a job runs on an ephemeral hosted
+group of `${{ github.workflow }}-${{ github.ref }}` that cancels the older run of the same ref (in all four), and the trivy version in
+`quality.yml` equal to `TRIVY_VERSION` in `scripts/quality/security.py`. Separate tests fix the shape of
+`scorecard.yml` (three) and of `codeql.yml` (one), see [OpenSSF Scorecard and Dependabot](#openssf-scorecard-and-dependabot). Because a job runs on an ephemeral hosted
 runner with a read-only token and no secret, a pull request from a fork needs no special handling. Set the repository to
 require approval for all outside contributors (Settings, Actions, General): that setting is not in the repository.
 
@@ -213,27 +224,111 @@ bare repository with a stand-in `uv` (a passing and a failing pipeline, no `uv`,
 missing tool fails its gate; `test_gpu_preflight.py` and `test_qdrant_preflight.py` run the real suites without a GPU
 and without Docker and check that each ends the run.
 
+## OpenSSF Scorecard and Dependabot
+
+`.github/workflows/scorecard.yml` runs [OpenSSF Scorecard](https://github.com/ossf/scorecard) on the repository and
+publishes the result to scorecard.dev, which the Scorecard badge of the README reads. The result is at
+<https://scorecard.dev/viewer/?uri=github.com/Axiumine/axmem>; it does not exist, and the badge shows an error, until
+the first run on `main` has published one. The workflow is not a gate: Scorecard rates the settings and the history of
+the repository, not our code, so it has no entry in `scripts/quality/registry.py` and no hook runs Scorecard (the `actionlint` gate and the
+architecture tests do check the file, like any other workflow).
+
+* **Triggers.** A push to `main` and `workflow_dispatch`. Scorecard reads the default branch only, so the job skips any
+  other ref and any fork. There is no schedule, because the repository forbids one in a workflow
+  (`test_no_workflow_is_scheduled`): a push to `main` refreshes the result, and a manual run
+  (`gh workflow run scorecard.yml`, or Run workflow in the Actions tab) refreshes it after a change that fires no push
+  event, such as a change of the repository rules. The action's README supports `push` and `schedule` and marks
+  `workflow_dispatch` (and `pull_request`) as experimental, so the push to `main` is the trigger to rely on and the manual
+  run is a convenience.
+* **The token.** The run uses the default `GITHUB_TOKEN`, with no personal access token and no secret. The action reads
+  repository rules (rulesets) with it, but not classic branch protection, which needs an admin token, so
+  Branch-Protection is scored from the rulesets only and some details of that check, and of others that need more than
+  read access, stay partial.
+* **What the job does.** It checks the code out without keeping the token, runs `ossf/scorecard-action` with
+  `publish_results: true`, keeps the SARIF file as a build artifact for five days and uploads it to code scanning. The
+  token is read-only at the top of the file; the one job adds `id-token: write` (the action signs the result with it, and
+  scorecard.dev verifies the signature) and `security-events: write` (the upload to code scanning). There is no secret and
+  no personal access token.
+* **Docker.** `ossf/scorecard-action` is a Docker container action, which the hosted runner starts by itself. The
+  workflow has no Docker step of its own and needs no daemon of ours, so it does not go against the rule that no workflow
+  uses Docker (`test_no_step_needs_a_gpu_or_docker` reads the steps, and the name, `uses` and `run` of none of them names Docker).
+* **What scorecard.dev accepts.** The API refuses to publish the result of a workflow that breaks the restrictions listed
+  in the [action's README](https://github.com/ossf/scorecard-action#workflow-restrictions): no `env` or `defaults` at the
+  top or in the job, no write permission at the top, `id-token: write` in the Scorecard job only, an Ubuntu runner, and
+  steps that are only `uses` of `actions/checkout`, `actions/upload-artifact`,
+  `github/codeql-action/upload-sarif` and `ossf/scorecard-action`. The workflow would still run if it broke one, and the
+  badge would not change, so the three `test_the_scorecard_*` tests of `tests/architecture/test_workflows.py` (the workflow,
+  its job, its steps) fail first. Every action is pinned to a commit like those of the other workflows.
+* **The release guard sees it.** `scripts.release.ci_green` reads every push-triggered run of `main` on the release
+  commit, so a Scorecard run that fails (the API refused the result, or Scorecard was unreachable) stops the release
+  until the run is repeated with `gh run rerun`. A run that the `if` of the job skipped counts as skipped, not as failed.
+  The same holds for a failed (or cancelled) CodeQL run: re-run the workflow, and do not edit the guard.
+
+`.github/workflows/codeql.yml` runs [CodeQL](https://codeql.github.com/) with the advanced setup (a workflow file, not the
+default setup of the repository settings), which is also what the Scorecard check SAST looks for: a call of
+`github/codeql-action/analyze` in a workflow. It is not a gate either, and it needs nothing local: no tool in the `dev`
+group, no hook and no entry in `scripts/quality/registry.py`.
+
+* **Triggers and languages.** A push to `main` and a pull request into `main`; no schedule and no `pull_request_target`.
+  The job `analyze` runs once for each language of its matrix: `python` and `actions` (the workflow files). The CodeQL
+  Python extractor lists Python 3.14, the version of `.python-version`, as supported. Both languages use
+  `build-mode: none`, so there is nothing to install or build, and the results of each language go to code scanning
+  under the category `/language:<language>`.
+* **The token.** Read-only at the top of the file; the one job adds `security-events: write` for the upload of the
+  alerts. The repository is public, so the job needs no `actions: read`. The checkout does not keep the token, there is no
+  secret, and every action is pinned to a commit.
+* **Hosted runner, no Docker.** An Ubuntu runner, no container or service, no step of ours that starts Docker.
+
+`.github/dependabot.yml` configures Dependabot version updates for the `github-actions` ecosystem, for `uv`
+(`pyproject.toml` and `uv.lock`) and, for the image of the UAT walkthrough harness in `test_harness/docker`, for `docker`
+(the digest-pinned `node` base image of its Dockerfile) and `npm` (`package.json` and `package-lock.json`), weekly, with at
+most three open pull requests for each, the minor and patch updates of an ecosystem in one pull request and the commit
+prefix `chore(deps)`. It is a setting of GitHub's Dependabot service, read
+from the default branch: it is not a workflow, adds no trigger to `.github/workflows` and runs nothing on a runner of
+ours. Its pull requests run `ci.yml`, `quality.yml` and `codeql.yml` like any other. Three things are left out of it on
+purpose, and the file says why: the `slsa-framework/slsa-github-generator` reference of `release.yml`, which is changed
+together with `SLSA_GENERATOR_VERSION` and `SLSA_GENERATOR_COMMIT`, the three TensorRT packages, which are bumped by hand
+as [GPU models](gpu-models.md) describes, and a new major version of the `node` image, which is chosen by hand. `.github/CODEOWNERS` names the maintainers of [MAINTAINERS.md](../MAINTAINERS.md)
+as the owners of every file.
+
+`.bestpractices.json` at the repository root prefills the [OpenSSF Best Practices](https://www.bestpractices.dev/) badge form.
+When the badge entry of the project is first edited for a section of the form, and again each time the maintainer clicks
+"Save (and continue)" with the robot icon, the badge application reads the repository and takes the `<criterion>_status` and
+`<criterion>_justification` pairs of the file as proposed answers (the file format is described in the badge project's
+`docs/bestpractices-json.md`). They are proposals: the maintainer reviews every answer in the form and saves it, and a
+criterion that is not in the file is simply unanswered. The file holds only what the repository itself shows, each answer with a
+justification that names a file of the repository, so it stays true only while those files do. Two answers also rest on a
+GitHub setting that is enabled for the repository: `vulnerability_report_private` (private vulnerability reporting) and
+`no_leaked_credentials` (secret scanning and push protection); the maintainer confirms them in the form. The file leaves out
+the answers that depend on a person (knowing secure design and common errors, code review standards, two-person review, the
+number of maintainers, two-factor authentication), on the state of the project at a moment (response times to reports and
+issues, the age of known vulnerabilities) and most gold-level criteria; of the gold level it answers `copyright_per_file`
+and `license_per_file`, which the headers show (see [Licensing headers](#licensing-headers)). When a document that a
+justification points to is renamed or removed, update the file in the same commit. It is not a gate and not part of the
+wheel or the sdist.
+
 ## Gates
 
 | Gate | What it enforces | Config |
 |---|---|---|
-| `ruff` | lint (existing rule set) | `ruff.toml` |
+| `ruff` | lint: 54 rule groups on (pyflakes, pycodestyle `E` `W` with `E501` at 140 columns, pep8-naming, bugbear, pylint `PLC` `PLE` `PLW` `PLR`, security `S`, simplify, pathlib, returns, tryceratops, mccabe, flynt, ...); off inside them: `TRY003`, `PT011`, `G004`, `PLC0415`, and `PLR2004` in `tests/`, each with its reason in the file; not selected: `ANN`, `D`, `EM`, `FBT`, `TC`, `T20`, `INP` and the preview rules `CPY` and `DOC`, see [Warnings](#warnings) | `ruff.toml` |
 | `imports` | layer contracts routes → services → protocols → repositories | `[tool.importlinter]` |
-| `bandit` | security lint on app/main/harness/scripts | `[tool.bandit]` |
+| `bandit` | security lint on app/main/harness/scripts/fuzz | `[tool.bandit]` |
 | `semgrep` | repo-specific rules (no `print` on the MCP stdout path, deprecated asyncio, Qdrant writes outside `store.py` or without `wait`, …) and the registry packs `p/python p/security-audit` (`SEMGREP_PACKS` in `scripts/quality/static.py`; they need the network, so a scoped `pre-commit` run keeps to the local rules; `SEMGREP_PACKS` in the environment replaces them, empty leaves them out). Uses `semgrep` on `PATH`, else `uvx`, else the pinned Docker image; fails when none can run | `.semgrep/axmem.yml`, `.semgrepignore` |
 | `shellcheck` | `shellcheck -x` with `SHELLCHECK_OPTS` emptied (`shellcheck-py`, pinned in the `dev` group) over every shell script the project holds: the files named `*.sh` and the files whose first line names `sh`, `bash`, `dash` or `ksh`, tracked or untracked and not ignored (the files of `.githooks/`, `scripts/*.sh`, `scripts/lib/*.sh`, the fake tools of `tests/release_support/fake_bin/`); fails when the binary is missing from the environment, or when the interpreter is not in a virtual environment (a system `bin/` would hold unpinned tools) | `.shellcheckrc` (it holds no option; its presence stops the search for a user-level rc file) |
 | `actionlint` | `actionlint` (`actionlint-py`, pinned in the `dev` group) over `.github/workflows/*.yml`: expressions, contexts, the job and step schema, and the `run:` blocks through the same pinned shellcheck (the gate puts the `bin/` of the environment first on `PATH` and passes `-shellcheck`, because actionlint lints `run:` blocks only with a shellcheck it finds); fails when a binary is missing. `actionlint-py` is an sdist in `uv.lock`: the first `uv sync` builds it and it downloads the pinned `actionlint` binary from github.com (checked against the SHA-256 in the sdist), so a sync needs GitHub as well as PyPI | `.github/actionlint.yaml` (optional) |
+| `reuse` | `reuse lint-file` (the FSFE `reuse` tool, `reuse[charset-normalizer]` pinned in the `dev` group) over every file that git sees, tracked or untracked and not ignored, 200 files per call: each has a copyright notice and a license identifier, in the file or in `REUSE.toml`, and `LICENSES/` holds the text of every license named. Always the whole project. The gate fixes the environment of the tool (`REUSE_ENCODING_MODULE=charset_normalizer`, messages in English), so the result does not depend on libmagic or on the language of the machine; it needs no network, and fails when the binary is missing from the environment, or when the interpreter is not in a virtual environment. See [Licensing headers](#licensing-headers) | `REUSE.toml`, `LICENSES/` |
 | `vulture` | dead code, min confidence 60 | `[tool.vulture]`, `vulture_whitelist.py` |
 | `radon-cc` | no function/method rated C or worse (minimum rating B), tests included | `radon.cfg` |
 | `radon-mi` | every file maintainability grade A (score above 19), tests included | `radon.cfg` |
-| `mypy` | type check of `app`, `main.py`, `scripts` | `[tool.mypy]` |
-| `pylint` | score at least 8/10 | `[tool.pylint]` |
+| `mypy` | type check of `app`, `main.py`, `scripts`, `fuzz` in `strict` mode (every function annotated, no bare generic, no implicit re-export, no stale `type: ignore`), plus `warn_unreachable`, `disallow_any_unimported` and nine optional error codes that the code already satisfies (`redundant-expr`, `truthy-bool` and `explicit-override` are left off, see [Warnings](#warnings)) | `[tool.mypy]` |
+| `pylint` | score at least 8/10 (the score is 8.00; most of the findings are `line-too-long` at 100 columns, a limit that ruff does not enforce: it stops at 140; `pre-commit` runs pylint on the staged files without the convention and refactor checks, `--disable=C,R`, so the 100 columns are counted only by the project-wide run in `pre-push` and `ci`), with the extensions that the code base satisfies completely | `[tool.pylint]` |
 | `architecture` | `tests/architecture`: the import contracts and the proofs of their rules, the rules of the workflow files, the shape of the release workflows; no GPU and no Docker | `[tool.importlinter]`, `tests/architecture/` |
 | `package` | the wheel and the sdist built from this checkout hold source only, see [Package contents](#package-contents) | `scripts/quality/package.py`, `[tool.hatch.build.targets.*]` |
 | `wheel` | the built wheel installs on the locked dependencies, starts and resolves, see [The wheel gate](#the-wheel-gate) | `scripts/quality/wheel.py` |
 | `snapshots` | syrupy snapshot tests (`-m snapshot`): CLI argument tree, settings defaults, Qdrant collection layout and payload types, MCP meta-tool signatures and tool catalogue, HTTP route table | `tests/integration/test_snapshots.py`, `tests/e2e/test_snapshots_e2e.py` |
-| `tests-fast` | `tests/integration`, stopping at the first failure (the architecture tests are the `architecture` gate) | `pytest.ini` |
-| `tests` | architecture + integration + end-to-end on one Qdrant node with branch coverage (erases previous coverage data first) | `[tool.coverage.*]` |
+| `tests-fast` | `tests/integration`, stopping at the first failure (the architecture tests are the `architecture` gate); every warning is an error (`filterwarnings = error`, see [Warnings](#warnings)) | `pytest.ini` |
+| `tests` | architecture + integration + end-to-end on one Qdrant node with branch coverage (erases previous coverage data first); every warning is an error, as in `tests-fast` | `[tool.coverage.*]`, `pytest.ini` |
 | `e2e-qdrant` | `tests/cluster` (`-m cluster`) against a real three-node Qdrant cluster (replication factor 3, write consistency 2, strong ordering, API key and internal authentication; the restore tests also start a four-node and a second three-node cluster), appending to the coverage data (fails without a GPU or without Docker) | `tests/cluster/conftest.py`, `tests/qdrant_support.py` |
 | `coverage` | combined **100 %** line and branch coverage of `app` and `main.py`, from the single-node and cluster runs together | `[tool.coverage.report]` |
 | `memray` | memory budgets (`@pytest.mark.limit_memory`) via pytest-memray, run as `pytest tests/e2e -m memory --memray` (Linux/macOS only) | `tests/e2e/test_memory_budget_e2e.py` |
@@ -244,6 +339,61 @@ and without Docker and check that each ends the run.
 
 `radon cc . -a -nc` and `radon mi . -s` work from the repository root and report the same files the
 gates check (`radon.cfg` excludes virtualenvs and generated paths).
+
+### Warnings
+
+Axmem turns on the warnings of its tools wherever that is practical, so that an error is found while the code is written (the
+OpenSSF Best Practices criterion `warnings_strict`). Each setting lives in the config file of its tool, and what is left
+off is listed there with the reason and the count of findings it would raise, so a reader sees what was not enabled and why.
+No rule or threshold that was on before was loosened: the findings were fixed in the code, or one line carries an exception.
+
+* **`ruff`** (`ruff.toml`, target `py314`): 54 groups are on, among them `E` and `W` (pycodestyle), `N` (pep8-naming), `B`
+  (bugbear), `BLE`, `ASYNC`, `DTZ`, `S`, `TRY`, `PTH`, `RET`, `SIM`, `RUF` (which also reports a `# noqa` that no longer
+  suppresses anything), `ERA` (commented-out code), `FLY` (flynt), `C90` (mccabe) and the `PL` groups with the size limits of
+  `[tool.pylint.design]`. Every ruff group (`uv run ruff linter`) is on, or listed at the end of `select` with the count of
+  its findings, or a single rule of it is in `ignore` with its reason. Ruff enforces 140 columns (`E501`, set in
+  `[lint.pycodestyle]`) and pylint 100 under `fail-under` 8.0 (see below), so a line of 101 to 140 columns costs pylint score
+  and fails no gate; `pre-commit` runs pylint on the staged files without the convention checks (`--disable=C,R`), so the 100
+  columns are counted only by the project-wide run in the `pre-push` and `ci` stages. Four lines over 140 columns carry a
+  `# noqa: E501 - reason` (two tool descriptions and an expected CLI help text, which tests pin, and one embedded script). Off
+  inside the groups, each with its reason in the file: `TRY003` (356), `PT011` (87, all in tests), `G004` (28; the log
+  masking filter treats a message and its arguments apart) and `PLC0415` (207; the lazy imports are deliberate).
+  `PLR2004` is on in the code (16 findings outside `tests/` were fixed with a named constant) and off in `tests/` (939
+  findings: assertions compare with literal expected values). Not selected, with the findings in all code / in `app`: `ANN`
+  about 15900 / 90, `D` about 5900 / 317, `EM` 384 / 198, `FBT` 120 / 41, `TC` about 230 / 136 (pydantic, FastAPI and the MCP
+  tools need those types at run time), `T20` 185 / 32 (the output of the CLI and the scripts is `print`), `INP` 393 / 0 (the
+  test directories are not packages) and two preview rules, `CPY` (about 550 / 98 with `--preview`; the `reuse` gate checks
+  the header of every file) and `DOC` (pydoclint, about 1200 / 408 with `--preview`; the docstring policy is not enforced).
+  Fixing `ANN`, `EM`, `FBT` or `TC` would change signatures or what a user sees, so they stay off. In `tests/` `ARG` and
+  `SLF001` are off too (fixtures requested for their effect, tests that reach into internals on purpose). Recount with
+  `uv run ruff check --no-cache --extend-select <GROUP> --statistics`.
+* **`mypy`** (`[tool.mypy]`): `strict = true`, `warn_unreachable`, `warn_unused_ignores`, `disallow_any_unimported` and nine
+  optional error codes. Measured and left off: `redundant-expr` (3 findings) and `truthy-bool` (2), which flag defensive
+  checks on a value that the types say is always true, and `explicit-override` (18), which asks for `@override` on every
+  override. `test_harness` is not type-checked (33 strict errors, some of them real, and fixing them would change what the
+  harness does).
+* **`pylint`** (`[tool.pylint]`): at least 8/10 (`--fail-under=8.0` is in `pyproject.toml` and, as a constant, in
+  `scripts/quality/static.py`; raise both together), lines of at most 100 characters (ruff stops at 140, so pylint is the
+  stricter of the two, and only through the score), eleven extensions that cost nothing. `pre-commit` runs pylint on the
+  staged files without the convention and refactor checks (`--disable=C,R`: a score over a few files means nothing for them),
+  so the 100 columns are counted only by the project-wide run in the `pre-push` stage and in the `ci` stage that hosted CI
+  runs. The score is 8.00 and 1785 of its findings are `line-too-long`, so a higher threshold needs about 480 lines rewrapped;
+  the line length is not raised to get there.
+* **`pytest`** (`pytest.ini`): `filterwarnings = error`, so a deprecated call, an unawaited coroutine or a leaked resource
+  fails the test that causes it. One `ignore` line follows, limited to one message, one category and one module: the
+  `DeprecationWarning` that `google.genai.types` (google-genai 1.66.0, pinned) raises at import for
+  `typing._UnionGenericAlias`, which only a newer release of that library removes. Two tests carry a
+  `@pytest.mark.filterwarnings` for the `RuntimeWarning` that `runpy` raises when a test runs `scripts.release.integrity` or
+  `scripts.release.guard` as a program. The dev group pins `httpx2` because `starlette.testclient` warns that `httpx` is
+  deprecated for it.
+* **Other tools**: `bandit` reports every severity and confidence, `shellcheck` runs at its default severity with no option
+  and `actionlint` checks every workflow; `radon` (rank B at most, grade A) and `vulture` (confidence 60) are at their
+  floors.
+
+A suppression is as narrow as it can be and carries its reason on the same line (see
+[Maintaining the thresholds](#maintaining-the-thresholds)): one rule on one line, a per-file ignore for one rule on one
+file, a `type: ignore[<code>]`, or a warning filter that names the message, the category and the module. Recount the
+findings of a group that is off with `uv run ruff check --no-cache --extend-select <GROUP> --statistics`.
 
 ### Coverage
 
@@ -302,8 +452,10 @@ the repository. It builds the package as `package` does, then stops at the first
 1. `uv lock --check`: `uv.lock` is current with `pyproject.toml` (the hooks run `uv run --frozen`, which never checks it);
 2. `twine check` on the wheel and the sdist (metadata and the README as it renders), `twine` pinned in the `dev` group;
 3. `check-wheel-contents` on the wheel, `check-wheel-contents` pinned in the `dev` group, with `W005` and `W009` ignored
-   (`WHEEL_IGNORE` in `scripts/quality/wheel.py`, with the reason: the top-level package is called `app`, and the wheel holds
-   the package and the `main.py` module that the console script points at);
+   (`WHEEL_IGNORE` in `scripts/quality/wheel.py`, with the reasons: the top-level package is called `app`, and the wheel
+   holds the package and the `main.py` module that the console script points at). Duplicate files (`W002`) are not ignored:
+   the tool cannot ignore one path, and the package markers `__init__.py` that hold the notice of the license each hold a
+   docstring of their own, so no two files of the wheel are identical;
 4. a clean environment: the locked dependencies without the dev group, the project and `tensorrt-cu13-libs`
    (`uv sync --locked`, so the TensorRT packages come from NVIDIA's index as `uv.lock` records), the wheel on top
    (`uv pip install --no-deps`), then `axmem --help` and `import main` from another directory, in isolated mode, so the
@@ -345,6 +497,18 @@ leak or an accidental full-table load, not on noise. Without `--memray` the test
 tests; on Windows the gate is skipped because memray is not available there. Change a budget only with the
 new measurement in a comment next to it.
 
+### Fuzzing
+
+The Atheris harnesses of `fuzz/` ([Fuzzing](fuzzing.md)) are not a gate of their own: a long fuzzing run is a command the
+contributor starts, and nothing runs one continuously. What the gates do with them is fixed so that they cannot rot.
+`tests/integration/test_fuzz_targets.py` runs every harness for 300 inputs with a fixed seed, so the `tests-fast` gate (in
+`pre-commit`) and the `tests` gate (in `pre-push`) fail when a harness stops working or a property it checks stops
+holding, and when the table of harnesses in [fuzzing.md](fuzzing.md) and the directory differ. `fuzz/` is in the path lists of
+`ruff`, `bandit`, `semgrep`, `vulture`, `radon`, `mypy` and `pylint`; it is outside the coverage report, in neither the wheel
+nor the sdist, and its test file is left out of the mutmut run (it starts child processes). `atheris` is pinned in the `dev`
+group for Linux x86_64 only, the one platform with a build for Python 3.14. A new harness is `fuzz/fuzz_<target>.py` with a
+row in the table of `fuzzing.md`.
+
 ### Mutation testing
 
 `mutation` runs `mutmut` over the modules a change touched, in every `pre-push`. A run over the whole of `app/`
@@ -380,6 +544,109 @@ branch that changes most of `app/` (dozens of modules, tens of thousands of muta
 rerun resumes: the mutants already tested stay in `mutants/` (git-ignored), and a rerun continues from them while the code
 and the files the tests read are unchanged; `rm -rf mutants` starts over.
 
+## Licensing headers
+
+Axmem is `AGPL-3.0-only`, copyright 2026 Giovanni Manzoni, and derived from Forgetful (copyright (c) 2025 Scott Raisbeck,
+MIT License, whose notice is kept in `LICENSE-FORGETFUL-MIT.md`). Every file of the checkout states its copyright and its
+license where a reader and a tool can read them, and the `reuse` gate fails a commit, a push and a hosted run when one does
+not. This is what the `copyright_per_file` and `license_per_file` criteria of the gold level of the OpenSSF Best Practices
+badge ask for.
+
+**Source files carry the notice in the file**: the Python files (tests included), the shell scripts (the files of
+`.githooks/`, `scripts/` and the fake tools of `tests/release_support/fake_bin/` included), the workflows and
+`.github/dependabot.yml`, and the Dockerfile. The header is the first thing in the file, after a shebang line, and after the
+parser directives (`# syntax=`) of a Dockerfile, which must stay first, then one blank line, then the code. There are two forms.
+A file that no author of Forgetful has touched:
+
+```
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+```
+
+A file derived from Forgetful:
+
+```
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+```
+
+**Which form a file takes** is decided by two tests. A file takes the second form when either holds, and the first form when
+neither does.
+
+1. History. `git log --follow --format=%an -- <file>` names an author other than the maintainer (Giovanni Manzoni). The
+   authors of Forgetful in the history are Scott Raisbeck (also as `ScottRBK`), Olivier Berthet, Tristin Stagg and
+   Hulkito; `--follow` follows a rename. The last Forgetful commit is `6d0199e` (Scott Raisbeck, 2026-10-18) and every commit
+   after it is the maintainer's, so another author means code that came from Forgetful. A file with no commit yet has no
+   history and goes to the second test.
+2. Overlap, for a file that history does not mark (a module of Axmem that was split off a Forgetful module, a test that was
+   copied and changed), which `--follow` cannot see. Take the code lines of the file: the lines of at least 25 characters
+   once trimmed that do not start with `#`, `import ` or `from `, each distinct line counted once. Take the same lines of every
+   Python file, shell script, workflow and Dockerfile of the Forgetful tree at `6d0199e`. The file is derived when one single
+   Forgetful file holds at least 5 of them and they are 25 percent or more of the code lines of the file.
+
+```python
+def code_lines(text):
+    return {line.strip() for line in text.splitlines()
+            if len(line.strip()) >= 25 and not line.strip().startswith(("#", "import ", "from "))}
+
+# `git show 6d0199e:<path>` gives the text of a file of the Forgetful tree
+shared = max(len(code_lines(new_file) & code_lines(forgetful_file)) for forgetful_file in forgetful_files)
+derived = shared >= 5 and shared / len(code_lines(new_file)) >= 0.25
+```
+
+The test is a count of lines, not a judgement of authorship, and was applied as it stands, with one choice that goes the
+safe way: three files fell below the threshold (`app/repositories/qdrant/memory_search.py`, 13 of 66 code lines, 20 percent,
+shared with `app/repositories/sqlite/memory_repository.py`; `app/routes/mcp/adapters/arguments.py`, 10 of 64, 16 percent, with
+`app/routes/mcp/tool_adapters.py`; `tests/integration/test_cli_launcher_arguments.py`, 11 of 73, 15 percent, with
+`tests/integration/test_cli_dispatch.py`) and carry the second form all the same, because a header that names Forgetful where
+it was not needed does no harm and one that leaves it out where it was needed does. Of the source files, 134 are derived: 121
+by history, 10 by an overlap of 25 percent or more (`app/repositories/qdrant/memory_base.py` is the one at exactly 25 percent)
+and those 3 by choice. The list of `REUSE.toml` below uses the history test alone, because a document or a data file has no code
+lines to compare. A new file takes the first form unless it moves or splits code of Forgetful. The headers carry no e-mail
+address. `app/_version.py` is written by hatch-vcs at build time and git ignores it.
+
+**The Forgetful line repeats the upstream notice, word for word, and is neither extended nor split by author.** The MIT
+License asks that "the above copyright notice" be kept in copies and substantial portions, and the notice of Forgetful is the
+one in its `LICENCE.md` (`Copyright (c) 2025 Scott Raisbeck`), kept in `LICENSE-FORGETFUL-MIT.md`. That file did not change
+when Forgetful took commits in 2026, nor when Olivier Berthet, Tristin Stagg and Lenin Mookiah contributed to it: the
+project states one notice for the whole of its code. The header therefore carries that notice and nothing else, for three
+reasons. The year is the one the owner of the notice chose, and a later year or a range would claim something in the name of a
+person who did not; the commit dates of a file in the history are not a statement of copyright. A name taken from `git log`
+is not a copyright holder either: the e-mail addresses of the history show that a contributor may have written for an
+employer, who would then hold the copyright, and the headers cannot decide that. And a second line would put two notices on
+the same code, which differ from the one in the license text. Who wrote what is in the history of Forgetful
+(<https://github.com/ScottRBK/forgetful>), which `git log --follow` reads and which is the evidence the rule above uses. A
+change of this line is a change of the upstream notice and is made only when Forgetful makes it. The line of the maintainer
+(`2026 Giovanni Manzoni`) covers what Axmem added or changed, in the year it did.
+
+**Everything else is covered in `REUSE.toml`**: the documents, the data and configuration files, the lock files, the images and
+the dotfiles have no room for a comment, or are generated. Its first annotation names types of files (`**/*.md`, `**/*.json`,
+`**/*.toml`, ...) and never a directory, so that a new `.py` file without a header is not covered by accident and fails the
+gate; the second lists, by path, the files of that kind that are derived from Forgetful (the history test above), and comes
+last so that it wins. `LICENSE` and `LICENSE-FORGETFUL-MIT.md` are license texts and keep their own. A new document needs no
+change in `REUSE.toml`; a new kind of file does.
+
+`LICENSES/` holds the texts of the two licenses that the files name. `AGPL-3.0-only.txt` is the text of `LICENSE`, byte for byte
+(the canonical text of gnu.org); `MIT.txt` is the text of the SPDX license list. The licenses of the headers, of `REUSE.toml` and
+of `license` in `pyproject.toml` must be the same set. Both annotations of `REUSE.toml` override what a document says about itself
+(the License section of `README.md`, a quoted header: that is text, not a notice). A source file that quotes the tags (the tests of
+the gate) puts the quotation between the ignore markers of `reuse` (`REUSE-IgnoreStart` and `REUSE-IgnoreEnd` in comments), or `reuse` reads it as the notice of the file.
+
+Two checks hold this. The `reuse` gate proves that every file git sees has a copyright notice and a license, and that every
+license named has its text. `tests/architecture/test_licensing_headers.py` proves the rest: every source file starts with one of
+the two headers above and no annotation of `REUSE.toml` covers a source file, `LICENSES/AGPL-3.0-only.txt` is `LICENSE`, and the
+set of licenses is the same everywhere. Neither can know which form is the right one for a file; that needs the history of git and the Forgetful tree (see above).
+
+```bash
+uv run python -m scripts.quality gate reuse
+uv run reuse lint-file path/to/new_file.py     # one file, with the reason when it fails
+```
+
+`uv run reuse annotate --year 2026 --copyright "Giovanni Manzoni" --license AGPL-3.0-only path/to/new_file.py` writes a header
+that the gate accepts, with an empty comment line between the two tags; put the header of a Dockerfile in by hand, below its
+`# syntax=` line, because `annotate` writes above it.
+
 ## Secrets
 
 `QODANA_TOKEN` goes into the git-ignored dotenv file in the repository root (`.env.example` lists the
@@ -411,6 +678,10 @@ untested.
 
 ## Maintaining the thresholds
 
+* A tool is never loosened to make a change pass: a rule group of `ruff.toml`, a `mypy` flag, the `pylint` score and
+  `filterwarnings = error` stay on, and a finding is fixed in the code. A new `# noqa`, `type: ignore` or `ignore:` warning
+  filter names one rule or one message and gives its reason on the same line; a rule that has to go off for the whole
+  project is listed in `ruff.toml` with its reason and the count of findings.
 * Coverage must stay at 100 %. Use `# pragma: no cover` only for code that cannot execute in any
   supported configuration, with a one-line reason. `[tool.coverage.report]` already excludes
   `TYPE_CHECKING` blocks, `@overload`, `raise NotImplementedError`, bare `...` bodies and the
@@ -438,7 +709,9 @@ untested.
   Docker), pin its tool in the `dev` group and add a row to the tables above. A check that only a workflow, a script or a
   person runs is not accepted.
 * The same convention applies to the other linters: `# noqa: <code> - reason` for ruff,
-  `# type: ignore[<code>]` with a reason for mypy (`warn_unused_ignores` flags stale ones). The code base
+  `# type: ignore[<code>]` with a reason for mypy (`warn_unused_ignores` flags stale ones; the code base has three: two on a class or
+  type that comes from a package without type information, `tensorrt` and `tokenizers`, and one on `_field_name` in
+  `app/config/settings.py`, where pydantic types `field_name` as optional). The code base
   uses no inline pylint disables; a noisy check is disabled once, with a comment, in
   `[tool.pylint."messages control"]`. The members of the native modules `tensorrt` and `cuda.*` are not checked
   (`ignored-modules` in `[tool.pylint.typecheck]`, the counterpart of the mypy override): they are filled in at

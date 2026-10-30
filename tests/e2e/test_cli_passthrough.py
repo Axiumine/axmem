@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """E2E tests for the CLI passthrough commands (docs/dev/cli_plan.md phase 3)
 
 Drives main.cli() in-process with patched argv against a real Qdrant node
@@ -153,7 +157,7 @@ def test_python_main_py_propagates_cli_exit_codes():
             sys.executable, "main.py",
             "call", "get_recent_memories", "--server", "http://127.0.0.1:9",
         ],
-        cwd=repo_root, env=env, capture_output=True, text=True, timeout=120,
+        cwd=repo_root, env=env, capture_output=True, text=True, timeout=120, check=False,
     )
 
     assert result.returncode == 1, (result.stdout, result.stderr)

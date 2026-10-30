@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """What git, GitHub and the PyPI JSON of the project say about a release.
 
 The release guard (``scripts.release.guard``) and the release integrity check (``scripts.release.integrity``)
@@ -433,7 +436,7 @@ def parse_release_json(text: str, package: str, index: str = "pypi") -> list[Pyp
         body = json.loads(text)
         found, releases = body["info"]["name"], body["releases"]
         if not isinstance(releases, dict):
-            raise TypeError("releases is not an object")
+            raise TypeError("releases is not an object")  # noqa: TRY301 - caught just below
     except (ValueError, LookupError, TypeError) as exc:
         raise FactsError(f"the answer read from {label} is not the JSON of a project: {exc!r}") from exc
     if not isinstance(found, str) or _normalised(found) != _normalised(package):
@@ -533,7 +536,7 @@ def version_key(
     numbers = [int(part) for part in release.split(".")]
     while len(numbers) > 1 and numbers[-1] == 0:
         numbers.pop()
-    if letter:
+    if letter:  # noqa: SIM108 - a conditional expression with a nested one in its else branch reads worse than the two branches
         pre = (float(_PRE_RANK[letter]), int(pre_n))
     else:
         pre = (-math.inf if dev is not None and post is None else math.inf, 0)

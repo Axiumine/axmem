@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The guard re-reads git and GitHub at the last moment, so a world that changed during the waits is caught at the dispatch.
 
 The release waits for CI and for the signing run, and a bundle that was whole at the end of the wait may not be at the
@@ -38,8 +41,8 @@ def _out(done: object) -> str:
 
 def _gh_rerun_signing_run(world: World) -> None:
     """What the maintainer does for a flaky signing run: `gh run rerun` of the run the push of the tag started."""
-    done = subprocess.run(  # noqa: S603
-        ["gh", "run", "rerun", "1", "-R", GITHUB_REPO],  # noqa: S607
+    done = subprocess.run(  # noqa: S603 - a program of the test setup, run without a shell
+        ["gh", "run", "rerun", "1", "-R", GITHUB_REPO],  # noqa: S607 - a program of the test setup, run without a shell
         cwd=world.root,
         env=world._env(),
         capture_output=True,

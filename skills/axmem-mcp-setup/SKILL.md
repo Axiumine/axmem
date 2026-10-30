@@ -29,7 +29,9 @@ object). Roughly 500 tokens of surface, with everything else disclosed at runtim
   `uv tool install .`). Right for a personal, local setup.
 - **HTTP** — the client connects to a running server at `<server>/mcp`, e.g.
   `http://localhost:8020/mcp`. Right for a shared or deployed instance; send
-  `Authorization: Bearer <token>` unless the server runs `AUTH_MODE=none` on a loopback bind.
+  `Authorization: Bearer <token>` unless the server runs `AUTH_MODE=none` on a loopback bind. Use an `https://`
+  endpoint for a server that is reachable beyond one machine: the server serves TLS itself when it has
+  `SERVER_SSL_CERTFILE` and `SERVER_SSL_KEYFILE`, or a reverse proxy does.
 
 Claude Code, as the worked example:
 

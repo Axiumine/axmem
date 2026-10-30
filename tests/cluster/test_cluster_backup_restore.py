@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Backup and restore on a real three-node cluster, in each replication layout.
 
 With a replication factor below the number of nodes a node stores only some of the shards, so its snapshot holds only

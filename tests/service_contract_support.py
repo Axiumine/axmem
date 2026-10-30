@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """What the service contract tests share: the pass-through spy, the log of a service and the memories they plant.
 
 A service runs on the production repository and the real embedder. A test states what the service asked of the

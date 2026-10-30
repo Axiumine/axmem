@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """How a restore reads what a node says about the replicas of a collection, one answer at a time.
 
 ``test_qdrant_backup_contract.py`` restores whole backup sets and pins when a restore gives up on a replica. This file
@@ -7,6 +10,8 @@ ended by the test and not by a deadline of minutes. The node is played by a stub
 adapter is replaced) and the checks are kept light: a mutated wait that cannot see an Active replica would otherwise
 keep every restore test waiting for its 90 s or 600 s.
 """
+from typing import Self
+
 import pytest
 
 from app.exceptions import OperatorCommandError
@@ -42,7 +47,7 @@ class Node:
         self.opened.append(url)
         return self
 
-    async def __aenter__(self) -> Node:
+    async def __aenter__(self) -> Self:
         return self
 
     async def __aexit__(self, *error) -> None:

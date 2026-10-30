@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Integration tests for the access checks of the REST routes (app/routes/api/access.py)
 
 A REST route stands for the registry tool that does the same work, and answers like a call to that tool over MCP:
@@ -5,6 +8,7 @@ A REST route stands for the registry tool that does the same work, and answers l
 token do not permit the tool, 415 when a body is not declared as JSON. The routes are registered through
 ``rest_route`` on a real server with the real tool registry, and driven through the ASGI application.
 """
+from typing import ClassVar
 from uuid import uuid4
 
 import httpx
@@ -132,7 +136,7 @@ def _expected(permitted_scopes: set[str]) -> dict[str, tuple[int, dict]]:
 
 
 def test_every_route_of_the_table_stands_for_a_tool_of_the_registry():
-    assert ROUTE_TOOLS == {(method, path): tool for method, path, tool, _ in ROUTES}
+    assert {(method, path): tool for method, path, tool, _ in ROUTES} == ROUTE_TOOLS
 
 
 def test_a_route_without_an_entry_cannot_be_registered(registry):
@@ -183,7 +187,12 @@ async def test_a_credential_without_a_scope_claim_gets_the_whole_instance_ceilin
 
 @pytest.mark.parametrize(
     ("ceiling", "permitted"),
-    [("read", {"read:memories"}), ("write", {"write:memories"}), ("read:memories", {"read:memories"}), ("write:memories", {"write:memories"})],
+    [
+        ("read", {"read:memories"}),
+        ("write", {"write:memories"}),
+        ("read:memories", {"read:memories"}),
+        ("write:memories", {"write:memories"}),
+    ],
 )
 async def test_the_instance_ceiling_decides_which_routes_answer(registry, ceiling, permitted):
     answers = await _answers(_server(registry, ceiling=ceiling, auth=FixedTokens()), _bearer("everything"))
@@ -299,7 +308,7 @@ async def test_authorize_request_answers_with_the_tenant_of_a_permitted_request(
     mcp = _base(registry, auth=FixedTokens())
 
     class Request:
-        headers = {"Authorization": "Bearer reader"}
+        headers: ClassVar[dict[str, str]] = {"Authorization": "Bearer reader"}
 
     assert (await authorize_request(Request(), mcp, "get_memory")).name == "acme"
     with pytest.raises(RequestError) as refused:

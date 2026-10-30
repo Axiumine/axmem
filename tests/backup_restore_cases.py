@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """Shared checks of the data a failed re-embed, a snapshot restore or an export/import must leave intact.
 
 Real Qdrant, real CLI and the real TensorRT embedder. The only wrapper is ``MigratingEmbedder`` in the child
@@ -22,18 +26,20 @@ from tests.embedding_doubles import MigratingEmbedder, similarity
 # embedding), or on the last one after two were written (the third).
 FAIL_AT = {"provider_error": 2, "late_error": 3}
 OBSOLETE_CUTOFF = 0.89
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 
 
 async def seed_memories(repo):
     """Three memories of one tenant: the first two linked, the third obsolete and superseded by the first."""
     user_id = uuid4()
-    memories = []
-    for index in range(3):
-        memories.append(await repo.create_memory(user_id, MemoryCreate(
+    memories = [
+        await repo.create_memory(user_id, MemoryCreate(
             title=f"Original memory {index}", content=f"Original content {index}",
             context="Backup regression", keywords=["backup", str(index)],
             tags=["original"], importance=7,
-        )))
+        ))
+        for index in range(3)
+    ]
     await repo.create_links_batch(user_id, memories[0].id, [memories[1].id])
     await repo.mark_obsolete(user_id, memories[2].id, "Replaced", memories[0].id)
     originals = [await repo.get_memory_by_id(user_id, item.id) for item in memories]
@@ -103,7 +109,7 @@ async def run_reembed_cli(failure, encoding):
     """Run the public CLI in its own process, against the test's Qdrant collections."""
     process = await asyncio.create_subprocess_exec(
         sys.executable, "-m", "tests.backup_restore_cases", failure,
-        cwd=Path(__file__).resolve().parents[1], env=child_environment(encoding),
+        cwd=REPOSITORY_ROOT, env=child_environment(encoding),
         stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
     )
     try:

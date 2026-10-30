@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Pieces the TensorRT embedder and the TensorRT reranker share: the start-up report, batch padding and the finite check.
 
 Both adapters feed a BERT-style model (``input_ids``, ``attention_mask``, ``token_type_ids``) with a
@@ -8,6 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 
@@ -54,7 +58,7 @@ def ensure_finite(values: np.ndarray, role: str, what: str) -> None:
         raise TensorRTError(f"the TensorRT {role} produced non-finite {what}")
 
 
-def pad_batch(encodings: list, pad_id: int, minimum: int) -> dict[str, np.ndarray]:
+def pad_batch(encodings: list[Any], pad_id: int, minimum: int) -> dict[str, np.ndarray]:
     """The model inputs for ``encodings``, padded to the longest of them (at least ``minimum`` tokens)."""
     shape = (len(encodings), max(minimum, *(len(encoding.ids) for encoding in encodings)))
     features = {

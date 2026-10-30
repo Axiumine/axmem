@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The only way the repositories read and write Qdrant points: the tenant filter chokepoint.
 
 An API key admits every tenant, so tenant isolation is this module's job. Every method takes a ``Scope``
@@ -156,7 +159,8 @@ def write_landed(payload: dict[str, Any], *, from_version: int, token: str) -> b
     history = payload.get(HISTORY_KEY) or []
     tokens = [payload.get(TOKEN_KEY), *history]
     if distance < len(tokens):
-        return tokens[distance] == token
+        same: bool = tokens[distance] == token  # the payload is untyped
+        return same
     # A history that is not full holds every write since the point's record began, so a version before that is a write
     # the record never saw (a copy of a newer point replaced it); a full one has dropped the token
     return None if len(history) >= CLAIM_HISTORY else False

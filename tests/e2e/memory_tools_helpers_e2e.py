@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Call helpers shared by the memory tool end-to-end tests.
 
 Every helper wraps one ``execute_axmem_tool`` round trip so that the test

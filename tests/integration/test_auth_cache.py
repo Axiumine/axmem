@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """Integration tests for TokenCache
 
 Tests token caching functionality with mock auth providers
@@ -125,7 +129,7 @@ async def test_token_cache_hash_security():
     await cache.set(token, RequestIdentity(user))
 
     # Verify raw token is not stored in cache keys
-    for key in cache._cache.keys():
+    for key in cache._cache:
         assert token not in key
         # Key should be a 64-char SHA-256 hash
         assert len(key) == 64

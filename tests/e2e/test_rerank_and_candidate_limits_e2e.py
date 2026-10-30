@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Reranked search honours ``k`` against the real Qdrant repository.
 
 The embedder is the real TensorRT embedder and the cross-encoder is the real TensorRT reranker
@@ -98,7 +101,7 @@ async def test_memory_search_still_reranks_when_k_is_within_dense_candidates(
 class _IndexOrderRerankHandler(BaseHTTPRequestHandler):
     """A /v1/rerank server that answers in document order instead of score order."""
 
-    def do_POST(self):  # noqa: N802
+    def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
         results = [
             {"index": index, "relevance_score": 0.95 if "BESTMATCH" in document else 0.05}
@@ -147,7 +150,7 @@ async def test_http_reranker_answering_in_document_order_still_picks_best_match(
         dense = await stack.memory_repository(tensorrt_embedder).search_scored(
             user_id, "alpha", "", 3, None, None, None,
         )
-    assert [memory.keywords for memory, _ in dense][0] == ["alpha"]
+    assert next(memory.keywords for memory, _ in dense) == ["alpha"]
     assert "BESTMATCH" in [memory.keywords[0] for memory, _ in dense]
 
     found = await _search_memories(repo, user_id, k=1, query="alpha")

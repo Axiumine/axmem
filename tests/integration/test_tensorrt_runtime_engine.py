@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The engine and its slots on the real GPU: what a call copies and runs, and the exact words of each refusal."""
 import weakref
 

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The TensorRT embedder, call for call: its start-up report and line, the arguments that win over the settings, the
 vectors it takes from the model output, what a refused text, width or model output says, and the one worker thread that
 serves every call.

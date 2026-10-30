@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """E2E tests for link_memories tool with auto-linking disabled.
 
 These tests verify manual linking functionality in isolation by disabling
@@ -506,7 +510,9 @@ async def test_link_memories_duplicate_prevention_e2e(mcp_client):
     memory2_id = memory2_result.data["id"]
     first_link_result = await _link_memories(mcp_client, memory1_id, [memory2_id])
     assert first_link_result.data is not None
-    assert memory2_id in first_link_result.data["linked_memory_ids"], f'Expected [{memory2_id}] but got {first_link_result.data["linked_memory_ids"]}'
+    assert memory2_id in first_link_result.data["linked_memory_ids"], (
+        f'Expected [{memory2_id}] but got {first_link_result.data["linked_memory_ids"]}'
+    )
     second_link_result = await _link_memories(mcp_client, memory1_id, [memory2_id])
     assert second_link_result.data is not None
     assert isinstance(second_link_result.data["linked_memory_ids"], list)
@@ -534,15 +540,13 @@ async def test_link_memories_invalid_source_id_e2e(mcp_client):
         "test", "error", "handling"], "tags": ["test"], "importance": 7}})
     assert target_result.data is not None
     target_id = target_result.data["id"]
-    try:
+    with pytest.raises(Exception) as raised:  # the client's own error type, ToolError for a refused call
         await mcp_client.call_tool("execute_axmem_tool", {"tool_name":
             "link_memories", "arguments": {"memory_id": MISSING_ID,
             "related_ids": [target_id]}})
-        assert False, "Expected ToolError for invalid source memory_id"
-    except Exception as e:
-        error_message = str(e)
-        assert "not found" in error_message.lower(
-            ) or "validation_error" in error_message.lower()
+    error_message = str(raised.value)
+    assert "not found" in error_message.lower(
+        ) or "validation_error" in error_message.lower()
 
 
 @pytest.mark.asyncio
@@ -552,6 +556,13 @@ async def test_link_memories_aliases_e2e(mcp_client):
     await _assert_link_alias_forms(mcp_client, ids)
     await _assert_id_alias_reads_and_updates(mcp_client, ids)
     await _assert_unlink_alias_forms(mcp_client, ids)
+
+
+async def _rejection(mcp_client, tool_name, arguments):
+    """The error with which the server refuses a call; any client or server error type counts as a refusal."""
+    with pytest.raises(Exception) as refusal:
+        await mcp_client.call_tool("execute_axmem_tool", {"tool_name": tool_name, "arguments": arguments})
+    return refusal.value
 
 
 @pytest.mark.asyncio
@@ -588,49 +599,21 @@ async def test_reject_numeric_and_non_uuid_ids_e2e(mcp_client):
     assert get_res.data["content"] == "Original untouched content"
 
     # 2. update_memory with boolean ID (True) must fail
-    with pytest.raises(Exception):
-        await mcp_client.call_tool("execute_axmem_tool", {
-            "tool_name": "update_memory",
-            "arguments": {"memory_id": True, "content": "Tampered via bool"},
-        })
+    await _rejection(mcp_client, "update_memory", {"memory_id": True, "content": "Tampered via bool"})
 
     # 3. get_memory with fractional ID must fail
-    with pytest.raises(Exception):
-        await mcp_client.call_tool("execute_axmem_tool", {
-            "tool_name": "get_memory",
-            "arguments": {"memory_id": fractional_id},
-        })
+    await _rejection(mcp_client, "get_memory", {"memory_id": fractional_id})
 
     # 4. mark_memory_obsolete with fractional ID must fail
-    with pytest.raises(Exception):
-        await mcp_client.call_tool("execute_axmem_tool", {
-            "tool_name": "mark_memory_obsolete",
-            "arguments": {"memory_id": fractional_id, "reason": "Testing rejection"},
-        })
+    await _rejection(mcp_client, "mark_memory_obsolete", {"memory_id": fractional_id, "reason": "Testing rejection"})
 
     # 5. link_memories with fractional source ID or target ID must fail
-    with pytest.raises(Exception):
-        await mcp_client.call_tool("execute_axmem_tool", {
-            "tool_name": "link_memories",
-            "arguments": {"source_id": fractional_id, "target_id": target_id},
-        })
-    with pytest.raises(Exception):
-        await mcp_client.call_tool("execute_axmem_tool", {
-            "tool_name": "link_memories",
-            "arguments": {"source_id": target_id, "related_ids": [fractional_id]},
-        })
+    await _rejection(mcp_client, "link_memories", {"source_id": fractional_id, "target_id": target_id})
+    await _rejection(mcp_client, "link_memories", {"source_id": target_id, "related_ids": [fractional_id]})
 
     # 6. unlink_memories with fractional source ID or target ID must fail
-    with pytest.raises(Exception):
-        await mcp_client.call_tool("execute_axmem_tool", {
-            "tool_name": "unlink_memories",
-            "arguments": {"source_id": fractional_id, "target_id": target_id},
-        })
-    with pytest.raises(Exception):
-        await mcp_client.call_tool("execute_axmem_tool", {
-            "tool_name": "unlink_memories",
-            "arguments": {"source_id": target_id, "target_id": fractional_id},
-        })
+    await _rejection(mcp_client, "unlink_memories", {"source_id": fractional_id, "target_id": target_id})
+    await _rejection(mcp_client, "unlink_memories", {"source_id": target_id, "target_id": fractional_id})
 
 
 @pytest.mark.asyncio

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """Integration tests for the bootstrap composition root (app/bootstrap.py)
 
 Phase 1 of docs/dev/cli_plan.md: the adapter/repo/service/registry wiring is extracted
@@ -141,7 +145,9 @@ def _unexpected(status: int):
         (OperatorCommandError("Qdrant refused the snapshot s: HTTP 400"), "Qdrant refused the snapshot s: HTTP 400"),
         (EmbeddingUnavailableError("budget spent"), "the embeddings provider is unavailable: budget spent"),
         (  # a message that already names TIKTOKEN_CACHE_DIR and the command that fills it
-            TokenizerUnavailableError("the tiktoken encoding of the token counter cannot be loaded (ConnectionError): set TIKTOKEN_CACHE_DIR"),
+            TokenizerUnavailableError(
+                "the tiktoken encoding of the token counter cannot be loaded (ConnectionError): set TIKTOKEN_CACHE_DIR",
+            ),
             "the tiktoken encoding of the token counter cannot be loaded (ConnectionError): set TIKTOKEN_CACHE_DIR",
         ),
         (  # a TensorRT engine is both: its own message already says what to do
@@ -151,7 +157,10 @@ def _unexpected(status: int):
         (PermissionError(13, "Permission denied", "/var/backups"), "Permission denied: /var/backups"),
         (OSError(28, "No space left on device"), "No space left on device"),
         (OSError("plain"), "plain"),
-        (ModuleNotFoundError("No module named 'openai'", name="openai"), "a Python package that this setting needs is not installed (openai)"),
+        (
+            ModuleNotFoundError("No module named 'openai'", name="openai"),
+            "a Python package that this setting needs is not installed (openai)",
+        ),
         (ImportError("broken"), "a Python package that this setting needs is not installed (broken)"),
         (ValueError("OPENAI_API_KEY must be configured\n  for the adapter"), "OPENAI_API_KEY must be configured for the adapter"),
         (_unexpected(401), "Qdrant refused the request (HTTP 401): check QDRANT_API_KEY"),

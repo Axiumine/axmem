@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Searching memories in Qdrant with the reranker: what it is given, and what comes back in the order it chose.
 
 The reranker is the real model, so the order it gives is whatever the model says, and the tests follow it. The store and

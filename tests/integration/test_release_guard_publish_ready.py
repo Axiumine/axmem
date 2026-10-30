@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """``guard publish-ready``: is the repository set up for the PyPI publication, read from GitHub's settings before a release.
 
 Nothing in ``publish.yml`` can keep another ref from publishing, so the safety is in the settings: the repository is public
@@ -393,4 +396,7 @@ def test_a_ruleset_that_lets_anybody_but_admins_bypass_does_not_count(ready, act
     code, _, err = ready(replace=_with_ruleset(_ruleset(bypass_actors=[ADMIN, actor])))
 
     assert code == 1
-    assert "no active tag ruleset covers refs/tags/v* with creation, update, deletion, non_fast_forward and lets only repository admins bypass it" in err
+    assert (
+        "no active tag ruleset covers refs/tags/v* with creation, update, deletion, non_fast_forward and lets only repository "
+        "admins bypass it"
+    ) in err

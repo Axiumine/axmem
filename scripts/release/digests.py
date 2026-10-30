@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Write and verify the release digest manifest.
 
 The wheel + sdist that ``scripts/release-pypi.sh`` builds on the release machine and the
@@ -31,6 +34,7 @@ import platform
 import subprocess  # nosec B404 - runs git, gh, uv and python with fixed argv lists, never a shell
 import sys
 from pathlib import Path
+from typing import Any
 
 SCHEMA = 1
 # The two globs release-pypi.sh builds, release.yml signs and publish.yml uploads. Kept here so
@@ -112,7 +116,7 @@ def cmd_write(args: argparse.Namespace) -> int:
 
 
 def _report_mismatch(
-    manifest: dict, dist: Path, expected: dict[str, str], actual: dict[str, str],
+    manifest: dict[str, Any], dist: Path, expected: dict[str, str], actual: dict[str, str],
 ) -> None:
     """Explain *why* the rebuild is not the published artefact, on stderr."""
     missing = sorted(set(expected) - set(actual))
@@ -148,7 +152,7 @@ def _report_mismatch(
         print(f"    this runner:     {json.dumps(_fingerprint(), sort_keys=True)}", file=sys.stderr)
 
 
-def _load_manifest(path: Path) -> dict:
+def _load_manifest(path: Path) -> dict[str, Any]:
     """Read the manifest, or raise ``ValueError`` with the operator-facing reason."""
     if not path.is_file():
         raise ValueError(
@@ -157,7 +161,7 @@ def _load_manifest(path: Path) -> dict:
             "  the release builds and the bytes signed here cannot be proven to be the bytes\n"
             "  installed. Re-cut the release through the script.",
         )
-    manifest = json.loads(path.read_text(encoding="utf-8"))
+    manifest: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
     if manifest.get("schema") != SCHEMA:
         raise ValueError(f"{path} has schema {manifest.get('schema')!r}, expected {SCHEMA}")
     return manifest
