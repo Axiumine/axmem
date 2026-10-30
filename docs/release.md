@@ -100,8 +100,10 @@ read the generator's release notes first); a test keeps the version and the tag 
   * a tag ruleset on `refs/tags/v*`: creation restricted to the maintainer (the Admin role is the only bypass actor), update,
     deletion and non-fast-forward blocked (`publish-ready` enforces it, bypass list included);
   * recommended: a branch ruleset that blocks the creation of `refs/heads/v*`, so no branch can be named like a tag;
-  * a ruleset on `main` without force push or deletion and with required status checks, with the maintainer as the only
-    bypass actor, because the script pushes to `main` (`publish-ready` only warns when it is missing).
+  * a ruleset on `main` without force push or deletion, with signed commits, a pull request with one code-owner approval,
+    resolved conversations and the required status checks (`lint (py3.14)`, `static (3.14)`, `trivy`, `smoke-test`,
+    `analyze (python)`, `analyze (actions)`), with the Admin role as the only bypass actor, because the script pushes to
+    `main` (`publish-ready` only warns when it is missing).
 * GitHub, Settings, Actions, General: when Allow select actions is on, allow `actions/*`, `astral-sh/setup-uv`,
   `sigstore/cosign-installer`, `softprops/action-gh-release`, `pypa/gh-action-pypi-publish` and the workflow of the
   `slsa-framework` generator. The default workflow token may stay read-only.

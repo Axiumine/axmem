@@ -155,9 +155,12 @@ request says what changed and why, and links the issue it closes.
 3. the maintainer has run the slow gates of the `pre-push` hook on the result (see
    [Making a change](#making-a-change)), because CI does not run the tests.
 
-These conditions are the maintainers' rule. The repository rules for `main` block deletion and force pushes and do not
-require the checks or an approval, so enforcing the conditions there is open work, listed in
-[GOVERNANCE.md](GOVERNANCE.md#if-the-lead-is-unavailable).
+The repository rules for `main` enforce the first two for a contributor: deletion and force pushes are blocked, commits must
+be signed, a change needs a pull request with one approval of a code owner, resolved conversations and the checks `lint`,
+`smoke-test`, `static`, `trivy` and the two CodeQL analyses green on the last commit. The third cannot be enforced, because
+the hosted CI has no GPU. The Admin role bypasses the rules, because the release script pushes to `main`; both owners are
+admins, so the rules do not hold the maintainers' own changes (see
+[GOVERNANCE.md](GOVERNANCE.md#if-the-lead-is-unavailable)).
 
 **The maintainers' own changes.** These are pushed to `main` directly after the git hooks have passed on the maintainer's
 machine: the `pre-commit` and `pre-push` hooks run the whole pipeline, including the tests that CI does not run. No second
