@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """Integration tests for auth provider factory (app/config/auth.py)
 
 Tests the build_auth_provider() factory and its helpers (_required, _scopes)
@@ -101,7 +105,7 @@ def test_build_returns_none_without_a_credential_mode(mock_settings, mode):
 
 @patch("app.config.auth.settings")
 @patch("app.middleware.token_verifiers.ExpiringJWTVerifier")
-def test_build_jwt_with_jwks_uri(MockJWT, mock_settings):
+def test_build_jwt_with_jwks_uri(mock_jwt, mock_settings):
     """JWT factory passes JWKS URI, issuer and audience when provided"""
     mock_settings.AUTH_MODE = "jwt"
     mock_settings.FASTMCP_SERVER_AUTH_JWT_JWKS_URI = "https://auth.example.com/.well-known/jwks.json"
@@ -112,19 +116,19 @@ def test_build_jwt_with_jwks_uri(MockJWT, mock_settings):
 
     result = build_auth_provider()
 
-    MockJWT.assert_called_once_with(
+    mock_jwt.assert_called_once_with(
         jwks_uri="https://auth.example.com/.well-known/jwks.json",
         public_key=None,
         issuer="https://auth.example.com",
         audience="my-api",
         required_scopes=["read", "write"],
     )
-    assert result == MockJWT.return_value
+    assert result == mock_jwt.return_value
 
 
 @patch("app.config.auth.settings")
 @patch("app.middleware.token_verifiers.ExpiringJWTVerifier")
-def test_build_jwt_with_public_key(MockJWT, mock_settings):
+def test_build_jwt_with_public_key(mock_jwt, mock_settings):
     """JWT factory passes public key when JWKS URI not provided; issuer and audience are trimmed"""
     mock_settings.AUTH_MODE = "jwt"
     mock_settings.FASTMCP_SERVER_AUTH_JWT_JWKS_URI = ""
@@ -135,14 +139,14 @@ def test_build_jwt_with_public_key(MockJWT, mock_settings):
 
     result = build_auth_provider()
 
-    MockJWT.assert_called_once_with(
+    mock_jwt.assert_called_once_with(
         jwks_uri=None,
         public_key="-----BEGIN PUBLIC KEY-----\nMIIB...",
         issuer="https://auth.example.com",
         audience="my-api",
         required_scopes=None,
     )
-    assert result == MockJWT.return_value
+    assert result == mock_jwt.return_value
 
 
 @pytest.mark.parametrize(
@@ -190,7 +194,7 @@ def test_build_jwt_missing_both_key_sources(mock_settings):
 
 @patch("app.config.auth.settings")
 @patch("app.middleware.token_verifiers.AudienceIntrospectionVerifier")
-def test_build_introspection_provider(MockIntrospection, mock_settings):
+def test_build_introspection_provider(mock_introspection, mock_settings):
     """Introspection factory passes correct settings including cache params and the audience"""
     mock_settings.AUTH_MODE = "introspection"
     mock_settings.FASTMCP_SERVER_AUTH_INTROSPECTION_AUDIENCE = " axmem-api "
@@ -204,7 +208,7 @@ def test_build_introspection_provider(MockIntrospection, mock_settings):
 
     result = build_auth_provider()
 
-    MockIntrospection.assert_called_once_with(
+    mock_introspection.assert_called_once_with(
         audience="axmem-api",
         introspection_url="https://auth.example.com/introspect",
         client_id="intro-client",
@@ -213,7 +217,7 @@ def test_build_introspection_provider(MockIntrospection, mock_settings):
         cache_ttl_seconds=600,
         max_cache_size=2000,
     )
-    assert result == MockIntrospection.return_value
+    assert result == mock_introspection.return_value
 
 
 @patch("app.config.auth.settings")

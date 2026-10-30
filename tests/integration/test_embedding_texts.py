@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The cosine values that the tests rely on, under the production embedder.
 
 ``tests/embedding_texts.py`` holds texts that are clearly similar or clearly unrelated; the auto-link

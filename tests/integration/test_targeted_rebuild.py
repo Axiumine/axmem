@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """Integration tests for the targeted, tenant-scoped rebuild on a real Qdrant node.
 
 Unlike ``tests/e2e/test_re_embedding_e2e.py``, this module drives the repository and the re-embedding
@@ -30,21 +34,20 @@ def _make_ctx():
 
 async def _seed_memories(repo, count=3, user_id=None):
     user_id = user_id or uuid4()
-    memories = []
-    for i in range(count):
-        memories.append(
-            await repo.create_memory(
-                user_id=user_id,
-                memory=MemoryCreate(
-                    title=f"M{i}",
-                    content=f"content {i}",
-                    context=f"ctx {i}",
-                    keywords=[f"k{i}"],
-                    tags=[f"t{i}"],
-                    importance=5,
-                ),
+    memories = [
+        await repo.create_memory(
+            user_id=user_id,
+            memory=MemoryCreate(
+                title=f"M{i}",
+                content=f"content {i}",
+                context=f"ctx {i}",
+                keywords=[f"k{i}"],
+                tags=[f"t{i}"],
+                importance=5,
             ),
         )
+        for i in range(count)
+    ]
     return user_id, memories
 
 

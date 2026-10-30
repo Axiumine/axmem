@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """Filesystem locations for CLI configuration.
 
 One mechanism for server and CLI: the user config file in ~/.config/axmem is already
@@ -14,4 +18,3 @@ def config_dir() -> Path:
 
 def user_env_file() -> Path:
     return config_dir() / ".env"
-

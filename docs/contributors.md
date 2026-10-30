@@ -1,7 +1,7 @@
 # Contributing to Axmem
 
 This guide covers testing and CI workflows for contributors. How to report a bug, send a pull request and which hardware
-Axmem supports (NVIDIA only; macOS only as a pull request of code that works natively) is in
+Axmem supports (NVIDIA only; Apple silicon only as a pull request of an MLX backend) is in
 [CONTRIBUTING.md](../CONTRIBUTING.md).
 
 ## Architecture
@@ -67,7 +67,9 @@ The Qodana token (`QODANA_TOKEN`) lives in your git-ignored dotenv file (see `.e
 name), never in a tracked file. Python 3.14 is the only supported version (`.python-version`).
 
 Every check of the project is a gate that a hook runs: there is no check that only a workflow or a manual command makes.
-`shellcheck`, `actionlint`, `twine` and `check-wheel-contents` are pinned in the `dev` group and come with the sync above.
+The two reports that run on GitHub only, CodeQL and OpenSSF Scorecard ([CI/CD Workflows](#cicd-workflows)), are not checks
+of the code in that sense: they rate and report, and no hook, gate or merge depends on a finding.
+`shellcheck`, `actionlint`, `reuse`, `twine` and `check-wheel-contents` are pinned in the `dev` group and come with the sync above.
 
 Everyday commands:
 
@@ -331,6 +333,28 @@ is caught
 (the pinned release binary, checked against its SHA-256). Snapshots, coverage, memory budgets, Qodana and mutation are not
 here: they need the GPU, Docker or a token and run in the `pre-push` hook. See [quality-gates.md](quality-gates.md).
 
+### `codeql.yml` - CodeQL
+
+**Triggers**: A push to `main`, and a pull request into `main`
+
+**Purpose**: Analyse the Python code and the workflow files of the repository with GitHub's CodeQL on a hosted runner (job
+`analyze`, once for the language `python` and once for `actions`, without a build) and report the alerts to code scanning.
+It is a report for the maintainers, not one of the quality gates: it has no local equivalent, no entry in
+`scripts/quality/registry.py` and no hook runs it. A failed run of the push to `main` does block a release, as the entry
+for `scorecard.yml` below says.
+
+### `scorecard.yml` - OpenSSF Scorecard
+
+**Triggers**: A push to `main`, and manual dispatch
+
+**Purpose**: Publish the [OpenSSF Scorecard](https://scorecard.dev/viewer/?uri=github.com/Axiumine/axmem) result of the
+default branch, which the badge in the README reads. It runs on a hosted runner with a read-only token (the Scorecard job
+alone may write the code scanning results and request the OIDC token that signs the result) and holds no secret. It
+publishes a result for readers and is not a quality gate, but it is not free of consequence: `scripts/release/ci_green.py`
+requires every push-triggered run of `main` on the release commit to be non-failed, so a failed run of this workflow (the
+API refused the result, or Scorecard was unreachable) or of `codeql.yml` stops a release until the run is repeated
+(`gh run rerun`). A run that the `if` of the job skipped counts as skipped, not as failed.
+
 ### `publish.yml` - PyPI Publication
 
 **Triggers**: `workflow_dispatch` on a release tag `v<version>`, which `scripts/release-pypi.sh` starts after its guard; a
@@ -359,4 +383,7 @@ There is one route, and it is a script: `scripts/release-pypi.sh <version>` buil
 release publishes nothing, and a tag pushed by hand starts `release.yml` without the release commit and the manifest that it
 needs. The setup, the steps and what to do when one stops are in [Releasing Axmem](release.md). Before the real upload,
 `scripts/release-testpypi.sh <version>` rehearses the same signed files on TestPyPI; it is optional and advisory, makes no
-release, and is described there too.
+release, and is described there too. Once a version is on an index, `scripts/smoke-release.sh --index testpypi|pypi <version>`
+installs its files from there and uses the server they start, on this machine's GPU, Docker and models; it is advisory too.
+Who can release when the lead maintainer cannot, and what is still to hand over, is in
+[GOVERNANCE.md](../GOVERNANCE.md#if-the-lead-is-unavailable).

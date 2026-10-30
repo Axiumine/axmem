@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """A setting or a service that an operator can fix ends a command with one line and exit code 1, never a traceback.
 
 Every case starts the real program in a child process, as the ``axmem`` console script does, with an

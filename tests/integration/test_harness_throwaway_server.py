@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Integration tests for the throwaway server's independence from its host.
 
 The harness boots a real `axmem serve` for an agent to walk through, so the
@@ -155,7 +158,7 @@ def test_missing_console_script_is_a_harness_infra_error(
 # ---------------------------------------------------------------------------
 
 class _HealthyBackend(BaseHTTPRequestHandler):
-    def do_GET(self):  # noqa: N802
+    def do_GET(self):
         self.send_response(200 if self.path == "/health" else 404)
         self.send_header("Content-Length", "2")
         self.end_headers()
@@ -170,13 +173,13 @@ def _unreachable_proxy(seen: list[str]):
     real proxy does for a host-local loopback address it cannot reach."""
 
     class _Proxy(BaseHTTPRequestHandler):
-        def do_GET(self):  # noqa: N802
+        def do_GET(self):
             seen.append(self.path)  # absolute-form URI when used as a forward proxy
             self.send_response(502)
             self.send_header("Content-Length", "0")
             self.end_headers()
 
-        do_POST = do_GET  # noqa: N815
+        do_POST = do_GET  # noqa: N815 - http.server looks the handler up by the name do_POST
 
         def log_message(self, *args):
             pass
@@ -188,6 +191,12 @@ def _serve(handler) -> ThreadingHTTPServer:
     httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler)
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     return httpd
+
+
+def _stop(httpd: ThreadingHTTPServer) -> None:
+    """Stop the serving loop and close the listening socket (shutdown() alone leaves it open)."""
+    httpd.shutdown()
+    httpd.server_close()
 
 
 @pytest.fixture
@@ -202,7 +211,7 @@ def proxy_requests(monkeypatch):
     monkeypatch.setenv("HTTP_PROXY", proxy_url)
     monkeypatch.setenv("http_proxy", proxy_url)
     yield seen
-    proxy.shutdown()
+    _stop(proxy)
 
 
 def test_health_probe_ignores_proxy_env(proxy_requests, tmp_path):
@@ -216,7 +225,7 @@ def test_health_probe_ignores_proxy_env(proxy_requests, tmp_path):
         # Act
         server._wait_until_healthy()
     finally:
-        backend.shutdown()
+        _stop(backend)
 
     # Assert: it was found healthy without ever involving the proxy
     assert proxy_requests == []
@@ -236,8 +245,11 @@ def test_harness_client_ignores_proxy_env(proxy_requests):
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
         port = sock.getsockname()[1]
+    # ws="websockets-sansio" is what main.py selects: the default implementation imports the
+    # deprecated websockets.legacy.
     uv = uvicorn.Server(uvicorn.Config(
         mcp.http_app(transport="http"), host="127.0.0.1", port=port, log_level="error",
+        ws="websockets-sansio",
     ))
     thread = threading.Thread(target=uv.run, daemon=True)
     thread.start()
@@ -290,7 +302,7 @@ def _resolved_settings(tmp_path: Path, name: str, user_config: str | None) -> di
 
     env = ThrowawayAxmem(run_dir)._child_env()
     env["PYTHONPATH"] = str(_PROJECT_ROOT)
-    result = subprocess.run(  # noqa: S603
+    result = subprocess.run(  # noqa: S603 - a program of the test setup, run without a shell
         [sys.executable, "-c", _RESOLVE_SETTINGS, str(config_dir)],
         cwd=run_dir, env=env, capture_output=True, text=True, check=True,
     )

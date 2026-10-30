@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Fake ``curl`` for PyPI and for TestPyPI: the JSON of the project ``axmem`` and the files behind its links.
 
 The release script reads PyPI with GET and nothing else, so this fake pins the exact argv: the options it knows are

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """One line for a failed remote embeddings SDK or HTTP call, naming what it was talking to; a lifespan that fails ends the same way.
 
 ``operator_failure`` once knew Qdrant only: the error of the OpenAI, Azure OpenAI, Google or Ollama SDK during a
@@ -53,7 +56,7 @@ def _no_retries(adapter):
 async def _failure_of(provider, monkeypatch, status):
     with FakeEmbeddingProvider(VECTOR, status=status) as server:
         adapter = _no_retries(adapter_for(provider, server, monkeypatch))
-        with pytest.raises(Exception) as raised:  # noqa: PT011 - each SDK has its own error classes; that is the point
+        with pytest.raises(Exception) as raised:  # each SDK has its own error classes; that is the point
             await adapter.generate_embedding("a text")
     return raised.value
 
@@ -108,7 +111,7 @@ async def test_a_provider_that_cannot_be_reached_is_named(provider, monkeypatch)
     with FakeEmbeddingProvider(VECTOR) as server:
         adapter = _no_retries(adapter_for(provider, server, monkeypatch))
     # the server is gone: nothing listens on its port any more
-    with pytest.raises(Exception) as raised:  # noqa: PT011 - the class differs by SDK
+    with pytest.raises(Exception) as raised:  # the class differs by SDK
         await adapter.generate_embedding("a text")
 
     line = operator_failure(raised.value)
@@ -126,7 +129,7 @@ async def test_a_message_never_repeats_what_the_provider_said_or_the_key(provide
     line = operator_failure(error)
 
     assert line is not None
-    assert "sk-leaked-key" in ERROR_TEXT and ERROR_TEXT in str(error) or provider == "Ollama"  # the SDK did carry it
+    assert ("sk-leaked-key" in ERROR_TEXT and ERROR_TEXT in str(error)) or provider == "Ollama"  # the SDK did carry it
     assert "provider-side-text" not in line
     assert "sk-" not in line
     assert "test-key" not in line
@@ -208,7 +211,12 @@ SERVERS = [
         "FASTMCP_SERVER_AUTH_INTROSPECTION_URL and that the endpoint runs",
     ),
     ("http://ollama.test:11434/api/embed", "Ollama", None, "OLLAMA_BASE_URL and that Ollama runs"),
-    ("https://generativelanguage.googleapis.com/v1beta/models/m:embedContent", "Google", "GOOGLE_AI_API_KEY", "the network access to Google"),
+    (
+        "https://generativelanguage.googleapis.com/v1beta/models/m:embedContent",
+        "Google",
+        "GOOGLE_AI_API_KEY",
+        "the network access to Google",
+    ),
 ]
 
 

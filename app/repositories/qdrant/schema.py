@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Layout of the Qdrant collections: names, vector configuration, payload indexes and generations.
 
 The live memory collection is an alias, ``<prefix>_memories``, onto one *generation*, a collection named
@@ -22,6 +25,9 @@ from app.exceptions import EmbedderChangedError, QdrantStartupError
 from app.repositories.qdrant.client import NodePool, describe_request_failure
 
 logger = logging.getLogger(__name__)
+
+# The HTTP status that Qdrant answers when the collection a request creates exists already
+_CONFLICT_STATUS = 409
 
 # Payload fields of a memory point that filters, orderings or conditional writes read. Qdrant scans an
 # unindexed field, and a condition on a value of the wrong type silently matches nothing, so every field a
@@ -283,7 +289,8 @@ class QdrantSchema:
         when it names another embedder. A generation that records none is taken to be the configured one, as in ``ensure``.
 
         ``written`` is for the look that follows a write into the generation that was live before (a created or edited
-        memory, or the batches of an import written so far, the one just written included): when the alias has moved to another embedder's generation
+        memory, or the batches of an import written so far, the one just written included): when the alias has moved
+        to another embedder's generation
         by then, the write is not nothing. It was made while the previous generation was live, and the copy that
         ``axmem re-embed`` makes after the switch may carry it into the new one, so the refusal says that the outcome is
         open and what to do about it (a caller that repeated a create could store the memory twice).
@@ -349,7 +356,8 @@ class QdrantSchema:
         return await self._read(lambda client: client.collection_exists(collection))
 
     async def links_layout_differs(self) -> bool:
-        """Whether the links collection exists with a shard count, replication factor or write consistency factor other than the settings'."""
+        """Whether the links collection exists with a shard count, replication factor or write consistency factor
+        other than the settings'."""
         if not await self.exists(self.names.links):
             return False
         info = await self._read(lambda client: client.get_collection(self.names.links))
@@ -418,7 +426,7 @@ class QdrantSchema:
             )
         except UnexpectedResponse as exc:
             # Another process created it between our check and this request: use theirs, verified below
-            if exc.status_code != 409:
+            if exc.status_code != _CONFLICT_STATUS:
                 raise
 
     @staticmethod

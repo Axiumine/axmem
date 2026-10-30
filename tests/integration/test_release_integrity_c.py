@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The release integrity check: listed (superseded) versions, the release being resumed, and what it cannot read.
 
 A version named in ``release-superseded.json`` is skipped only when PyPI serves exactly the listed files with the listed

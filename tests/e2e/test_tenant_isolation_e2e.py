@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """E2E: tenant A can never read or change tenant B's memories, on the REST and MCP access paths.
 
 An auth-enabled app (static tokens, tenants alice and bob) runs behind its own HTTP stack,

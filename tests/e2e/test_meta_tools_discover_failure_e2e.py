@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """E2E tests for how ``discover_axmem_tools`` reports a failure.
 
 A domain or validation error keeps its own message for the agent; anything else is
@@ -30,9 +33,8 @@ async def test_unexpected_failure_while_discovering_tools_becomes_a_tool_error(
 
     monkeypatch.setattr(meta_tools, "build_discovery_payload", broken_discovery)
 
-    with caplog.at_level(logging.ERROR, logger=meta_tools.logger.name):
-        with pytest.raises(ToolError) as caught:
-            await mcp_client.call_tool("discover_axmem_tools", {})
+    with caplog.at_level(logging.ERROR, logger=meta_tools.logger.name), pytest.raises(ToolError) as caught:
+        await mcp_client.call_tool("discover_axmem_tools", {})
 
     assert str(caught.value) == f"Failed to discover tools: {expected_detail}"
     logged = [r for r in caplog.records if r.getMessage().startswith("discover_axmem_tools failed")]

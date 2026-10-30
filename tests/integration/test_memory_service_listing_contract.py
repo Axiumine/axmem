@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """MemoryService start-up and listing on the real Qdrant repository: what it asks of the repository and what it logs.
 
 The service runs against the production repository and the real embedder. A pass-through spy (``spy``) records the

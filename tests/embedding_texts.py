@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Texts whose cosine similarity under the production embedder the tests rely on.
 
 The real TensorRT embedder (BAAI/bge-small-en-v1.5, strict fp32) gives these values for the embedding

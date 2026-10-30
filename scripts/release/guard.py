@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The proof that an exact release commit may be uploaded to PyPI.
 
 ``.github/workflows/publish.yml`` uploads to PyPI, and PyPI refuses a second upload of the same file name for
@@ -117,7 +120,7 @@ def load_manifest(path: Path) -> dict[str, Any]:
         manifest: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
         shaped = [{"name": a["name"], "sha256": a["sha256"]} for a in manifest["artifacts"]]
         if not shaped:
-            raise ValueError("it lists no artefact")
+            raise ValueError("it lists no artefact")  # noqa: TRY301 - caught just below
     except (OSError, ValueError, LookupError, TypeError) as exc:
         raise FactsError(f"cannot read the release manifest {path}: {exc}") from exc
     return manifest

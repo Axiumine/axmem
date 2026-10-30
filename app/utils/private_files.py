@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Keep files that hold user data readable by their owner only.
 
 Backups and exports hold every tenant's memories in plain files, so group and other access is

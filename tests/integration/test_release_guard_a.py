@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The release guard, conditions 1 to 3: the release commit, green CI on it, and the tag on the remote.
 
 A scratch repository with a bare remote, a digest manifest, an annotated tag and a ``dist/`` is judged by the real guard,
@@ -176,4 +179,4 @@ class TestAChildThatRefusesWithoutAWordIsStillARefusal:
         out = capsys.readouterr().out
         assert f"{name} exited 1 without a reason" in out
         assert out.count(": FAIL") == 1
-        assert f"[{number}]" in [line[:3] for line in out.splitlines() if ": FAIL" in line][0]
+        assert f"[{number}]" in next(line[:3] for line in out.splitlines() if ": FAIL" in line)

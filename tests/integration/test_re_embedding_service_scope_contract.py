@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """ReEmbeddingService.validate_targeted_scope on the real Qdrant repository: the checks it makes before a targeted rebuild.
 
 The repository is the production one and the embedder is the real TensorRT model behind call-recording spies

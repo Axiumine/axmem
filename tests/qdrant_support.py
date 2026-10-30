@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Real Qdrant servers for the tests: a throwaway single node, and throwaway clusters (three nodes, or as many as asked).
 
 Nothing is simulated. The suites talk to ``qdrant/qdrant`` (the version the service requires and the gates
@@ -28,7 +31,7 @@ SCROLLS_PER_TEST = 1_000  # the page reads one integration test may make: see ``
 
 def _docker(*args: str, check: bool = True, timeout: float = 120) -> str:
     result = subprocess.run(  # noqa: S603 - fixed argument list  # nosec B603 B607
-        ["docker", *args],  # noqa: S607
+        ["docker", *args],  # noqa: S607 - a program of the test setup, run without a shell
         capture_output=True, text=True, timeout=timeout, check=False,
     )
     if check and result.returncode:

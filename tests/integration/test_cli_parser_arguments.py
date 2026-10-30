@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Integration tests for how the CLI parser validates the ``call --args`` option.
 
 ``axmem call <tool> --args <json>`` takes the tool arguments as one JSON object;

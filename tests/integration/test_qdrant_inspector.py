@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The cluster check, with the nodes played by one real Qdrant node and skewed views of it.
 
 A cluster test cannot make three real replicas disagree on cue, so a "node" here is a client of the one test
@@ -71,7 +74,7 @@ async def test_nodes_that_hold_the_same_points_agree(seeded):
 
 
 async def test_a_node_that_lacks_a_point_or_holds_another_version_of_it_is_named(seeded):
-    stack, repo, user_id, originals = seeded
+    stack, repo, _user_id, originals = seeded
     check, pool = inspector(stack, nodes=3)
     [link_id] = [point.id async for point in stack.store.iterate(SYSTEM, stack.schema.names.links)]
     pool.clients[1] = SkewedClient(pool.clients[1], hide=[originals[0].id, link_id])

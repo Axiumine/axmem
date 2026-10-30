@@ -1,0 +1,108 @@
+version = 1
+SPDX-PackageName = "Axmem"
+SPDX-PackageDownloadLocation = "https://github.com/Axiumine/axmem"
+
+# Every file that cannot carry a comment (documents, data, configuration, images) or is generated is covered here. A source
+# file (Python, shell, workflow, Dockerfile) carries its notice in the file instead and is not listed: one without a
+# notice fails the reuse gate. See "Licensing headers" in docs/quality-gates.md.
+#
+# Both annotations override what a file says about itself: the License section of README.md or the quotation of a header in a
+# document is text, not a notice. Where two annotations match one file, the last one wins.
+
+# Written for Axmem: no commit by an author of Forgetful touches these files. The globs name types of files, never a
+# directory, so that a new source file without a notice is not covered by accident.
+[[annotations]]
+precedence = "override"
+path = [
+    "**/*.md",
+    "**/*.json",
+    "**/*.toml",
+    "**/*.lock",
+    "**/*.png",
+    "**/*.nix",
+    "**/*.yaml",
+    "**/*.cfg",
+    "**/*.ini",
+    "**/*.example",
+    ".github/CODEOWNERS",
+    ".semgrep/axmem.yml",
+    ".semgrepignore",
+    ".shellcheckrc",
+    ".trivyignore",
+]
+SPDX-FileCopyrightText = "2026 Giovanni Manzoni"
+SPDX-License-Identifier = "AGPL-3.0-only"
+
+# Derived from Forgetful: a commit by one of its authors (Scott Raisbeck, Olivier Berthet, Tristin Stagg) is in the history
+# of each of these files. Listed by path, and last, so that it wins over the globs above. The MIT notice of Forgetful is in
+# LICENSE-FORGETFUL-MIT.md.
+[[annotations]]
+precedence = "override"
+path = [
+    ".gitignore",
+    ".python-version",
+    "AGENTS.md",
+    "CLAUDE.md",
+    "README.md",
+    "architecture.md",
+    "docs/api_reference.md",
+    "docs/assets/mycelium_class_diagram.md",
+    "docs/concepts.md",
+    "docs/configuration.md",
+    "docs/connectivity_guide.md",
+    "docs/contributors.md",
+    "docs/copilot-cli/README.md",
+    "docs/copilot-cli/agents/axmem-memory.agent.md",
+    "docs/copilot-cli/agents/knowledge-explorer.agent.md",
+    "docs/copilot-cli/agents/memory-curator.agent.md",
+    "docs/copilot-cli/skills/README.md",
+    "docs/dev/architecture-tests.md",
+    "docs/dev/cli_plan.md",
+    "docs/embedding_migration.md",
+    "docs/features_roadmap.md",
+    "docs/gemini-cli/README.md",
+    "docs/gemini-cli/commands/axmem-setup.toml",
+    "docs/gemini-cli/commands/encode-repo.toml",
+    "docs/gemini-cli/commands/memory-explore.toml",
+    "docs/gemini-cli/commands/memory-list.toml",
+    "docs/gemini-cli/commands/memory-save.toml",
+    "docs/gemini-cli/commands/memory-search.toml",
+    "docs/images/avatar.png",
+    "docs/images/hero_banner.png",
+    "docs/images/layers.png",
+    "docs/nix.md",
+    "docs/opencode/README.md",
+    "docs/opencode/commands/axmem-setup.md",
+    "docs/opencode/commands/encode-repo.md",
+    "docs/opencode/commands/memory-explore.md",
+    "docs/opencode/commands/memory-list.md",
+    "docs/opencode/commands/memory-save.md",
+    "docs/opencode/commands/memory-search.md",
+    "docs/opencode/skills/README.md",
+    "docs/prompts/comprehensive_project_understanding_prompt.md",
+    "docs/prompts/custom_agent_integration.md",
+    "docs/prompts/example_system_prompt.md",
+    "docs/prompts/knowledge_base_bootstrap_prompt.md",
+    "docs/prompts/prompts_overview.md",
+    "docs/prompts/rapid_project_scan_prompt.md",
+    "docs/search.md",
+    "docs/tool_reference.md",
+    "flake.lock",
+    "flake.nix",
+    "pyproject.toml",
+    "pytest.ini",
+    "ruff.toml",
+    "skills/README.md",
+    "skills/axmem-cli-setup/SKILL.md",
+    "skills/axmem-context-gather/SKILL.md",
+    "skills/axmem-encode-repo/SKILL.md",
+    "skills/axmem-explore/SKILL.md",
+    "skills/axmem-mcp-setup/SKILL.md",
+    "skills/axmem-recall/SKILL.md",
+    "skills/axmem-remember/SKILL.md",
+    "test_harness/README.md",
+    "test_harness/docker/opencode.json",
+    "uv.lock",
+]
+SPDX-FileCopyrightText = ["2025 Scott Raisbeck", "2026 Giovanni Manzoni"]
+SPDX-License-Identifier = "AGPL-3.0-only AND MIT"

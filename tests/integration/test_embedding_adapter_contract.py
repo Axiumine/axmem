@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """What the remote embedding adapters say and send, word for word.
 
 Operators read the start-up and failure lines in the log and the error texts of a refused configuration or answer; the
@@ -279,7 +282,7 @@ async def test_a_refused_request_is_logged_with_its_traceback_and_raised_unchang
     with FakeEmbeddingProvider(VECTOR, status=400) as server:
         adapter = adapter_for(provider, server, monkeypatch)
 
-        with pytest.raises(Exception) as raised:  # noqa: PT011 - each library has its own error type
+        with pytest.raises(Exception) as raised:  # each library has its own error type
             await adapter.generate_embedding("hello")
 
     (record,) = records(caplog, message)

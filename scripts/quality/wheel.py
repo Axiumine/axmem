@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Wheel gate: the built package is what a user gets when installing it.
 
 ``package`` reads what the wheel and the sdist hold. This gate uses them: ``twine check`` on the metadata,
@@ -17,6 +20,7 @@ import tempfile
 import tomllib
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 from . import package
 from .core import ROOT, Ctx, MissingToolError, Skip, run, venv_binary
@@ -29,6 +33,8 @@ WHEEL_INPUTS = (
 # check-wheel-contents codes to ignore. W005: the top-level package is called `app`, which the tool lists among the
 # common names a wheel should not claim. W009: the wheel holds two top-level entries, the package `app/` and the module
 # `main.py` that the console script points at (`[tool.hatch.build.targets.wheel] packages`): the layout of the project.
+# W002 (duplicate files) is not ignored: the tool cannot ignore a path, so every package marker (`__init__.py`) that holds
+# the notice of the license (docs/quality-gates.md, "Licensing headers") also holds a docstring of its own.
 WHEEL_IGNORE = "W005,W009"
 # Modules the clean environment imports. `main` is the console script's own module, which imports the application with
 # the runtime dependencies alone.
@@ -44,7 +50,7 @@ VERSION_ENV = {"SETUPTOOLS_SCM_PRETEND_VERSION": "0.0.0"}
 Step = Callable[[], tuple[bool, str]]
 
 
-def _pyproject(project: Path) -> dict:
+def _pyproject(project: Path) -> dict[str, Any]:
     return tomllib.loads((project / "pyproject.toml").read_text(encoding="utf-8"))
 
 

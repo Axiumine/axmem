@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """Protocol for CLI tool execution.
 
 Every CLI tool command is written once against this seam; whether it runs against the

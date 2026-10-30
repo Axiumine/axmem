@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """What the logs of the schema say, and a server that keeps running while the memories move to another embedder.
 
 A write after the switch is refused with a sentence that says what it means for the write that was made. The node is

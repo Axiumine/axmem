@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Integration tests for memory model validation.
 
 Covers the write-time rules on MemoryCreate / MemoryUpdate / MemoryQueryRequest
@@ -192,7 +195,7 @@ UNENCODABLE_TEXT_FIELDS = [
 def test_list_items_reject_lone_surrogates(overrides):
     """A lone surrogate in a JSON column used to be stored and then broke every response."""
     field = next(iter(overrides))
-    for build in (_create, lambda **kw: MemoryUpdate(**kw)):
+    for build in (_create, MemoryUpdate):
         with pytest.raises(ValidationError) as exc_info:
             build(**overrides)
 

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """End-to-end tests for MCP memory tools: update_memory and get_memory
 
 Covers PATCH semantics, embedding refresh, list-field replacement, error handling
@@ -182,17 +186,15 @@ async def test_update_memory_keywords_tags_replacement_e2e(mcp_client):
 @pytest.mark.asyncio
 async def test_update_memory_invalid_id_e2e(mcp_client):
     """Test error handling when updating non-existent memory"""
-    try:
+    with pytest.raises(Exception) as raised:  # the client's own error type, ToolError for a refused call
         await call_tool(
             mcp_client, "update_memory", memory_id=MISSING_ID, title="This Should Fail",
         )
-        assert False, "Expected ToolError for invalid memory_id"
-    except Exception as e:
-        error_message = str(e)
-        assert (
-            "not found" in error_message.lower()
-            or "validation_error" in error_message.lower()
-        )
+    error_message = str(raised.value)
+    assert (
+        "not found" in error_message.lower()
+        or "validation_error" in error_message.lower()
+    )
 
 
 @pytest.mark.asyncio
@@ -218,12 +220,10 @@ async def test_get_memory_basic_retrieval_e2e(mcp_client):
 @pytest.mark.asyncio
 async def test_get_memory_invalid_id_e2e(mcp_client):
     """Test error handling when retrieving non-existent memory"""
-    try:
+    with pytest.raises(Exception) as raised:  # the client's own error type, ToolError for a refused call
         await get_memory(mcp_client, MISSING_ID)
-        assert False, "Expected ToolError for invalid memory_id"
-    except Exception as e:
-        error_message = str(e)
-        assert (
-            "not found" in error_message.lower()
-            or "validation_error" in error_message.lower()
-        )
+    error_message = str(raised.value)
+    assert (
+        "not found" in error_message.lower()
+        or "validation_error" in error_message.lower()
+    )

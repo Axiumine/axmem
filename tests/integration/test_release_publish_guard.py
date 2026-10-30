@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The publish workflow is dispatched only through the release guard, and nothing else uploads to PyPI.
 
 PyPI refuses a second upload of a file name for good, so the upload is the one step of a release that cannot be undone. The

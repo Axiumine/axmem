@@ -1,9 +1,13 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The documented install commands say what the built wheel cannot: where the TensorRT packages live.
 
 ``[tool.uv.sources]`` and ``[[tool.uv.index]]`` are read by ``uv sync`` and by uv's install of a checkout or a Git
 URL, but they are not part of a built wheel: its metadata names ``tensorrt-cu13``, ``tensorrt-cu13-bindings`` and
 ``tensorrt-cu13-libs`` with their pins and no index, and on PyPI the first and the last are placeholders (only the
-bindings are a real wheel there). A wheel installed with pip or ``uv tool install`` therefore needs ``--extra-index-url`` with the index of ``pyproject.toml``.
+bindings are a real wheel there). A wheel installed with pip or ``uv tool install`` therefore needs
+``--extra-index-url`` with the index of ``pyproject.toml``.
 These tests keep every command of the documentation in step with that file; the CI smoke test resolves the built
 wheel with the same flag (``tests/architecture/test_workflows.py`` keeps that step in step as well).
 """
@@ -63,7 +67,7 @@ def test_the_readme_lists_the_install_commands_that_work_for_uv_and_pip():
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     commands = COMMANDS.findall(readme)
 
-    assert "## Quick Start" in readme and "### Installing the package" in readme
+    assert "## Quick Start" in readme and "### Installing the package" in readme  # noqa: PT018 - split in two, radon-cc rates the test C
     assert "uv tool install ." in commands
     assert f"uv tool install --extra-index-url {INDEX_URL} axmem" in commands  # PyPI, with uv
     assert f"pip install --extra-index-url {INDEX_URL} axmem" in commands  # PyPI, with pip

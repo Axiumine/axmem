@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Embeddings from an optional HTTP embeddings gateway (``EMBEDDING_PROVIDER=gateway``).
 
 The adapter posts batches of texts as JSON to ``GATEWAY_URL`` + ``GATEWAY_PATH`` and checks what
@@ -216,7 +219,7 @@ class GatewayEmbeddingsAdapter(EmbeddingsAdapter):
             transport=self._transport,
             timeout=settings.EMBEDDING_REQUEST_TIMEOUT_SECONDS,
         ) as client:
-            for group in batched(texts, EMBEDDING_BATCH_LIMIT):
+            for group in batched(texts, EMBEDDING_BATCH_LIMIT, strict=False):
                 vectors.extend(await self._embed_chunk(client, list(group), correlation_id))
         return vectors
 

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Reading memories from Qdrant: one memory by id, and the filtered, sorted pages of a listing, exactly.
 
 The repository reads through the store, so the tests note every call it makes there (a spy that passes each call on) and

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """E2E tests for update_memory consistency
 
 Covers REST null handling, the project scope round-tripping on every read path, and the
@@ -256,7 +259,7 @@ class RecordingEmbedder(DelegatingEmbedder):
         self.writes_during_calls: list[int] = []
         self.before_return = None
 
-    async def generate_embedding(self, text: str) -> list[float]:  # noqa: A002
+    async def generate_embedding(self, text: str) -> list[float]:
         self.calls += 1
         self.writes_during_calls.append(self.writes_so_far())
         if self.latency:
@@ -449,7 +452,7 @@ async def test_update_that_keeps_losing_fails_with_a_conflict_and_changes_nothin
 
 
 async def test_update_of_missing_memory_raises_not_found_without_writing(embedding_stack):
-    service, repo, raw, embedder, user_id = embedding_stack
+    service, repo, _raw, embedder, user_id = embedding_stack
     memory = await _create_embedded_memory(service, embedder, user_id)
     writes_before = embedder.writes_so_far()
 

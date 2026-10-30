@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Integration tests for the harness container's image build, bind mounts and credentials.
 
 Covers the host-side mechanics of `test_harness/container.py` that decide whether a run can
@@ -36,7 +39,7 @@ SERVER_URL = "http://host.docker.internal:59999"
 posix_only = pytest.mark.skipif(sys.platform == "win32", reason="POSIX modes and uids")
 
 
-class _StopRun(Exception):
+class _StopRunError(Exception):
     """Raised by the fake containers.run so a run ends once the mounts are handed over."""
 
 
@@ -101,7 +104,7 @@ def _fake_uv_build(repo_root: Path):
 
     def fake_run(cmd, *args, cwd=None, **kwargs):
         assert cmd[:2] == ["uv", "build"], cmd
-        out = Path(cwd or os.getcwd()) / cmd[cmd.index("-o") + 1]
+        out = Path(cwd or Path.cwd()) / cmd[cmd.index("-o") + 1]
         out.mkdir(parents=True, exist_ok=True)
         (out / "axmem-0.0.0-py3-none-any.whl").write_text("wheel")
         return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
@@ -166,18 +169,18 @@ def test_run_with_relative_output_mounts_absolute_dirs_holding_the_wheel(
 
     monkeypatch.setattr(harness_main, "ThrowawayAxmem", _FakeServer)
     monkeypatch.setattr(container_mod.subprocess, "run", _fake_uv_build(fake_repo))
-    fake_docker.run_error = _StopRun()
+    fake_docker.run_error = _StopRunError()
     config = config_from_argv(["--output", "runs", "--skills", "axmem-remember"])
 
     # Act
-    with pytest.raises(_StopRun):
+    with pytest.raises(_StopRunError):
         asyncio.run(harness_main._run(config))
 
     # Assert: every bind source is absolute, and the dir mounted at /harness is the one
     # `uv build -o` wrote the wheel into (it runs with cwd=<repo root>)
     (kwargs,) = fake_docker.runs
     sources = list(kwargs["volumes"])
-    assert all(os.path.isabs(source) for source in sources), sources
+    assert all(Path(source).is_absolute() for source in sources), sources
     harness_src = next(s for s, spec in kwargs["volumes"].items() if spec["bind"] == "/harness")
     assert list(Path(harness_src).glob("*.whl"))
     assert (Path(harness_src) / "runner.py").exists()
@@ -204,7 +207,7 @@ def test_container_given_a_relative_run_dir_still_mounts_absolute_dirs(
 
     # Assert
     (kwargs,) = fake_docker.runs
-    assert all(os.path.isabs(source) for source in kwargs["volumes"])
+    assert all(Path(source).is_absolute() for source in kwargs["volumes"])
     harness_src = next(s for s, spec in kwargs["volumes"].items() if spec["bind"] == "/harness")
     assert list(Path(harness_src).glob("*.whl"))
 
@@ -214,6 +217,12 @@ def test_container_given_a_relative_run_dir_still_mounts_absolute_dirs(
 
 def _spawn_failure(tool):
     return FileNotFoundError(2, "No such file or directory", tool)
+
+
+def _write_image_inputs(directory):
+    """The files of the build context that the image hash reads (requirements.lock is written by ensure_image)."""
+    for name in container_mod._IMAGE_INPUTS:
+        (directory / name).write_text(f"{name} v1\n")
 
 
 @pytest.mark.parametrize(
@@ -252,6 +261,7 @@ def test_missing_docker_cli_during_image_build_is_an_infra_error(
     tmp_path, monkeypatch, fake_docker,
 ):
     # Arrange: uv export works, the docker CLI cannot even be spawned
+    _write_image_inputs(tmp_path)
     monkeypatch.setattr(container_mod, "_DOCKER_DIR", tmp_path)
     monkeypatch.setattr(container_mod, "export_requirements", lambda: "pkg==1\n")
 
@@ -305,7 +315,7 @@ def no_docker_sdk(tmp_path, monkeypatch):
     (shadow / "docker" / "docker-compose.yml").write_text("services: {}\n")
 
     def real_sdk_dir(entry):
-        return os.path.isfile(os.path.join(entry or ".", "docker", "__init__.py"))
+        return (Path(entry or ".") / "docker" / "__init__.py").is_file()
 
     monkeypatch.setattr(sys, "path", [str(shadow), *(p for p in sys.path if not real_sdk_dir(p))])
     for name in [m for m in sys.modules if m == "docker" or m.startswith("docker.")]:
@@ -325,7 +335,7 @@ def test_missing_sdk_without_any_docker_dir_is_an_infra_error(no_docker_sdk, mon
     # Arrange: nothing named docker anywhere on the path -> plain ModuleNotFoundError
     monkeypatch.setattr(
         sys, "path",
-        [p for p in sys.path if not os.path.isdir(os.path.join(p or ".", "docker"))],
+        [p for p in sys.path if not (Path(p or ".") / "docker").is_dir()],
     )
     importlib.invalidate_caches()
 
@@ -379,6 +389,7 @@ def test_main_exits_2_with_install_hint_when_sdk_is_missing(no_docker_sdk, tmp_p
 @pytest.fixture
 def build_calls(tmp_path, monkeypatch):
     """Capture the `docker build` argv; the build context is a throwaway dir."""
+    _write_image_inputs(tmp_path)
     monkeypatch.setattr(container_mod, "_DOCKER_DIR", tmp_path)
     monkeypatch.setattr(container_mod, "export_requirements", lambda: "pkg==1\n")
     calls: list[list[str]] = []
@@ -392,7 +403,7 @@ def build_calls(tmp_path, monkeypatch):
 
 
 def test_forced_rebuild_bypasses_the_layer_cache(build_calls, fake_docker):
-    # Arrange: floating steps (opencode-ai@latest, agent-shell-py>=) have unchanged
+    # Arrange: floating steps (agent-shell-py>=; opencode is lock-pinned) have unchanged
     # instruction text, so a cached build would keep serving the old versions
 
     # Act
@@ -427,7 +438,7 @@ def test_automatic_rebuilds_keep_using_the_layer_cache(build_calls, fake_docker)
 
 def test_matching_image_is_not_rebuilt(build_calls, fake_docker):
     # Arrange
-    digest = container_mod.requirements_hash("pkg==1\n")
+    digest = container_mod.image_inputs_hash("pkg==1\n")
     fake_docker.image_labels = {container_mod._HASH_LABEL: digest}
 
     # Act
@@ -435,6 +446,23 @@ def test_matching_image_is_not_rebuilt(build_calls, fake_docker):
 
     # Assert
     assert build_calls == []
+
+
+@pytest.mark.parametrize("name", container_mod._IMAGE_INPUTS)
+def test_image_baked_from_an_older_build_input_is_rebuilt(tmp_path, build_calls, fake_docker, name):
+    # Arrange: the image carries the label of the current inputs, then a node digest bump (Dockerfile) or a new
+    # opencode pin (package.json, package-lock.json) changes one of them while requirements.lock stays the same
+    requirements = "pkg==1\n"  # what the build_calls fixture makes `uv export` return
+    fake_docker.image_labels = {container_mod._HASH_LABEL: container_mod.image_inputs_hash(requirements)}
+    (tmp_path / name).write_text(f"{name} v2\n")
+
+    # Act
+    ensure_image(log=lambda *_: None)
+
+    # Assert: rebuilt with the layer cache (the changed layer invalidates itself), stamped with the new digest
+    (cmd,) = build_calls
+    assert "--no-cache" not in cmd
+    assert f"{container_mod._HASH_LABEL}={container_mod.image_inputs_hash(requirements)}" in cmd
 
 
 # --- credentials stay private; the container runs as the invoking user ---------------
@@ -569,5 +597,5 @@ def test_image_is_writable_by_an_arbitrary_uid():
     # Assert: the chmod lives in the RUN that creates the files; a separate trailing
     # `RUN chmod -R` layer would copy every file up and bloat the image by ~0.9 GB
     assert any("/opt/venv" in i and "pip install" in i for i in chmod_runs)
-    assert any("/home/node" in i and "npm install" in i for i in chmod_runs)
+    assert any("/home/node" in i and "npm --prefix /opt/agents ci" in i for i in chmod_runs)
     assert not [i for i in instructions if re.fullmatch(r"RUN\s+chmod\b.*", i)]

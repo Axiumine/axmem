@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Snapshots of surfaces that must not change by accident: CLI help, settings, Qdrant collection layout.
 
 A changed snapshot is a contract change: review the diff, then refresh deliberately with
@@ -57,8 +60,8 @@ def _describe(parser: argparse.ArgumentParser, name: str, out: dict[str, list[di
     Python releases, while arguments, defaults and help strings are the actual contract.
     """
     arguments = []
-    for action in parser._actions:  # noqa: SLF001 - argparse exposes its actions only here
-        if isinstance(action, argparse._SubParsersAction):  # noqa: SLF001
+    for action in parser._actions:  # argparse exposes its actions only here
+        if isinstance(action, argparse._SubParsersAction):
             for child_name, child in sorted(action.choices.items()):
                 _describe(child, f"{name} {child_name}", out)
             continue

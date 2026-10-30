@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Writes, reads and recovery while nodes of a real three-node cluster are stopped or killed.
 
 Replication factor 3 with write consistency factor 2 lets one node be gone: the pool moves on to the next node,

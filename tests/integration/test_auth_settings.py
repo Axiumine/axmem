@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Settings that choose and configure authentication: AUTH_MODE, DEFAULT_TENANT, AUTH_STATIC_TOKEN_HASHES.
 
 Settings are built from environment variables with Settings(_env_file=None), as startup does.
@@ -33,7 +36,7 @@ def test_a_blank_auth_mode_stays_blank(monkeypatch, raw):
 
 @pytest.mark.parametrize("mode", AUTH_MODES)
 def test_auth_mode_matches_case_insensitively(monkeypatch, mode):
-    assert _settings(monkeypatch, AUTH_MODE=f" {mode.upper()} ").AUTH_MODE == mode
+    assert mode == _settings(monkeypatch, AUTH_MODE=f" {mode.upper()} ").AUTH_MODE
 
 
 @pytest.mark.parametrize("typo", ["jtw", "oauth", "github", "google", "basic"])

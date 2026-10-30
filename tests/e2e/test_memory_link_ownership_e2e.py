@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """E2E tests: memory links must never cross user boundaries.
 
 A caller must not be able to link to (and probe the existence of) another user's memory id,

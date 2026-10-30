@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """MemoryService token budget on the real Qdrant repository: what is kept, what is dropped and what is logged.
 
 The memories here are not stored anywhere: each is seven tokens (``plain_memory``), so a budget can be stated in whole

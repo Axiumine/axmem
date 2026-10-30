@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """Integration tests for curated verb flag -> tool-argument mapping (phase 5)
 
 Verbs are exercised through the real argparse tree against a recording executor, so

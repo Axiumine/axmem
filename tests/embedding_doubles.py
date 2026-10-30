@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Wrappers around the production embedder for the tests that must inject what a model cannot do on demand.
 
 Vectors always come from the real TensorRT embedder on the GPU (the ``tensorrt_embedder`` session

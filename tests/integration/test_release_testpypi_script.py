@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """``scripts/release-testpypi.sh`` rehearses the upload of a release on TestPyPI, and touches nothing else.
 
 The real script runs in a scratch world (``tests/release_support/world.py``) against a fake origin, ``gh`` and ``curl``: the

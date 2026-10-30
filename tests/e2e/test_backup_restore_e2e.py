@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Snapshots, export/import and a failed CLI re-embed against a real Qdrant node."""
 
 import json
@@ -95,7 +98,7 @@ class TestExportImport:
     async def test_export_then_import_into_empty_collections_restores_the_memories(
         self, seeded, tmp_path, isolated_qdrant, tensorrt_embedder, monkeypatch,
     ):
-        stack, repo, user_id, originals = seeded
+        stack, _repo, user_id, originals = seeded
         backup = create_backup_service(stack)
         archive = tmp_path / "export.jsonl"
         summary = await backup.export_memories(archive)

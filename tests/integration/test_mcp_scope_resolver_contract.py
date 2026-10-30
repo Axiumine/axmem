@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Contract of the scope model of the MCP surface: scope strings, token claims and the tools they permit.
 
 The instance ceiling (``AXMEM_SCOPES``) and the scopes of a token narrow one another, and a token whose scopes

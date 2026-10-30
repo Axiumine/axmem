@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """E2E tests: malformed REST requests are client errors, never 500.
 
 Covers non-numeric / out-of-range path ids, invalid or non-object JSON bodies,

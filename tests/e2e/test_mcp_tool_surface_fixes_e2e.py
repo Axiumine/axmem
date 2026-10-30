@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """E2E tests for MCP tool-surface argument validation on a real Qdrant node
 
 Covers the memory id and project scope arguments reached through

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The release flow holds no credential: it reads no environment file and puts no ambient secret on a command line.
 
 PyPI is given the files by ``publish.yml`` with an OIDC identity (trusted publishing); this machine only reads PyPI's public
@@ -98,7 +101,8 @@ class TestAnEnvironmentFileThatCannotBeOpenedAndAmbientSecrets:
         done = world.release(VERSION, **AMBIENT)
 
         assert done.returncode == 0, _out(done)
-        assert trap.is_dir() and list(trap.iterdir()) == []
+        assert trap.is_dir()
+        assert list(trap.iterdir()) == []
         assert len(world.dispatches()) == 1
         assert world.uv_publishes() == []
         assert world.uploads() == []

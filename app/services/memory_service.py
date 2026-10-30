@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """Memory Service - Core business logic for memory operations
 
 This service implements the primary functionality for the Axmem Memory System:
@@ -8,10 +12,10 @@ This service implements the primary functionality for the Axmem Memory System:
     - Retrieval within a project scope
 """
 import asyncio
+import logging
 from datetime import datetime
 from uuid import UUID
 
-from app.config.logging_config import logging
 from app.config.settings import settings
 from app.exceptions import InvalidStateTransitionError
 from app.models.memory_models import (
@@ -78,10 +82,10 @@ class MemoryService:
         2. Linked memories (1-hop neighbors) for each primary result
 
         Applies token budget limits to ensure results fit within context window.
-            
+
         Args:
             user_id: User ID for isolation
-            memory_query: Memory Query Request 
+            memory_query: Memory Query Request
 
         Returns:
             MemoryQueryResults with primary memories, linked memories, and metadata
@@ -244,7 +248,7 @@ class MemoryService:
         """Update an existing memory
 
         Args:
-            user_id: user_id 
+            user_id: user_id
             memory_id: memory_id of the memory being updated
             updated_memory: Memory Update object containing the data to be updated
         """
@@ -269,13 +273,11 @@ class MemoryService:
                         })
             return existing_memory
 
-        modified_memory = await self.memory_repo.update_memory(
+        return await self.memory_repo.update_memory(
             memory_id=memory_id,
             user_id=user_id,
             updated_memory=updated_memory,
         )
-
-        return modified_memory
 
     async def mark_memory_obsolete(
             self,
@@ -285,7 +287,7 @@ class MemoryService:
             superseded_by: UUID | None = None,
     ) -> bool:
         """Mark a memory as obsolete (soft delete)
-        
+
         Args:
             user_id: User ID
             memory_id: Memory ID to mark obsolete
@@ -320,14 +322,12 @@ class MemoryService:
         if memory and memory.is_obsolete:
             raise InvalidStateTransitionError(f"Memory {memory_id} is already obsolete")
 
-        success = await self.memory_repo.mark_obsolete(
+        return await self.memory_repo.mark_obsolete(
             memory_id=memory_id,
             user_id=user_id,
             reason=reason,
             superseded_by=superseded_by,
         )
-
-        return success
 
     async def unobsolete_memory(self, user_id: UUID, memory_id: UUID) -> bool:
         """Restore a soft-deleted memory to active search results."""
@@ -477,13 +477,11 @@ class MemoryService:
             user_id=user_id,
         )
 
-        links_created = await self.memory_repo.create_links_batch(
+        return await self.memory_repo.create_links_batch(
             user_id=user_id,
             source_id=source_memory.id,
             target_ids=related_ids,
         )
-
-        return links_created
 
     async def unlink_memories(
             self,
@@ -515,7 +513,7 @@ class MemoryService:
 
     async def _fetch_linked_memories(
             self,
-            user_id,
+            user_id: UUID,
             primary_memories: list[Memory],
             max_links_per_primary: int,
             project: str | None,
@@ -529,7 +527,7 @@ class MemoryService:
             user_id: User ID for whom to link the memories for
             primary memories: list of the primary Memories objects to link from
             max_links_per_primary: Maximum links per primary memory
-        
+
         Returns:
             List of LinkedMemory objects
         """
@@ -579,7 +577,7 @@ class MemoryService:
     ) -> tuple[list[Memory], list[LinkedMemory], int, bool]:
         """Apply token budget and count limits to memory results
 
-        Strategy: 
+        Strategy:
         1. Prioritise primary memories (sorted by importance)
         2. Add linked memories if space remains
         3. Enforce hard limit of max_total_count memories

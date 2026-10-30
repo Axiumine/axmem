@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Shared request parsing for REST handlers.
 
 Malformed client input (ids that are not UUIDs, invalid or non-object

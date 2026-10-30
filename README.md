@@ -10,6 +10,12 @@
   <a href="https://developer.nvidia.com/tensorrt">
     <img src="https://img.shields.io/badge/TensorRT-powered-orange" alt="TensorRT">
   </a>
+  <a href="https://scorecard.dev/viewer/?uri=github.com/Axiumine/axmem">
+    <img src="https://api.scorecard.dev/projects/github.com/Axiumine/axmem/badge" alt="OpenSSF Scorecard">
+  </a>
+  <a href="https://www.bestpractices.dev/projects/16062">
+    <img src="https://www.bestpractices.dev/projects/16062/badge" alt="OpenSSF Best Practices">
+  </a>
 </p>
 
 
@@ -73,7 +79,7 @@ flowchart TD
     Client["MCP client, HTTP client or the axmem CLI"] --> Tools["Three meta-tools: discover, how to use, execute"]
     Tools --> Services["Memory services"]
     Services --> Repo["Memory repository"]
-    Repo --> Qdrant[("Qdrant: one node or a three-node cluster")]
+    Repo --> Qdrant[("Qdrant: one node or a cluster")]
     Repo --> Models["TensorRT embedder and reranker on the NVIDIA GPU"]
 ```
 
@@ -84,7 +90,7 @@ flowchart TD
 - Fail-closed authentication: JWT, token introspection or static bearer tokens, one tenant per credential; a server with no `AUTH_MODE` refuses to start
 - Tenant isolation: a tenant reads and changes only its own memories, over MCP, REST and the CLI
 - Meta-tool discovery: only three tools are exposed to the client application to preserve the context window.
-- One datastore: [Qdrant](https://qdrant.tech/) 1.19 or newer holds the memories, their links and their vectors, on a single node or on a three-node cluster. No SQL database, no migrations. Every write waits for the server and is made conditional where two writers could meet, so concurrent updates never silently lose one another (a lost race answers 409).
+- One datastore: [Qdrant](https://qdrant.tech/) 1.19 or newer holds the memories, their links and their vectors, on a single node or on a cluster. No SQL database, no migrations. Every write waits for the server and is made conditional where two writers could meet, so concurrent updates never silently lose one another (a lost race answers 409).
 - Stores memories as vectors so they can be retrieved with natural-language queries from AI agents.
 - Cross-encoder reranking to improve recall and precision of memory retrieval. It runs on an NVIDIA GPU with TensorRT 11 in strict fp32 and has no CPU path; see [GPU models](docs/gpu-models.md). A remote rerank service (`RERANKING_PROVIDER=HTTP`) or `RERANKING_ENABLED=false` runs without a GPU.
 - Standalone embeddings: the default `TensorRT` provider runs `BAAI/bge-small-en-v1.5` in this process on an NVIDIA GPU (strict fp32, CLS pooling, unit-length vectors) with no model service on the network. It has no CPU path; see [GPU models](docs/gpu-models.md). Other providers are explicit choices: the optional HTTP embeddings gateway (`EMBEDDING_PROVIDER=gateway`, nothing reads a `GATEWAY_*` setting unless it is selected), Azure, Google, OpenAI or Ollama. Switching providers or dimensions needs a re-embed, see [Embedding Migration](docs/embedding_migration.md)
@@ -118,7 +124,7 @@ uv sync
 
 # Qdrant must be running (see "Qdrant" below). Run the server. It fails closed: with no AUTH_MODE it
 # refuses to start. AUTH_MODE=none serves one local tenant and is accepted only on stdio or
-# when the HTTP server binds a loopback address (127.0.0.1 or ::1)
+# when the HTTP server binds a loopback address (an address of 127.0.0.0/8, or ::1)
 QDRANT_URL=http://127.0.0.1:6333 AUTH_MODE=none uv run main.py
 ```
 The memories live in Qdrant. The models and engines are kept in platform-appropriate locations (`~/.local/share/axmem/models` on Linux).
@@ -180,6 +186,11 @@ cp .env.example .env
 uv run main.py --transport http --port 8020
 ```
 
+The HTTP server speaks plain HTTP unless it is given a certificate: set `SERVER_SSL_CERTFILE` and `SERVER_SSL_KEYFILE` (both or
+neither; the start refuses one without the other, or a file it cannot load) to serve TLS 1.2 or later itself, or bind to a loopback
+address behind a TLS-terminating reverse proxy. A server that is reachable beyond one machine and speaks plain HTTP logs a warning at
+start. See [Serve TLS](docs/configuration.md#serve-tls).
+
 Run it under your service manager of choice (for example a systemd unit whose `WorkingDirectory` is the clone and whose
 `ExecStart` is `uv run main.py --transport http`). Environment variables set in the unit take precedence over the file.
 
@@ -225,7 +236,7 @@ Every request acts as one tenant. `AUTH_MODE` decides how the tenant is found, a
 | `static` | Fixed bearer token per tenant; only its SHA-256 hash is configured (`AUTH_STATIC_TOKEN_HASHES`) | The tenant the token is configured for |
 | `none` | None | `DEFAULT_TENANT` |
 
-`AUTH_MODE=none` is accepted only on stdio or on a loopback bind (`127.0.0.1`, `::1`); on any other address the server refuses to
+`AUTH_MODE=none` is accepted only on stdio or on a loopback bind (any address of `127.0.0.0/8`, such as `127.0.0.1`, or `::1`; a host name such as `localhost` does not count); on any other address the server refuses to
 start. The check sees the bind address only: if a proxy, a tunnel or a port mapping forwards to the loopback port, every caller
 is the default tenant, so use `jwt`, `introspection` or `static` for anything that is not strictly local. A credential-free HTTP server also
 answers `421` to a `Host` that is not a loopback name and `403` to a foreign `Origin`, so a web page cannot drive it by DNS rebinding or a
@@ -428,6 +439,7 @@ For vector search and optional cross-encoder reranking, see
 - `MEMORY_NUM_AUTO_LINK` – Auto-link count (default: `3`, set `0` to disable)
 - `MEMORY_SIMILARITY_THRESHOLD` – Minimum cosine similarity for auto-links (default: `0.7`)
 - `SERVER_PORT` – HTTP server port (default: `8020`)
+- `SERVER_SSL_CERTFILE`, `SERVER_SSL_KEYFILE`, `SERVER_SSL_KEYFILE_PASSWORD` – PEM files that make the HTTP server serve TLS (default: empty, plain HTTP); both files or neither
 - `AUTH_MODE` – `none`, `jwt`, `introspection` or `static`; no default, the server will not start without it
 
 For all environment variables with detailed explanations, see [Configuration Guide](docs/configuration.md).
@@ -451,6 +463,15 @@ For all environment variables with detailed explanations, see [Configuration Gui
 - [Changelog](CHANGELOG.md) – Notable changes to Axmem by section
 - [Changes from Forgetful](docs/changes-from-forgetful.md) – Every difference from upstream, the reason and its status
 
+### Security and project
+
+- [Security policy](SECURITY.md) – How to report a vulnerability privately
+- [Security guide](docs/security.md) – The security model of Axmem and how to run it securely
+- [Assurance case](docs/assurance-case.md) – Why the security claims of the project hold, and the evidence for each
+- [Roadmap](docs/roadmap.md) – What the project plans to do next
+- [Governance](GOVERNANCE.md) and [Maintainers](MAINTAINERS.md) – Who decides, who has access and what happens if the lead maintainer is unavailable
+- Releases are signed with cosign (keyless) and carry SLSA level 3 provenance; PyPI files carry a PEP 740 attestation. To check one, see [Checking a release](docs/release.md#checking-a-release).
+
 ### External Resources
 
 - [MCP Protocol Specification](https://modelcontextprotocol.io/) – Model Context Protocol docs
@@ -463,7 +484,8 @@ For all environment variables with detailed explanations, see [Configuration Gui
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) first. Axmem runs on NVIDIA GPUs only and will not be made to run on other devices on
-request; the one exception is a pull request with code that works natively on macOS.
+request; the one exception is a pull request that adds Apple silicon with an MLX backend. Report a vulnerability as
+[SECURITY.md](SECURITY.md) says, not in an issue.
 
 We welcome contributions! Axmem uses integration + E2E testing on a real NVIDIA GPU (the embedder and reranker tests run the actual TensorRT engines; there is no CPU or skip path). Docker is needed to start the real Qdrant node (and the three-node cluster) the suites run against.
 

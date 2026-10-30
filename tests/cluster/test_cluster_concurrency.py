@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Races between writers spread over the nodes of a real three-node cluster.
 
 The pool starts every request at a different node, so concurrent writers reach different nodes of the cluster

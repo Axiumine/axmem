@@ -8,7 +8,8 @@ All configuration is optional except authentication: Axmem uses sensible default
 
 To customize configuration, copy the reference file from the repository root and edit it. Axmem reads
 `.env` from the directory it is started in and `~/.config/axmem/.env` (the user config file, which
-outranks the local one):
+outranks the local one). The one exception is `AXMEM_SERVER`, the server the CLI talks to: the CLI
+does not take it from the `.env` of the directory it is started in (see [`AXMEM_SERVER`](#axmem_server)):
 
 ```bash
 cp .env.example .env
@@ -45,8 +46,8 @@ uv run main.py --transport http
 - **Default**: `0.0.0.0`
 - **Description**: Network interface the server binds to
 - **Values**:
-  - `0.0.0.0` - Listen on all interfaces (default). Needs `AUTH_MODE=jwt`, `introspection` or `static`
-  - `127.0.0.1` or `::1` - Listen only on localhost. The only HTTP binds that accept `AUTH_MODE=none`
+  - `0.0.0.0` - Listen on all interfaces (default). Needs `AUTH_MODE=jwt`, `introspection` or `static`. Without `SERVER_SSL_CERTFILE` it serves plain HTTP, and the start logs a warning that says so (see [TLS](#serve-tls))
+  - A loopback address: any address of `127.0.0.0/8` (`127.0.0.1` and the like) or `::1` - Listen only on this machine. The only HTTP binds that accept `AUTH_MODE=none`; a host name such as `localhost` is not accepted for it
 - **Example**: `SERVER_HOST=127.0.0.1`
 
 ### `SERVER_PORT`
@@ -54,6 +55,14 @@ uv run main.py --transport http
 - **Description**: Port number the MCP server listens on
 - **Note**: If changed, update your MCP client configuration
 - **Example**: `SERVER_PORT=8020`
+
+### `SERVER_SSL_CERTFILE`, `SERVER_SSL_KEYFILE`, `SERVER_SSL_KEYFILE_PASSWORD`
+- **Default**: empty, empty, empty: the HTTP server speaks plain HTTP, as it always did. These settings change no default: the bind is still `0.0.0.0` and a server is still allowed to speak plain HTTP
+- **Description**: The path of a PEM file with the certificate of the server (and its chain) and the path of a PEM file with its private key. With both set, this process serves HTTPS on `SERVER_PORT` (the HTTP transport: `axmem serve`, `--transport http`). `SERVER_SSL_KEYFILE_PASSWORD` is the password of a private key that is encrypted; it is a secret like `QDRANT_API_KEY` (held as a secret, never logged, never repeated in an error) and is needed only for such a key
+- **Fails closed**: both files or neither. The start ends with `Error: <cause>` and exit code 1, and never falls back to plain HTTP, when only one of the two files is set, when `SERVER_SSL_KEYFILE_PASSWORD` is set without them, when a file does not exist or cannot be read, and when the two cannot be loaded as a certificate and a private key that belong together (not PEM, a key of another certificate, an encrypted key with a missing or wrong password). This is checked before anything is bound. Stdio serves no HTTP and ignores the three settings
+- **What a client can negotiate**: TLS 1.2 or later (SSLv3, TLS 1.0 and TLS 1.1 are not offered: that is the minimum of the server context of Python 3.10 and later), and for TLS 1.2 only ECDHE key exchange with AES-GCM or ChaCha20-Poly1305 (forward secrecy and authenticated encryption); the TLS 1.3 suites are not restricted. uvicorn's own default cipher string would drop every AES-GCM suite and keep CBC and SHA-1 suites, so Axmem replaces it. No client certificate is asked for; the bearer token of `AUTH_MODE` is the credential. The files are read at start: restart the server after renewing a certificate
+- **Note**: Axmem builds no URL from its settings (it has no OAuth metadata, redirect or discovery route), so there is no scheme to follow; the only effect of TLS on the answers is the `Strict-Transport-Security` header, see [Security headers](#security-headers-of-the-http-server). The how-to, with the reverse-proxy alternative, is below: [Serve TLS](#serve-tls)
+- **Example**: `SERVER_SSL_CERTFILE=/etc/axmem/axmem.pem`, `SERVER_SSL_KEYFILE=/etc/axmem/axmem-key.pem`
 
 ### `REQUEST_BODY_MAX_BYTES`
 - **Default**: `4194304` (4 MiB), at least `1024`
@@ -71,6 +80,44 @@ uv run main.py --transport http
 - **Default**: `[]`
 - **Description**: A JSON list of host names, besides `localhost` and the loopback addresses, that a server running `AUTH_MODE=none` answers to (compared without regard to case and port; a blank entry or `*` names nothing). Needed when a client reaches the server under another name, such as `host.docker.internal` from a container on the same machine; without it that request is refused with `421`. Never list a name that a page you do not control can point at your machine
 - **Example**: `AXMEM_ALLOWED_HOSTS=["host.docker.internal"]`
+
+### Security headers of the HTTP server
+Every answer of the HTTP server carries the headers below. They have no setting: they are always on, and they are on the answers that refuse a request too (the `421` and `403` of the loopback guard, the `413` of the body limit, the `401` and `403` of the credential and scope checks, a `404` or `405`), since the middleware that adds them is the outermost one of the stack.
+
+| Header | Value | What it does |
+|---|---|---|
+| `X-Content-Type-Options` | `nosniff` | A browser never takes a body for another media type than the one declared |
+| `X-Frame-Options` | `DENY` | The answer is never framed |
+| `Content-Security-Policy` | `default-src 'none'; frame-ancestors 'none'` | A body that a browser did render could load and run nothing, and nothing frames it. The server has no HTML page, no documentation UI and no OAuth discovery route, so the policy breaks nothing |
+| `Referrer-Policy` | `no-referrer` | A link followed from an answer reveals no address |
+| `Cache-Control` | `no-store` | Memories are kept by no cache |
+| `Cross-Origin-Resource-Policy` | `same-origin` | A page of another origin cannot embed an answer with a `no-cors` request. A browser applies it to `no-cors` requests only, so CORS clients and every program that is not a browser are unaffected. It is left out with `CORS_ENABLED=true`, where the operator has invited other origins in |
+| `Strict-Transport-Security` | `max-age=31536000` | Only when this process serves TLS (`SERVER_SSL_CERTFILE` is set), and not on an answer to a loopback `Host` (`localhost`, `127.0.0.1`, `::1`): a browser pins a host name whatever the port, so it would force `https` onto every other server on `localhost`. No `includeSubDomains` and no `preload`: they commit a whole domain, which is your decision. Behind a TLS-terminating proxy the proxy knows whether the client came in over TLS, and sends it |
+
+A header that a route sets itself is kept as it is: the MCP event stream keeps its own `Cache-Control: no-cache, no-transform`, and a streamed body is passed on as it is produced. The headers are added by `SecurityHeadersMiddleware` ([security_headers.py](../app/middleware/security_headers.py)), installed first by `_http_middleware` in `main.py`. An unhandled exception is answered by Starlette outside every middleware, and that `500` has none of them.
+
+### Serve TLS
+Axmem can serve HTTPS itself, or sit behind a reverse proxy that does. Plain HTTP stays the default, so the choice is yours: a server that is reachable beyond one machine without either sends its bearer tokens and its memories in clear text. When the server speaks plain HTTP on an address that is not loopback (`localhost` counts as loopback here), it logs one `WARNING` at start that says so and names both ways out.
+
+**In this process.** Get a certificate for the name your clients use from your certificate authority (a certificate that browsers and operating systems trust, for example from Let's Encrypt), or make a self-signed one for a test:
+
+```bash
+openssl req -x509 -newkey rsa:3072 -nodes -days 90 -keyout axmem-key.pem -out axmem.pem \
+  -subj "/CN=axmem.example" -addext "subjectAltName=DNS:axmem.example,IP:127.0.0.1"
+chmod 600 axmem-key.pem
+```
+
+Then point the server at the two files (the key readable by the account that runs the server only), with a credential mode:
+
+```bash
+AUTH_MODE=static AUTH_STATIC_TOKEN_HASHES='{"alice":"<sha256 of the token>"}' \
+SERVER_SSL_CERTFILE=/etc/axmem/axmem.pem SERVER_SSL_KEYFILE=/etc/axmem/axmem-key.pem \
+uv run main.py serve --transport http --host 0.0.0.0 --port 8020
+```
+
+A client must verify the certificate. The `axmem` CLI does (`--server https://axmem.example:8020`, or `AXMEM_SERVER`); for a certificate that a private authority or yourself signed, tell it which authority to trust with `SSL_CERT_FILE=/etc/axmem/axmem.pem axmem tools list --server https://axmem.example:8020`. Without it the command ends with `Error: Client failed to connect: [SSL: CERTIFICATE_VERIFY_FAILED] ...`. An MCP client has a trust setting of its own; Axmem never asks a client to skip the check.
+
+**Behind a reverse proxy.** Bind the server to a loopback address (`SERVER_HOST=127.0.0.1`), let the proxy terminate TLS and forward to `http://127.0.0.1:8020`, and use a credential mode: with `AUTH_MODE=none` the proxy would make every caller the default tenant (see [Authentication Configuration](#authentication-configuration)). Let the proxy send `Strict-Transport-Security`, do not let it buffer the responses of `/mcp` (they are an event stream), and set its own request-size and rate limits.
 
 ### `LOG_LEVEL`
 - **Default**: `INFO`
@@ -176,8 +223,8 @@ Axmem fails closed. The server has no default authentication mode: with `AUTH_MO
 | `static` | Fixed token per tenant, configured as a SHA-256 hash | The tenant the token is configured for |
 | `none` | No credential | `DEFAULT_TENANT` (every request is that one tenant) |
 
-`AUTH_MODE=none` is accepted **only** when the server binds a loopback address (`127.0.0.1` or `::1`;
-hostnames such as `localhost` do not count) or runs on stdio. On any other bind (`0.0.0.0`, a LAN
+`AUTH_MODE=none` is accepted **only** when the server binds a loopback address (any address of `127.0.0.0/8`, such as
+`127.0.0.1`, or `::1`; hostnames such as `localhost` do not count) or runs on stdio. On any other bind (`0.0.0.0`, a LAN
 address) the server exits with an error instead of serving anonymous requests. The credential modes
 (`jwt`, `introspection`, `static`) need a bearer token, so they are refused on stdio, which carries none.
 
@@ -439,7 +486,24 @@ default, or against a remote deployment.
   login` drops them before saving the URL, and `auth status` and CLI error messages mask
   them. Use `AXMEM_TOKEN` (below) to authenticate.
 - **Set by**: `axmem auth login --server URL` (written to `~/.config/axmem/.env`),
-  or manually via shell env / any `.env` file in the standard list.
+  the `AXMEM_SERVER` environment variable, or `--server URL` on a command. **Not** the
+  `.env` file of the working directory: the CLI ignores `AXMEM_SERVER` there (any
+  spelling of the line: `export`, quotes, lower case, `${}`), because a cloned repository
+  could otherwise name a server of its own and receive `AXMEM_TOKEN` and every memory the
+  CLI saves or searches. When that file names a server and nothing else does, the CLI
+  runs in local mode and prints this on stderr (also with `--json`; stdout stays the
+  result):
+
+  ```text
+  Note: ./.env sets AXMEM_SERVER, which the CLI ignores in the settings file of the working directory. Use --server, the AXMEM_SERVER environment variable or <your user settings file> (written by `axmem auth login`).
+  ```
+
+  The note never repeats the ignored value, and is silent when `--server`, `--local`, the
+  environment or the user's file already decided. If you relied on a `.env` in the working
+  directory to choose the server, move the line to the environment, to `--server` or to the
+  user's file (`axmem auth login --server URL` writes it). Every other setting of that
+  `.env`, and the file as a whole for `axmem serve` run in that directory, is read as
+  before.
 
 ### `AXMEM_TOKEN`
 
@@ -466,6 +530,10 @@ each request 300 seconds.
 2. Shell environment: `AXMEM_SERVER`, `AXMEM_TOKEN`
 3. User config file: `~/.config/axmem/.env` (`axmem auth login --server URL` saves `AXMEM_SERVER` there)
 4. Defaults: local mode, Qdrant at `http://127.0.0.1:6333`, TensorRT embeddings and TensorRT reranking (both need an NVIDIA GPU)
+
+This list is for `AXMEM_SERVER`, the one setting that names a server for the CLI. The `.env` of the
+working directory is not on it: it cannot set `AXMEM_SERVER` (see above). For every other setting the
+order is the environment, then the user config file, then the `.env` of the working directory, then the defaults.
 
 ### `axmem auth`
 

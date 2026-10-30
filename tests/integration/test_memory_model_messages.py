@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Integration tests for the exact errors that the memory request models report (app/models/memory_models.py)
 
 The errors are what a client sees in the 400 body of a REST call and in the error of an MCP tool: the type, the
@@ -90,7 +93,10 @@ def test_a_string_that_is_not_text_is_left_to_the_type_check_of_the_field():
 # ============================================
 
 
-@pytest.mark.parametrize(("label", "cleaned"), [(None, None), ("project-x", "project-x"), ("  padded  ", "padded"), ("a" * SCOPE_MAX_LENGTH, "a" * SCOPE_MAX_LENGTH)])
+@pytest.mark.parametrize(
+    ("label", "cleaned"),
+    [(None, None), ("project-x", "project-x"), ("  padded  ", "padded"), ("a" * SCOPE_MAX_LENGTH, "a" * SCOPE_MAX_LENGTH)],
+)
 def test_a_scope_label_is_trimmed_and_none_stays_none(label, cleaned):
     assert clean_scope(label) == cleaned
 
@@ -118,7 +124,9 @@ def test_a_scope_label_that_cannot_be_stored_is_refused_with_the_reason(label, m
 # ============================================
 
 
-@pytest.mark.parametrize("reason", ["superseded by the newer decision", "  kept verbatim  ", "x", "r" * settings.MEMORY_OBSOLETE_REASON_MAX_LENGTH])
+@pytest.mark.parametrize(
+    "reason", ["superseded by the newer decision", "  kept verbatim  ", "x", "r" * settings.MEMORY_OBSOLETE_REASON_MAX_LENGTH],
+)
 def test_a_reason_that_can_be_stored_is_returned_as_written(reason):
     assert clean_obsolete_reason(reason) == reason
 

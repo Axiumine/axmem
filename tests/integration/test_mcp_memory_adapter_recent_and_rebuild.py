@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Integration tests for the contract of the memory tool adapters: get_recent_memories and rebuild_embeddings.
 
 The adapters call the real ``MemoryService`` and ``ReEmbeddingService`` behind spies; see

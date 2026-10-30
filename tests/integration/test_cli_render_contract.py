@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Integration tests for the exact text and JSON the CLI prints: results, errors, memory listings and memory details.
 
 Scripts parse the `--json` forms and people read the human ones, so the shapes are fixed here to the character. The
@@ -94,7 +97,9 @@ def test_no_memories_is_said_in_words():
 
 
 def test_memories_are_listed_one_per_line_in_rank_order_with_a_question_mark_for_a_missing_importance():
-    memories = [{"id": 11, "title": "First", "importance": 10}, {"id": 12, "title": "Second"}, {"id": 13, "title": "Third", "importance": 1}]
+    memories = [
+        {"id": 11, "title": "First", "importance": 10}, {"id": 12, "title": "Second"}, {"id": 13, "title": "Third", "importance": 1},
+    ]
 
     assert render.render_memory_lines(memories) == (
         "#1  [10]  First  (memory 11)\n#2  [?]  Second  (memory 12)\n#3  [1]  Third  (memory 13)"
@@ -152,7 +157,10 @@ def _watch_listing(monkeypatch):
 async def test_a_search_without_primary_memories_says_none_were_found_from_an_empty_list(monkeypatch):
     handed = _watch_listing(monkeypatch)
 
-    _, human = await verbs.run(AnswerExecutor({"linked_memories": [{"id": 2, "title": "Other"}]}), build_parser().parse_args(["memory", "search", "q", "-c", "why"]))
+    _, human = await verbs.run(
+        AnswerExecutor({"linked_memories": [{"id": 2, "title": "Other"}]}),
+        build_parser().parse_args(["memory", "search", "q", "-c", "why"]),
+    )
 
     assert human == "No memories found."
     assert handed == [[]]
@@ -170,7 +178,9 @@ async def test_the_recent_memories_are_listed_from_the_memories_of_the_answer():
 async def test_recent_memories_without_a_memories_entry_says_none_were_found_from_an_empty_list(monkeypatch):
     handed = _watch_listing(monkeypatch)
 
-    _, human = await verbs.run(AnswerExecutor({"primary_memories": [{"id": 2, "title": "Not this"}]}), build_parser().parse_args(["memory", "recent"]))
+    _, human = await verbs.run(
+        AnswerExecutor({"primary_memories": [{"id": 2, "title": "Not this"}]}), build_parser().parse_args(["memory", "recent"]),
+    )
 
     assert human == "No memories found."
     assert handed == [[]]

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Memory-to-memory links for the Qdrant memory repository.
 
 A link is a point of its own in the links collection. Its id is derived from the tenant and the two memory

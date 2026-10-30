@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Static bearer tokens: one fixed token per tenant, configured only as a SHA-256 hash.
 
 The configuration never holds a token. A presented token is hashed and compared with every

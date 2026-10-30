@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """This module defines the models for the health service"""
 
 from datetime import datetime
@@ -10,5 +14,3 @@ class HealthStatus(BaseModel):
     timestamp: datetime = Field(..., description="When the health check was performed", examples=["2024-12-30T20:12:25.673396"])
     service: str = Field(..., description="Name of the service", examples=["JWT Auth"])
     version: str = Field(..., description="Service version", examples=["v1.0.0"])
-
-

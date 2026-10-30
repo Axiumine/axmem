@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """A release is refused for a commit that CI has not fully passed.
 
 ``scripts.release.ci_green`` asks GitHub for every push-triggered run of the exact commit. These cases pin what is

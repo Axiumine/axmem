@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """Scoped Permissions for Meta-Tools
 
 Resolves OAuth-style scopes to sets of permitted tool names.
@@ -16,9 +20,9 @@ Categories: memories
 """
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Any
 
-from app.config.logging_config import logging
 from app.models.tool_registry_models import ToolCategory, ToolMetadata
 from app.routes.server_state import server_of
 
@@ -224,7 +228,7 @@ def _current_access_token() -> Any:
     try:
         from fastmcp.server.dependencies import get_access_token
         return get_access_token()
-    except Exception:
+    except Exception:  # noqa: BLE001 - any failure means no access token
         return None
 
 

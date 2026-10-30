@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """Re-embedding service: new embeddings for every memory, or for a tenant's subset.
 
 Orchestrates the workflow of embedding all memories again with the currently configured
@@ -6,6 +10,7 @@ provider, and the tenant-scoped rebuild. Knows nothing about Qdrant specifics.
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from typing import Any
 from uuid import UUID
 
 from app.config.settings import settings
@@ -54,7 +59,7 @@ class TargetedRebuildResult:
     """
     rebuilt_ids: list[UUID] = field(default_factory=list)
     skipped_ids: list[UUID] = field(default_factory=list)
-    failed: list[dict] = field(default_factory=list)
+    failed: list[dict[str, Any]] = field(default_factory=list)
 
 
 class ReEmbeddingService:
@@ -350,7 +355,7 @@ class ReEmbeddingService:
             })
             result.failed.extend({"memory_id": stored.memory.id, "reason": "embedding_failed"} for stored in batch)
             return []
-        except Exception:  # noqa: BLE001 - intentional broad capture
+        except Exception:  # intentional broad capture
             logger.exception("rebuild_embeddings: batch embedding failed, retrying one memory at a time", extra={
                 "user_id": str(user_id),
                 "batch_size": len(batch),
@@ -360,7 +365,7 @@ class ReEmbeddingService:
             try:
                 embedding = await self.embedding_adapter.generate_embedding(build_embedding_text(stored.memory))
                 embedded.append((stored, embedding))
-            except Exception:  # noqa: BLE001 - intentional broad capture
+            except Exception:  # intentional broad capture
                 logger.exception("rebuild_embeddings: embedding failed", extra={
                     "memory_id": str(stored.memory.id),
                     "user_id": str(user_id),
@@ -415,7 +420,7 @@ class ReEmbeddingService:
                     source_id=memory_id,
                     target_ids=[memory.id for memory in similar_memories],
                 )
-            except Exception:  # noqa: BLE001 - link failures are per-memory partial failures
+            except Exception:  # link failures are per-memory partial failures
                 logger.exception("rebuild_embeddings: auto-link failed", extra={
                     "memory_id": str(memory_id),
                     "user_id": str(user_id),

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The TensorRT reranker, call for call: its start-up report and warm-up, the arguments that win over the settings, the
 scores it takes from the model output, the order of a ranking, what a model output without scores says, and the worker
 threads that serve every call.
@@ -281,7 +284,7 @@ async def test_the_real_model_ranks_the_document_that_answers_the_query_first(te
 
     ranked = await tensorrt_reranker.rerank(query, documents)
 
-    assert [index for index, _ in ranked][0] == 1
+    assert next(index for index, _ in ranked) == 1
     assert sorted(index for index, _ in ranked) == [0, 1, 2]
     assert [score for _, score in ranked] == sorted((score for _, score in ranked), reverse=True)
     assert dict(ranked) == pytest.approx(dict(enumerate(tensorrt_reranker.score(query, documents))), abs=1e-3)

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Fetching, recording and verifying the cross-encoder model files, and loading its tokenizer.
 
 The model comes from the real Hugging Face repository (fetched once into the model directory of
@@ -169,7 +172,7 @@ def test_a_file_that_cannot_be_read_is_reported_not_crashed_on(copied_model, mon
 
 
 def test_an_unknown_repository_cannot_be_fetched(tmp_path):
-    with pytest.raises(TensorRTStartupError, match="cannot fetch onnx/model.onnx of") as raised:
+    with pytest.raises(TensorRTStartupError, match=r"cannot fetch onnx/model.onnx of") as raised:
         fetch_model("axmem-tests/this-model-does-not-exist", tmp_path)
 
     assert raised.value.cause == "model-unavailable"
@@ -211,7 +214,7 @@ def test_a_tokenizer_that_cannot_be_parsed_is_a_startup_error_not_a_bare_excepti
 
 
 def test_a_tokenizer_file_that_is_gone_is_a_startup_error_too(tmp_path):
-    with pytest.raises(TensorRTStartupError, match="cannot be parsed .*No such file") as raised:
+    with pytest.raises(TensorRTStartupError, match=r"cannot be parsed .*No such file") as raised:
         load_tokenizer(tmp_path / TOKENIZER_FILE)
 
     assert raised.value.cause == "model-unavailable"

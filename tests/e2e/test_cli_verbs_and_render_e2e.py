@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """E2E tests for CLI project resolution and human-output safety
 
 Full-stack cli() invocations against a real Qdrant node: deterministic -p

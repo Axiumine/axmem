@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Robustness tests for the embedding provider adapters.
 
 Each adapter is driven with its real SDK client where possible. Only the HTTP
@@ -285,7 +288,7 @@ class Gate:
 
 async def call_while_gated(call, gate: Gate):
     task = asyncio.create_task(call())
-    while not gate.started.is_set():
+    while not gate.started.is_set():  # noqa: ASYNC110 - polls a threading.Event set by a worker thread
         await asyncio.sleep(0.001)
     gate.release.set()
     return await task

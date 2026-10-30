@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Creating a memory in Qdrant: what a create writes, how many times, and when it is stamped.
 
 The repository writes through the store, so the tests note the calls it makes there and read the stored point back from

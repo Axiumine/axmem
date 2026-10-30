@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """Integration tests for LocalExecutor (docs/dev/cli_plan.md phase 3)
 
 LocalExecutor drives the same ToolRegistry the MCP meta-tools execute, through the

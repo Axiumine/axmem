@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """Unit tests for ToolRegistry
 
 Tests the registry methods in isolation without external dependencies.
@@ -210,7 +214,7 @@ async def test_execute_nonexistent_tool(empty_registry):
 @pytest.mark.asyncio
 async def test_execute_tool_with_context(empty_registry):
     """Test executing a tool with additional context"""
-    async def tool_with_context(arg: str, user_id: int = None) -> dict:
+    async def tool_with_context(arg: str, user_id: int | None = None) -> dict:
         return {"arg": arg, "user_id": user_id}
 
     params = [

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 name: Publish to PyPI
 
 # The only workflow that uploads to PyPI, and the one PyPI knows as the trusted publisher of axmem (workflow

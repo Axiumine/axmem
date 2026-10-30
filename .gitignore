@@ -42,6 +42,13 @@ app/_version.py
 # serena
 .serena
 
+# Playwright MCP: the page snapshots and console logs of a browser session
+.playwright-mcp/
+
+# Fuzzing (docs/fuzzing.md): the corpora and the inputs that made a harness fail
+fuzz/corpus/
+fuzz/artifacts/
+
 # UAT walkthrough harness artifacts
 test_harness/runs/
 test_harness/docker/requirements.lock

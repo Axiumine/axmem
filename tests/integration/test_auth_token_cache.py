@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Integration tests for token cache lifetime, capacity edge cases and identity claims
 
 Covers the auth middleware (app/middleware/auth.py) and the introspection verifier
@@ -210,24 +213,24 @@ def _introspection_settings(mock_settings, enabled: bool) -> None:
 
 @patch("app.config.auth.settings")
 @patch(INTROSPECTION_CLASS)
-def test_introspection_cache_disabled_when_token_cache_disabled(MockIntrospection, mock_settings):
+def test_introspection_cache_disabled_when_token_cache_disabled(mock_introspection, mock_settings):
     _introspection_settings(mock_settings, enabled=False)
 
     build_auth_provider()
 
-    kwargs = MockIntrospection.call_args.kwargs
+    kwargs = mock_introspection.call_args.kwargs
     assert kwargs["cache_ttl_seconds"] is None
     assert kwargs["max_cache_size"] is None
 
 
 @patch("app.config.auth.settings")
 @patch(INTROSPECTION_CLASS)
-def test_introspection_cache_configured_when_token_cache_enabled(MockIntrospection, mock_settings):
+def test_introspection_cache_configured_when_token_cache_enabled(mock_introspection, mock_settings):
     _introspection_settings(mock_settings, enabled=True)
 
     build_auth_provider()
 
-    kwargs = MockIntrospection.call_args.kwargs
+    kwargs = mock_introspection.call_args.kwargs
     assert kwargs["cache_ttl_seconds"] == 600
     assert kwargs["max_cache_size"] == 2000
 
@@ -266,8 +269,7 @@ async def test_a_rejected_tenant_claim_is_never_cached():
     cache = TokenCache(ttl_seconds=300, max_size=100)
     mcp = MockFastMCP(auth_provider=verifier, token_cache=cache)
 
-    with patch.object(settings, "TOKEN_CACHE_ENABLED", True):
-        with pytest.raises(ValueError, match="not a valid tenant name"):
-            await get_identity_from_request(create_mock_request("odd-token"), mcp)
+    with patch.object(settings, "TOKEN_CACHE_ENABLED", True), pytest.raises(ValueError, match="not a valid tenant name"):
+        await get_identity_from_request(create_mock_request("odd-token"), mcp)
 
     assert cache.stats["size"] == 0

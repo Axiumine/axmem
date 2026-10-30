@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """An sdist may hold only the files that git tracks, so that a clean checkout of the tag rebuilds the same bytes.
 
 hatchling's sdist target walks the working tree, so an untracked file of the release machine (a nested ignored
@@ -102,7 +105,7 @@ def test_an_sdist_of_tracked_files_passes(capsys, repo, dist):
 
 def test_the_files_that_the_build_writes_need_no_tracking(capsys, repo, dist):
     """``PKG-INFO`` and the version file that hatch-vcs writes are in the sdist and never in git."""
-    assert sdist.GENERATED == {"PKG-INFO", "app/_version.py"}
+    assert {"PKG-INFO", "app/_version.py"} == sdist.GENERATED
     an_sdist(dist, TRACKED | {"PKG-INFO": b"Name: axmem\n", "app/_version.py": b"version = '0.1.0'\n"})
 
     assert check(capsys, repo, dist)[0] == 0

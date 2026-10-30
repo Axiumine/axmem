@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The pre-push pipeline is the one place that runs the GPU, Docker and Qdrant gates, and it never passes by skipping.
 
 Stage order, a failing gate refusing the push, a missing tool or daemon failing its gate instead of skipping it, and
@@ -16,7 +19,7 @@ import pytest
 from scripts.quality import cli, core, registry, security, static, testing
 
 ROOT = Path(__file__).resolve().parents[2]
-STATIC_GATES = ["ruff", "imports", "bandit", "semgrep", "vulture", "radon-cc", "radon-mi", "shellcheck", "actionlint"]
+STATIC_GATES = ["ruff", "imports", "bandit", "semgrep", "vulture", "radon-cc", "radon-mi", "shellcheck", "actionlint", "reuse"]
 HOSTED_GATES = [*STATIC_GATES, "trivy", "mypy", "pylint", "architecture", "package", "wheel"]
 NEEDS_GPU_OR_DOCKER = {
     "snapshots", "tests-fast", "tests", "e2e-qdrant", "coverage", "memray", "qodana", "mutation", "gitnexus",
@@ -106,16 +109,16 @@ def _pre_push_with_the_real_mutation_gate(monkeypatch, tmp_path, changed):
     monkeypatch.delenv("QUALITY_PUSH_REMOTE", raising=False)
     git = ["git", "-c", "user.name=t", "-c", "user.email=t@example.org", "-C", str(tmp_path)]
     for argv in (["init", "-q", "-b", "work"], ["commit", "-q", "--allow-empty", "-m", "first"]):
-        subprocess.run([*git, *argv], check=True, capture_output=True)  # noqa: S603
-    subprocess.run([*git, "remote", "add", "axiumine", "/nonexistent/axiumine.git"], check=True)  # noqa: S603
-    subprocess.run([*git, "update-ref", "refs/remotes/axiumine/main", "HEAD"], check=True)  # noqa: S603
-    subprocess.run([*git, "config", "branch.work.remote", "axiumine"], check=True)  # noqa: S603
-    subprocess.run([*git, "config", "branch.work.merge", "refs/heads/main"], check=True)  # noqa: S603
+        subprocess.run([*git, *argv], check=True, capture_output=True)  # noqa: S603 - a program of the test setup, run without a shell
+    subprocess.run([*git, "remote", "add", "axiumine", "/nonexistent/axiumine.git"], check=True)  # noqa: S603 - a program of the test setup, run without a shell
+    subprocess.run([*git, "update-ref", "refs/remotes/axiumine/main", "HEAD"], check=True)  # noqa: S603 - a program of the test setup, run without a shell
+    subprocess.run([*git, "config", "branch.work.remote", "axiumine"], check=True)  # noqa: S603 - a program of the test setup, run without a shell
+    subprocess.run([*git, "config", "branch.work.merge", "refs/heads/main"], check=True)  # noqa: S603 - a program of the test setup, run without a shell
     for name in changed:
         (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
         (tmp_path / name).write_text("x = 1\n", encoding="utf-8")
-    subprocess.run([*git, "add", "."], check=True)  # noqa: S603
-    subprocess.run([*git, "commit", "-q", "--allow-empty", "-m", "change"], check=True, capture_output=True)  # noqa: S603
+    subprocess.run([*git, "add", "."], check=True)  # noqa: S603 - a program of the test setup, run without a shell
+    subprocess.run([*git, "commit", "-q", "--allow-empty", "-m", "change"], check=True, capture_output=True)  # noqa: S603 - a program of the test setup, run without a shell
     monkeypatch.setattr(core, "ROOT", tmp_path)
 
 

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 from typing import Protocol
 
 import httpx
@@ -63,12 +67,8 @@ class HttpRerankAdapter:
 
         # The /v1/rerank schema does not promise sorted results (some servers answer in
         # document order), but callers keep the first k entries as the best ones.
-        ranked = sorted(
+        return sorted(
             ((r["index"], float(r["relevance_score"])) for r in response_json["results"]),
             key=lambda pair: pair[1],
             reverse=True,
         )
-
-        return ranked
-
-

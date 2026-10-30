@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Token counter: encoder failures and the shared first-use instance.
 
 Covers the fallback to an approximate count when the encoder fails on a given text, and

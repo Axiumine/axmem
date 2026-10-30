@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The Qdrant preflight of the suites: it pulls the pinned image when it is missing, and it ends the run, never skips.
 
 The preflight is exercised with real pytest runs in a subprocess, against a stand-in ``docker`` command that records
@@ -56,7 +59,7 @@ def _run_preflight(tmp_path, *, image, pull="works", docker=True, environment=No
     log = tmp_path / "docker.log"
     log.touch()
 
-    result = subprocess.run(  # noqa: S603
+    result = subprocess.run(  # noqa: S603 - a program of the test setup, run without a shell
         [sys.executable, "-m", "pytest", str(tmp_path), "-p", "no:cacheprovider", "-c", os.devnull,
          "--rootdir", str(tmp_path)],
         cwd=ROOT,
@@ -135,7 +138,7 @@ def test_every_suite_of_the_pre_push_gates_ends_the_run_when_docker_is_missing(t
     empty.mkdir()
     environment = {name: value for name, value in os.environ.items() if name != "AXMEM_TEST_QDRANT_URL"}
 
-    result = subprocess.run(  # noqa: S603
+    result = subprocess.run(  # noqa: S603 - a program of the test setup, run without a shell
         [sys.executable, "-m", "pytest", path, "-p", "no:cacheprovider", *marker],
         cwd=ROOT,
         env={**environment, "PATH": str(empty)},

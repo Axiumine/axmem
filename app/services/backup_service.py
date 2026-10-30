@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """Coordinate snapshots, portable exports and the consistency check through the storage adapters."""
 
 from datetime import datetime
@@ -41,7 +45,7 @@ class BackupService:
                     f"{sum(1 for node in report.nodes if node.error)} unreadable nodes); "
                     "run qdrant-check, repair the cluster, and stop the writers before a backup",
                 )
-        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        timestamp = datetime.now().astimezone().strftime("%Y%m%d-%H%M%S")  # local time
         return await self.backups.create_backup(timestamp)
 
     async def restore_backup(self, backup_path: Path) -> None:

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Integration tests for MemoryUpdate semantics ("Unchanged if null")
 
 Covers the request model and MemoryService.update_memory with stubbed I/O. The

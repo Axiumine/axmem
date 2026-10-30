@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The words and the rules of the authentication start-up: what an operator reads, and which combinations may start.
 
 ``ensure_startup_allowed`` is the fail-closed gate of the server, ``build_auth_provider`` builds the provider of the

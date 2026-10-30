@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The operator-facing references say what the code does.
 
 Three statements of the documentation were once wrong in a way a reader only meets in production: a
@@ -68,11 +71,12 @@ def test_a_value_in_a_settings_file_never_reaches_the_process_environment(tmp_pa
 
 
 def test_no_guide_puts_a_process_environment_variable_in_a_settings_file_block():
-    offenders = []
-    for guide in [ROOT / "README.md", *sorted((ROOT / "docs").rglob("*.md"))]:
-        for block in DOTENV_FENCE.findall(guide.read_text(encoding="utf-8")):
-            if "TIKTOKEN_CACHE_DIR" in dotenv_values(stream=io.StringIO(block)):
-                offenders.append(str(guide.relative_to(ROOT)))
+    offenders = [
+        str(guide.relative_to(ROOT))
+        for guide in [ROOT / "README.md", *sorted((ROOT / "docs").rglob("*.md"))]
+        for block in DOTENV_FENCE.findall(guide.read_text(encoding="utf-8"))
+        if "TIKTOKEN_CACHE_DIR" in dotenv_values(stream=io.StringIO(block))
+    ]
 
     assert offenders == []
     offline_guide = (ROOT / "docs" / "gpu-models.md").read_text(encoding="utf-8")

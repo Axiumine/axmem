@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """An in-process HTTP server that speaks the snapshot endpoints of a Qdrant node, for the failures a real node will not produce on cue.
 
 A real node takes a snapshot of a small collection in milliseconds and answers; the failures this one produces are the
@@ -9,6 +12,7 @@ from __future__ import annotations
 import json
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from typing import Self
 from urllib.parse import urlsplit
 
 
@@ -21,7 +25,7 @@ class FakeQdrantNode:
     ``list_fails_after`` makes the listings after that many succeed fail with 500; ``delete_fails`` makes every deletion fail.
     """
 
-    def __init__(self) -> None:
+    def __init__(self) -> None:  # noqa: C901 - declares the state and the routes of the whole fake node
         self.snapshots: dict[str, list[str]] = {}
         self.create_delay = 0.0
         self.create_status = 200
@@ -48,7 +52,7 @@ class FakeQdrantNode:
                 except OSError:
                     pass  # the client gave up and closed the connection: what this node is for
 
-            def do_GET(self):  # noqa: N802 - the name http.server calls
+            def do_GET(self):  # the name http.server calls
                 path = urlsplit(self.path).path
                 node.requests.append(("GET", path))
                 collection = path.split("/")[2]
@@ -61,7 +65,7 @@ class FakeQdrantNode:
                     {"name": name, "creation_time": "2026-01-01T00:00:00", "size": 1} for name in names
                 ]})
 
-            def do_POST(self):  # noqa: N802
+            def do_POST(self):
                 path = urlsplit(self.path).path
                 node.requests.append(("POST", path))
                 collection = path.split("/")[2]
@@ -77,7 +81,7 @@ class FakeQdrantNode:
                 else:
                     self._answer(200, {"status": "ok", "time": 0.0, "result": {"name": name, "size": 1}})
 
-            def do_DELETE(self):  # noqa: N802
+            def do_DELETE(self):
                 path = urlsplit(self.path).path
                 node.requests.append(("DELETE", path))
                 _, _, collection, _, name = path.split("/")
@@ -104,7 +108,7 @@ class FakeQdrantNode:
     def url(self) -> str:
         return f"http://127.0.0.1:{self._server.server_address[1]}"
 
-    def __enter__(self) -> FakeQdrantNode:
+    def __enter__(self) -> Self:
         self._thread.start()
         return self
 

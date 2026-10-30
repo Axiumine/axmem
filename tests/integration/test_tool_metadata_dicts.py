@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Integration tests for the two views of a tool that the meta-tools return (app/models/tool_registry_models.py)
 
 ``discover_tools`` returns the light view of each tool and ``how_to_use`` the full one. Their keys and values are

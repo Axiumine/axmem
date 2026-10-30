@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """``guard testpypi-run``: finding or starting the ``publish-testpypi.yml`` run of the rehearsal, and following it.
 
 The rehearsal workflow runs only when ``scripts/release-testpypi.sh`` dispatches it on the tag. The command adopts a live run of
@@ -541,6 +544,6 @@ def test_the_constants_of_the_module_are_the_row_of_the_table():
         "publish-testpypi.yml",
         "testpypi",
     )
-    assert (testpypi.TESTPYPI_WORKFLOW, testpypi.TESTPYPI_ENVIRONMENT) == facts.INDEXES[
+    assert facts.INDEXES[
         "testpypi"
-    ][2:]
+    ][2:] == (testpypi.TESTPYPI_WORKFLOW, testpypi.TESTPYPI_ENVIRONMENT)

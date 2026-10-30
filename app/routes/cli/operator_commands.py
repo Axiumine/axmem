@@ -1,11 +1,19 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Operator commands on the Qdrant data: backup, restore, export, import and the cluster check.
 
 These run against the configured Qdrant nodes directly (never through a server), print a short report
 and return the process exit code. Backups and exports hold every tenant's data.
 """
+import argparse
 import sys
 from collections.abc import Awaitable, Callable
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.services.backup_service import BackupService
 
 REPORT_LIMIT = 50
 
@@ -19,7 +27,9 @@ def _start_logging() -> None:
     atexit.register(shutdown_logging)
 
 
-async def _with_service(run: Callable, *, create_collections: bool = False, links_whole: bool = False) -> int:
+async def _with_service(
+    run: Callable[[BackupService], Awaitable[int]], *, create_collections: bool = False, links_whole: bool = False,
+) -> int:
     """Open the Qdrant stack, run ``run(service)`` and close the stack; a failure an operator can fix is exit code 1.
 
     ``create_collections`` makes the collections exist, with the layout the settings ask for, before ``run``
@@ -58,7 +68,7 @@ async def _with_service(run: Callable, *, create_collections: bool = False, link
 
 
 async def backup(*, force: bool = False) -> int:
-    async def run(service) -> int:
+    async def run(service: BackupService) -> int:
         result = await service.create_backup(force=force)
         print(f"Backup saved: {result.directory}")
         for file in result.files:
@@ -81,7 +91,7 @@ async def restore(path: Path, *, confirmed: bool) -> int:
         )
         return 2
 
-    async def run(service) -> int:
+    async def run(service: BackupService) -> int:
         await service.restore_backup(path)
         print(f"Restored: {path}")
         print("In a cluster, wait until every replica is Active, then run qdrant-check before starting the writers.")
@@ -91,7 +101,7 @@ async def restore(path: Path, *, confirmed: bool) -> int:
 
 
 async def export_memories(path: Path) -> int:
-    async def run(service) -> int:
+    async def run(service: BackupService) -> int:
         summary = await service.export_memories(path)
         print(f"Exported {summary.memories} memories and {summary.links} links of {summary.tenants} tenants to {path}")
         if summary.changed_during_export:
@@ -107,7 +117,7 @@ async def export_memories(path: Path) -> int:
 
 
 async def import_memories(path: Path) -> int:
-    async def run(service) -> int:
+    async def run(service: BackupService) -> int:
         summary = await service.import_memories(path)
         print(
             f"Imported {summary.memories} memories and {summary.links} links of {summary.tenants} tenants "
@@ -119,7 +129,7 @@ async def import_memories(path: Path) -> int:
 
 
 async def check() -> int:
-    async def run(service) -> int:
+    async def run(service: BackupService) -> int:
         report = await service.check()
         for node in report.nodes:
             state = f"unreadable ({node.error})" if node.error else f"{node.points} points"
@@ -145,7 +155,7 @@ async def check() -> int:
     return await _with_service(run)
 
 
-async def run_operator_command(args) -> int:
+async def run_operator_command(args: argparse.Namespace) -> int:
     """Route the parsed ``backup``/``restore``/``export``/``import``/``qdrant-check`` arguments."""
     handlers: dict[str, Callable[[], Awaitable[int]]] = {
         "backup": lambda: backup(force=args.force),

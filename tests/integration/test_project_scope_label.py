@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The project scope is a free-form label: trimmed, 1 to 500 characters, storable, or None for no scope."""
 import pytest
 from pydantic import ValidationError
@@ -45,7 +48,7 @@ def test_an_overlong_label_is_refused():
 
 
 def test_a_label_that_cannot_be_stored_is_refused():
-    with pytest.raises(ValueError, match="cannot be stored|unencodable|surrogate"):
+    with pytest.raises(ValueError, match=r"cannot be stored|unencodable|surrogate"):
         clean_scope("bad\ud800label")
 
 

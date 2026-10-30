@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """What the cluster check asks of each node, reports about it and logs, with the nodes played by views of one real node.
 
 ``test_qdrant_inspector.py`` shows that nodes holding the same points agree and that a missing or newer point is named.

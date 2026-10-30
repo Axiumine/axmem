@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """Integration tests for the walkthrough orchestration (test_harness/walkthrough.py).
 
 The session runner is dependency-injected: the real one execs the agent inside the
@@ -41,7 +45,7 @@ class StubRunner:
     outcome: SessionOutcome = field(default_factory=lambda: SessionOutcome(kind="ran"))
     seen: dict = field(default_factory=dict)
 
-    async def run_session(self, *, skill, skill_dir, workspace, prompt, timeout):
+    async def run_session(self, *, skill, skill_dir, workspace, prompt, timeout):  # noqa: ASYNC109 - the SessionRunner protocol
         self.seen = {
             "skill": skill, "skill_dir": skill_dir, "workspace": workspace,
             "prompt": prompt, "timeout": timeout,

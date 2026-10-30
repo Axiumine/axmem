@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The pre-push hook refuses a push whose pipeline fails, and a push that no pipeline checked.
 
 The hook is the one place that runs the GPU, Docker and Qdrant gates, so a push must not get past it by accident. Real
@@ -58,8 +61,8 @@ class Pushes:
         uv.chmod(0o755)
 
     def git(self, cwd, *args):
-        return subprocess.run(  # noqa: S603
-            ["git", "-C", str(cwd), *args],  # noqa: S607
+        return subprocess.run(  # noqa: S603 - a program of the test setup, run without a shell
+            ["git", "-C", str(cwd), *args],  # noqa: S607 - a program of the test setup, run without a shell
             capture_output=True, text=True, env=self.env, check=True,
         ).stdout.strip()
 
@@ -69,8 +72,8 @@ class Pushes:
         self.git(self.work, "commit", "-q", "-m", message)
 
     def push(self, *refspecs):
-        return subprocess.run(  # noqa: S603
-            ["git", "-C", str(self.work), "push", "origin", *refspecs],  # noqa: S607
+        return subprocess.run(  # noqa: S603 - a program of the test setup, run without a shell
+            ["git", "-C", str(self.work), "push", "origin", *refspecs],  # noqa: S607 - a program of the test setup, run without a shell
             capture_output=True, text=True, env=self.env, check=False,
         )
 
@@ -108,8 +111,8 @@ def test_the_pipeline_is_told_which_remote_the_push_goes_to(pushes):
     pushes.git(pushes.work, "init", "-q", "--bare", "-b", "main", str(other))
     pushes.git(pushes.work, "remote", "add", "axiumine", str(other))
 
-    result = subprocess.run(  # noqa: S603
-        ["git", "-C", str(pushes.work), "push", "axiumine", "main"],  # noqa: S607
+    result = subprocess.run(  # noqa: S603 - a program of the test setup, run without a shell
+        ["git", "-C", str(pushes.work), "push", "axiumine", "main"],  # noqa: S607 - a program of the test setup, run without a shell
         capture_output=True, text=True, env=pushes.env, check=False,
     )
 

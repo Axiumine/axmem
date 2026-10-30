@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Integration tests for the contract of the memory tool adapters: the registry, create_memory and query_memory.
 
 The adapters sit between an agent and ``MemoryService``: they resolve the tenant of the call, accept the argument

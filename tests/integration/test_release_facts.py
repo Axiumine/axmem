@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The release facts: what git, GitHub and the PyPI JSON of the project say about a release.
 
 The release guard and the integrity check decide from these reads. They are tested against a real bare repository for
@@ -103,7 +106,7 @@ def test_the_working_directory_is_honoured(tmp_path):
 
 
 def test_a_command_that_does_not_answer_is_a_facts_error_not_a_wait():
-    with pytest.raises(facts.FactsError, match="gave no answer in 0.3 s"):
+    with pytest.raises(facts.FactsError, match=r"gave no answer in 0.3 s"):
         facts.run_text(_python("import time; time.sleep(30)"), timeout=0.3)
 
 
@@ -146,8 +149,8 @@ def test_gh_text_that_is_not_json_is_a_facts_error(monkeypatch):
 
 def _git(cwd, *args):
     """``git <args>`` run in ``cwd`` with a clean environment; its stdout."""
-    done = subprocess.run(  # noqa: S603
-        ["git", *args],  # noqa: S607
+    done = subprocess.run(  # noqa: S603 - a program of the test setup, run without a shell
+        ["git", *args],  # noqa: S607 - a program of the test setup, run without a shell
         cwd=cwd,
         env=SYSTEM_ENV,
         check=True,
@@ -345,7 +348,7 @@ def test_a_file_name_that_is_not_a_plain_name_is_refused(name):
     ["axmem-0.1.0.zip", "axmem-0.1.0.tar.gz.sigstore.json", "axmem-0.1.1.tar.gz", "axmem-0.1.0-py3-none-any.whl.asc"],
 )
 def test_a_file_that_is_neither_the_wheel_nor_the_sdist_of_its_version_is_refused(name):
-    with pytest.raises(facts.FactsError, match="is neither the wheel nor the sdist of 0.1.0"):
+    with pytest.raises(facts.FactsError, match=r"is neither the wheel nor the sdist of 0.1.0"):
         facts.parse_release_json(_one(filename=name), PACKAGE)
 
 
@@ -374,7 +377,7 @@ def test_a_digest_that_is_not_a_sha256_is_refused(sha):
     ],
 )
 def test_a_link_that_is_not_https_on_the_file_host_itself_is_refused(url):
-    with pytest.raises(facts.FactsError, match="linked at a URL that is not https://files.pythonhosted.org/"):
+    with pytest.raises(facts.FactsError, match=r"linked at a URL that is not https://files.pythonhosted.org/"):
         facts.parse_release_json(_one(url=url), PACKAGE)
 
 

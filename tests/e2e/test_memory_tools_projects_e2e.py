@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """End-to-end tests for MCP memory tools: the project scope
 
 A project is an optional free-form scope string on a memory. It is created on first use,

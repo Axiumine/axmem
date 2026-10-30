@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Re-embedding in Qdrant: what the validation of a generation asks of the node, and what each failed check means.
 
 The node and the embedder are the real ones; the spy of the store notes each call the repository makes on it and can

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """How the engine cache judges, discards, stores and prunes its entries, and what the operator reads in the log about it."""
 import json
 import logging
@@ -81,7 +84,7 @@ def test_an_entry_is_stored_in_a_scratch_directory_that_is_moved_into_place(tmp_
         moves.append((source, target))
         replace(source, target)
 
-    monkeypatch.setattr(tensorrt_cache.os, "replace", noting)
+    monkeypatch.setattr(os, "replace", noting)  # Path.replace calls it
 
     final = tensorrt_cache._store(tmp_path, NEW, {"tf32": True, "gpu": "G"}, b"plan bytes")
 

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The TestPyPI rehearsal of a release: is the repository set up for it, and what did ``publish-testpypi.yml`` do.
 
 ``scripts/release-testpypi.sh`` uploads the signed files of a release that ``scripts/release-pypi.sh`` has already made
@@ -67,7 +70,11 @@ def _start(args: argparse.Namespace) -> str | None:
         print(f"A {TESTPYPI_WORKFLOW} run of {args.tag} is live ({found.get('url', '')}) - waiting for it, no second dispatch.", flush=True)
         return str(found["databaseId"])
     known = {row["databaseId"] for row in rows}
-    print(f"Dispatching {TESTPYPI_WORKFLOW} on {args.tag} (it runs in the environment {TESTPYPI_ENVIRONMENT}, whose reviewers must approve)...", flush=True)
+    print(
+        f"Dispatching {TESTPYPI_WORKFLOW} on {args.tag} (it runs in the environment {TESTPYPI_ENVIRONMENT},"
+        " whose reviewers must approve)...",
+        flush=True,
+    )
     run_text(["gh", "workflow", "run", TESTPYPI_WORKFLOW, "-R", args.repo, "--ref", args.tag, "-f", f"tag={args.tag}"])
 
     def probe() -> tuple[bool, list[dict[str, Any]]]:

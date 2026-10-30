@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """E2E tests for startup configuration wiring on a real Qdrant node
 
 - The default HTTP serve path must run the shutdown teardown (dispose_runtime: dispose the

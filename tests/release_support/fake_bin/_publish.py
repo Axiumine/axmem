@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The publishing half of the fake ``gh``: the ``publish.yml`` runs and the settings that make a repository publish-ready.
 
 The full fake ``gh`` (``fake_bin/gh``) and the light one of ``tests/release_support/fakes.py`` both hand every call to
@@ -27,11 +30,13 @@ The rehearsal's workflow, ``publish-testpypi.yml``, is a second flow of the same
 ``publish_`` (``testpypi_runs``, ``testpypi_existing``, ``testpypi_effect``, ``testpypi_hidden_lists``, ``testpypi_row``,
 ``testpypi_successor``, ``testpypi_rerun``, ``testpypi_run_log``): a successful run puts the release's files on the fake
 TestPyPI (``state/testpypi``). Its ``gh_fail_on`` kinds are ``testpypi-runs``, ``testpypi-dispatch``, ``testpypi-view``,
-and ``testpypi-log`` (a rerun of either workflow fails on ``publish-rerun``; the rehearsal never reruns). A run of one workflow is never listed for the other.
+and ``testpypi-log`` (a rerun of either workflow fails on ``publish-rerun``; the rehearsal never reruns). A run of one
+workflow is never listed for the other.
 
 ``gh api`` answers the settings from ``publish_ready``, a dict with the parts ``repo``, ``workflow``, ``environment``,
 ``policies``, ``rulesets`` (the list), ``ruleset_details`` (id as text to the body) and ``main_rules``; the environment of
-the rehearsal has the parts ``testpypi_workflow``, ``testpypi_environment`` and ``testpypi_policies``, with the same defaults. A part that is given
+the rehearsal has the parts ``testpypi_workflow``, ``testpypi_environment`` and ``testpypi_policies``, with the same
+defaults. A part that is given
 replaces the default (everything is ready); ``publish_ready_patch`` merges its dicts into the default part instead (one
 reason at a time: ``{"environment": {"can_admins_bypass": true}}``). A part that is ``{"__http": 404}`` answers the error of
 the endpoint (exit 1, ``gh: ... (HTTP 404)``). The tag of the SLSA generator that ``release.yml`` uses is read from the same

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The engine the cache loads from one entry, and the plan built a moment ago that tells a damaged file from a GPU that refuses all."""
 import json
 import logging

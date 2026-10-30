@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Shared pieces of the auto-link cutoff tests (integration and end-to-end suites).
 
 The anchor and the related memory are clearly similar (cosine 0.83, above the 0.7 cutoff) and the

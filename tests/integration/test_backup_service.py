@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """Integration tests for BackupService.
 
 The service only coordinates the storage adapters: the consistency gate of replicated deployments, the
@@ -75,7 +79,7 @@ async def test_backup_name_carries_a_sortable_timestamp():
     result = await backup_service.create_backup()
 
     (stamp,) = backups.created
-    datetime.strptime(stamp, "%Y%m%d-%H%M%S")
+    datetime.strptime(stamp, "%Y%m%d-%H%M%S")  # noqa: DTZ007 - only the format of the stamp is checked
     assert result.directory.name == f"axmem-backup-{stamp}"
 
 

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Shared request validation helpers for the REST API routes.
 
 Keeps the way routes report invalid input (400 responses) in one place.
@@ -25,4 +28,3 @@ def validation_error_response(error: ValidationError) -> JSONResponse:
         },
         status_code=400,
     )
-

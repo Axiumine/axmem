@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Integration tests for the 413 answer and the exact limit of the request body limit (app/middleware/body_limit.py)"""
 import json
 

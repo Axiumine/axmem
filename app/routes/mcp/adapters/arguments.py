@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """Argument normalisation shared by the MCP tool adapters.
 
 Tool arguments reach the adapters straight from an agent, so ids, numbers, booleans and
@@ -63,7 +67,9 @@ def coerce_str_list(vals: Any, param_name: str = "tags") -> list[str] | None:
     if isinstance(vals, str):
         return [vals]
     if not isinstance(vals, (list, tuple, set)):
-        raise ValueError(f"{param_name} must be a list of strings, got {type(vals).__name__}")
+        raise ValueError(  # noqa: TRY004 - callers catch ValueError
+            f"{param_name} must be a list of strings, got {type(vals).__name__}",
+        )
     items = list(vals)
     if not all(isinstance(item, str) for item in items):
         raise ValueError(f"{param_name} must be a list of strings")
@@ -79,7 +85,9 @@ def coerce_int(val: Any, param_name: str) -> int:
     if val is None:
         raise ValueError(f"{param_name} cannot be None")
     if isinstance(val, bool):
-        raise ValueError(f"{param_name} must be an integer, got bool ({val})")
+        raise ValueError(  # noqa: TRY004 - callers catch ValueError
+            f"{param_name} must be an integer, got bool ({val})",
+        )
     if isinstance(val, int):
         return val
     if isinstance(val, float):

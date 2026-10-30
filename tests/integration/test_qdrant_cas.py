@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Concurrent writers and lost acknowledgements on a real Qdrant node.
 
 Edits and obsolete toggles are conditional writes that carry the version the writer read. These tests prove

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """E2E tests: the credential-free server cannot be driven by a web page.
 
 ``AUTH_MODE=none`` serves every request as the one local tenant, and the loopback bind is its only protection.

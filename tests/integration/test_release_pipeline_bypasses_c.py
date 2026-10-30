@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The ways past the release guard that go through the tree, the version and the environment, each closed and proved.
 
 A tree with a change is built into ``dist/`` and the manifest but is not in the tag, which burns the version. A version

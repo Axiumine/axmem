@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Integration tests for the id-list coercion helpers shared by the MCP tool adapters."""
 from uuid import UUID
 

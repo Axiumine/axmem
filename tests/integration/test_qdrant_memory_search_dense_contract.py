@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Searching memories in Qdrant by the vector alone: what a search asks the node for and what comes back.
 
 The reranker is off here, or has nothing to choose among. The node, the embedder and the reranker are the real ones; the

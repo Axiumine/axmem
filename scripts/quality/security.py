@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Supply-chain, deep-analysis and code-graph gates: trivy, Qodana, GitNexus."""
 
 from __future__ import annotations

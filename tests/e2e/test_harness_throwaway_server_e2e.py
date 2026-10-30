@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """E2E tests: the throwaway server boots and takes writes whatever the host looks like.
 
 Boots the real `axmem serve` console script as an OS subprocess (the test Qdrant node,

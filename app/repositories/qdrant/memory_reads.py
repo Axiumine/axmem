@@ -1,8 +1,12 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """Single-memory lookup and filtered, sorted listing for the Qdrant memory repository"""
+import logging
 from datetime import UTC, datetime
 from uuid import UUID
 
-from app.config.logging_config import logging
 from app.exceptions import NotFoundError
 from app.models.memory_models import VALID_SORT_BY, VALID_SORT_ORDER, Memory
 from app.repositories.qdrant.memory_base import QdrantMemoryBase

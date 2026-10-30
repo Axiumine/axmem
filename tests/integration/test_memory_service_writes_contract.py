@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """MemoryService writes on the real Qdrant repository: create, update, read by id, link and unlink.
 
 The service runs against the production repository and the real embedder. A pass-through spy (``spy``) records the

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Integration tests for the token cache limits and the debug lines of the authentication helpers (app/middleware/auth.py)
 
 The cache keeps a validated identity for five minutes and for at most a thousand tokens unless it is told otherwise,

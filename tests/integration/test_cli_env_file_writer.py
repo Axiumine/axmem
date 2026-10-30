@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Regression tests for upsert_env_var, the writer behind `axmem auth login`.
 
 The user config file (~/.config/axmem/.env) also holds unrelated settings and
@@ -200,6 +203,7 @@ def _run_in_legacy_locale(code: str, *args: Path, cwd: Path) -> subprocess.Compl
         text=True,
         errors="replace",
         timeout=60,
+        check=False,
     )
 
 

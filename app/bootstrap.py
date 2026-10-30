@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """Composition root for the Axmem runtime.
 
 Extracted from main.lifespan() (docs/dev/cli_plan.md phase 1) so every front door —
@@ -8,7 +12,8 @@ from __future__ import annotations
 
 import asyncio
 import atexit
-from collections.abc import Callable
+import logging
+from collections.abc import Callable, Iterable
 from contextlib import ExitStack
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
@@ -18,7 +23,6 @@ from app.config.legacy_settings import (
     warn_about_legacy_settings,
     warn_about_old_config_files,
 )
-from app.config.logging_config import logging
 from app.config.settings import (
     EMBEDDING_PROVIDERS,
     RERANKING_PROVIDERS,
@@ -38,6 +42,10 @@ from app.routes.mcp.tool_metadata_registry import register_all_tools_metadata
 from app.routes.mcp.tool_registry import ToolRegistry
 
 if TYPE_CHECKING:
+    from app.protocols.embedding_protocol import EmbeddingsAdapter
+    from app.repositories.embeddings.reranker_adapter import RerankAdapter
+    from app.repositories.embeddings.tensorrt_embedder import TensorRTEmbeddingsAdapter
+    from app.repositories.embeddings.tensorrt_reranker import TensorRTRerankAdapter
     from app.repositories.qdrant.memory_repository import QdrantStack
     from app.services.backup_service import BackupService
     from app.services.memory_service import MemoryService
@@ -67,7 +75,7 @@ def create_backup_service(stack: QdrantStack) -> BackupService:
     )
 
 
-def get_embedding_adapter():
+def get_embedding_adapter() -> EmbeddingsAdapter:
     """Create embedding adapter based on settings.
 
     The default ``TensorRT`` provider runs the model on the NVIDIA GPU of this machine and raises
@@ -97,10 +105,10 @@ def get_embedding_adapter():
     return OllamaEmbeddingsAdapter()  # canonical_choice leaves only Ollama after the branches above
 
 
-_TENSORRT_ADAPTERS: dict[tuple, Any] = {}
+_TENSORRT_ADAPTERS: dict[tuple[Any, ...], Any] = {}
 
 
-def _shared_tensorrt_embedder():
+def _shared_tensorrt_embedder() -> TensorRTEmbeddingsAdapter:
     """The process-wide TensorRT embedder for the current settings, built on first use.
 
     Building one means a GPU probe, a model check and an engine build or load, and every
@@ -119,10 +127,11 @@ def _shared_tensorrt_embedder():
     )
     if key not in _TENSORRT_ADAPTERS:
         _TENSORRT_ADAPTERS[key] = TensorRTEmbeddingsAdapter()
-    return _TENSORRT_ADAPTERS[key]
+    adapter: TensorRTEmbeddingsAdapter = _TENSORRT_ADAPTERS[key]  # the key names the adapter type
+    return adapter
 
 
-def _shared_tensorrt_reranker():
+def _shared_tensorrt_reranker() -> TensorRTRerankAdapter:
     """The process-wide TensorRT reranker for the current settings, built on first use (see the embedder)."""
     from app.repositories.embeddings.tensorrt_reranker import TensorRTRerankAdapter
 
@@ -136,7 +145,8 @@ def _shared_tensorrt_reranker():
     )
     if key not in _TENSORRT_ADAPTERS:
         _TENSORRT_ADAPTERS[key] = TensorRTRerankAdapter()
-    return _TENSORRT_ADAPTERS[key]
+    adapter: TensorRTRerankAdapter = _TENSORRT_ADAPTERS[key]  # the key names the adapter type
+    return adapter
 
 
 def _release_tensorrt_adapters() -> None:
@@ -150,7 +160,7 @@ def _release_tensorrt_adapters() -> None:
 atexit.register(_release_tensorrt_adapters)
 
 
-def get_reranker_adapter():
+def get_reranker_adapter() -> RerankAdapter | None:
     """Create the reranker adapter if enabled.
 
     The TensorRT provider needs an NVIDIA GPU and raises ``TensorRTStartupError`` when it cannot
@@ -165,7 +175,7 @@ def get_reranker_adapter():
     return _shared_tensorrt_reranker()
 
 
-def log_tensorrt_models(*adapters) -> None:
+def log_tensorrt_models(*adapters: Any) -> None:
     """Log what each TensorRT model did at start-up and the GPU memory and CUDA context they share."""
     reports = [adapter.startup for adapter in adapters if hasattr(adapter, "startup")]
     if not reports:
@@ -245,7 +255,7 @@ async def check_runtime_start() -> None:
         await stack.close()
 
 
-def engine_failures(adapters) -> list[str]:
+def engine_failures(adapters: Iterable[Any]) -> list[str]:
     """Why a local model can no longer serve, one line per model; empty while every one of them can.
 
     A TensorRT engine that met a sticky CUDA error refuses all later work until the process restarts. The

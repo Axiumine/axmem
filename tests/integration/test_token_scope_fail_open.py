@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Integration tests: a token's scope claim must never widen access to the instance ceiling.
 
 Covers how the access token's scope claim is turned into token scopes and

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """ReEmbeddingService.re_embed_all on the real Qdrant repository: the calls it makes, the outcomes it reports, what it logs.
 
 The repository is the production one and the embedder is the real TensorRT model behind call-recording spies

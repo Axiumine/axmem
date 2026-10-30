@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Cross-encoder reranker that runs the model directly on TensorRT (strict fp32, NVIDIA GPU only).
 
 Construction is the start-up warm-up: it probes the GPU, fetches the model once, builds or loads

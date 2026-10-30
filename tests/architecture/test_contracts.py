@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """Prove the configured import rules using isolated packages and the real checker."""
 
 import json
@@ -65,7 +69,7 @@ def check(root):
          "from importlinter.cli import lint_imports_command; lint_imports_command()",
          "--config", "pyproject.toml", "--no-cache", "--no-logo"],
         cwd=root, env={**os.environ, "PYTHONPATH": str(root), "NO_COLOR": "1"},
-        text=True, capture_output=True, timeout=15,
+        text=True, capture_output=True, timeout=15, check=False,
     )
     return result.returncode, result.stdout + result.stderr
 
@@ -109,12 +113,13 @@ def write_clean_fixture(root, options, source, target, bridge):
 
 def assert_violation_reported(output, contract, source, target, bridge, style):
     assert f'{contract["name"]} BROKEN' in output, output
-    assert source in output and target in output, output
+    assert source in output, output
+    assert target in output, output
     if style in ("indirect", "reexport"):
         assert bridge in output, output
 
 
-@pytest.mark.parametrize("contract_id,source,target", CASES, ids=[case[0] for case in CASES])
+@pytest.mark.parametrize(("contract_id", "source", "target"), CASES, ids=[case[0] for case in CASES])
 @pytest.mark.parametrize("style", ["direct", "indirect", "type_checking", "reexport", "local"])
 def test_contract_rejects_forbidden_dependency(tmp_path, contract_id, source, target, style):
     options = configuration()

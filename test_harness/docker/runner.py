@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """In-container session runner: streams one agent session and persists its events.
 
 Standalone by design — stdlib plus agent_shell (baked into the image) only, so the

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Refuse an sdist that carries files git does not track.
 
 hatchling's sdist target walks the working tree and honours only the root ``.gitignore``, not nested ones and

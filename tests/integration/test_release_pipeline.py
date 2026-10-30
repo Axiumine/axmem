@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The whole release flow, run on the real script against a fake remote, ``gh``, ``uv`` and PyPI.
 
 A release uploads nothing from this machine: it asks the publish workflow to, once the signed files exist, and PyPI never

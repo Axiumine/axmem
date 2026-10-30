@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The Qdrant connections: failover between nodes, retries of ambiguous failures, the server version check.
 
 The faults are injected between the pool and its clients (a client whose calls raise what the library raises
@@ -263,7 +266,7 @@ async def test_a_snapshot_is_taken_under_its_own_long_timeout_and_waits_for_the_
 
     assert name.startswith(live)
     assert timeouts == [client_module.SNAPSHOT_TIMEOUT_SECONDS]
-    assert client_module.SNAPSHOT_TIMEOUT_SECONDS > pool._timeout
+    assert pool._timeout < client_module.SNAPSHOT_TIMEOUT_SECONDS
     names = [snapshot.name for snapshot in await pool.clients[0].list_snapshots(live)]
     assert name in names  # "wait=true": the snapshot is complete when the call returns
     await pool.delete_snapshot(0, live, name)

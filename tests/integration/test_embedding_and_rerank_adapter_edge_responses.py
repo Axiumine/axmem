@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Embedding adapters: missing configuration and provider answers that carry no vector.
 
 The provider SDK objects are replaced by small in-process fakes, so nothing touches the network
@@ -42,7 +45,7 @@ def _google_answering(adapter, embeddings):
 async def test_azure_answer_without_a_response_object_is_reported(azure_adapter):
     azure_adapter.client = SimpleNamespace(embeddings=SimpleNamespace(create=lambda **_request: None))
 
-    with pytest.raises(RuntimeError, match="^Azure response did not contain embedding vector$"):
+    with pytest.raises(RuntimeError, match=r"^Azure response did not contain embedding vector$"):
         await azure_adapter.generate_embedding("hello")
 
 
@@ -57,7 +60,7 @@ async def test_azure_answer_returns_the_first_embedding(azure_adapter, monkeypat
 def test_google_adapter_requires_an_api_key(monkeypatch):
     monkeypatch.setattr(settings, "GOOGLE_AI_API_KEY", "")
 
-    with pytest.raises(ValueError, match="^GOOGLE_AI_API_KEY must be configured for GoogleEmbeddingsAdapter$"):
+    with pytest.raises(ValueError, match=r"^GOOGLE_AI_API_KEY must be configured for GoogleEmbeddingsAdapter$"):
         ea.GoogleEmbeddingsAdapter()
 
 

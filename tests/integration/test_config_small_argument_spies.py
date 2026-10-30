@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Integration tests for four arguments that the small config, middleware and route modules hand on and that no result shows
 
 The host of a request loses one trailing dot, the stderr handler is made for ``sys.stderr``, the server of a request context is
@@ -22,6 +25,8 @@ def test_the_host_of_a_request_loses_only_its_trailing_dot_when_it_is_compared_w
 
     class Name(str):
         """A host name that records the characters it is stripped of from the right."""
+
+        __slots__ = ()
 
         def lower(self):
             return Name(super().lower())
@@ -72,18 +77,18 @@ def test_the_server_of_a_context_is_narrowed_to_the_axmem_server_by_a_cast_and_i
 
 
 def test_the_default_format_of_configure_logging_is_checked_as_console_and_not_changed_in_case(monkeypatch):
-    class Stop(Exception):
+    class StopError(Exception):
         """Raised by the check, so that nothing of the logging is set up."""
 
     asked = []
 
     def canonical_choice(setting, value, choices):
         asked.append((setting, value, choices))
-        raise Stop
+        raise StopError
 
     monkeypatch.setattr(logging_config, "canonical_choice", canonical_choice)
 
-    with pytest.raises(Stop):
+    with pytest.raises(StopError):
         logging_config.configure_logging()
 
     assert asked == [("LOG_FORMAT", "console", LOG_FORMATS)]

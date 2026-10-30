@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Engine cache on the real GPU: build, cache hit, fingerprint change, pruning and damaged entries.
 
 Every engine here is built from the real model by TensorRT into a temporary cache directory.
@@ -264,7 +267,7 @@ def test_a_cache_directory_that_cannot_be_written_is_a_startup_error(model, cach
     monkeypatch.setattr("app.repositories.embeddings.tensorrt_cache.shutil.rmtree", refuse)
     engines = RecordedEngines(monkeypatch)
 
-    with pytest.raises(TensorRTStartupError, match="cannot be used.*Permission denied") as raised:
+    with pytest.raises(TensorRTStartupError, match=r"cannot be used.*Permission denied") as raised:
         open_cached(model, cache_copy)
 
     assert raised.value.cause == "engine-unusable"
@@ -315,7 +318,7 @@ def test_a_file_that_cannot_be_read_is_not_judged_damaged(model, cache_copy, mon
 
     with monkeypatch.context() as patch:
         patch.setattr(tensorrt_cache.Path, read, unreadable)
-        with pytest.raises(TensorRTStartupError, match="cannot be used.*Permission denied") as raised:
+        with pytest.raises(TensorRTStartupError, match=r"cannot be used.*Permission denied") as raised:
             open_cached(model, cache_copy)
 
     assert raised.value.cause == "engine-unusable"
@@ -355,7 +358,7 @@ def test_an_engine_is_released_when_the_cache_cannot_store_it(model, cold_build,
     monkeypatch.setattr(tensorrt_cache, "_store", disk_full)
     engines = RecordedEngines(monkeypatch)
 
-    with pytest.raises(TensorRTStartupError, match="cannot be used.*No space left on device"):
+    with pytest.raises(TensorRTStartupError, match=r"cannot be used.*No space left on device"):
         open_cached(model, tmp_path / "engines")
 
     assert len(engines.created) == 1

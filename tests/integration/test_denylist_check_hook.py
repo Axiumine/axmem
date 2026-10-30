@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The denylist guard refuses staged changes, messages and pushes that match a clone-local term."""
 
 import shutil
@@ -18,8 +21,8 @@ pytestmark = pytest.mark.skipif(
 
 
 def _git(repo, *args):
-    return subprocess.run(  # noqa: S603
-        ["git", "-C", str(repo), *args],  # noqa: S607
+    return subprocess.run(  # noqa: S603 - a program of the test setup, run without a shell
+        ["git", "-C", str(repo), *args],  # noqa: S607 - a program of the test setup, run without a shell
         capture_output=True, text=True, check=True,
         env={"PATH": "/usr/bin:/bin", "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1",
              "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.com",
@@ -28,8 +31,8 @@ def _git(repo, *args):
 
 
 def _guard(repo, *args, path=SYSTEM_PATH):
-    return subprocess.run(  # noqa: S603
-        ["sh", str(HOOK), *args],  # noqa: S607
+    return subprocess.run(  # noqa: S603 - a program of the test setup, run without a shell
+        ["sh", str(HOOK), *args],  # noqa: S607 - a program of the test setup, run without a shell
         cwd=repo, capture_output=True, text=True, check=False,
         env={"PATH": path, "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1"},
     )
@@ -79,7 +82,7 @@ def test_clean_staged_change_passes(repo):
     assert _guard(repo, "staged").returncode == 0
 
 
-@pytest.mark.parametrize("name,text", [
+@pytest.mark.parametrize(("name", "text"), [
     ("a.txt", f"a line with {TERM.upper()} inside\n"),
     ("a.txt", "an Other-Term here\n"),
     (f"{TERM}.txt", "clean content\n"),
@@ -265,7 +268,7 @@ def test_a_missing_awk_fails_closed(repo, tmp_path_factory):
         _assert_cannot_check(_guard(repo, *arguments, path=without_awk), "awk failed")
 
 
-@pytest.mark.parametrize("mode,tool,argument,fragment", [
+@pytest.mark.parametrize(("mode", "tool", "argument", "fragment"), [
     ("staged", "git", "--name-only", "staged file names"),
     ("staged", "git", "-U0", "staged changes"),
     ("range", "git", "log", "message of commit"),

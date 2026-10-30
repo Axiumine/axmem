@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The signing facts, part one: the tag's own run and the GitHub release as ``gh`` describes it.
 
 Condition 4 of the release guard and the integrity check both ask ``facts.signing_problems``. These cases cover what it

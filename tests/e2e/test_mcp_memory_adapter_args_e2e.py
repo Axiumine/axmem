@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """E2E tests for argument handling in the memory tool adapters.
 
 `execute_axmem_tool` passes free-form arguments straight to the adapters, so the

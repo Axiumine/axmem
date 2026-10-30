@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Integration tests for harness argument and config parsing.
 
 An explicit timeout must win over built-in per-skill defaults and must never reach the

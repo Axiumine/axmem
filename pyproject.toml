@@ -16,7 +16,7 @@ classifiers = [
 ]
 dependencies = [
     "dotenv==0.9.9",
-    "fastmcp==3.2.2",
+    "fastmcp==3.4.10",
     "cuda-python==13.4.4",
     "google-genai==1.66.0",
     "httpx==0.28.1",
@@ -55,22 +55,36 @@ tensorrt-cu13-libs = { index = "nvidia" }
 [dependency-groups]
 dev = [
     "actionlint-py==1.7.12.25",
+    # Fuzzing (fuzz/, docs/fuzzing.md). The one build of CPython 3.14 that Atheris publishes is for Linux x86_64 and
+    # there is no source distribution, so the marker keeps `uv sync` from failing anywhere else.
+    "atheris==3.1.0 ; sys_platform == 'linux' and platform_machine == 'x86_64'",
     "bandit[toml]==1.9.4",
     "check-wheel-contents==0.6.3",
     "coverage[toml]==7.16.2",
+    # The TLS tests (tests/tls_support.py) make their own certificate authority and server certificates with it; the JWT
+    # verifiers of FastMCP install it already.
+    "cryptography==50.0.0",
     "grimp==3.17",
+    # starlette.testclient (tests/integration/test_auth_info.py) warns that httpx is deprecated for it and asks for httpx2;
+    # pytest.ini turns warnings into errors.
+    "httpx2==2.16.0",
     "import-linter==2.15",
-    "memray>=1.20.0 ; sys_platform != 'win32'",
+    # The tests that sign tokens (tests/jwt_support.py) import it; FastMCP verifies with it and installs it.
+    "joserfc==1.7.0",
+    "memray==1.20.0 ; sys_platform != 'win32'",
     "mutmut==3.8.0",
     "mypy==2.4.0",
     "pylint==4.1.3",
     "pytest==9.0.3",
     "pytest-asyncio==1.3.0",
     "pytest-cov==7.1.0",
-    "pytest-memray>=1.11.0 ; sys_platform != 'win32'",
+    "pytest-memray==1.11.0 ; sys_platform != 'win32'",
     "pyyaml==6.0.3",
     "radon==6.0.1",
     "requests==2.33.0",
+    # The reuse gate (docs/quality-gates.md, "Licensing headers"). The extra installs the library that the gate names to detect
+    # the encoding of a file, so that the result does not depend on whether the machine has libmagic.
+    "reuse[charset-normalizer]==6.2.0",
     "ruff==0.17.1",
     "shellcheck-py==0.11.0.1",
     "syrupy==6.1.1",
@@ -79,7 +93,7 @@ dev = [
 ]
 # Dev-only: drives the UAT walkthrough container; agent-shell-py lives in the
 # container image (test_harness/docker/Dockerfile), not on the host.
-harness = ["docker>=7.1.0"]
+harness = ["docker==7.2.0"]
 
 [project.urls]
 Homepage = "https://github.com/Axiumine/axmem"
@@ -212,6 +226,8 @@ ignore_imports = [
 # ---------------------------------------------------------------------------
 
 [tool.coverage.run]
+# fuzz/ is outside the report on purpose: a harness is run by tests/integration/test_fuzz_targets.py for a few
+# hundred inputs, which proves it works, not that every line of it ran.
 source = ["app", "main"]
 branch = true
 relative_files = true
@@ -240,13 +256,34 @@ source = ["app", "*/app"]
 
 [tool.mypy]
 python_version = "3.14"
-files = ["app", "main.py", "scripts"]
-check_untyped_defs = true
-warn_unused_ignores = true
-warn_redundant_casts = true
+files = ["app", "main.py", "scripts", "fuzz"]
+# strict = true turns on every optional check that mypy documents as strict: check_untyped_defs, the disallow_untyped_*,
+# disallow_incomplete_defs, disallow_any_generics, disallow_subclassing_any, disallow_untyped_decorators,
+# no_implicit_optional, warn_redundant_casts, warn_unused_ignores, warn_return_any, no_implicit_reexport, strict_equality,
+# strict_concatenate and extra_checks. It reported 165 errors in 33 files once (annotations only, all fixed); an
+# unannotated def, a bare generic, a re-export through another module or a stale type: ignore is an error now.
+strict = true
+# Not part of strict, kept on: code that mypy proves unreachable is an error.
 warn_unreachable = true
-no_implicit_optional = true
-strict_equality = true
+# Also part of strict; named so that a reader of this table sees that a stale type: ignore fails the gate.
+warn_unused_ignores = true
+# Not part of strict: a type that becomes Any because its package ships no type information is an error. The two
+# places that name such a type (the TensorRT logger base class and the tokenizer) say so in a type: ignore.
+disallow_any_unimported = true
+# Error codes that mypy leaves off and that the code base already satisfies. Measured and left off, with their count:
+# redundant-expr (3: defensive checks on a value the types call always true), truthy-bool (2: the same kind),
+# explicit-override (18: asks for @override on every override).
+enable_error_code = [
+    "ignore-without-code",
+    "possibly-undefined",
+    "unused-awaitable",
+    "redundant-self",
+    "mutable-override",
+    "deprecated",
+    "exhaustive-match",
+    "narrowed-type-not-subtype",
+    "unimported-reveal",
+]
 show_error_codes = true
 pretty = false
 plugins = ["pydantic.mypy"]
@@ -257,14 +294,33 @@ init_typed = true
 warn_required_dynamic_aliases = true
 
 [[tool.mypy.overrides]]
-module = ["tiktoken.*", "dotenv.*", "tensorrt.*", "tensorrt_bindings.*", "cuda.*", "tokenizers.*"]
+module = ["tiktoken.*", "dotenv.*", "tensorrt.*", "tensorrt_bindings.*", "cuda.*", "tokenizers.*", "atheris.*"]
 ignore_missing_imports = true
 
 [tool.pylint.main]
 jobs = 0
 py-version = "3.14"
+# The score is 8.00: 1785 of its findings are line-too-long at 100 columns (the rest cost 0.15 points), and the threshold
+# is the score rounded down to 0.5. scripts/quality/static.py passes the same value on the command line; raise both together.
 fail-under = 8.0
-load-plugins = ["pylint.extensions.mccabe"]
+# Extensions that the code base satisfies completely, so each one costs nothing and keeps the pattern out. Measured and left
+# out, with their findings (counted with one process, jobs = 0 reports each message twice): consider_using_assignment_expr
+# 134 (style), while_used 15, bad_builtin 9, set_membership 7 (a set needs hashable operands), no_self_use 3,
+# consider_ternary_expression 2, empty_comment 2 (blank separators of a comment block), confusing_elif 1.
+load-plugins = [
+    "pylint.extensions.mccabe",
+    "pylint.extensions.check_elif",
+    "pylint.extensions.comparison_placement",
+    "pylint.extensions.consider_refactoring_into_while_condition",
+    "pylint.extensions.dict_init_mutate",
+    "pylint.extensions.dunder",
+    "pylint.extensions.eq_without_hash",
+    "pylint.extensions.for_any_all",
+    "pylint.extensions.private_import",
+    "pylint.extensions.redefined_variable_type",
+    "pylint.extensions.redefined_loop_name",
+    "pylint.extensions.typing",
+]
 ignore-paths = ["^app/_version\\.py$"]
 
 [tool.pylint.format]
@@ -301,7 +357,7 @@ disable = [
 exclude_dirs = ["tests", "test_harness/runs", ".venv", ".gitnexus", "node_modules"]
 
 [tool.vulture]
-paths = ["app", "main.py", "test_harness", "scripts", "vulture_whitelist.py"]
+paths = ["app", "main.py", "test_harness", "scripts", "fuzz", "vulture_whitelist.py"]
 min_confidence = 60
 exclude = ["app/_version.py", "test_harness/runs/"]
 # Decorators that register the decorated function with a framework: pydantic validators,
@@ -350,8 +406,11 @@ also_copy = [
 pytest_add_cli_args = [
     "-p", "no:cacheprovider", "-q", "-o", "tmp_path_retention_policy=failed",
     "--ignore=tests/architecture/test_contracts.py",
+    "--ignore=tests/architecture/test_licensing_headers.py",  # reads the notice of every source file of the checkout, which the sandbox mutates
     "--ignore=tests/integration/test_cli_env_file_writer.py",
+    "--ignore=tests/integration/test_cli_server_origin.py",  # starts the CLI in a subprocess for every case (38 runs), too slow to repeat for each mutant
     "--ignore=tests/integration/test_config_precedence.py",
+    "--ignore=tests/integration/test_fuzz_targets.py",  # starts the harnesses of fuzz/ (atheris takes over the child process)
     "--ignore=tests/integration/test_gpu_preflight.py",
     "--ignore=tests/integration/test_harness_config_cli.py",
     "--ignore=tests/integration/test_harness_container_image_and_mounts.py",
@@ -360,6 +419,7 @@ pytest_add_cli_args = [
     "--ignore=tests/integration/test_harness_throwaway_server.py",
     "--ignore=tests/integration/test_harness_walkthrough.py",
     "--ignore=tests/integration/test_main_lifespan_and_routes.py",
+    "--ignore=tests/integration/test_quality_reuse_gate.py",  # the real tool on scratch repositories and on the checkout
     "--ignore=tests/integration/test_quality_runner.py",
     "--ignore=tests/integration/test_quality_shell_gates.py",  # real tools on scratch repositories and on the checkout
     "--ignore=tests/integration/test_quality_wheel_gate.py",  # builds the real package of the checkout
@@ -368,6 +428,7 @@ pytest_add_cli_args = [
     "--ignore-glob=tests/integration/test_release_*.py",
     "--ignore=tests/integration/test_startup_config_wiring.py",
     "--ignore=tests/integration/test_tensorrt_startup_refusal.py",
-    # This test starts main.py in a scratch directory, where an instrumented app module cannot find mutmut's config.
+    # These tests start main.py in a scratch directory, where an instrumented app module cannot find mutmut's config.
     "--deselect=tests/integration/test_startup_failures.py::test_a_settings_file_that_is_not_utf8_is_named_in_one_line",
+    "--deselect=tests/integration/test_tls_settings.py::test_the_child_process_ends_with_one_error_line_and_exit_code_1",
 ]

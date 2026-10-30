@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The tiktoken encoding loads while the server starts, within a limit, and a host that cannot load it refuses to start.
 
 tiktoken fetches the data of an encoding on first use, with a request that has no timeout of its own. On a host that
@@ -37,7 +40,7 @@ def vocabulary() -> bytes:
     """The vocabulary of ``gpt-4``'s encoding, read through tiktoken's own cache (fetched the first time on a new host)."""
     try:
         return tiktoken.load.read_file_cached(CL100K_URL)
-    except Exception as error:  # the suites run with the real data: nothing is skipped when it is missing
+    except Exception as error:  # noqa: BLE001 - the suites run with the real data: nothing is skipped when it is missing
         pytest.fail(f"the tiktoken vocabulary is not on disk and could not be downloaded ({type(error).__name__})")
 
 
@@ -152,7 +155,7 @@ def test_a_download_that_fails_names_the_kind_of_error_and_keeps_it_as_the_cause
 def test_the_start_up_uses_the_time_limit_of_the_settings(empty_cache, hanging_download, monkeypatch):
     monkeypatch.setattr(settings, "TIKTOKEN_LOAD_TIMEOUT_SECONDS", 0.2)
 
-    with pytest.raises(TokenizerUnavailableError, match="no answer within 0.2 seconds"):
+    with pytest.raises(TokenizerUnavailableError, match=r"no answer within 0.2 seconds"):
         load_token_counter()
 
 

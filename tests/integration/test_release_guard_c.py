@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The release guard waits for the signing run, and condition 4 is the tag's own run and a whole signed bundle.
 
 ``wait-release`` polls the ``release.yml`` run that the push of the tag started, then requires the bundles; it ends at once

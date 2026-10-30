@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The re-embed run's reporting and stop handling in ``main.py``.
 
 A re-embed copies every memory into a new collection and only then makes it the live one, so every way
@@ -290,7 +293,7 @@ async def test_a_qdrant_start_up_refusal_ends_the_run_with_status_1_and_closes_t
 
     monkeypatch.setattr(app.config.logging_config, "configure_logging", lambda **_: None)
     monkeypatch.setattr(main.atexit, "register", lambda *_: None)
-    monkeypatch.setattr(app.bootstrap, "get_embedding_adapter", lambda: object())
+    monkeypatch.setattr(app.bootstrap, "get_embedding_adapter", object)
     monkeypatch.setattr(app.bootstrap, "create_qdrant_stack", lambda: stack)
     monkeypatch.setattr(main, "_reembed", refuse)
 
@@ -318,7 +321,7 @@ def reembed_run(monkeypatch):
     stack = _Stack()
     monkeypatch.setattr(app.config.logging_config, "configure_logging", lambda **_: None)
     monkeypatch.setattr(main.atexit, "register", lambda *_: None)
-    monkeypatch.setattr(app.bootstrap, "get_embedding_adapter", lambda: object())
+    monkeypatch.setattr(app.bootstrap, "get_embedding_adapter", object)
     monkeypatch.setattr(app.bootstrap, "create_qdrant_stack", lambda: stack)
     return stack, monkeypatch, app.bootstrap
 

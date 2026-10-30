@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """Token counting utilities for context budget management
 """
 import logging
@@ -86,7 +90,7 @@ def get_token_counter() -> TokenCounter:
     Loading a tiktoken encoding may download it, which blocks. Async callers should
     run this in a worker thread (``asyncio.to_thread``) until the counter exists.
     """
-    global _token_counter
+    global _token_counter  # noqa: PLW0603 - the shared counter, built once
     if _token_counter is None:
         with _token_counter_lock:
             if _token_counter is None:
@@ -119,7 +123,7 @@ def preload_token_counter(timeout_seconds: float, model: str = DEFAULT_MODEL) ->
         TokenizerUnavailableError: the encoding did not load in time, or failed to load; the message names
             ``TIKTOKEN_CACHE_DIR`` and the command that fills it
     """
-    global _token_counter
+    global _token_counter  # noqa: PLW0603 - the shared counter, built once
     with _token_counter_lock:
         if _token_counter is not None and _token_counter.encoding is not None:
             return _token_counter

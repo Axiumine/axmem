@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Contract of the argument normalisation that the MCP tool adapters share.
 
 An agent sends ids, numbers, booleans and string lists as it likes; the adapters turn them into the typed
@@ -6,14 +9,12 @@ reads back, so they are pinned here word for word, together with the defaults, t
 which the aliases of the link tools win.
 """
 
-from datetime import UTC, datetime, timedelta, tzinfo
 from uuid import UUID
 
 import pytest
 from fastmcp.exceptions import ToolError
 
 from app.config.settings import settings
-from app.routes.mcp.adapters import memory_arguments
 from app.routes.mcp.adapters.arguments import (
     clamp_int,
     clamp_optional_int,
@@ -30,7 +31,6 @@ from app.routes.mcp.adapters.memory_arguments import (
     LINK_SPEC,
     UNLINK_SPEC,
     check_importance_min,
-    parse_created_since,
     resolve_link_arguments,
     resolve_memory_id,
 )
@@ -329,7 +329,7 @@ def test_resolve_memory_id_does_not_fall_back_when_memory_id_is_present_but_blan
 
 
 # ---------------------------------------------------------------------------
-# importance_min
+# The importance_min filter
 # ---------------------------------------------------------------------------
 
 
@@ -344,103 +344,6 @@ def test_check_importance_min_refuses_everything_else_with_one_message(value):
         check_importance_min(value)
 
     assert str(caught.value) == "importance_min must be an integer between 1 and 10"
-
-
-# ---------------------------------------------------------------------------
-# created_since
-# ---------------------------------------------------------------------------
-
-CREATED_SINCE_REFUSAL = "created_since must be an ISO 8601 timestamp with a timezone"
-
-
-@pytest.mark.parametrize(
-    ("text", "expected"),
-    [
-        ("2026-10-18T12:30:45Z", datetime(2026, 10, 18, 12, 30, 45, tzinfo=UTC)),
-        ("2026-10-18T12:30:45+00:00", datetime(2026, 10, 18, 12, 30, 45, tzinfo=UTC)),
-        ("2026-10-18T12:30:45+02:00", datetime(2026, 10, 18, 10, 30, 45, tzinfo=UTC)),
-        ("2026-10-18T01:30:45-05:30", datetime(2026, 10, 18, 7, 0, 45, tzinfo=UTC)),
-        ("2026-10-18T12:30:45.250Z", datetime(2026, 10, 18, 12, 30, 45, 250000, tzinfo=UTC)),
-    ],
-)
-def test_parse_created_since_returns_the_instant_in_utc(text, expected):
-    result = parse_created_since(text)
-
-    assert result == expected
-    assert result is not None
-    assert result.utcoffset() == timedelta(0)
-    assert result.tzinfo is UTC
-
-
-def test_parse_created_since_leaves_an_omitted_value_alone():
-    assert parse_created_since(None) is None
-
-
-@pytest.mark.parametrize(
-    "value",
-    [
-        7,
-        1.5,
-        True,
-        ["2026-10-18T12:30:45Z"],
-        "yesterday",
-        "",
-        "2026-10-18",
-        "2026-10-18T12:30:45",
-        "2026-10-18 12:30:45+00:00",
-        "2026-13-45T12:30:45Z",
-    ],
-    ids=["int", "float", "bool", "list", "word", "empty", "date-only", "no-timezone", "space-separator", "bad-month"],
-)
-def test_parse_created_since_refuses_what_is_not_a_timestamp_with_a_timezone(value):
-    with pytest.raises(ToolError) as caught:
-        parse_created_since(value)
-
-    assert str(caught.value) == CREATED_SINCE_REFUSAL
-
-
-def test_parse_created_since_gives_the_parser_an_explicit_offset_in_place_of_the_z_suffix(monkeypatch):
-    handed_over = []
-
-    class _RecordingDatetime:
-        @staticmethod
-        def fromisoformat(text):
-            handed_over.append(text)
-            return datetime.fromisoformat(text)
-
-    monkeypatch.setattr(memory_arguments, "datetime", _RecordingDatetime)
-
-    assert parse_created_since("2026-10-18T12:30:45Z") == datetime(2026, 10, 18, 12, 30, 45, tzinfo=UTC)
-    assert parse_created_since("2026-10-18T12:30:45+02:00") == datetime(2026, 10, 18, 10, 30, 45, tzinfo=UTC)
-    assert handed_over == ["2026-10-18T12:30:45+00:00", "2026-10-18T12:30:45+02:00"]
-
-
-def test_parse_created_since_refuses_a_timestamp_whose_timezone_reports_no_offset(monkeypatch):
-    class _NoOffset(tzinfo):
-        def utcoffset(self, dt):
-            return None
-
-        def dst(self, dt):
-            return None
-
-    class _ParserWithoutOffset:
-        @staticmethod
-        def fromisoformat(_text):
-            return datetime(2026, 10, 18, 12, 30, 45, tzinfo=_NoOffset())
-
-    monkeypatch.setattr(memory_arguments, "datetime", _ParserWithoutOffset)
-
-    with pytest.raises(ToolError) as caught:
-        parse_created_since("2026-10-18T12:30:45+02:00")
-
-    assert str(caught.value) == CREATED_SINCE_REFUSAL
-
-
-def test_parse_created_since_hides_the_parser_error_behind_the_one_message():
-    with pytest.raises(ToolError) as caught:
-        parse_created_since("yesterday")
-
-    assert isinstance(caught.value.__cause__, ValueError)
 
 
 # ---------------------------------------------------------------------------
@@ -647,7 +550,9 @@ def test_the_targets_are_deduplicated_in_order_and_never_contain_the_source():
     ids=["link", "unlink"],
 )
 def test_a_source_that_is_its_own_only_target_is_refused(spec, message):
-    assert _refusal(resolve_link_arguments, spec, _provided(memory_id=str(FIRST), source_id=str(FIRST), related_ids=[str(FIRST), str(FIRST)])) == message
+    assert _refusal(
+        resolve_link_arguments, spec, _provided(memory_id=str(FIRST), source_id=str(FIRST), related_ids=[str(FIRST), str(FIRST)]),
+    ) == message
 
 
 def test_one_call_links_at_most_the_configured_number_of_memories(monkeypatch):

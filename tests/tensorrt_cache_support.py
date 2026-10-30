@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Doubles and helpers for the tests of the TensorRT engine cache: the names of an entry, and the recorders that stand in for a build."""
 import json
 from pathlib import Path

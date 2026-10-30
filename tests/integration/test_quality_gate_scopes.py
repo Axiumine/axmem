@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """What a commit can skip: a staged file that a gate reads never leaves that gate out, and a gate configuration widens the run.
 
 Stand-ins for pytest and semgrep record the command, so nothing here starts a suite.

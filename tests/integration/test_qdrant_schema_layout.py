@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The layout of the collections as a start checks it: the vector width, the shards and replicas, and the indexes.
 
 A mismatch is made by creating the collection the way an earlier configuration would have; the node is the real one.
@@ -42,7 +45,9 @@ async def test_a_start_refuses_collections_of_another_layout_but_a_replacing_sta
     generation = await schema.live_generation()
     monkeypatch.setattr(settings, "QDRANT_SHARD_NUMBER", 2)
 
-    with pytest.raises(QdrantStartupError, match=f"Qdrant collection {schema.names.links} does not match the settings: shard_number is 1 but"):
+    with pytest.raises(
+        QdrantStartupError, match=f"Qdrant collection {schema.names.links} does not match the settings: shard_number is 1 but",
+    ):
         await schema.ensure()
     await schema.ensure(replacing=True)
     await schema.discard(schema.names.links)
@@ -60,7 +65,9 @@ async def test_a_start_refuses_links_with_vectors_of_another_width_even_when_it_
     )
 
     for replacing in (False, True):
-        with pytest.raises(QdrantStartupError, match=f"Qdrant collection {schema.names.links} does not match the settings: vectors are 3 wide but 1 are"):
+        with pytest.raises(
+            QdrantStartupError, match=f"Qdrant collection {schema.names.links} does not match the settings: vectors are 3 wide but 1 are",
+        ):
             await schema.ensure(replacing=replacing)
 
 

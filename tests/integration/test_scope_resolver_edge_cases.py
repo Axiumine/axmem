@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Integration tests for scope parsing and resolution edge cases.
 
 A scope string without any real token is rejected, and a scope token this server does not

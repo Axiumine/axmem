@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """QdrantStore on a real node: scopes, create-if-absent, guarded writes, reads and the read-back of claim tokens.
 
 The store is the one holder of the Qdrant connections (see test_tenant_chokepoint.py for the proof that
@@ -376,7 +379,7 @@ async def test_search_finds_the_nearest_point_of_the_tenant_only(store, collecti
     hits = await store.search(Scope.of(tenant), collection, query=vector(20), limit=5, with_vectors=True)
     close_only = await store.search(Scope.of(tenant), collection, query=vector(20), limit=5, score_threshold=0.5)
 
-    assert [hit.id for hit in hits][0] == mine_near.id
+    assert next(hit.id for hit in hits) == mine_near.id
     assert theirs.id not in {hit.id for hit in hits}
     assert hits[0].vector == vector(20)
     assert hits[0].score == pytest.approx(1.0)

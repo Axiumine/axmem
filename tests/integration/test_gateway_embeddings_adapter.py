@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The optional HTTP embeddings gateway provider, against a small in-process fake gateway.
 
 The fake serves the request/response contract the adapter speaks (strict body, 1 to 256 inputs, vectors in
@@ -680,7 +683,7 @@ def test_a_blank_gateway_metadata_means_none_and_never_stops_another_provider(mo
 def test_gateway_metadata_must_be_a_json_object_of_strings_but_only_the_gateway_checks(monkeypatch, raw):
     monkeypatch.setenv("GATEWAY_METADATA", raw)
 
-    assert Settings(_env_file=None).GATEWAY_METADATA == raw  # another provider is not stopped by it
+    assert raw == Settings(_env_file=None).GATEWAY_METADATA  # another provider is not stopped by it
     monkeypatch.setattr(settings, "GATEWAY_METADATA", raw)
     with pytest.raises(ValueError, match="GATEWAY_METADATA must be a JSON object of string values"):
         build(FakeGateway())

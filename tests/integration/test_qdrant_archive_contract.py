@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The exact bytes, counts, refusals and log lines of the archive export and import, on a real Qdrant node.
 
 ``test_qdrant_archive.py`` shows that every unreadable line is skipped and that the good ones still import. This file

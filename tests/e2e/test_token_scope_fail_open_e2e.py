@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """End-to-end tests: token scopes must narrow, never widen, the instance ceiling.
 
 Drives the in-process FastMCP app (real Qdrant, real meta-tools, real scope

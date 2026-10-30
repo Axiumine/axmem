@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """Provenance defaults utility
 
 Applies environment-level provenance defaults to Create and Update models.
@@ -5,6 +9,10 @@ When ENFORCE_ENV_OVERWRITE is False (default), env vars fill in None fields only
 When ENFORCE_ENV_OVERWRITE is True, env vars always override agent-provided values
 on both create and update operations.
 """
+
+from typing import Any
+
+from pydantic import BaseModel
 
 from app.config.settings import settings
 
@@ -17,13 +25,13 @@ PROVENANCE_ENV_MAP = {
 }
 
 
-def apply_provenance_defaults(data):
+def apply_provenance_defaults[Model: BaseModel](data: Model) -> Model:
     """Apply env-level provenance defaults to a Create model.
 
     - ENFORCE_ENV_OVERWRITE=False (default): env vars fill in None fields only
     - ENFORCE_ENV_OVERWRITE=True: env vars always override agent-provided values
     """
-    updates = {}
+    updates: dict[str, Any] = {}
     enforce = settings.ENFORCE_ENV_OVERWRITE
 
     for field, setting_name in PROVENANCE_ENV_MAP.items():
@@ -36,7 +44,7 @@ def apply_provenance_defaults(data):
     return data.model_copy(update=updates) if updates else data
 
 
-def apply_provenance_defaults_for_update(data):
+def apply_provenance_defaults_for_update[Model: BaseModel](data: Model) -> Model:
     """Apply env-level provenance enforcement to Update models.
 
     Only active when ENFORCE_ENV_OVERWRITE=True:
@@ -49,7 +57,7 @@ def apply_provenance_defaults_for_update(data):
     if not settings.ENFORCE_ENV_OVERWRITE:
         return data
 
-    updates = {}
+    updates: dict[str, Any] = {}
     for field, setting_name in PROVENANCE_ENV_MAP.items():
         env_value = getattr(settings, setting_name, None)
         if env_value and field in data.model_fields_set:

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """PATCH-style update models: cleaning of list and text inputs.
 
 Covers how every update model cleans padded or blank source file paths, and that an update

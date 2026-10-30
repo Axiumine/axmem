@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """How the release of an engine and of a slot reports the steps that failed (the real GPU, with the failing CUDA calls scripted)."""
 import logging
 

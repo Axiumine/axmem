@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The requests that create the collections: each creation is a set of requests the node must get in one shape.
 
 The layout of the settings, the vector, the indexes and the alias are asked of the real node, and the recorder notes
@@ -152,7 +155,9 @@ async def test_a_links_collection_made_for_a_rebuild_has_the_shape_of_the_links_
         "shard_number": 2, "replication_factor": 1, "write_consistency_factor": 1,
         "hnsw_config": qm.HnswConfigDiff(m=0), "metadata": None,
     })
-    assert [call[1] for call in changes(calls, "create_payload_index")] == [(f"{schema.names.links}_probe", field) for field in LINK_INDEXES]
+    assert [call[1] for call in changes(calls, "create_payload_index")] == [
+        (f"{schema.names.links}_probe", field) for field in LINK_INDEXES
+    ]
 
 
 async def test_a_generation_whose_indexes_cannot_be_built_is_deleted_and_the_cause_is_what_is_raised(

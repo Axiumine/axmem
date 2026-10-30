@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """A scan of a collection is complete or it fails: a point that other writers are rewriting is never left out of it.
 
 Qdrant returns a point from a majority read only while the replicas it asks hold the same version of it, so a scan
@@ -179,7 +182,7 @@ async def test_pages_continue_where_the_last_one_ended_and_the_last_one_says_so(
 
 
 async def test_the_re_embedding_scan_of_the_old_generation_leaves_no_memory_out(world):
-    stack, repo, _tenant, ids, undecided = world
+    _stack, repo, _tenant, ids, undecided = world
     source, target = await repo.live_generation(), await repo.create_generation()
     undecided.disagree([ids[0], ids[1], ids[5]], 2)
 
@@ -238,7 +241,9 @@ async def test_a_replacement_that_another_writer_overtook_still_counts(world, te
     async def overtaken(scope, collection, point, **kwargs) -> None:
         await real_replace(scope, collection, point, **kwargs)
         version = int(point.payload[VERSION_KEY])
-        await real_replace(scope, collection, NewPoint(point.id, point.vector, {**point.payload, VERSION_KEY: version + 1}), expected_version=version)
+        await real_replace(
+            scope, collection, NewPoint(point.id, point.vector, {**point.payload, VERSION_KEY: version + 1}), expected_version=version,
+        )
 
     monkeypatch.setattr(stack.store, "replace", overtaken)
 
@@ -377,7 +382,7 @@ async def test_the_export_command_is_silent_when_the_data_did_not_change(world, 
 
 
 async def test_the_export_command_ends_in_one_error_line_when_the_replicas_never_agree(world, tmp_path, capsys, monkeypatch):
-    stack, _repo, _tenant, ids, undecided = world
+    _stack, _repo, _tenant, ids, undecided = world
     undecided.disagree([ids[2]], 10**6)
     real_build = client_module._build_client
     monkeypatch.setattr(client_module, "_build_client", lambda *args: DisagreeingReplicas(real_build(*args), undecided))
@@ -385,14 +390,17 @@ async def test_the_export_command_ends_in_one_error_line_when_the_replicas_never
     assert await operator_commands.export_memories(tmp_path / "export.jsonl") == 1
 
     error = capsys.readouterr().err
-    assert error.startswith("Error: The replicas of ") and "kept holding different versions" in error
+    assert error.startswith("Error: The replicas of ")
+    assert "kept holding different versions" in error
     assert list(tmp_path.glob("export.jsonl*")) == []
 
 
 # ---- the import ----------------------------------------------------------------------------------------------------
 
 
-async def test_an_import_does_not_skip_a_link_because_the_replicas_disagree_about_its_memories(isolated_stack, tensorrt_embedder, tmp_path, monkeypatch):
+async def test_an_import_does_not_skip_a_link_because_the_replicas_disagree_about_its_memories(
+    isolated_stack, tensorrt_embedder, tmp_path, monkeypatch,
+):
     monkeypatch.setattr(store_module, "AGREEMENT_WAIT_SECONDS", 0.0)
     repo = isolated_stack.memory_repository(tensorrt_embedder)
     _user_id, originals = await seed_memories(repo)

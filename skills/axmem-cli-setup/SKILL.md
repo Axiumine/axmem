@@ -46,8 +46,10 @@ Connection precedence: `--local` > `--server URL` > `AXMEM_SERVER` env > local d
   the environment only and never stored; there is no browser flow. The token names the
   tenant, and a tenant sees only its own memories. Local mode is the `DEFAULT_TENANT` tenant.
 
-Config merges shell env over `~/.config/axmem/.env`. Check state anytime with
-`axmem auth status`.
+Config merges shell env over `~/.config/axmem/.env`. A `.env` in the working directory cannot
+choose the server: the CLI ignores `AXMEM_SERVER` there (a cloned repository must not decide where
+the token goes), stays local and prints a `Note: ./.env sets AXMEM_SERVER` line on stderr. Check
+state anytime with `axmem auth status`.
 
 ## Verify — the completion criterion
 
@@ -88,6 +90,11 @@ same operations.
   server bound to another address needs `AUTH_MODE=jwt`, `introspection` or `static`. A credential-free HTTP
   server also answers `421` to a `Host` that is not `localhost` or a loopback address and `403` to a foreign
   `Origin`, so point `AXMEM_SERVER` at `http://127.0.0.1:<port>` (or `localhost`), not at another name for the machine.
+- The HTTP server speaks plain HTTP unless both `SERVER_SSL_CERTFILE` and `SERVER_SSL_KEYFILE` name PEM files (TLS 1.2 or
+  later; the password of an encrypted key is `SERVER_SSL_KEYFILE_PASSWORD`). One without the other, a file that cannot be
+  loaded, or a password alone refuses the start with `Error: ...`; plain HTTP beyond loopback logs a warning. Behind a
+  TLS-terminating proxy bind to loopback instead. A server certificate from a private authority needs
+  `SSL_CERT_FILE=<authority.pem>` in the environment of a command that uses `--server https://...`.
 - Storage via env: Qdrant is the only store. `QDRANT_URL` (one node or a comma-separated cluster, default
   `http://127.0.0.1:6333`), `QDRANT_API_KEY`, and `QDRANT_COLLECTION_PREFIX` to keep several deployments apart.
 - Operator commands against the configured Qdrant: `axmem backup`, `axmem restore <dir> --yes` (stop the

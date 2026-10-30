@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Client-safe error text for MCP tool failures.
 
 ``str(exc)`` of an unexpected exception can carry request URLs, filters, payloads, internal

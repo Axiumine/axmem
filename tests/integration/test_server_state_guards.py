@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Integration tests for the typed server state and the guards around the tenant.
 
 ``AxmemMCP`` (app/routes/server_state.py) is the one type routes, middleware and MCP

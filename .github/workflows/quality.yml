@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 name: Quality gates
 
 # The static gates of the local Git hooks (.githooks/, scripts/quality) on hosted runners, under the same gate names: the
@@ -52,6 +55,8 @@ jobs:
         run: uv run --frozen python -m scripts.quality gate shellcheck
       - name: actionlint
         run: uv run --frozen python -m scripts.quality gate actionlint
+      - name: reuse (a copyright notice and a license in every file)
+        run: uv run --frozen python -m scripts.quality gate reuse
       - name: vulture
         run: uv run --frozen python -m scripts.quality gate vulture
       - name: radon complexity (min rating B)

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """E2E tests: the embeddings used for similarity searches must belong to the caller.
 
 The similarity searches start from the stored embedding of a memory. These tests drive the memory

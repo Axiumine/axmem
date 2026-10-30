@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Contract of the three MCP meta-tools: what a client gets from a call and what an operator finds in the log.
 
 Each tool is called through the mounted FastMCP server, with stubbed tool implementations behind a real

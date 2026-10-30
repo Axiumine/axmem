@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Compare the nodes of a cluster by reading each one on its own.
 
 Health endpoints say whether the peers see each other, not whether their replicas hold the same data. This

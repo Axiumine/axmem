@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 name: Publish to TestPyPI
 
 # The rehearsal of publish.yml on TestPyPI: the same signed bytes of a release that scripts/release-pypi.sh has already

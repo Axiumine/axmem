@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The collection layout: creation, the checks that stop a start on a mismatch, generations and the live alias.
 
 Each test works on collections of its own (``isolated_qdrant``), on the real node, through the pool's real

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """What an operator reads when BackupService refuses a backup, and where the refusal starts.
 
 ``test_backup_service.py`` covers the flow; this file pins the exact refusal text (the counts it reports and the

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """E2E tests: the REST routes obey ``AXMEM_SCOPES`` and the scopes of the caller's token.
 
 The MCP meta-tools always refused a tool that the instance ceiling or the token's scopes did not permit; the REST
@@ -271,9 +274,8 @@ async def _create_in(stack, token):
 
 
 async def test_a_read_scoped_token_reads_but_does_not_write(jwt_stack, keys):
-    async with jwt_stack() as stack:
-        async with _create_in(stack, _token(keys)) as memory_id:
-            statuses = await _statuses(stack, _token(keys, scope="read"), memory_id)
+    async with jwt_stack() as stack, _create_in(stack, _token(keys)) as memory_id:
+        statuses = await _statuses(stack, _token(keys, scope="read"), memory_id)
 
     reads = {f"{m} {p}" for m, p, _ in READS}
     assert {route for route, status in statuses.items() if status == 200} == reads
@@ -281,9 +283,8 @@ async def test_a_read_scoped_token_reads_but_does_not_write(jwt_stack, keys):
 
 
 async def test_a_write_scoped_token_writes_but_does_not_read(jwt_stack, keys):
-    async with jwt_stack() as stack:
-        async with _create_in(stack, _token(keys)) as memory_id:
-            statuses = await _statuses(stack, _token(keys, scope="write:memories"), memory_id)
+    async with jwt_stack() as stack, _create_in(stack, _token(keys)) as memory_id:
+        statuses = await _statuses(stack, _token(keys, scope="write:memories"), memory_id)
 
     reads = {f"{m} {p}" for m, p, _ in READS}
     assert {status for route, status in statuses.items() if route in reads} == {403}
@@ -347,13 +348,12 @@ async def test_a_cached_token_keeps_its_scopes(embedding_adapter, reranker_adapt
     reader = _token(keys, scope="read")
     writer = _token(keys, scope="read write")
 
-    async with _cached_jwt_stack(embedding_adapter, reranker_adapter, keys) as (stack, cache):
-        async with stack.rest() as client:
-            answers = [
-                (await client.post("/api/v1/memories", json=MEMORY, headers=_bearer(token))).status_code
-                for token in (reader, reader, writer, reader, writer)
-            ]
-            listed = await client.get("/api/v1/memories", headers=_bearer(reader))
+    async with _cached_jwt_stack(embedding_adapter, reranker_adapter, keys) as (stack, cache), stack.rest() as client:
+        answers = [
+            (await client.post("/api/v1/memories", json=MEMORY, headers=_bearer(token))).status_code
+            for token in (reader, reader, writer, reader, writer)
+        ]
+        listed = await client.get("/api/v1/memories", headers=_bearer(reader))
 
     assert answers == [403, 403, 201, 403, 201]
     assert listed.status_code == 200

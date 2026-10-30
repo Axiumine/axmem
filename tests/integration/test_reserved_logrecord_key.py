@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Regression tests for log ``extra`` dicts that collide with LogRecord attributes.
 
 ``Logger.makeRecord`` raises ``KeyError("Attempt to overwrite 'name' in LogRecord")``

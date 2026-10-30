@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """What the tests of ``scripts/release-testpypi.sh`` share: a release that stopped where the rehearsal belongs, and the words it prints.
 
 ``make_released`` runs the real ``scripts/release-pypi.sh`` in a scratch world (``tests/release_support/world.py``) until it

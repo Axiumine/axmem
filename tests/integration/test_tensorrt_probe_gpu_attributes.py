@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """``probe_gpu`` explains a failure of each of its CUDA calls with a startup error, whichever call it is.
 
 ``test_tensorrt_runtime.py`` fails every call of a name at once, so the first of the two compute capability reads

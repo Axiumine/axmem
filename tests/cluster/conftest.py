@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Fixtures for the three-node Qdrant cluster suite (marker ``cluster``, run by the ``e2e-qdrant`` gate).
 
 The cluster is real: three ``qdrant/qdrant`` containers on a Docker network with an API key and

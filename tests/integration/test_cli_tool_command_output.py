@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Integration tests for what the tool commands print, send and return: tools, call and the memory verbs.
 
 The commands run end to end from the parsed arguments through the production RemoteExecutor; the one external

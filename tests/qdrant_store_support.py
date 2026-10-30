@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Doubles and builders for the tests of ``QdrantStore`` (not a test module).
 
 A recorder sits between the pool and its real clients and notes each request, so that an option dropped or changed

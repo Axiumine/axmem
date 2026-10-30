@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Integration tests for how RemoteExecutor reads results that carry no structured data.
 
 A bare array or scalar has no MCP structured content (the root must be an object), so

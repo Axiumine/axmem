@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Doubles for the TensorRT runtime tests: the CUDA runtime module and NVML, scripted where a failure cannot be had on demand."""
 from types import SimpleNamespace
 

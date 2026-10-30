@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Integration tests for the words an operator reads from backup, restore, export, import and qdrant-check.
 
 The commands print a short report on stdout, the warnings and refusals on stderr, and return the exit code a script
@@ -162,7 +165,9 @@ async def test_an_import_reports_what_it_read_and_makes_the_collections_first(st
 
 
 async def test_nodes_that_agree_are_listed_with_their_points(stack, capsys):
-    service = RecordingService(report=ConsistencyReport(nodes=[NodeReport("http://a:6333", points=5), NodeReport("http://b:6333", points=5)]))
+    service = RecordingService(
+        report=ConsistencyReport(nodes=[NodeReport("http://a:6333", points=5), NodeReport("http://b:6333", points=5)]),
+    )
     opened = stack(service)
 
     assert await operator_commands.check() == 0
@@ -174,10 +179,16 @@ async def test_nodes_that_agree_are_listed_with_their_points(stack, capsys):
     assert opened == [{}]
 
 
-@pytest.mark.parametrize("divergent_count", [1, operator_commands.REPORT_LIMIT - 1, operator_commands.REPORT_LIMIT, operator_commands.REPORT_LIMIT + 1])
+@pytest.mark.parametrize(
+    "divergent_count", [1, operator_commands.REPORT_LIMIT - 1, operator_commands.REPORT_LIMIT, operator_commands.REPORT_LIMIT + 1],
+)
 async def test_the_differing_points_are_listed_up_to_the_limit_and_the_rest_is_counted(stack, capsys, divergent_count):
     divergent = [f"collection:{index}" for index in range(divergent_count)]
-    stack(RecordingService(report=ConsistencyReport(nodes=[NodeReport("http://a", points=5), NodeReport("http://b", points=4)], divergent=divergent)))
+    stack(
+        RecordingService(
+            report=ConsistencyReport(nodes=[NodeReport("http://a", points=5), NodeReport("http://b", points=4)], divergent=divergent),
+        ),
+    )
 
     assert await operator_commands.check() == 1
 

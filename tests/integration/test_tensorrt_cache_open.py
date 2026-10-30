@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """``open_engine`` with the real engine class on the real GPU: a cold and a warm cache, the lock, a plan that is rejected,
 and a cache directory that cannot be used. Only the build is replaced (by ``Builds``), because a build costs half a minute.
 """

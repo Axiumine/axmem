@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The gates between the release commit and the dispatch of ``publish.yml``, and the resumption of a stopped release.
 
 ``test_release_pipeline.py`` pins the flow that goes green and the push that is refused. These cases pin what stops the

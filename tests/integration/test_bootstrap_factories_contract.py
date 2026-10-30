@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Integration tests for the factories of the composition root that need no GPU and no Qdrant (app/bootstrap.py)
 
 The factories choose the adapters from the settings, share the TensorRT engines of one process, wire the backup
@@ -7,6 +10,7 @@ where the question is how many are built and under which key.
 """
 import logging
 from types import SimpleNamespace
+from typing import ClassVar
 
 import pytest
 
@@ -34,7 +38,7 @@ from app.services.backup_service import BackupService
 class _Engine:
     """Stands for a TensorRT adapter: it records its construction and its closing, and loads nothing."""
 
-    log: list = []
+    log: ClassVar[list] = []
 
     def __init__(self):
         self.closed = False

@@ -1,4 +1,8 @@
-"""The build backend is pinned to exact versions, because the build on the maintainer's machine and the rebuild of ``release.yml`` must be the same bytes.
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
+"""The build backend is pinned to exact versions, because the build on the maintainer's machine and the rebuild of
+``release.yml`` must be the same bytes.
 
 A pin that is loosened (``>=``, ``~=``, a bare name) is found by ``release.yml`` only after the tag of the release is
 pushed, and the version is lost for it. The dependencies of the two packages are not pinned (docs/release.md says so).

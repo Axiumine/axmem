@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """What the fidelity audit of the PyPI reads found that the first fakes could not show.
 
 Every call the release flow makes was compared with the real tool, and the findings that changed what the script does each
@@ -207,7 +210,7 @@ class TestFilesThatCannotBeTrustedAfterThePublication:
         assert done.returncode != 0
         assert world.dispatches() == [DISPATCH]
         assert "could not download" in _out(done)
-        assert "files.pythonhosted.org" in _out(done)
+        assert re.search(r"\bfiles\.pythonhosted\.org\b", _out(done))
 
     def test_the_re_run_after_the_file_host_recovers_finishes_and_dispatches_nothing(
         self, world: World,
@@ -268,8 +271,8 @@ class TestThePinnedCurlArgv:
     @pytest.fixture
     def curl(self, world: World) -> object:
         def run(*argv: str) -> subprocess.CompletedProcess[str]:
-            return subprocess.run(  # noqa: S603
-                ["curl", *argv],  # noqa: S607
+            return subprocess.run(  # noqa: S603 - a program of the test setup, run without a shell
+                ["curl", *argv],  # noqa: S607 - a program of the test setup, run without a shell
                 cwd=world.tmp,
                 env=world._env(),
                 capture_output=True,
@@ -281,7 +284,7 @@ class TestThePinnedCurlArgv:
 
     PINNED = ("-sSL", "--globoff", "--proto", "=https", "--proto-redir", "=https", "--connect-timeout", "20", "--max-time", "600")
 
-    def test_the_pinned_read_of_the_json_is_answered(self, curl, world: World) -> None:  # noqa: ANN001
+    def test_the_pinned_read_of_the_json_is_answered(self, curl, world: World) -> None:
         done = curl(*self.PINNED, "-o", str(world.tmp / "out.json"), "-w", "%{http_code}", JSON_URL)
 
         assert done.returncode == 0, done.stderr
@@ -300,7 +303,7 @@ class TestThePinnedCurlArgv:
         ids=["method", "upload", "header", "user", "config", "form"],
     )
     def test_anything_but_a_plain_get_is_refused_and_logged(
-        self, curl, world: World, extra: tuple[str, ...],  # noqa: ANN001
+        self, curl, world: World, extra: tuple[str, ...],
     ) -> None:
         done = curl(*self.PINNED, *extra, JSON_URL)
 
@@ -317,14 +320,14 @@ class TestThePinnedCurlArgv:
         ids=["no proto", "no proto-redir", "http allowed"],
     )
     def test_a_read_without_the_https_pins_is_refused(
-        self, curl, world: World, argv: tuple[str, ...],  # noqa: ANN001
+        self, curl, world: World, argv: tuple[str, ...],
     ) -> None:
         done = curl(*argv)
 
         assert done.returncode == 2
         assert "--proto =https and --proto-redir =https are required" in done.stderr
 
-    def test_a_read_that_lets_curl_expand_the_url_is_refused(self, curl, world: World) -> None:  # noqa: ANN001
+    def test_a_read_that_lets_curl_expand_the_url_is_refused(self, curl, world: World) -> None:
         done = curl("-sSL", "--proto", "=https", "--proto-redir", "=https", JSON_URL)
 
         assert done.returncode == 2
@@ -341,7 +344,7 @@ class TestThePinnedCurlArgv:
         ],
         ids=["http", "other host", "userinfo", "simple", "per-version json"],
     )
-    def test_any_other_url_is_refused(self, curl, world: World, url: str) -> None:  # noqa: ANN001
+    def test_any_other_url_is_refused(self, curl, world: World, url: str) -> None:
         done = curl(*self.PINNED, url)
 
         assert done.returncode == 2
@@ -356,7 +359,7 @@ class TestTheLaxFakeUploadsNothing:
         state.mkdir()
         fakes.install(bin_dir)
 
-        done = subprocess.run(  # noqa: S603
+        done = subprocess.run(  # noqa: S603 - a program of the test setup, run without a shell
             [str(bin_dir / "uv"), "publish", "dist/x.whl"],
             env={"PATH": "/usr/bin:/bin", "FAKE_STATE": str(state)},
             capture_output=True,

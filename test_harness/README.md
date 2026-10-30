@@ -55,14 +55,17 @@ or invalid usage/configuration (a one-line `usage error: ...` on stderr, nothing
 
 ## The image
 
-`axmem-test-harness:latest`, built from `test_harness/docker/Dockerfile`: opencode,
-uv-managed Python 3.14, agent-shell, and Axmem's **locked dependency tree** baked as
-cached layers. The working tree itself is built as a wheel on the host and installed
-`--no-deps` at container start, so every run walks the current checkout without an
-image rebuild. `ensure_image()` hashes `uv export --frozen` into an image label and
-rebuilds automatically when the lock drifts (stale images have burned runs before);
-`--rebuild-image` forces it without the layer cache (`docker build --no-cache`), so the
-floating installs (`opencode-ai@latest`, `agent-shell-py`) really pick up a new release.
+`axmem-test-harness:latest`, built from `test_harness/docker/Dockerfile`: opencode (version pinned in
+`test_harness/docker/package.json` and `package-lock.json`, installed with `npm ci`), uv-managed Python 3.14,
+agent-shell, and Axmem's **locked dependency tree** baked as cached layers. The working tree itself is built as
+a wheel on the host and installed `--no-deps` at container start, so every run walks the current checkout without
+an image rebuild. `ensure_image()` hashes `uv export --frozen`, the Dockerfile, `package.json` and
+`package-lock.json` into an image label and rebuilds automatically when any of them changes
+(stale images have burned runs before), so a new `node` digest or a new `opencode-ai` pin
+takes effect on the next run. `--rebuild-image` forces a rebuild without the layer cache
+(`docker build --no-cache`), so the floating installs (`agent-shell-py`, the `uv` installer)
+really pick up a new release. To move opencode, change the version in `package.json` and
+refresh `package-lock.json` as the comment in the Dockerfile describes.
 
 The container runs as the invoking host user (`uid:gid`, `HOME=/home/node`) and the image
 leaves the venv and `/home/node` writable for any uid, so the rw mounts and the staged

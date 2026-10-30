@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Integration tests for the CLI auth status / login commands and AXMEM_TOKEN handling.
 
 There is no interactive sign-in: the CLI sends the bearer token from AXMEM_TOKEN, or
@@ -8,6 +11,7 @@ import asyncio
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 
@@ -34,7 +38,7 @@ def isolated_cli_config(tmp_path, monkeypatch) -> Path:
 class _StubExecutor:
     """Stands in for RemoteExecutor: records construction, replays a canned outcome."""
 
-    built: dict = {}
+    built: ClassVar[dict] = {}
     outcome: object = {"tools_by_category": {}}
 
     def __init__(self, url, *, token=None, client_factory=None):
@@ -210,7 +214,7 @@ class _FakeSecuredServer:
                 self.end_headers()
                 self.wfile.write(body)
 
-            do_GET = do_POST = do_DELETE = _respond
+            do_GET = do_POST = do_DELETE = _respond  # noqa: N815 - the names http.server dispatches on
 
         self._server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
         self.url = f"http://127.0.0.1:{self._server.server_address[1]}/mcp"

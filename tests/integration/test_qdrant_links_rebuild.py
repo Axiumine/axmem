@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Moving the links collection to the layout of the settings, and finishing the move after a stop half way.
 
 A collection keeps the shard count it was created with, so after the layout settings change the links follow the

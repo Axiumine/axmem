@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The TensorRT reranker adapter on the real GPU: scores, ordering, batching, concurrency, failures.
 
 The model is the real cross-encoder, run in strict fp32 by TensorRT. The golden scores were
@@ -311,8 +314,8 @@ def test_tf32_and_directories_are_read_from_the_environment(monkeypatch, tmp_pat
     configured = Settings(_env_file=None)
 
     assert configured.RERANKING_TF32 is True
-    assert configured.RERANKING_MODEL_DIR == str(tmp_path / "models")
-    assert configured.RERANKING_ENGINE_CACHE_DIR == str(tmp_path / "engines")
+    assert str(tmp_path / "models") == configured.RERANKING_MODEL_DIR
+    assert str(tmp_path / "engines") == configured.RERANKING_ENGINE_CACHE_DIR
 
 
 @pytest.mark.parametrize("value", ["0", "-1", "1.5"])
@@ -324,5 +327,5 @@ def test_rerank_worker_count_rejects_invalid_limits(monkeypatch, value):
 
 
 def test_adapter_defaults_come_from_the_settings(tensorrt_reranker):
-    assert settings.RERANKING_WORKERS == tensorrt_reranker.workers
-    assert settings.RERANKING_TF32 == tensorrt_reranker.tf32
+    assert tensorrt_reranker.workers == settings.RERANKING_WORKERS
+    assert tensorrt_reranker.tf32 == settings.RERANKING_TF32

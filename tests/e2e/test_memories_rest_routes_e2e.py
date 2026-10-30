@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """E2E tests for memory REST route error mapping and obsolete-state validation.
 
 Each test works as a tenant of its own. Covers:

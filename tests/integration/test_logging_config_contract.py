@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The exact output and the exact set-up of the logging: JSON fields, console colours, masking bounds and the queue.
 
 What the log shows an operator (the fields of a JSON line, the colour of a level, the format of the console line, what
@@ -44,7 +47,7 @@ def _record(message="hello world", *, level=logging.INFO, args=None, exc_info=No
 
 def _raised(message: str):
     try:
-        raise ValueError(message)
+        raise ValueError(message)  # noqa: TRY301 - the test needs a live exception to take its info from
     except ValueError:
         return sys.exc_info()
 

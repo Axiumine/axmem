@@ -1,8 +1,12 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The release guard, conditions 4 and 5, all five at once, and what is not a pass at all.
 
 Condition 4 needs a green ``release.yml`` run and a release with a whole bundle per file; condition 5 needs ``dist/``
 byte-identical to the manifest with nothing else in it (in ``publish.yml`` that directory
-holds the signed files downloaded from the GitHub release, not a local rebuild). Broken together the guard lists every unmet condition and exits 1;
+holds the signed files downloaded from the GitHub release, not a local rebuild). Broken together the guard lists every
+unmet condition and exits 1;
 a manifest it cannot read, or GitHub not answering, is exit 2 and never a pass. ``test_release_guard_dist.py`` and
 ``test_release_guard_links.py`` cover the entries of ``dist/`` one by one.
 """

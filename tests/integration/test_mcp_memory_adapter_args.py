@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Integration tests for argument handling in the memory tool adapters.
 
 Covers the coercion helpers, the sort option validation in MemoryService.list_memories

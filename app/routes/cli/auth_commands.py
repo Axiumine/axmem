@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """CLI auth commands: login and status.
 
 There is no interactive sign-in: a remote server is reached with the bearer token in the
@@ -18,12 +22,13 @@ from pathlib import Path
 
 from app.routes.cli.paths import user_env_file
 from app.routes.cli.remote_executor import (
+    ClientFactory,
     RemoteExecutor,
     bearer_token_from_env,
     normalize_server_url,
     strip_url_userinfo,
 )
-from app.routes.cli.render import redact_urls_in_text
+from app.routes.cli.render import emit_ignored_server_notice, redact_urls_in_text
 from app.utils.url_helpers import redact_url
 
 # The settings file is parsed as UTF-8 (settings.py). A module-level constant: the one spelling of the codec.
@@ -61,11 +66,11 @@ def _atomic_write(target: Path, data: bytes, mode: int | None) -> None:
             handle.flush()
             os.fsync(handle.fileno())
         if mode is not None:
-            os.chmod(tmp_name, mode)
-        os.replace(tmp_name, target)
+            Path(tmp_name).chmod(mode)
+        Path(tmp_name).replace(target)
     except BaseException:
         with contextlib.suppress(OSError):
-            os.unlink(tmp_name)
+            Path(tmp_name).unlink()
         raise
 
 
@@ -101,7 +106,7 @@ async def login(
     server: str,
     *,
     env_file: Path | None = None,
-    client_factory=None,
+    client_factory: ClientFactory | None = None,
 ) -> int:
     """Check the connection to a server and save it as the default."""
     url = normalize_server_url(server)
@@ -118,7 +123,7 @@ async def login(
 
     try:
         await executor.list_tools()
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - any failure is reported, not raised
         print(
             f"Error: could not authenticate against {url}: "
             f"{redact_urls_in_text(str(exc))}",
@@ -134,7 +139,7 @@ async def login(
     return 0
 
 
-async def status(*, server: str | None = None, client_factory=None) -> int:
+async def status(*, server: str | None = None, client_factory: ClientFactory | None = None) -> int:
     """Report the active mode; in remote mode prove the credentials work.
 
     A status check must never change state. It sends the AXMEM_TOKEN bearer token, if
@@ -145,6 +150,7 @@ async def status(*, server: str | None = None, client_factory=None) -> int:
 
     url = server or settings.AXMEM_SERVER
     if not url:
+        emit_ignored_server_notice()
         print("Mode: local (no AXMEM_SERVER configured)")
         print(f"Qdrant: {', '.join(settings.qdrant_urls)}")
         return 0
@@ -154,7 +160,7 @@ async def status(*, server: str | None = None, client_factory=None) -> int:
 
     try:
         await executor.list_tools()
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - any failure is reported, not raised
         print(f"Server: {redact_url(executor.server_url)}", file=sys.stderr)
         print(f"Error: not authenticated: {redact_urls_in_text(str(exc))}", file=sys.stderr)
         return 1

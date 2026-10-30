@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The guard command ``testpypi-ready`` of the TestPyPI rehearsal.
 
 It is not a second implementation: ``testpypi-ready`` is ``publish-ready`` with the key ``testpypi`` of ``facts.INDEXES``:
@@ -50,7 +53,9 @@ def test_a_repository_that_is_set_up_is_ready_for_the_rehearsal_and_the_calls_ar
     code, out, err = ready()
 
     assert code == 0
-    assert out == f"{REPO} is ready to publish: publish-testpypi.yml, environment testpypi, the tag ruleset and the SLSA generator tag hold\n"
+    assert out == (
+        f"{REPO} is ready to publish: publish-testpypi.yml, environment testpypi, the tag ruleset and the SLSA generator tag hold\n"
+    )
     assert err == ""
     paths = [line.split()[-1] for line in world.events() if line.startswith("gh api ")]
     assert paths == [
@@ -95,7 +100,10 @@ ENVIRONMENT_REASONS = [
         "(it has main of type branch, v*.*.* of type tag)",
     ),
     ({"testpypi_policies": {"branch_policies": []}}, "(it has none)"),
-    ({"testpypi_workflow": {"state": "disabled_manually"}}, "publish-testpypi.yml is disabled_manually, not active: merge it to the default branch first"),
+    (
+        {"testpypi_workflow": {"state": "disabled_manually"}},
+        "publish-testpypi.yml is disabled_manually, not active: merge it to the default branch first",
+    ),
 ]
 
 
@@ -150,14 +158,20 @@ def test_the_repository_checks_are_those_of_publish_ready(ready, patch, reason):
     "replace",
     [
         {"rulesets": []},
-        {"rulesets": [{"id": 7, "target": "tag", "enforcement": "disabled"}], "ruleset_details": {"7": {"id": 7, "target": "tag", "enforcement": "disabled"}}},
+        {
+            "rulesets": [{"id": 7, "target": "tag", "enforcement": "disabled"}],
+            "ruleset_details": {"7": {"id": 7, "target": "tag", "enforcement": "disabled"}},
+        },
     ],
 )
 def test_the_tag_ruleset_is_required_for_the_rehearsal_as_for_the_release(ready, replace):
     code, _, err = ready(replace=replace)
 
     assert code == 1
-    assert "no active tag ruleset covers refs/tags/v* with creation, update, deletion, non_fast_forward and lets only repository admins bypass it" in err
+    assert (
+        "no active tag ruleset covers refs/tags/v* with creation, update, deletion, non_fast_forward and lets only repository "
+        "admins bypass it"
+    ) in err
 
 
 def test_a_ruleset_that_lets_the_write_role_bypass_it_refuses_the_rehearsal_too(ready):

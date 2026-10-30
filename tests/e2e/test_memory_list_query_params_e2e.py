@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """E2E tests for query-parameter handling on the memories list route.
 
 Malformed or out-of-range values must produce a 400 naming the parameter instead of

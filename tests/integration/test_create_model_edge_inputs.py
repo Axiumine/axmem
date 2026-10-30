@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Request models: edge inputs for non-text values.
 
 Covers memory text fields given as something other than a string.

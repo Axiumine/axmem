@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Memory creation, updates and obsolescence for the Qdrant memory repository.
 
 Edits and obsolete toggles are compare-and-set writes. The version a writer read is part of the write

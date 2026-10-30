@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Light fakes of ``gh``, ``curl`` and ``uv`` for the tests of the checks in ``scripts/release``.
 
 The checks of ``scripts/release`` (the guard, the integrity check, the CI check) are run for real, in a scratch git
@@ -190,7 +193,7 @@ elif args[:2] == ["release", "download"]:
 else:
     print(f"fake gh: unexpected call {args}", file=sys.stderr)
     sys.exit(2)
-"""
+"""  # noqa: E501 - the text of the fake gh script: embedded code, written to a file as it stands
 
 FAKE_UV = r"""#!/usr/bin/env bash
 set -euo pipefail

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Memory repository on Qdrant: memories and links as points, every operation scoped to a tenant
 
 The operations live in mixins grouped by concern (search, writes, reads, links, re-embedding);

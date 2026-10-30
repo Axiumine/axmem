@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """``guard publish-state``, ``publish-dispatch`` and ``publish-wait``: finding, starting and following the ``publish.yml`` run.
 
 ``publish.yml`` runs only when the release script dispatches it on the tag. The script asks first whether a run of that tag at

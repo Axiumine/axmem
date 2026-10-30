@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """ReEmbeddingService.rebuild_targeted on the real Qdrant repository: how it reports what failed, and the links it refreshes.
 
 The repository is the production one and the embedder is the real TensorRT model behind call-recording spies

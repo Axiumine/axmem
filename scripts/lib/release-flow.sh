@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 # release-flow.sh — the steps of scripts/release-pypi.sh that read or change the state of a release.
 # SOURCED ONLY: defines functions, runs nothing.
 #

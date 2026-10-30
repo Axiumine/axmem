@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Connections to the Qdrant nodes: failover between nodes and retries of ambiguous failures.
 
 Only this module and the store modules next to it import ``qdrant_client`` (see the import
@@ -43,12 +46,14 @@ SNAPSHOT_CLEANUP_POLL_SECONDS = 2.0
 MINIMUM_SERVER_VERSION = (1, 19, 0)
 
 _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
+# The first HTTP status of a server-side failure: the request may have been applied before it failed
+_FIRST_SERVER_ERROR_STATUS = 500
 
 
 def is_ambiguous(exc: BaseException) -> bool:
     """True when a failed request may or may not have been applied: a transport failure, or a 5xx answer."""
     if isinstance(exc, UnexpectedResponse):
-        return exc.status_code is not None and exc.status_code >= 500
+        return exc.status_code is not None and exc.status_code >= _FIRST_SERVER_ERROR_STATUS
     return isinstance(exc, ResponseHandlingException | TimeoutError)
 
 
@@ -145,7 +150,8 @@ class NodePool:
 
     async def run(self, call: Callable[[AsyncQdrantClient], Awaitable[T]], attempts: int = 1) -> T:
         """Run ``call`` on a node; after an ambiguous failure try again (on the next node) up to ``attempts`` times."""
-        # Never raised: the loop runs once at least and each pass returns, raises or replaces this value, so every mutant of the line is equivalent
+        # Never raised: the loop runs once at least and each pass returns, raises or replaces this value, so every
+        # mutant of the line is equivalent
         failure: BaseException = RuntimeError("no attempt was made")  # pragma: no mutate
         order = itertools.cycle(self._order())
         for attempt in range(max(attempts, 1)):
@@ -253,7 +259,8 @@ class NodePool:
         return {snapshot.name for snapshot in await self.clients[index].list_snapshots(collection)}
 
     async def _snapshot_names_or_none(self, index: int, collection: str) -> set[str] | None:
-        """The snapshots ``collection`` has on node ``index``, or None when the node will not list them (the request that follows says why)."""
+        """The snapshots ``collection`` has on node ``index``, or None when the node will not list them (the request
+        that follows says why)."""
         try:
             return await self._snapshot_names(index, collection)
         except Exception:  # noqa: BLE001 - a node that cannot list its snapshots fails the request that follows with its own error
@@ -291,7 +298,7 @@ class NodePool:
                         "Deleted the snapshot a failed request left on the node",
                         extra={"node": node, "collection": collection, "snapshot": name},
                     )
-                except Exception:  # noqa: BLE001 - one that cannot be deleted is named, the others are still tried
+                except Exception:  # one that cannot be deleted is named, the others are still tried
                     logger.exception(
                         "A snapshot left by a failed request could not be deleted; delete it with the Qdrant API",
                         extra={"node": node, "collection": collection, "snapshot": name},
@@ -314,4 +321,3 @@ class NodePool:
     async def close(self) -> None:
         for client in self.clients:
             await client.close()
-

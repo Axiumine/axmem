@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """How QdrantStore pages and scans, exactly: where a page ends, how big a read is, and which replicas answer.
 
 A recorder sits between the pool and its real clients and notes each request, so that an option dropped or changed

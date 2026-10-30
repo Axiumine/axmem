@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The CI workflows run on hosted runners only, and only the checks that need neither a GPU nor Docker.
 
 The suites that run the real TensorRT models and a real Qdrant (tests, end-to-end, cluster, coverage, memory budgets,
@@ -21,8 +24,8 @@ WORKFLOWS = sorted(WORKFLOWS_DIR.glob("*.yml"))
 GATE_COMMAND = re.compile(r"scripts\.quality\s+gate\s+([\w-]+)")
 # What a workflow may ask `scripts.quality` for: the gates that run on any Linux machine, none of them on a GPU or Docker.
 HOSTED_GATES = {
-    "ruff", "imports", "bandit", "semgrep", "shellcheck", "actionlint", "vulture", "radon-cc", "radon-mi", "mypy", "pylint",
-    "architecture", "trivy", "package", "wheel",
+    "ruff", "imports", "bandit", "semgrep", "shellcheck", "actionlint", "reuse", "vulture", "radon-cc", "radon-mi", "mypy",
+    "pylint", "architecture", "trivy", "package", "wheel",
 }
 # Words of a step that only a GPU or a Docker host can act on.
 GPU_OR_DOCKER_WORDS = re.compile(
@@ -35,6 +38,8 @@ JOBS_OF = {
     "publish.yml": {"verify", "publish"},
     "publish-testpypi.yml": {"verify", "publish"},
     "release.yml": {"sign-artefacts", "provenance-artefacts"},
+    "scorecard.yml": {"analysis"},
+    "codeql.yml": {"analyze"},
 }
 
 
@@ -74,7 +79,7 @@ def _gates_named():
 
 def test_the_workflows_and_their_jobs_are_the_hosted_ones():
     assert {path.name for path in WORKFLOWS} == set(JOBS_OF)
-    assert {path.name for path in CHECKED} == {"ci.yml", "quality.yml"}
+    assert {path.name for path in CHECKED} == {"ci.yml", "quality.yml", "scorecard.yml", "codeql.yml"}
     for path in WORKFLOWS:
         assert set(_load(path)["jobs"]) == JOBS_OF[path.name], path.name
 
@@ -136,7 +141,7 @@ def test_the_hooks_and_hosted_ci_run_the_same_gates():
     hooked = {gate for stage in ("pre-commit", "pre-push") for group in registry.STAGES[stage] for gate in group}
 
     assert pre_push[: len(ci)] == ci
-    assert HOSTED_GATES <= hooked
+    assert hooked >= HOSTED_GATES
     assert set(registry.GATES) - HOSTED_GATES <= hooked  # the rest needs a GPU, Docker or a clone
 
 
@@ -235,6 +240,15 @@ def test_the_static_job_runs_the_shell_and_workflow_linters_from_the_pinned_envi
         assert _step("quality.yml", "static", name)["run"] == f"uv run --frozen python -m scripts.quality gate {name}"
 
 
+def test_the_static_job_runs_the_reuse_gate_from_the_pinned_environment():
+    """The copyright and license criteria of the Best Practices badge: a file without a notice fails a hosted run too."""
+    names = _step_names("quality.yml", "static")
+    (step,) = [step for step in _load(WORKFLOWS_DIR / "quality.yml")["jobs"]["static"]["steps"] if "gate reuse" in step.get("run", "")]
+
+    assert step["run"] == "uv run --frozen python -m scripts.quality gate reuse"
+    assert names.index("actionlint") < names.index(step["name"]) < names.index("vulture")
+
+
 def test_the_publish_workflow_proves_the_files_it_uploads_before_the_job_that_uploads_them_and_uploads_last():
     names = _step_names("publish.yml", "verify")
     order = [
@@ -287,6 +301,60 @@ def test_the_trivy_job_can_import_the_gates_because_it_installs_no_dependency():
     )
 
     assert result.returncode == 0, result.stderr
+
+
+# What the Scorecard job may use: api.scorecard.dev refuses to publish the result of a job with any other action.
+SCORECARD_ACTIONS = {
+    "actions/checkout",
+    "actions/upload-artifact",
+    "github/codeql-action/upload-sarif",
+    "ossf/scorecard-action",
+}
+
+
+def _scorecard():
+    return _load(WORKFLOWS_DIR / "scorecard.yml")
+
+
+# https://github.com/ossf/scorecard-action#workflow-restrictions: a workflow that breaks one of them still runs, but the API
+# refuses its result, and the badge in README.md reads that result. Three tests hold them: the workflow, its job, its steps.
+def test_the_scorecard_workflow_has_no_env_no_defaults_and_no_write_permission_at_the_top():
+    document = _scorecard()
+
+    assert not {"env", "defaults"} & set(document)
+    assert "write" not in document["permissions"].values()
+    assert "id-token" not in document["permissions"]
+    assert {name for name, other in document["jobs"].items() if "id-token" in other.get("permissions", {})} == {"analysis"}
+
+
+def test_the_scorecard_job_signs_its_result_on_a_hosted_runner_without_env_or_defaults():
+    job = _scorecard()["jobs"]["analysis"]
+
+    assert not {"env", "defaults"} & set(job)
+    assert job["permissions"]["id-token"] == "write"
+    assert re.fullmatch(r"ubuntu-[\w.-]+", job["runs-on"])
+
+
+def test_the_scorecard_job_has_only_the_steps_of_the_actions_that_the_api_accepts_and_publishes_the_result():
+    steps = _scorecard()["jobs"]["analysis"]["steps"]
+    scorecard = [step for step in steps if step["uses"].startswith("ossf/scorecard-action@")]
+
+    assert all("uses" in step and "run" not in step for step in steps)
+    assert {step["uses"].split("@")[0] for step in steps} <= SCORECARD_ACTIONS
+    assert len(scorecard) == 1
+    assert scorecard[0]["with"]["publish_results"] is True
+
+
+def test_the_codeql_workflow_analyzes_languages_and_uploads_with_the_write_permission_in_its_job_only():
+    """Scorecard's SAST check looks in the workflows for `github/codeql-action/analyze`; init and analyze are the pair."""
+    document = _load(WORKFLOWS_DIR / "codeql.yml")
+    job = document["jobs"]["analyze"]
+    uses = [step["uses"].split("@")[0] for step in job["steps"] if "uses" in step]
+
+    assert {"github/codeql-action/init", "github/codeql-action/analyze"} <= set(uses)
+    assert "security-events" not in document["permissions"]
+    assert job["permissions"]["security-events"] == "write"
+    assert job["strategy"]["matrix"]["language"]
 
 
 PINNED_ACTION = re.compile(r"[\w.-]+/[\w./-]+@[0-9a-f]{40}")

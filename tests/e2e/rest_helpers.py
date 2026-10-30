@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Request builders for the REST end-to-end tests.
 
 The builders post the same request bodies the tests used to spell out inline, so each

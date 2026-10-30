@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """Text preparation shared by embedding workflows and repositories"""
 
 import logging
@@ -59,11 +63,8 @@ def build_memory_text(memory: Memory) -> str:
         tags = ", ".join(memory.tags)
         memory_parts.append(f"Tags: {tags}")
 
-    memory_text = "\n".join(memory_parts)
-
-    return memory_text
+    return "\n".join(memory_parts)
 
 
 def build_contextual_query(query: str, context: str) -> str:
     return f"query: {query}, context: {context}"
-

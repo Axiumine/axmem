@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """``guard pypi-missing``: what ``publish.yml`` takes out of ``dist`` before the upload.
 
 PyPI refuses a file name it has used, even for the same bytes, and the upload action stops at the first refusal. After a

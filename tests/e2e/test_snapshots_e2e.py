@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Snapshots of the public MCP and HTTP surface.
 
 A changed snapshot is a contract change: review the diff, then refresh deliberately with

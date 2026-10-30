@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Strict query-parameter parsing shared by the REST list routes.
 
 The helper raises ``ValueError`` (with a message naming the parameter) for a

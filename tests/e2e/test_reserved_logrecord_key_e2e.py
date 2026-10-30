@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """E2E tests: INFO logging must not break requests.
 
 A log call that passes a key reserved by ``logging.LogRecord`` in ``extra`` makes

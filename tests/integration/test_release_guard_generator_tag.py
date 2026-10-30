@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """``guard publish-ready`` and the tag of the SLSA generator: a release stops when the tag was moved after it was chosen.
 
 The generator of ``release.yml`` can only be referenced by tag (its verifier needs one), and a tag can be moved. The

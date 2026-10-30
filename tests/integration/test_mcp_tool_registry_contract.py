@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Contract of the tool registry behind the meta-tools and the CLI executors.
 
 The registry keeps the metadata a client discovers together with the callable behind it. What it lists, what it

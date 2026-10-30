@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Integration tests for the in-process write of the settings file by `axmem auth login` (upsert_env_var).
 
 The user config file also holds unrelated settings and secrets, so the writer must read it as UTF-8 like settings does,
@@ -247,7 +250,7 @@ def test_failure_replacing_the_file_leaves_original_and_no_temp_file(env_file, m
 
 def test_a_temp_file_that_is_already_gone_does_not_hide_the_failure(env_file, monkeypatch):
     def replace_after_losing_the_temp_file(source, destination):
-        os.unlink(source)
+        Path(source).unlink()
         raise PermissionError(errno.EACCES, "Permission denied")
 
     monkeypatch.setattr(os, "replace", replace_after_losing_the_temp_file)

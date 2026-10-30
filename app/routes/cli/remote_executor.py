@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """Remote ToolExecutor: drives a deployed Axmem server through fastmcp.Client.
 
 execute()/list_tools()/tool_info() proxy the server's meta-tools, so the tenant and
@@ -8,10 +12,17 @@ import contextlib
 import json
 import os
 import re
-from typing import Any
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse, urlsplit, urlunsplit
 
 from app.utils.url_helpers import redact_url
+
+if TYPE_CHECKING:
+    from fastmcp import Client
+
+# Builds the fastmcp client of a server URL and an optional bearer token (tests inject their own).
+type ClientFactory = Callable[[str, str | None], Any]
 
 # A real scheme is always followed by "://"; "localhost:8020" is NOT a scheme
 # (urlparse misreads its scheme as "localhost"), so match on the "://" form.
@@ -93,7 +104,7 @@ def bearer_token_from_env() -> str | None:
     return token
 
 
-def _default_client_factory(url: str, token: str | None):
+def _default_client_factory(url: str, token: str | None) -> Client[Any]:
     """Build a fastmcp Client: the bearer token when one is supplied, no credential otherwise."""
     from fastmcp import Client
 
@@ -105,7 +116,7 @@ def _default_client_factory(url: str, token: str | None):
 class RemoteExecutor:
     """ToolExecutor over a remote deployment via the server's meta-tools."""
 
-    def __init__(self, server_url: str, *, token: str | None = None, client_factory=None):
+    def __init__(self, server_url: str, *, token: str | None = None, client_factory: ClientFactory | None = None):
         self.server_url = normalize_server_url(server_url)
         self._token = token
         factory = client_factory or _default_client_factory
@@ -137,10 +148,12 @@ class RemoteExecutor:
 
     async def list_tools(self, category: str | None = None) -> dict[str, Any]:
         payload = {"category": category} if category else {}
-        return await self._call("discover_axmem_tools", payload)
+        tools: dict[str, Any] = await self._call("discover_axmem_tools", payload)
+        return tools
 
     async def tool_info(self, tool_name: str) -> dict[str, Any]:
-        return await self._call("how_to_use_axmem_tool", {"tool_name": tool_name})
+        info: dict[str, Any] = await self._call("how_to_use_axmem_tool", {"tool_name": tool_name})
+        return info
 
     async def close(self) -> None:
         # Runs in the command runner's finally block: a connection that failed to

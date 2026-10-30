@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """What both TensorRT adapters share: the start-up report line an operator reads, the finite check and batch padding.
 
 The report is built from real values (a GPU description, a memory reading, the installed TensorRT version) and its text is

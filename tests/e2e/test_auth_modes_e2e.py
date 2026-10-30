@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """E2E: every credential mode accepts a valid token and refuses invalid, expired and missing ones.
 
 Each mode (JWT, token introspection, static token) runs on a real app behind its own
@@ -109,17 +112,15 @@ def _rejected_cases(mode: Mode) -> list[str]:
 
 
 async def test_valid_token_is_accepted_over_rest(mode, embedding_adapter, reranker_adapter):
-    async with auth_stack(embedding_adapter, reranker_adapter, mode.provider) as stack:
-        async with stack.rest(mode.tokens[VALID]) as client:
-            response = await client.get("/api/v1/memories")
+    async with auth_stack(embedding_adapter, reranker_adapter, mode.provider) as stack, stack.rest(mode.tokens[VALID]) as client:
+        response = await client.get("/api/v1/memories")
 
     assert response.status_code == 200, response.text
 
 
 async def test_valid_token_is_accepted_over_mcp(mode, embedding_adapter, reranker_adapter):
-    async with auth_stack(embedding_adapter, reranker_adapter, mode.provider) as stack:
-        async with stack.mcp(mode.tokens[VALID]) as client:
-            result = await client.call_tool(RECENT[0], RECENT[1])
+    async with auth_stack(embedding_adapter, reranker_adapter, mode.provider) as stack, stack.mcp(mode.tokens[VALID]) as client:
+        result = await client.call_tool(RECENT[0], RECENT[1])
 
     assert result.data == {"memories": [], "total_count": 0}
 
@@ -138,7 +139,7 @@ async def test_rejected_tokens_get_a_401_over_rest(mode, embedding_adapter, rera
 async def test_rejected_tokens_cannot_open_an_mcp_session(mode, embedding_adapter, reranker_adapter):
     async with auth_stack(embedding_adapter, reranker_adapter, mode.provider) as stack:
         for case in _rejected_cases(mode):
-            with pytest.raises(Exception) as caught:  # noqa: PT011 - the transport error type is the client's own
+            with pytest.raises(Exception) as caught:  # the transport error type is the client's own
                 async with stack.mcp(mode.tokens[case]) as client:
                     await client.call_tool(RECENT[0], RECENT[1])
             message = str(caught.value)

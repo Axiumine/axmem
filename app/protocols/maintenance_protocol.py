@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Operator operations on the stored data: snapshots, portable export and import, consistency check."""
 
 from dataclasses import dataclass, field

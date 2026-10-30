@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """E2E tests for re-embedding on a real Qdrant node with the real TensorRT embedder.
 
 Tests the full stack: ReEmbeddingService -> QdrantMemoryRepository -> Qdrant collections. Every test
@@ -49,7 +53,7 @@ async def _create_test_memories(repo, count=5):
 @pytest.mark.asyncio
 async def test_re_embed_search_works_after(repo, embedding_adapter):
     """Create memories, re-embed, run semantic search, verify results returned"""
-    user_id, memories = await _create_test_memories(repo, count=3)
+    user_id, _memories = await _create_test_memories(repo, count=3)
 
     # Re-embed all memories
     service = ReEmbeddingService(
@@ -78,7 +82,7 @@ async def test_re_embed_search_works_after(repo, embedding_adapter):
 @pytest.mark.asyncio
 async def test_re_embed_count_integrity(repo, embedding_adapter):
     """After re-embed, the new generation holds exactly the memories the old one did"""
-    user_id, memories = await _create_test_memories(repo, count=5)
+    _user_id, _memories = await _create_test_memories(repo, count=5)
 
     service = ReEmbeddingService(
         memory_repository=repo,
@@ -94,7 +98,7 @@ async def test_re_embed_count_integrity(repo, embedding_adapter):
 
 @pytest.mark.asyncio
 async def test_re_embed_switches_the_live_generation_and_keeps_the_previous_one(repo, embedding_adapter):
-    user_id, memories = await _create_test_memories(repo, count=2)
+    _user_id, _memories = await _create_test_memories(repo, count=2)
     before = await repo.live_generation()
 
     result = await ReEmbeddingService(repo, embedding_adapter, batch_size=10).re_embed_all()
@@ -323,7 +327,7 @@ async def test_edit_made_while_the_copy_runs_is_not_lost(repo, embedding_adapter
 async def test_rebuild_targeted_is_user_scoped(repo, embedding_adapter):
     """A user can never trigger a rebuild on another user's memories."""
     user_a, memories_a = await _create_test_memories(repo, count=2)
-    user_b, memories_b = await _create_test_memories(repo, count=2)
+    user_b, _memories_b = await _create_test_memories(repo, count=2)
 
     service = ReEmbeddingService(
         memory_repository=repo,

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """Integration test fixtures: the real Qdrant repository, the real TensorRT models, stubs only for HTTP
 
 The memory repository under test is the production ``QdrantMemoryRepository`` on a real Qdrant node (a

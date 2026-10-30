@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The rehearsal workflow on TestPyPI is publish.yml with the listed differences and no others.
 
 ``publish-testpypi.yml`` uploads the same signed bytes of a release as ``publish.yml`` to TestPyPI, by trusted publishing in
@@ -102,7 +105,9 @@ def _expected():
 
     document = _strings(yaml.safe_load(_text(PYPI)), change)
     document["triggers"] = document.get("on", document.get(True))
-    assert found == {old: count for old, _, count in DIFFERENCES}, "a difference of the table is missing from publish.yml, or occurs elsewhere"
+    assert found == {old: count for old, _, count in DIFFERENCES}, (
+        "a difference of the table is missing from publish.yml, or occurs elsewhere"
+    )
     publish = document["jobs"]["publish"]
     assert publish["environment"] == "pypi"
     publish["environment"] = "testpypi"
@@ -269,7 +274,7 @@ def test_the_upload_step_is_the_pinned_action_with_the_testpypi_url_and_without_
     assert step["with"] == {"repository-url": "https://test.pypi.org/legacy/", "packages-dir": "dist", "print-hash": True}
     assert step["if"] == "steps.held.outputs.remaining != '0'"
     assert set(step) == {"name", "if", "uses", "with"}  # no env, no secret, no continue-on-error
-    assert REPOSITORY_URL == step["with"]["repository-url"]
+    assert step["with"]["repository-url"] == REPOSITORY_URL
     assert re.findall(r"repository-url:\s*(\S+)", _code()) == [REPOSITORY_URL]
 
 

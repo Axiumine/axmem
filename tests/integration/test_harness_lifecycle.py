@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Integration tests for the harness run lifecycle (test_harness/__main__.py + container.py).
 
 Teardown order and exception safety, SIGTERM handling, Ctrl-C racing the container
@@ -36,13 +39,13 @@ class FakeDockerError(Exception):
     """Stands in for docker.errors.DockerException."""
 
 
-class FakeNotFound(FakeDockerError):
+class FakeNotFoundError(FakeDockerError):
     """Stands in for docker.errors.NotFound."""
 
 
 FAKE_DOCKER = types.ModuleType("docker")
 FAKE_DOCKER.errors = types.SimpleNamespace(
-    DockerException=FakeDockerError, NotFound=FakeNotFound,
+    DockerException=FakeDockerError, NotFound=FakeNotFoundError,
 )
 
 
@@ -108,7 +111,7 @@ class FakeDaemon:
         for item in self.registry:
             if item.name == name:
                 return item
-        raise FakeNotFound(name)
+        raise FakeNotFoundError(name)
 
     def _run(self, **kwargs):
         if self.run_gate is not None:
@@ -454,6 +457,8 @@ def _signal_running_session(
         if proc.poll() is None:
             proc.kill()
             proc.wait()
+        if proc.stdout is not None:
+            proc.stdout.close()  # the driver's output pipe; left open it is a ResourceWarning
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX signals")

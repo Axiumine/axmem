@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """E2E tests: an authentication mode with incomplete settings refuses the server and nothing else.
 
 ``AUTH_MODE=jwt`` without an issuer and an audience (and ``static`` without token hashes, ``introspection``

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Integration tests for the conventions behind the one-line service failures (app/repositories/service_failures.py)
 
 The lines name a server by the address its request went to, so two spellings of one address must compare equal (the

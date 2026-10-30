@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Command line: run stages/gates, install the Git hooks.
 
     uv run python -m scripts.quality list

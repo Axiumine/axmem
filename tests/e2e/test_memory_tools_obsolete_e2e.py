@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """End-to-end tests for MCP memory tools: obsolete handling
 
 Covers mark_memory_obsolete / unobsolete_memory and how obsolete memories behave

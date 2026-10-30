@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Invalid `--batch-size` must be rejected before re-embed touches Qdrant.
 
 Drives the real main.cli() against a real Qdrant node holding one memory, with the real TensorRT

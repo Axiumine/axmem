@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The links a memory read looks up: which links are asked of the store, with how much of each, and when none are.
 
 Every read that returns memories adds the ids each one is linked to. The links come from one scan of the link collection

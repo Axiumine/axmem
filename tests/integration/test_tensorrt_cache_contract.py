@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The contract of the engine cache that a directory alone decides: the fingerprint and the directory it names, the lock,
 and which directories are cache entries.
 """

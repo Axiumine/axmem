@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """End-to-end tests for MCP meta-tools via HTTP
 
 Requires:
@@ -372,7 +376,10 @@ async def test_discover_all_categories_e2e(mcp_client):
     assert result.data["total_count"] >= 10  # At least 10 tools total
 
 
-ID_ARGUMENT = re.compile(r"""["']?(?P<name>memory_id|source_id|target_id|superseded_by|related_ids)["']?\s*[:=]\s*(?P<value>\[[^\]]*\]|"[^"]*"|\w+)""")
+ID_ARGUMENT = re.compile(
+    r"""["']?(?P<name>memory_id|source_id|target_id|superseded_by|related_ids)["']?"""
+    r"""\s*[:=]\s*(?P<value>\[[^\]]*\]|"[^"]*"|\w+)""",
+)
 
 
 def _identifiers_in(text):

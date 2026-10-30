@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """What the Qdrant connection module promises to a caller, an operator and a reader of the log.
 
 ``test_qdrant_pool.py`` and ``test_qdrant_snapshot_cleanup.py`` show how the pool behaves when nodes fail. This file

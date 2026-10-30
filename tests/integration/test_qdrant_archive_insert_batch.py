@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Where the batch of an import is written when the alias of the live generation moves while it is on its way.
 
 ``test_qdrant_embedder_switch.py`` moves the alias under a whole import on a real node. This file asks the one step that

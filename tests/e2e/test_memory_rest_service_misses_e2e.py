@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """End-to-end tests: memory REST routes when the memory service reports a miss.
 
 The memory service may answer "nothing found" with ``None`` / ``False`` instead of raising,

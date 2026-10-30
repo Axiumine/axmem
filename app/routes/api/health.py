@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """Health check endpoints for monitoring service status.
 """
 
@@ -13,11 +17,11 @@ from app.routes.server_state import AxmemMCP
 
 logger = logging.getLogger(__name__)
 
-def register(mcp: AxmemMCP):
+def register(mcp: AxmemMCP) -> None:
     """Register health check routes with FastMCP"""
 
     @mcp.custom_route("/health", methods=["GET"])
-    async def health_check(request: Request) -> JSONResponse:
+    async def health_check(request: Request) -> JSONResponse:  # noqa: ARG001 - route signature
         """Health check endpoint for the service.
 
         Returns 503 until lifespan() completes and services are attached to mcp.

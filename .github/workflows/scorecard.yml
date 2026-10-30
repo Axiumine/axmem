@@ -1,0 +1,61 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
+name: Scorecard
+
+# Publishes the OpenSSF Scorecard of the default branch to https://scorecard.dev; the badge in README.md reads that result.
+# api.scorecard.dev refuses the results of a workflow that breaks its restrictions
+# (https://github.com/ossf/scorecard-action#workflow-restrictions): no env or defaults at the workflow or in the job, no
+# write permission at the top level, `id-token: write` in the Scorecard job only, no container or service, an Ubuntu runner,
+# and in that job only `uses` steps of checkout, upload-artifact, codeql-action/upload-sarif and scorecard-action.
+# Hosted runner, no GPU, no Docker step of our own. Triggers: a push to main (Scorecard reads the default branch only) and a
+# manual run to refresh the result after a change of the repository rules, which fire no workflow event of their own.
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analysis:
+    name: analysis
+    runs-on: ubuntu-latest
+    # Scorecard cannot run on a fork, and it fails on any ref but the default branch.
+    if: ${{ !github.event.repository.fork && github.event.repository.default_branch == github.ref_name }}
+    permissions:
+      contents: read
+      id-token: write  # signs the results that api.scorecard.dev verifies (this job only)
+      security-events: write  # uploads the SARIF file to code scanning
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Run the Scorecard analysis
+        uses: ossf/scorecard-action@fa7117db83c52d787ae5a89f350999701505d78e # v2.5.0
+        with:
+          results_file: results.sarif
+          results_format: sarif
+          publish_results: true
+
+      - name: Keep the SARIF file for five days
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: SARIF file
+          path: results.sarif
+          retention-days: 5
+
+      - name: Upload the results to code scanning
+        if: ${{ always() }}
+        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        with:
+          sarif_file: results.sarif

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The typed FastMCP server that carries the Axmem runtime.
 
 ``main.lifespan`` builds the runtime (``app.bootstrap.build_runtime``) and attaches its

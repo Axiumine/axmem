@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The collection layout and the replication of writes on a real three-node cluster."""
 from uuid import uuid4
 

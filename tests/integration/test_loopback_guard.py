@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Integration tests for the loopback guard of the credential-free HTTP server
 
 With ``AUTH_MODE=none`` the bind address is the only protection, and a web page can still reach it by DNS
@@ -17,7 +20,7 @@ from app.middleware.loopback_guard import (
 )
 
 
-class Reached(Exception):
+class ReachedError(Exception):
     """The request got past the guard."""
 
 

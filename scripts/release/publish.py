@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The reads and waits of the PyPI publication: is the repository set up for it, and what did ``publish.yml`` do.
 
 ``publish.yml`` is the only workflow that uploads to PyPI, and it runs only when ``scripts/release-pypi.sh``
@@ -115,7 +118,12 @@ def _selected_problems(env: dict[str, Any], index: str = "pypi") -> list[str]:
     """Why the environment is open to every branch, or to the protected ones only: the tag rule would not apply."""
     if env.get("deployment_branch_policy") == SELECTED_ONLY:
         return []
-    return [f"environment {index_row(index).environment} must deploy from selected branches and tags only (Deployment branches and tags: Selected)"]
+    return [
+        (
+            f"environment {index_row(index).environment} must deploy from selected branches and tags only"
+            " (Deployment branches and tags: Selected)"
+        ),
+    ]
 
 
 def _policy_problems(policies: list[dict[str, Any]], index: str = "pypi") -> list[str]:

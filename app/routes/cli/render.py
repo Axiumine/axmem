@@ -1,4 +1,9 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """Output rendering for the CLI."""
+import contextlib
 import io
 import json
 import re
@@ -36,7 +41,7 @@ _TEXT_UNSAFE = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f\u2028\u2029]")
 _ESCAPE_CODEC = "unicode_escape"
 
 
-def _escape(match: re.Match) -> str:
+def _escape(match: re.Match[str]) -> str:
     # The escaped text is ASCII, which str-from-bytes decodes to the same characters under the UTF-8 default.
     return match.group().encode(_ESCAPE_CODEC).decode()
 
@@ -68,10 +73,8 @@ def ensure_safe_stdout() -> None:
     # Only a text wrapper can be reconfigured; other streams (StringIO, custom shims) are left alone
     if not isinstance(stream, io.TextIOWrapper) or stream.errors != "strict":
         return
-    try:
+    with contextlib.suppress(OSError, ValueError):
         stream.reconfigure(errors="replace")
-    except (OSError, ValueError):
-        pass
 
 
 def render_result(value: Any, as_json: bool) -> str:
@@ -102,7 +105,19 @@ def emit_error(message: str, as_json: bool) -> None:
         print(f"Error: {message}", file=sys.stderr)
 
 
-def render_memory_lines(memories: list[dict]) -> str:
+def emit_ignored_server_notice() -> None:
+    """Tell on stderr, if it is so, that the working directory's settings file named a server that was ignored.
+
+    stdout stays the result (also with ``--json``). Call it where the CLI settles on local mode without being asked to.
+    """
+    from app.config.settings import ignored_server_notice
+
+    notice = ignored_server_notice()
+    if notice:
+        print(notice, file=sys.stderr)
+
+
+def render_memory_lines(memories: list[dict[str, Any]]) -> str:
     """Compact one-line-per-memory listing, e.g. '#1  [8]  Title  (memory 812)'."""
     if not memories:
         return "No memories found."
@@ -113,7 +128,7 @@ def render_memory_lines(memories: list[dict]) -> str:
     )
 
 
-def _obsolete_line(memory: dict) -> str:
+def _obsolete_line(memory: dict[str, Any]) -> str:
     reason = memory.get("obsolete_reason")
     line = f"OBSOLETE: {sanitize_line(reason) if reason else 'no reason recorded'}"
     if memory.get("superseded_by") is not None:
@@ -121,7 +136,7 @@ def _obsolete_line(memory: dict) -> str:
     return line
 
 
-def render_memory_detail(memory: dict) -> str:
+def render_memory_detail(memory: dict[str, Any]) -> str:
     """Multi-line detail view for a single memory; obsolete memories are flagged."""
     tags = ", ".join(sanitize_line(tag) for tag in memory.get("tags") or []) or "-"
     lines = [f"Memory {memory['id']}: {sanitize_line(memory['title'])}"]

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Read release-superseded.json, the list of versions that sit on PyPI without a tag.
 
 A release that fails after the upload leaves a version on PyPI that has no git tag and never gets one

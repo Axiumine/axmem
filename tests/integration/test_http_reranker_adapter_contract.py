@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The HTTP reranker adapter, word for word: what a missing URL says and what a request carries.
 
 The adapter runs on a real ``httpx`` client whose transport is an in-process server, so the request is what leaves the

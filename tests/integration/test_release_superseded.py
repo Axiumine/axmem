@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """``release-superseded.json`` is read strictly, and the reader keeps only what the integrity check needs.
 
 A release that fails after its upload leaves a version on PyPI that has no tag and never gets one. The file names
@@ -265,7 +268,12 @@ def test_check_counts_the_entries_of_a_valid_file(capsys):
 
 def test_check_counts_each_entry_of_a_file_that_lists_two(capsys, tmp_path):
     path = tmp_path / FILE_NAME
-    path.write_text(text_of(good(), good() | {"version": "0.1.1", "superseded_by": "0.1.2", "files": [{"name": "axmem-0.1.1.tar.gz", "sha256": SDIST_SHA}]}), encoding="utf-8")
+    path.write_text(
+        text_of(
+            good(), good() | {"version": "0.1.1", "superseded_by": "0.1.2", "files": [{"name": "axmem-0.1.1.tar.gz", "sha256": SDIST_SHA}]},
+        ),
+        encoding="utf-8",
+    )
 
     assert cli(capsys, "check", str(path)) == (0, f"{path}: 2 superseded version(s)\n", "")
 

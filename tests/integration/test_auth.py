@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """Integration tests for the tenant resolution of MCP tool calls
 
 Tests the auth helpers with the context pattern: the tenant comes from
@@ -97,9 +101,11 @@ async def test_trusted_local_caller_is_the_local_tenant_whatever_the_mode(monkey
 
 @pytest.mark.asyncio
 async def test_missing_token_is_refused():
-    with patch("app.middleware.auth.get_access_token", return_value=None):
-        with pytest.raises(ValueError, match="Authentication required but no bearer token provided"):
-            await auth.get_tenant_from_auth(MockContext(auth=True))
+    with (
+        patch("app.middleware.auth.get_access_token", return_value=None),
+        pytest.raises(ValueError, match="Authentication required but no bearer token provided"),
+    ):
+        await auth.get_tenant_from_auth(MockContext(auth=True))
 
 
 @pytest.mark.asyncio
@@ -148,25 +154,22 @@ async def test_a_numeric_sub_names_a_tenant():
 @pytest.mark.asyncio
 @pytest.mark.parametrize("claims", [{}, {"name": "Test User"}, {"sub": ""}, {"sub": None, "tenant": "  "}])
 async def test_a_token_naming_no_tenant_is_refused(claims):
-    with _token_patch(claims):
-        with pytest.raises(ValueError, match="no 'tenant_id', 'tenant' or 'sub' claim"):
-            await auth.get_tenant_from_auth(MockContext(auth=True))
+    with _token_patch(claims), pytest.raises(ValueError, match="no 'tenant_id', 'tenant' or 'sub' claim"):
+        await auth.get_tenant_from_auth(MockContext(auth=True))
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("bad", [True, ["acme"], {"id": "acme"}, 1.5])
 async def test_an_invalid_tenant_claim_is_refused_instead_of_skipped(bad):
     # Falling through to "sub" would put the caller in a tenant the issuer never meant
-    with _token_patch({"tenant_id": bad, "sub": "user-1"}):
-        with pytest.raises(ValueError, match="'tenant_id' is not a valid tenant name"):
-            await auth.get_tenant_from_auth(MockContext(auth=True))
+    with _token_patch({"tenant_id": bad, "sub": "user-1"}), pytest.raises(ValueError, match="'tenant_id' is not a valid tenant name"):
+        await auth.get_tenant_from_auth(MockContext(auth=True))
 
 
 @pytest.mark.asyncio
 async def test_an_overlong_tenant_claim_is_refused():
-    with _token_patch({"tenant_id": "t" * (TENANT_MAX_LENGTH + 1)}):
-        with pytest.raises(ValueError, match="is longer than"):
-            await auth.get_tenant_from_auth(MockContext(auth=True))
+    with _token_patch({"tenant_id": "t" * (TENANT_MAX_LENGTH + 1)}), pytest.raises(ValueError, match="is longer than"):
+        await auth.get_tenant_from_auth(MockContext(auth=True))
 
 
 @pytest.mark.asyncio

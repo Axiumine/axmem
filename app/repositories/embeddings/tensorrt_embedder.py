@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Embeddings computed in this process by a bge model on TensorRT (strict fp32, NVIDIA GPU only).
 
 This is the default embeddings provider (``EMBEDDING_PROVIDER=TensorRT``). Construction is the
@@ -142,14 +145,16 @@ class TensorRTEmbeddingsAdapter(EmbeddingsAdapter):
         vectors = np.concatenate(chunks)
         self._engine.verify()
         ensure_finite(vectors, "embedder", "embeddings")
-        return vectors.tolist()
+        embeddings: list[list[float]] = vectors.tolist()  # numpy types tolist() as Any
+        return embeddings
 
     def _embed_chunk(self, texts: list[str]) -> np.ndarray:
         encodings = self._tokenizer.encode_batch(texts)
         hidden = self._engine.infer(pad_batch(encodings, self._pad_id, MIN_SEQUENCE))
         cls = hidden[:, 0, :].astype(np.float64)  # CLS pooling
         with np.errstate(all="ignore"):  # a zero vector divides to NaN, which embed() refuses
-            return cls / np.linalg.norm(cls, axis=1, keepdims=True)
+            normalised: np.ndarray = cls / np.linalg.norm(cls, axis=1, keepdims=True)
+            return normalised
 
     def unusable_reason(self) -> str:
         """Why this embedder can serve no more (an engine that met a sticky CUDA error), or an empty string."""

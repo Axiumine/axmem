@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 name: Release
 
 # Signs the files that scripts/release-pypi.sh gives to PyPI, and attests them. It runs on the push of a plain release tag

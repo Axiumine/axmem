@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The exact words and the exact reading rules of the start-up warnings about settings of earlier versions.
 
 ``test_legacy_settings`` checks that each removed setting is recognised and that the warnings say the right things.

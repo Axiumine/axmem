@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Scott Raisbeck
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only AND MIT
+
 """Authentication info endpoint for client configuration detection."""
 
 import logging
@@ -17,11 +21,11 @@ AUTH_MODE_BY_PROVIDER = {
 }
 
 
-def register(mcp: AxmemMCP):
+def register(mcp: AxmemMCP) -> None:
     """Register auth info routes with FastMCP"""
 
     @mcp.custom_route("/api/v1/auth/info", methods=["GET"])
-    async def get_auth_info(request: Request) -> JSONResponse:
+    async def get_auth_info(request: Request) -> JSONResponse:  # noqa: ARG001 - route signature
         """Get authentication configuration info (public endpoint).
 
         No authentication required - used by clients to detect the auth mode

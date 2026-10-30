@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Engine cache: one directory per fingerprint of everything a TensorRT plan depends on.
 
 A plan is only valid for the model file, TensorRT version, GPU model and compute capability,
@@ -15,7 +18,6 @@ import fcntl
 import hashlib
 import json
 import logging
-import os
 import re
 import shutil
 import tempfile
@@ -179,7 +181,7 @@ def _store(group: Path, key: str, current: dict[str, object], plan: bytes) -> Pa
     (scratch / PLAN_NAME).write_bytes(plan)
     (scratch / FINGERPRINT_NAME).write_text(json.dumps(current, sort_keys=True, indent=2))
     final = group / key
-    os.replace(scratch, final)
+    scratch.replace(final)
     return final
 
 

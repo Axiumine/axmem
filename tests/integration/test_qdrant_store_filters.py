@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """How QdrantStore scopes and filters, exactly: tenants, the clauses of a where, the condition builders, the tenant stamp.
 
 None of this needs a node: the filters are values that the store hands to the client.

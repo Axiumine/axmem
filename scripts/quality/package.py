@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Package gate: the wheel and the sdist hold Axmem's source and nothing else.
 
 The AGPL release is the Python source. The model weights, the TensorRT engines built from them and the NVIDIA

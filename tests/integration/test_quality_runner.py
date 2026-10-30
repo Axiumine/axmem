@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The quality-gate runner wires every stage to a real gate and enforces ordering/skips."""
 
 import json
@@ -36,7 +39,7 @@ def test_required_tools_are_gated_before_push():
     assert {
         "ruff", "mypy", "pylint", "bandit", "vulture", "semgrep", "radon-cc", "radon-mi",
         "tests", "e2e-qdrant", "coverage", "memray", "trivy", "qodana",
-        "gitnexus", "mutation", "package", "wheel", "shellcheck", "actionlint", "architecture",
+        "gitnexus", "mutation", "package", "wheel", "shellcheck", "actionlint", "reuse", "architecture",
     } <= pre_push
 
 
@@ -235,15 +238,15 @@ def test_radon_mi_gate_requires_grade_a(monkeypatch):
 
 
 def test_install_hooks_points_git_at_githooks(tmp_path, monkeypatch):
-    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)  # noqa: S603, S607
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)  # noqa: S603, S607 - a program of the test setup, run without a shell
     hooks = tmp_path / ".githooks"
     hooks.mkdir()
     (hooks / "pre-commit").write_text("#!/bin/sh\n", encoding="utf-8")
     monkeypatch.setattr(core, "ROOT", tmp_path)
     monkeypatch.setattr(cli, "ROOT", tmp_path)
     assert cli.install_hooks() == 0
-    value = subprocess.run(  # noqa: S603
-        ["git", "-C", str(tmp_path), "config", "core.hooksPath"],  # noqa: S607
+    value = subprocess.run(  # noqa: S603 - a program of the test setup, run without a shell
+        ["git", "-C", str(tmp_path), "config", "core.hooksPath"],  # noqa: S607 - a program of the test setup, run without a shell
         capture_output=True, text=True, check=True,
     ).stdout.strip()
     assert value == ".githooks"

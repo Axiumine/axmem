@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """An in-process HTTP server that speaks the embeddings APIs of the remote providers, for the real SDK clients.
 
 The adapters of Azure OpenAI, Google, OpenAI and Ollama are driven through their real client libraries; only the
@@ -7,6 +10,7 @@ of the API the path belongs to, and records what it was asked. Nothing here comp
 import json
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from typing import Self
 
 from app.config.settings import settings
 from app.repositories.embeddings import embedding_adapter
@@ -36,7 +40,7 @@ class FakeEmbeddingProvider:
         provider = self
 
         class Handler(BaseHTTPRequestHandler):
-            def do_POST(self):  # noqa: N802 - the name http.server calls
+            def do_POST(self):  # the name http.server calls
                 body = self.rfile.read(int(self.headers.get("Content-Length", 0)))
                 provider.requests.append((self.path, json.loads(body)))
                 answer = provider.answer(self.path.split("?")[0])
@@ -77,7 +81,7 @@ class FakeEmbeddingProvider:
             return {"embeddings": [{"values": self.vector}]}
         return None
 
-    def __enter__(self) -> FakeEmbeddingProvider:
+    def __enter__(self) -> Self:
         self._thread.start()
         return self
 

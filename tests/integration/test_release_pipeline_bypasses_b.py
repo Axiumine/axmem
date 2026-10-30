@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The ways past the release guard that go through what PyPI serves, each closed and proved on the real script.
 
 The integrity check once proved a tag name, a run and file names, never the bytes PyPI holds, and an answer that is not

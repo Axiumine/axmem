@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """The claim tokens that tell whether a write landed, and how a record that Qdrant returns is read, exactly.
 
 Neither needs a node: the claim fields are plain dicts, and a record is any object with an id, a payload and a vector.

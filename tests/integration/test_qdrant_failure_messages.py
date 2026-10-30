@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """What an operator reads when Qdrant refuses a request, does not answer or answers with an error."""
 import httpx
 import pytest

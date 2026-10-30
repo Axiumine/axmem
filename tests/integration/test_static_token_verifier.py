@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Static bearer tokens: SHA-256 hashes in the configuration, constant-time comparison, one tenant per token."""
 import hashlib
 import hmac

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Integration tests for what the private-file helpers ask of the operating system (app/utils/private_files.py)
 
 The permissions of the files that result are covered in ``test_private_files_permissions.py``. Here the calls that
@@ -20,7 +23,7 @@ from app.utils.private_files import (
 pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="Windows has no owner/group/other mode bits")
 
 
-class _Recorded(Exception):
+class _RecordedError(Exception):
     """Raised by a recorder that has seen the call it was waiting for."""
 
 
@@ -30,7 +33,7 @@ def _recording_open(monkeypatch, calls: list, raise_for: str | None = None):
     def record(path, flags, mode=0o777, **kwargs):
         calls.append((Path(path).name, flags, mode))
         if Path(path).name == raise_for:  # the clean-up of the temporary directory opens files with this function as well
-            raise _Recorded
+            raise _RecordedError
         return real_open(path, flags, mode, **kwargs)
 
     monkeypatch.setattr(os, "open", record)
@@ -57,7 +60,7 @@ def test_a_system_without_a_flag_against_links_adds_nothing_to_the_flags(tmp_pat
         system.setattr(os, "O_EXCL", 1 << 22)
         system.delattr(os, "O_NOFOLLOW")
 
-        with pytest.raises(_Recorded):
+        with pytest.raises(_RecordedError):
             open_new_private_text_file(tmp_path / "export.partial")
 
     assert calls == [("export.partial", (1 << 20) | (1 << 21) | (1 << 22), 0o600)]

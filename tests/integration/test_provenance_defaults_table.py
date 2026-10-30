@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Integration tests for what the environment settings do to the provenance of a memory (app/utils/provenance.py)
 
 ``ENCODING_*`` and ``AGENT_*`` name who wrote a memory. They fill what a create request leaves empty and, when

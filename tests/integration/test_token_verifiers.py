@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Integration tests for the token verifiers that close the gaps FastMCP leaves open
 
 A signed token without ``exp`` never expires under FastMCP's ``JWTVerifier``, and its introspection verifier
@@ -9,13 +12,14 @@ import time
 
 import httpx
 import pytest
-from fastmcp.server.auth.providers.jwt import JsonWebToken, RSAKeyPair
+from fastmcp.server.auth.providers.jwt import RSAKeyPair
 
 from app.middleware.token_verifiers import (
     AudienceIntrospectionVerifier,
     ExpiringJWTVerifier,
     audience_matches,
 )
+from tests.jwt_support import sign_rs256
 
 ISSUER = "https://idp.example.test"
 AUDIENCE = "axmem-api"
@@ -35,11 +39,11 @@ def _mint(keys: RSAKeyPair, **claims) -> str:
     payload = {"sub": "alice", "iss": ISSUER, "aud": AUDIENCE, "iat": int(time.time()), "exp": int(time.time()) + 3600}
     payload.update(claims)
     payload = {name: value for name, value in payload.items() if value is not None}
-    return JsonWebToken(["RS256"]).encode({"alg": "RS256"}, payload, keys.private_key.get_secret_value()).decode()
+    return sign_rs256(keys, payload)
 
 
 # ============================================
-# JWT: exp is required
+# JWT: the exp claim is required
 # ============================================
 
 
@@ -57,11 +61,7 @@ async def test_a_signed_token_without_an_expiry_is_refused(keys):
 
 
 async def test_a_signed_token_whose_expiry_is_null_is_refused(keys):
-    token = JsonWebToken(["RS256"]).encode(
-        {"alg": "RS256"},
-        {"sub": "alice", "iss": ISSUER, "aud": AUDIENCE, "exp": None},
-        keys.private_key.get_secret_value(),
-    ).decode()
+    token = sign_rs256(keys, {"sub": "alice", "iss": ISSUER, "aud": AUDIENCE, "exp": None})
 
     assert await _verifier(keys).verify_token(token) is None
 

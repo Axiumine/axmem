@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """E2E tests for REST validation error responses and list/search parameter bounds.
 
 Each test works as a tenant of its own.
@@ -34,7 +37,8 @@ def _assert_validation_error(response, label):
     """A 400 whose body is a JSON list of pydantic-style field errors."""
     assert response.status_code == 400, f"{label}: {response.status_code} {response.text[:200]}"
     errors = response.json()["error"]
-    assert isinstance(errors, list) and errors, f"{label}: {errors!r}"
+    assert isinstance(errors, list), f"{label}: {errors!r}"
+    assert errors, f"{label}: {errors!r}"
     for error in errors:
         assert {"type", "loc", "msg"} <= set(error), f"{label}: {error!r}"
 

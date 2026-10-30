@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Helpers the cluster tests share: building memories, waiting for the nodes to agree, and the races themselves."""
 import asyncio
 import random
@@ -43,7 +46,9 @@ def lost_changes(stored, applied: list[dict]) -> list[str]:
     return [field for change in applied for field, value in change.items() if getattr(stored, field) != value]
 
 
-async def wait_until_the_nodes_agree(stack: QdrantStack, timeout: float = AGREE_TIMEOUT_SECONDS):
+async def wait_until_the_nodes_agree(
+    stack: QdrantStack, timeout: float = AGREE_TIMEOUT_SECONDS,  # noqa: ASYNC109 - the deadline of this poll
+):
     """Poll the per-node comparison until it reports no difference; return the last report."""
     inspector = QdrantClusterInspector(stack.pool, stack.schema)
     deadline = time.monotonic() + timeout

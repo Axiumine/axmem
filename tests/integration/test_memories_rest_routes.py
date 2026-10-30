@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """Integration tests for mark_memory_obsolete state validation (stubbed repository)."""
 from uuid import uuid4
 

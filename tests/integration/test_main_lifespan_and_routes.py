@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Giovanni Manzoni
+# SPDX-License-Identifier: AGPL-3.0-only
+
 """``main.py`` wiring: what the lifespan attaches and how CORS is served.
 
 The lifespan runs in this process against a real Qdrant node (the attached attributes of the
@@ -17,6 +20,7 @@ from app.config.settings import settings
 from app.middleware.auth import TokenCache
 from app.middleware.body_limit import BodyLimitMiddleware
 from app.middleware.loopback_guard import LoopbackGuardMiddleware
+from app.middleware.security_headers import SecurityHeadersMiddleware
 
 pytestmark = pytest.mark.usefixtures("qdrant_env")  # ``_serve`` checks Qdrant before it binds anything
 
@@ -112,7 +116,9 @@ async def test_health_answers_503_once_a_local_engine_can_no_longer_serve(
     assert healthy.json()["status"] == "healthy"
     assert embedder_down.status_code == 503
     assert embedder_down.json()["status"] == "unhealthy"
-    assert [text.split(" (")[0] for text in embedder_down.json()["failures"]] == ["the embedder engine is unusable after an earlier failure"]
+    assert [text.split(" (")[0] for text in embedder_down.json()["failures"]] == [
+        "the embedder engine is unusable after an earlier failure",
+    ]
     assert "cudaErrorIllegalAddress" in embedder_down.json()["failures"][0]
     assert [text.split(" ")[1] for text in both_down.json()["failures"]] == ["embedder", "reranker"]
     assert recovered.status_code == 200
@@ -247,7 +253,9 @@ async def test_the_credential_modes_need_no_loopback_guard(monkeypatch, mode):
     assert response.status_code == 200
 
 
-def test_the_http_middleware_is_the_guard_in_front_of_cors_for_none_mode_only_and_the_body_limit_behind_both(monkeypatch):
+def test_the_http_middleware_is_the_security_headers_then_the_guard_in_front_of_cors_for_none_mode_only_and_the_body_limit_behind_all(
+    monkeypatch,
+):
     monkeypatch.setattr(settings, "CORS_ENABLED", True)
     monkeypatch.setattr(settings, "CORS_ORIGINS", ["https://app.example", "*"])
 
@@ -258,11 +266,13 @@ def test_the_http_middleware_is_the_guard_in_front_of_cors_for_none_mode_only_an
     monkeypatch.setattr(settings, "CORS_ENABLED", False)
     static_without_cors = main._http_middleware()
 
-    assert [entry.cls for entry in none_mode] == [LoopbackGuardMiddleware, CORSMiddleware, BodyLimitMiddleware]
-    assert none_mode[0].kwargs == {"allowed_origins": ["https://app.example"], "allowed_hosts": []}
-    assert none_mode[2].kwargs == {"max_bytes": settings.REQUEST_BODY_MAX_BYTES}
-    assert [entry.cls for entry in static_mode] == [CORSMiddleware, BodyLimitMiddleware]
-    assert [entry.cls for entry in static_without_cors] == [BodyLimitMiddleware]
+    assert [entry.cls for entry in none_mode] == [
+        SecurityHeadersMiddleware, LoopbackGuardMiddleware, CORSMiddleware, BodyLimitMiddleware,
+    ]
+    assert none_mode[1].kwargs == {"allowed_origins": ["https://app.example"], "allowed_hosts": []}
+    assert none_mode[3].kwargs == {"max_bytes": settings.REQUEST_BODY_MAX_BYTES}
+    assert [entry.cls for entry in static_mode] == [SecurityHeadersMiddleware, CORSMiddleware, BodyLimitMiddleware]
+    assert [entry.cls for entry in static_without_cors] == [SecurityHeadersMiddleware, BodyLimitMiddleware]
 
 
 def test_the_guard_of_a_server_without_cors_names_no_origin(monkeypatch):
@@ -270,7 +280,7 @@ def test_the_guard_of_a_server_without_cors_names_no_origin(monkeypatch):
     monkeypatch.setattr(settings, "CORS_ENABLED", False)
     monkeypatch.setattr(settings, "CORS_ORIGINS", ["https://app.example"])
 
-    guard, _body_limit = main._http_middleware()
+    _headers, guard, _body_limit = main._http_middleware()
 
     assert guard.kwargs == {"allowed_origins": [], "allowed_hosts": []}
 
