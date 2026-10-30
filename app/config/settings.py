@@ -444,7 +444,7 @@ class Settings(BaseSettings):
         file_secret_settings: PydanticBaseSettingsSource,
     ) -> tuple[PydanticBaseSettingsSource, ...]:
         """The usual order, with the settings files read by a source that ignores the CLI's server in ``./.env``."""
-        files = cast(DotEnvSettingsSource, dotenv_settings)
+        files = cast(DotEnvSettingsSource, dotenv_settings)  # pragma: no mutate - cast returns its second argument
         trusted = _TrustedDotEnvSource(
             settings_cls,
             env_file=files.env_file,

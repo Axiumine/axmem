@@ -14,3 +14,15 @@ import tempfile
 # reach a server that does not exist.
 CONFIG_HOME = tempfile.mkdtemp(prefix="axmem-config-")
 os.environ["XDG_CONFIG_HOME"] = CONFIG_HOME
+
+if "MUTANT_UNDER_TEST" in os.environ:
+    # ``app.config.settings`` builds the settings when it is imported, and the conftest imports it before any test runs.
+    # A mutant under which that import raises would end the pytest session with exit code 4, which mutmut books as a
+    # timeout and the mutation gate as a survivor; exit code 1 books it as killed, which it is: no test can pass on it.
+    try:
+        import app.config.settings
+    except Exception:  # noqa: BLE001 - any failure of the import kills the mutant
+        import traceback
+
+        traceback.print_exc()
+        os._exit(1)  # the exit code is mutmut's verdict; sys.exit would only raise inside pytest's import
