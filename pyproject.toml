@@ -428,6 +428,7 @@ pytest_add_cli_args = [
     "--ignore-glob=tests/integration/test_release_*.py",
     "--ignore=tests/integration/test_startup_config_wiring.py",
     "--ignore=tests/integration/test_tensorrt_startup_refusal.py",
-    # This test starts main.py in a scratch directory, where an instrumented app module cannot find mutmut's config.
+    # These tests start main.py in a scratch directory, where an instrumented app module cannot find mutmut's config.
     "--deselect=tests/integration/test_startup_failures.py::test_a_settings_file_that_is_not_utf8_is_named_in_one_line",
+    "--deselect=tests/integration/test_tls_settings.py::test_the_child_process_ends_with_one_error_line_and_exit_code_1",
 ]
