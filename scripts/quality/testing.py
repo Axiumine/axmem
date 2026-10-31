@@ -43,6 +43,9 @@ TEST_INPUTS = ("docs/", "README.md", "CHANGELOG.md", ".env.example", "release-su
 # The cluster suite starts real Qdrant nodes (three, four, and a second three) and waits for replicas to settle; it
 # outgrew the half hour every other gate gets
 E2E_QDRANT_TIMEOUT_SECONDS = 10800
+# The integration and end-to-end suites run the real models on a real Qdrant node: 22 to 29 minutes on the maintainer's machine,
+# which left the half hour every other gate gets no margin as soon as another job shared the machine
+TESTS_TIMEOUT_SECONDS = 10800
 # One `mutmut run`, over the app/ modules the push changes: 24 h unless MUTATION_TIMEOUT_S names another cap, which
 # subprocess can wait at most MUTATION_TIMEOUT_S_MAX for (poll() takes milliseconds in a C int)
 MUTATION_TIMEOUT_S_DEFAULT = 86400
@@ -88,7 +91,7 @@ def gate_snapshots(ctx: Ctx) -> tuple[bool, str]:
 def gate_tests_fast(ctx: Ctx) -> tuple[bool, str]:
     if ctx.scoped and not (ctx.py_changed(CODE_PREFIXES) or ctx.touches("tests/", *TEST_INPUTS)):
         raise Skip("no code or test changes")
-    return check_tests([*venv_tool("pytest"), "tests/integration", "-x", *PYTEST])
+    return check_tests([*venv_tool("pytest"), "tests/integration", "-x", *PYTEST], timeout=TESTS_TIMEOUT_SECONDS)
 
 
 def gate_tests(_ctx: Ctx) -> tuple[bool, str]:
@@ -96,6 +99,7 @@ def gate_tests(_ctx: Ctx) -> tuple[bool, str]:
     run([*venv_tool("coverage"), "erase"])
     return check(
         [*venv_tool("pytest"), *SUITES, *PYTEST, "--cov", "--cov-branch", "--cov-report=", "--cov-fail-under=0"],
+        timeout=TESTS_TIMEOUT_SECONDS,
     )
 
 

@@ -157,6 +157,10 @@ without the mark, with the commit that landed it, in the commit that lands it.
 
 ### Changed
 
+- The `tests-fast` gate (`pre-commit`) and the `tests` gate (`pre-push`) are stopped after 3 hours, like `e2e-qdrant`, instead of the
+  30 minutes every other gate gets (`TESTS_TIMEOUT_SECONDS` in `scripts/quality/testing.py`). The integration and end-to-end
+  suites take 22 to 29 minutes with the real models on a Qdrant node, so the half hour failed a commit and four pushes whenever
+  another job shared the machine. A suite that hangs now holds a commit or a push for up to 3 hours before it fails.
 - The `ruff` gate now runs every rule group except a few that `ruff.toml` lists as off, each with its reason and the count of
   its findings (was 16 groups: `F`, `I`, `Q`, `COM`, `C4`, `ISC`, `ICN`, `PIE`, `PGH`, `TID`, `YTT`, `FA`, `LOG`, `T10`, `UP`, `S`).
   Added: `E`, `W`, `N`, `A`, `B`, `BLE`, `ASYNC`, `DTZ`, `ERA`, `EXE`, `FIX`, `FLY`, `FURB`, `G`, `INT`, `PERF`, `PTH`, `PYI`,
@@ -275,6 +279,7 @@ without the mark, with the commit that landed it, in the commit that lands it.
   the new `uv.lock` reports no issue. OpenSSF Scorecard's Vulnerabilities check counts such advisories, which is how they were
   found; the `trivy` gate had not stopped on them.
 - `joserfc` is pinned at 1.7.6 (was 1.7.0), the smallest release that carries the fixes of two advisories published on 2026-10-30: GHSA-jpxq-7h8p-2q76 (high: an unbounded `recipients` array in a JWE General JSON message leads to CPU exhaustion through repeated RSA private-key decryption, fixed in 1.7.5) and GHSA-9pg5-8c7x-5hfx (medium: the size guard for a compact JWS allocates the attacker-controlled segments before it rejects them). FastMCP verifies bearer tokens with `joserfc`, and `tests/jwt_support.py` signs them with it. OpenSSF Scorecard's Vulnerabilities check listed both for the old lock file the same day, before the `trivy` database had them; the scan of the new `uv.lock` reports no issue.
+- `pyasn1` is locked at 0.6.5 (was 0.6.4), the release that fixes four denial-of-service findings of high severity that the `trivy` database listed on 2026-10-31: CVE-2026-119194 (hash collisions in schemaless decoding), CVE-2026-119195 (quadratic processing of fragmented ASN.1 data), CVE-2026-119196 (decoding of a constructed bit string) and CVE-2026-119197 (quadratic complexity in the decoding of a binary REAL). Axmem does not call `pyasn1`: it comes in through `google-auth` (with `pyasn1-modules` and `rsa`), which `google-genai` needs, so it is in the lock file and in an install that has the Gemini embedding provider. Only `uv.lock` changes; `pyproject.toml` does not pin it. The scan of the new `uv.lock` reports no issue.
 - Operations note, not a change to any file: four security settings of the GitHub repository `Axiumine/axmem` are enabled, as the
   GitHub API reported on 2026-10-29: private vulnerability reporting (the private channel that `SECURITY.md` names), secret scanning,
   secret scanning push protection and Dependabot security updates. The first three were off in the audit that began this work.
