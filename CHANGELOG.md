@@ -145,8 +145,8 @@ without the mark, with the commit that landed it, in the commit that lands it.
   [docs/quality-gates.md](docs/quality-gates.md), "OpenSSF Scorecard and Dependabot".
 - `docs/security-review.md`: a review of the security requirements and of the security boundary, dated 2026-10-29 (commit
   `e2cc68b` and the uncommitted tree of that day), with sixteen numbered findings. It was prepared by an AI coding agent working
-  for the lead maintainer, says so on its first page, and is not an independent human review: the maintainer has to read it and
-  adopt or redo it, and a second human reviewer is an open item. Two findings are already fixed in the tree (the TLS option and
+  for the lead maintainer, says so on its first page, and is not an independent human review; the lead maintainer adopted it on
+  2026-10-31 as the project's own record of its security review, and a second human reviewer is an open item. Two findings are already fixed in the tree (the TLS option and
   the security headers, above), one is rated Medium (a `.env` file in the working directory could set `AXMEM_SERVER`, and
   the CLI then sent `AXMEM_TOKEN` there; fixed in the tree, see Security below) and SR-16 (the same file still names the Qdrant node and the
   provider URLs of a local-mode CLI) is recorded as accepted; none of the other code findings has been fixed. `docs/security.md` and

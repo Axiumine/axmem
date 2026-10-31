@@ -11,7 +11,8 @@ how to report a vulnerability is in [SECURITY.md](../SECURITY.md).
 | Tree reviewed | Commit `e2cc68b` plus the uncommitted working tree of that day. The unreleased work was not committed yet (it includes the TLS option, `app/config/tls.py`, and the security headers, `app/middleware/security_headers.py`), and a parallel change was adding licence headers to the source files while this was written, so the line numbers below include those headers. Once the work is committed, the maintainer should put the commit here. |
 | Prepared by | An AI coding agent (Claude Code, model `claude-sonnet-5-5`) working for the lead maintainer |
 | Independent human review | **No.** See the next section |
-| Status | A draft for the maintainer to read, adopt or redo |
+| Adopted by | Giovanni Manzoni, lead maintainer, on 2026-10-31 (see the next section) |
+| Status | Adopted by the lead maintainer as the project's record of its security review; the findings and their statuses are as of the date above |
 
 ## Read this first: who wrote this, and what it is worth
 
@@ -21,11 +22,13 @@ below, wrote small probes to test suspicions, and wrote down what it found. It c
 background would see, and it can be wrong about a line it read. Every claim names a file and a line (or a command) so that a
 person can check it, and a claim that was not tested says so.
 
-What has to happen before this page can be used to answer the security-review criterion of the OpenSSF Best Practices
-badge (the criterion that asks for a review of the security requirements and of the security boundary):
+What had to happen before this page could be used to answer the security-review criterion of the OpenSSF Best Practices
+badge (the criterion that asks for a review of the security requirements and of the security boundary), and what is still open:
 
-1. The lead maintainer reads the page, checks the findings that matter to them, and either **adopts** it (and says so, in this
-   page, with their name and the date), or **redoes** the parts they do not trust. Until then it is a draft.
+1. **Done.** The lead maintainer, Giovanni Manzoni, **adopted** this page on 2026-10-31: they take it as the project's own
+   record of its security review, with its findings and their statuses as written. The open findings stay open until a change
+   fixes them or the maintainer accepts them. Adopting is not redoing the review, and it does not turn the work of the agent
+   into an independent review.
 2. Whether a review by a project member, or by an AI agent that a project member directed, is enough for that criterion is
    the maintainer's reading of the criterion to make. This page does not claim it is.
 3. **A second human reviewer is an open item.** No independent review of the code is on record, and the co-owner has made no
