@@ -18,7 +18,7 @@ dependencies = [
     "dotenv==0.9.9",
     "fastmcp==3.4.10",
     "cuda-python==13.4.4",
-    "google-genai==1.66.0",
+    "google-genai==2.33.0",
     "httpx==0.28.1",
     "huggingface-hub==1.4.1",
     "numpy==2.4.2",
