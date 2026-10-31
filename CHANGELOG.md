@@ -157,6 +157,10 @@ without the mark, with the commit that landed it, in the commit that lands it.
 
 ### Changed
 
+- The `tests-fast` gate (`pre-commit`) and the `tests` gate (`pre-push`) are stopped after 3 hours, like `e2e-qdrant`, instead of the
+  30 minutes every other gate gets (`TESTS_TIMEOUT_SECONDS` in `scripts/quality/testing.py`). The integration and end-to-end
+  suites take 22 to 29 minutes with the real models on a Qdrant node, so the half hour failed a commit and four pushes whenever
+  another job shared the machine. A suite that hangs now holds a commit or a push for up to 3 hours before it fails.
 - The `ruff` gate now runs every rule group except a few that `ruff.toml` lists as off, each with its reason and the count of
   its findings (was 16 groups: `F`, `I`, `Q`, `COM`, `C4`, `ISC`, `ICN`, `PIE`, `PGH`, `TID`, `YTT`, `FA`, `LOG`, `T10`, `UP`, `S`).
   Added: `E`, `W`, `N`, `A`, `B`, `BLE`, `ASYNC`, `DTZ`, `ERA`, `EXE`, `FIX`, `FLY`, `FURB`, `G`, `INT`, `PERF`, `PTH`, `PYI`,
