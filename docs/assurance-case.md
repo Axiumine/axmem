@@ -3,7 +3,7 @@
 This page argues that Axmem meets the security requirements in [docs/security.md](security.md), and says where the argument
 is weak. It is written from the source and the tests as of 2026-10-29 (version `0.6.0rc1` plus the unreleased changes). It was
 written by the project side and has not been reviewed by an independent security reviewer. A [security review](security-review.md)
-of the requirements and of the security boundary exists, and says who prepared it (an AI coding agent) and what is still open.
+of the requirements and of the security boundary exists, and says who prepared it (an AI coding agent, adopted by the lead maintainer on 2026-10-31) and what is still open.
 Where something is unknown or untested, this page says so.
 
 **Top claim.** Axmem meets its security requirements in [docs/security.md](security.md), for a deployment that follows the
