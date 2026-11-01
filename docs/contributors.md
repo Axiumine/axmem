@@ -339,7 +339,7 @@ here: they need the GPU, Docker or a token and run in the `pre-push` hook. See [
 
 **Purpose**: Analyse the Python code and the workflow files of the repository with GitHub's CodeQL on a hosted runner (job
 `analyze`, once for the language `python` and once for `actions`, without a build) and report the alerts to code scanning.
-It is a report for the maintainers, not one of the quality gates: it has no local equivalent, no entry in
+It is a report for the maintainer, not one of the quality gates: it has no local equivalent, no entry in
 `scripts/quality/registry.py` and no hook runs it. A failed run of the push to `main` does block a release, as the entry
 for `scorecard.yml` below says.
 
@@ -385,5 +385,5 @@ needs. The setup, the steps and what to do when one stops are in [Releasing Axme
 `scripts/release-testpypi.sh <version>` rehearses the same signed files on TestPyPI; it is optional and advisory, makes no
 release, and is described there too. Once a version is on an index, `scripts/smoke-release.sh --index testpypi|pypi <version>`
 installs its files from there and uses the server they start, on this machine's GPU, Docker and models; it is advisory too.
-Who can release when the lead maintainer cannot, and what is still to hand over, is in
+What happens when the lead maintainer cannot release (nobody is named to take over) is in
 [GOVERNANCE.md](../GOVERNANCE.md#if-the-lead-is-unavailable).

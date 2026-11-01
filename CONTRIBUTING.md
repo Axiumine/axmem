@@ -1,7 +1,7 @@
 # Contributing to Axmem
 
-Thank you for helping. Axmem is a small project: two owners are listed in [MAINTAINERS.md](MAINTAINERS.md), and the lead
-maintainer does the day-to-day work, so replies can take a few days; a short, focused change gets reviewed fastest.
+Thank you for helping. Axmem is a small project with one maintainer ([MAINTAINERS.md](MAINTAINERS.md)), so replies can
+take a few days; a short, focused change gets reviewed fastest.
 
 ## Hardware
 
@@ -36,7 +36,7 @@ The maintainer decides whether to merge it. No other platform is planned or cons
   issue first so we agree on the approach before you spend time on it.
 * **Improve the docs**: [README.md](README.md) and [docs/](docs/) are part of the product.
 
-Who decides and who has access is in [GOVERNANCE.md](GOVERNANCE.md); the maintainers are listed in
+Who decides and who has access is in [GOVERNANCE.md](GOVERNANCE.md); the maintainer is named in
 [MAINTAINERS.md](MAINTAINERS.md); how a change is reviewed is in [Code review](#code-review) below. Everyone taking part follows the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Set up
@@ -66,7 +66,7 @@ the [contributors guide](docs/contributors.md).
 4. Update [CHANGELOG.md](CHANGELOG.md) and [docs/changes-from-forgetful.md](docs/changes-from-forgetful.md) when the
    change is visible to a user, an MCP client or an operator (tools, REST routes, settings, schema, dependencies,
    supported platforms, quality gates), and the page in [docs/](docs/) or the skill in [skills/](skills/) that describes it.
-5. Open a pull request against `main` that says what changed and why, and links the issue. A maintainer reviews it as
+5. Open a pull request against `main` that says what changed and why, and links the issue. The maintainer reviews it as
    described in [Code review](#code-review).
 
 The maintainer runs the slow gates (the full suites on a real Qdrant node and a three-node cluster, 100 % coverage, memory
@@ -133,7 +133,7 @@ with" lines are rejected by the `commit-msg` hook; mark AI-written commits with 
 
 ## Code review
 
-Every change from a contributor arrives as a pull request against `main`, and only a maintainer merges it. The pull
+Every change from a contributor arrives as a pull request against `main`, and only the maintainer merges it. The pull
 request says what changed and why, and links the issue it closes.
 
 **What a reviewer checks.**
@@ -149,21 +149,26 @@ request says what changed and why, and links the issue it closes.
 * No new dependency that was not agreed, and nothing in the wheel or the sdist but Axmem's source.
 * The commit messages follow the format in [Commits](#commits).
 
-**Merge conditions.** A maintainer merges a contributor's pull request only when all of these hold:
+**Merge conditions.** The maintainer merges a contributor's pull request only when all of these hold:
 
-1. a maintainer who is not its author has approved it, and the open review comments are answered;
+1. the maintainer, who is not its author, has approved it, and the open review comments are answered;
 2. the checks of `ci.yml` (`lint`, `smoke-test`) and `quality.yml` (`static`, `trivy`) are green on the last commit;
 3. the maintainer has run the slow gates of the `pre-push` hook on the result (see
    [Making a change](#making-a-change)), because CI does not run the tests.
 
+Axmem has one maintainer, so the approval in the first condition is the lead's, and no other maintainer reviews a
+contributor's pull request. No other code owner exists, so the lead's own changes have no approver (see below).
+
 The repository rules for `main` enforce the first two for a contributor: deletion and force pushes are blocked, commits must
 be signed, a change needs a pull request with one approval of a code owner, resolved conversations and the checks `lint`,
 `smoke-test`, `static`, `trivy` and the two CodeQL analyses green on the last commit. The third cannot be enforced, because
-the hosted CI has no GPU. The Admin role bypasses the rules, because the release script pushes to `main`; both owners are
-admins, so the rules do not hold the maintainers' own changes (see
+the hosted CI has no GPU. The lead is the only code owner (`.github/CODEOWNERS`) and cannot approve their own pull request.
+The Admin role bypasses the rules, because the release script pushes to `main` and the lead merges their own changes the
+same way, so the rules do not hold the maintainer's own changes. The Admin role also includes the account @vivi7, which has
+access but is not a maintainer ([MAINTAINERS.md](MAINTAINERS.md); see also
 [GOVERNANCE.md](GOVERNANCE.md#if-the-lead-is-unavailable)).
 
-**The maintainers' own changes.** These are pushed to `main` directly after the git hooks have passed on the maintainer's
+**The maintainer's own changes.** These are pushed to `main` directly after the git hooks have passed on the maintainer's
 machine: the `pre-commit` and `pre-push` hooks run the whole pipeline, including the tests that CI does not run. No second
 person reviews them today.
 

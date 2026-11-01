@@ -14,8 +14,9 @@ No PyPI token, password or environment file exists anywhere in this flow, and `u
 does use is the maintainer's own GitHub login, which it neither reads nor stores: `gh auth login` (see "Once, before the
 first release") for the GitHub API, the CI runs, the release downloads and the dispatch, and the same login in git for the
 push of `main` and of the tag. PyPI is only read, without any login. A GitHub release made by hand starts nothing:
-`publish.yml` runs only when it is dispatched on a tag. What the co-owner can do when the lead maintainer cannot release,
-and the access that is still to hand over, is in [GOVERNANCE.md](../GOVERNANCE.md#if-the-lead-is-unavailable).
+`publish.yml` runs only when it is dispatched on a tag. What happens when the lead maintainer cannot release is in
+[GOVERNANCE.md](../GOVERNANCE.md#if-the-lead-is-unavailable): nobody is named to take over, and the lead is the only owner of
+the PyPI project and the only required reviewer of the release environments.
 
 Before the real upload the same signed bytes can be rehearsed on TestPyPI, with `scripts/release-testpypi.sh <version>` and
 `.github/workflows/publish-testpypi.yml` (see "Rehearsal on TestPyPI"). TestPyPI is not a second place to ship to: the
@@ -95,17 +96,19 @@ read the generator's release notes first); a test keeps the version and the tag 
   `testpypi`. `publish-testpypi.yml` is registered on test.pypi.org only: never on pypi.org, where `publish.yml` is the one
   publisher. TestPyPI is a scratch index and may delete a project and its files; if it does, add the pending publisher again.
 * GitHub, Settings, Environments, `pypi`: Deployment branches and tags set to Selected, with one rule of the type tag,
-  `v*.*.*`, and no branch rule; Required reviewers set, naming every owner who may approve a release; Allow administrators
-  to bypass off; no secrets. Turn Prevent self-review on only when a second reviewer account exists: with one maintainer who approves their own deployment the gate
-  is a pause, not a second pair of eyes. `publish-ready` enforces everything here except self-review.
+  `v*.*.*`, and no branch rule; Required reviewers set, naming every maintainer who may approve a release (today the
+  lead maintainer only); Allow administrators to bypass off; no secrets. Turn Prevent self-review on only when a second
+  reviewer account exists: with one maintainer who approves their own deployment the gate is a pause, not a second pair of
+  eyes. `publish-ready` enforces everything here except self-review.
 * GitHub, Settings, Environments, `testpypi`, for the rehearsal: the same settings as `pypi` (Selected, one rule of the type
   tag `v*.*.*`, Required reviewers, Allow administrators to bypass off, no secrets).
   `python3 -m scripts.release.guard testpypi-ready --repo Axiumine/axmem` runs every check of `publish-ready` for it (the
   workflow `publish-testpypi.yml` active, the environment, the tag ruleset, the SLSA generator tag), and the rehearsal script
   runs it before it reads or dispatches anything.
 * GitHub, Settings, Rules, Rulesets:
-  * a tag ruleset on `refs/tags/v*`: creation restricted to the maintainer (the Admin role is the only bypass actor), update,
-    deletion and non-fast-forward blocked (`publish-ready` enforces it, bypass list included);
+  * a tag ruleset on `refs/tags/v*`: creation restricted to the maintainer (the Admin role is the only bypass actor; it
+    includes the `@vivi7` account, which is not a maintainer), update, deletion and non-fast-forward blocked
+    (`publish-ready` enforces it, bypass list included);
   * recommended: a branch ruleset that blocks the creation of `refs/heads/v*`, so no branch can be named like a tag;
   * a ruleset on `main` without force push or deletion, with signed commits, a pull request with one code-owner approval,
     resolved conversations and the required status checks (`lint (py3.14)`, `static (3.14)`, `trivy`, `smoke-test`,

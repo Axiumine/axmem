@@ -288,8 +288,8 @@ from the default branch: it is not a workflow, adds no trigger to `.github/workf
 ours. Its pull requests run `ci.yml`, `quality.yml` and `codeql.yml` like any other. Three things are left out of it on
 purpose, and the file says why: the `slsa-framework/slsa-github-generator` reference of `release.yml`, which is changed
 together with `SLSA_GENERATOR_VERSION` and `SLSA_GENERATOR_COMMIT`, the three TensorRT packages, which are bumped by hand
-as [GPU models](gpu-models.md) describes, and a new major version of the `node` image, which is chosen by hand. `.github/CODEOWNERS` names the maintainers of [MAINTAINERS.md](../MAINTAINERS.md)
-as the owners of every file.
+as [GPU models](gpu-models.md) describes, and a new major version of the `node` image, which is chosen by hand. `.github/CODEOWNERS` names the lead maintainer ([MAINTAINERS.md](../MAINTAINERS.md))
+as the owner of every file.
 
 `.bestpractices.json` at the repository root prefills the [OpenSSF Best Practices](https://www.bestpractices.dev/) badge form.
 When the badge entry of the project is first edited for a section of the form, and again each time the maintainer clicks
@@ -547,11 +547,11 @@ and the files the tests read are unchanged; `rm -rf mutants` starts over.
 ## Dependency findings
 
 This is the policy for findings of software composition analysis: a known vulnerability in a locked dependency, and the
-license of a dependency. It says which part is automated and which part is a duty of the maintainers, because the two
+license of a dependency. It says which part is automated and which part is a duty of the maintainer, because the two
 differ. Vulnerabilities in the lock file are scanned by the `trivy` gate on every push; the licenses of dependencies are
-read by a person. The lead maintainer decides; the co-owner is consulted when a decision touches security, and takes over
-when the lead is unavailable ([GOVERNANCE.md](../GOVERNANCE.md#decisions)). The times below are the lead maintainer's
-targets, not guarantees, as in [SECURITY.md](../SECURITY.md#what-to-expect).
+read by a person. The lead maintainer, the only maintainer, decides ([GOVERNANCE.md](../GOVERNANCE.md#decisions)); nobody
+is named to take over when the lead is unavailable ([GOVERNANCE.md](../GOVERNANCE.md#if-the-lead-is-unavailable)). The
+times below are the lead maintainer's targets, not guarantees, as in [SECURITY.md](../SECURITY.md#what-to-expect).
 
 ### What is scanned
 
@@ -601,8 +601,8 @@ with the reason in a comment on the line above and the review date as the expiry
 `<ID>` is the vulnerability ID that `trivy` prints. Once the date in `exp:` has passed, trivy no longer ignores the ID, so the
 gate fails again until a person looks: the dependency is bumped and the entry deleted, or the entry is renewed with a new reason and a
 new date. The date is at most 90 days after the day the entry is written. Trivy enforces the date; the reason and the limit
-of 90 days are checked in review. An entry weakens a gate, so the change that adds one states the reason, the lead
-maintainer decides and the co-owner is consulted. `.trivyignore` holds no entry at present.
+of 90 days are checked in review. An entry weakens a gate, so the change that adds one states the reason, and the lead
+maintainer decides; nobody else is consulted. `.trivyignore` holds no entry at present.
 
 ### Licenses
 

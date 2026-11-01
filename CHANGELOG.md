@@ -85,7 +85,8 @@ without the mark, with the commit that landed it, in the commit that lands it.
   the requirements are met, the secure design principles, the OWASP Top 10 and CWE Top 25 tables, the residual risks) and
   `docs/roadmap.md` (what the project intends to do in the twelve months to October 2027 and what it does not). The README
   links them, and `CONTRIBUTING.md`, `GOVERNANCE.md` and `MAINTAINERS.md` now state the coding standards, the review and merge
-  conditions, and what the co-owner can and cannot do if the lead is unavailable (`GOVERNANCE.md#if-the-lead-is-unavailable`).
+  conditions, and what happens if the lead is unavailable (`GOVERNANCE.md#if-the-lead-is-unavailable`: nobody is named to take
+  over, see the first entry of Changed).
 - `.bestpractices.json`: proposed answers for the [OpenSSF Best Practices](https://www.bestpractices.dev/) badge form, each with
   a justification that points to a file of the repository. The badge form reads them as proposals; the maintainer reviews every
   answer. It is not part of the wheel or the sdist. See [docs/quality-gates.md](docs/quality-gates.md), "OpenSSF Scorecard and
@@ -157,6 +158,14 @@ without the mark, with the commit that landed it, in the commit that lands it.
 
 ### Changed
 
+- The project has one maintainer, Giovanni Manzoni, and no successor. `MAINTAINERS.md`, `GOVERNANCE.md`, `SECURITY.md`,
+  `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, the docs under `docs/` and the proposed answers of `.bestpractices.json` called the
+  GitHub account `vivi7` a "co-owner and successor" and spoke of two owners; they now say that the account has owner access to
+  the organization and admin access to the repository, that it is not a maintainer, and that nobody is named to take over
+  (the bus factor is 1). `SECURITY.md` says that GitHub shows a private report to every administrator of the repository, that
+  account included, and its fallback after 14 days without an answer is to write again on the same private channel and then to
+  open a public "Security contact request" issue. `.github/CODEOWNERS` names `@giovannimanzoni` alone. Access to the
+  organization and the repository is unchanged.
 - The `tests-fast` gate (`pre-commit`) and the `tests` gate (`pre-push`) are stopped after 3 hours, like `e2e-qdrant`, instead of the
   30 minutes every other gate gets (`TESTS_TIMEOUT_SECONDS` in `scripts/quality/testing.py`). The integration and end-to-end
   suites take 22 to 29 minutes with the real models on a Qdrant node, so the half hour failed a commit and four pushes whenever

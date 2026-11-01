@@ -23,7 +23,7 @@ The claim holds only while these hold. Axmem does nothing to check them.
 | H2 | Qdrant, and the API key for it, are reachable only by Axmem and the operator. |
 | H3 | Any HTTP server that is not on loopback serves TLS itself (`SERVER_SSL_CERTFILE`, NET-7) or sits behind a TLS-terminating reverse proxy, and a reverse proxy or the network limits the rate of requests. Plain HTTP is the default, so this is a choice the operator has to make; the server warns at start when it is not made (NET-9). |
 | H4 | The identity provider (`jwt`, `introspection`) is trusted to say who is which tenant, and to issue tokens with the right audience. |
-| H5 | The accounts that can change the repository and the PyPI project are not compromised. [MAINTAINERS.md](../MAINTAINERS.md) says both owners use two-factor authentication; this page does not check it. |
+| H5 | The accounts that can change the repository and the PyPI project are not compromised: the lead maintainer's, and the `@vivi7` account, which has admin access but is not a maintainer. [GOVERNANCE.md](../GOVERNANCE.md#access) says the `Axiumine` organization requires two-factor authentication; this page does not check it. |
 | H6 | The pinned dependencies contain no vulnerability that is unknown today. Known ones are searched for by `trivy`; unknown ones cannot be. |
 
 ## Threat model
@@ -85,7 +85,7 @@ flowchart TD
     G3["G3: A tenant cannot reach another tenant's data"]
     G4["G4: A web page or a remote party cannot drive the server beyond its limits"]
     G5["G5: Secrets do not leak through settings, logs or files"]
-    G6["G6: What users install is what the maintainers built, from locked inputs"]
+    G6["G6: What users install is what the maintainer built, from locked inputs"]
     G7["G7: Known classes of weakness are looked for before every push, and again on GitHub"]
     G0 --> G1
     G0 --> G2
@@ -288,10 +288,11 @@ Two weaknesses outside the Top 25 that the TLS option and the headers address:
    chokepoint test is the main defence.
 3. **Permissive defaults.** `AXMEM_SCOPES=*`, tokens without a scope claim, and static tokens get every tool.
 4. **Prompt injection.** Stored content is returned as written. Defence belongs to the client.
-5. **One maintainer in practice.** The lead maintainer writes, reviews and approves; a second reviewer is not required for
-   the maintainers' own changes ([GOVERNANCE.md](../GOVERNANCE.md)), and the release approval can be given by the same
-   person. The co-owner has no commits yet and is not a reviewer of the release environment. No independent review of this page or of the code has
-   taken place.
+5. **One maintainer.** The lead maintainer writes, reviews and approves; a second reviewer is not required for
+   the maintainer's own changes ([GOVERNANCE.md](../GOVERNANCE.md)), and the release approval is given by the same
+   person, the only required reviewer of the release environments. No other maintainer exists and no successor is named. The
+   `@vivi7` account is an owner of the organization and an admin of the repository, but it is not a maintainer. No independent
+   review of this page or of the code has taken place.
 6. **Little fuzzing, and no dynamic scanner against the HTTP surface.** Three Atheris harnesses cover token claims, the
    coercion of tool arguments and terminal text, run for a few hundred inputs in the hooks ([Fuzzing](fuzzing.md)); the
    end-to-end suite is the only dynamic check of the HTTP surface.
