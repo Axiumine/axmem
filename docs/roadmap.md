@@ -1,8 +1,8 @@
 # Roadmap
 
 What the Axmem project intends to work on in the twelve months from November 2026 to October 2027, and what it does not
-intend to do. Written on 2026-10-29. It is a plan, not a promise: Axmem is a small project with a lead maintainer and a
-co-owner ([MAINTAINERS.md](../MAINTAINERS.md)), nothing here has a date or a commitment of delivery, and the order can
+intend to do. Written on 2026-10-29. It is a plan, not a promise: Axmem is a small project with one
+maintainer ([MAINTAINERS.md](../MAINTAINERS.md)), nothing here has a date or a commitment of delivery, and the order can
 change. This page is reviewed at each release, and the list of features it draws from is
 [docs/features_roadmap.md](features_roadmap.md).
 
@@ -54,7 +54,7 @@ These are decisions, not omissions. A request for one of them is closed.
 |---|---|
 | Support for hardware other than NVIDIA GPUs: CPU-only, AMD, Intel | The embedder and reranker run on TensorRT and there is no CPU path, by design ([GPU models](gpu-models.md), [CONTRIBUTING.md](../CONTRIBUTING.md#hardware)). A request for another device is closed |
 | Windows | Linux only; the engine cache locks with `fcntl` ([GPU models](gpu-models.md#host-requirements)) |
-| Apple silicon (macOS) from the maintainers | The one exception is a pull request with an [MLX](https://github.com/ml-explore/mlx) backend that runs natively on an Apple-silicon Mac and keeps the NVIDIA path passing; the maintainer decides whether to merge it. A backend on Core ML, Metal, PyTorch MPS, ONNX Runtime or the CPU, or an Intel Mac, is not accepted, and no other platform is planned or considered ([CONTRIBUTING.md](../CONTRIBUTING.md#hardware), [GOVERNANCE.md](../GOVERNANCE.md#decisions)) |
+| Apple silicon (macOS) from the maintainer | The one exception is a pull request with an [MLX](https://github.com/ml-explore/mlx) backend that runs natively on an Apple-silicon Mac and keeps the NVIDIA path passing; the maintainer decides whether to merge it. A backend on Core ML, Metal, PyTorch MPS, ONNX Runtime or the CPU, or an Intel Mac, is not accepted, and no other platform is planned or considered ([CONTRIBUTING.md](../CONTRIBUTING.md#hardware), [GOVERNANCE.md](../GOVERNANCE.md#decisions)) |
 | fp16 or bf16 engines | The engines are built in strict fp32; reduced precision is not supported ([GPU models](gpu-models.md)) |
 | A datastore other than Qdrant: SQL, SQLite, PostgreSQL | They were removed, and Qdrant is the only store ([changes from Forgetful](changes-from-forgetful.md)) |
 | A container image or compose deployment | Axmem runs natively; Docker is only a test dependency ([AGENTS.md](../AGENTS.md), [architecture overview](../architecture.md)) |
@@ -66,5 +66,5 @@ These are decisions, not omissions. A request for one of them is closed.
 ## How this page is kept
 
 When an item lands it is checked off in [docs/features_roadmap.md](features_roadmap.md), recorded in the changelog and
-removed from the table above. When the maintainers decide on a new direction it is added here, with its source, before work
+removed from the table above. When the maintainer decides on a new direction it is added here, with its source, before work
 starts. If you want to propose something, open an issue ([CONTRIBUTING.md](../CONTRIBUTING.md#ways-to-contribute)).

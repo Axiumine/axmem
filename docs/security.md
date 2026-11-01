@@ -106,7 +106,7 @@ version, and the text of a failed model check) and `/api/v1/auth/info` (whether 
 | SUP-7 | Dependabot proposes version updates every week, as pull requests, for the GitHub Actions of `.github/workflows`, for `pyproject.toml` and `uv.lock`, and, for the test harness only, for the Docker base image and the npm packages in `test_harness/docker` (the project has no container deployment). The pull requests run `ci.yml` and `quality.yml` like any other change, and a maintainer merges them: no workflow merges one by itself. The three TensorRT packages and the SLSA generator are left out on purpose and are bumped by hand. | `.github/dependabot.yml` | No test: it is a setting of GitHub's Dependabot service, read from the default branch |
 | SUP-8 | Two reports run on GitHub, outside the hooks: CodeQL analysis of the Python code and of the workflow files (`.github/workflows/codeql.yml`, on a push to `main` and on pull requests into it) and the OpenSSF Scorecard of the repository (`.github/workflows/scorecard.yml`, on a push to `main`). They are reports, not gates: no hook runs them, and an alert or a low score does not stop a push or a merge. A failed run of either on the release commit does stop a release until it is repeated. | `.github/workflows/codeql.yml`, `.github/workflows/scorecard.yml`, `scripts/release/ci_green.py` | `tests/architecture/test_workflows.py` (the shape of both workflows), `tests/integration/test_release_ci_green.py` |
 
-Five settings of the GitHub repository are enabled as well: private vulnerability reporting (how to use it is in [SECURITY.md](../SECURITY.md)), secret scanning, push protection for secrets, and Dependabot alerts with Dependabot security updates. They are read from the GitHub API (2026-10-29) and are not files in the repository, so nothing here enforces them; they stay on only while the owners keep them on.
+Five settings of the GitHub repository are enabled as well: private vulnerability reporting (how to use it is in [SECURITY.md](../SECURITY.md)), secret scanning, push protection for secrets, and Dependabot alerts with Dependabot security updates. They are read from the GitHub API (2026-10-29) and are not files in the repository, so nothing here enforces them; they stay on only while the administrators of the repository keep them on.
 
 ## What Axmem does not guarantee
 
@@ -225,7 +225,7 @@ not files of the repository, so nothing here enforces them.
 
 | Credential | Kept in | Who uses it, scope, expiry | Rotation and revocation |
 |---|---|---|---|
-| The GitHub account of each owner | At GitHub. The `Axiumine` organization requires two-factor authentication, and new write access goes only to accounts with a TOTP app, a passkey or a security key, not SMS ([GOVERNANCE.md](../GOVERNANCE.md#access)). | Its owner only. Both owners are owners of the organization and admins of the repository ([MAINTAINERS.md](../MAINTAINERS.md)). No expiry. | No schedule. On suspicion: change the password, end the sessions, delete the account's tokens and keys. The other owner removes its access to the organization and the repository, which [GOVERNANCE.md](../GOVERNANCE.md#access) requires at once when an account may be compromised. |
+| The GitHub account of each person with admin access | At GitHub. The `Axiumine` organization requires two-factor authentication, and new write access goes only to accounts with a TOTP app, a passkey or a security key, not SMS ([GOVERNANCE.md](../GOVERNANCE.md#access)). | Its holder only. Two accounts are owners of the organization and admins of the repository ([MAINTAINERS.md](../MAINTAINERS.md)): the lead maintainer's, and `@vivi7`, which is not a maintainer. No expiry. | No schedule. On suspicion: change the password, end the sessions, delete the account's tokens and keys. The lead maintainer removes a compromised account's access to the organization and the repository, which [GOVERNANCE.md](../GOVERNANCE.md#access) requires at once. If the lead maintainer's own account is the one at risk, nobody is named to do it; `@vivi7` could as an administrator, but no role of it in this is documented. |
 | The fine-grained GitHub token of `gh auth login`, the one credential a release needs ([Once, before the first release](release.md#once-before-the-first-release)) | The login store of `gh`, and git's credential helper (`gh auth setup-git`), on the lead maintainer's release machine. No script of the repository reads or stores it. | The lead maintainer, through the release script. Limited to `Axiumine/axmem`: Contents, Actions and Workflows write, Administration read, and no more than what `publish-ready` reports as needed. It can do no more than its account can. A fine-grained token has an expiry date, chosen when it is made. **Target:** at most 90 days. | Make the new token before the old one expires, run `publish-ready` with it, then delete the old one in GitHub (Settings, Developer settings, fine-grained tokens) and `gh auth logout` of the old login. A missing or too narrow login stops a release before anything is changed. |
 | The SSH key and the commit signing key of a maintainer | On the maintainer's machine. The public keys are on their GitHub account. | The maintainer: git over SSH when the remote is SSH, and the signed commits that the rules for `main` require. No expiry. **Target:** protected by a passphrase or held on a hardware key. | No schedule. On suspicion or when the device is lost: remove the public key from the GitHub account and make a new pair. |
 | `QODANA_TOKEN` | The git-ignored dotenv file in the repository root of the machine that pushes, or the environment ([Quality gates](quality-gates.md#secrets)). | The `qodana` gate of the `pre-push` hook, on the developer machine only; no workflow reads it. It is a Qodana Cloud project token, which lets a scan upload its report to that project. The project sets no expiry that it checks. | **Target:** regenerated once a year, with the dotenv file updated. On suspicion: delete or regenerate it in the Qodana Cloud project. |
@@ -268,8 +268,8 @@ What does not exist, on purpose, because a credential that does not exist cannot
 * A credential has the least scope that works: the token above is limited to one repository and the listed permissions, and a
   change to them is a change to [docs/release.md](release.md) and to this table.
 * A credential sits only on the machine that needs it. Hosted CI gets none.
-* Today only the lead maintainer holds the release token, the Qodana token and the PyPI accounts. The co-owner holds none of
-  them; what is still to hand over is in [GOVERNANCE.md](../GOVERNANCE.md#what-needs-a-hand-over).
+* Today only the lead maintainer holds the release token, the Qodana token and the PyPI accounts. The `@vivi7` account holds none of
+  them, and nobody is named to take them over ([GOVERNANCE.md](../GOVERNANCE.md#if-the-lead-is-unavailable)).
 
 ### Rotating and revoking
 
@@ -278,12 +278,13 @@ What does not exist, on purpose, because a credential that does not exist cannot
   scanning and push protection are on, the organization requires two-factor authentication) and updates the date in this section.
   No tool of the project tracks these dates.
 * At once, on suspicion: revoke with the last column of the table. Do not wait to learn whether the credential was used.
-* At once, when a person leaves or loses access ([GOVERNANCE.md](../GOVERNANCE.md#access)): the owners remove the person from the
+* At once, when a person leaves or loses access ([GOVERNANCE.md](../GOVERNANCE.md#access)): the lead maintainer removes the person from the
   organization, the repository, `.github/CODEOWNERS` and [MAINTAINERS.md](../MAINTAINERS.md), from the reviewers of the
   environments `pypi` and `testpypi`, and from the PyPI project. The person deletes their tokens, their keys and their dotenv file.
   A fine-grained token can do no more than its account, so removing the account's access ends what the token can do in the
-  repository. If the lead maintainer is the one who leaves, the co-owner does this. They are not yet an owner of the PyPI
-  project, so they cannot remove access there; from GitHub they can disable the two publish workflows.
+  repository. If the lead maintainer is the one who leaves, nobody is named to do this. The `@vivi7` account, which is not a
+  maintainer, can still remove access on GitHub and disable the two publish workflows as an administrator, but it is not an
+  owner of the PyPI project, so it cannot remove access there.
 
 ### If a credential leaks
 
@@ -299,7 +300,7 @@ What does not exist, on purpose, because a credential that does not exist cannot
    security advisory as [SECURITY.md](../SECURITY.md#what-happens-next) describes, yank the affected release on PyPI when they may
    be tampered with, and release a fix under a new version number, because PyPI never accepts a file name twice. If only a
    development credential was exposed and nothing a user installs could have changed (the Qodana token), say what happened in the
-   commit or issue that replaces it, with no secret in it. Either way the other owner is told the same day.
+   commit or issue that replaces it, with no secret in it. Either way the other account with admin access is told the same day.
 5. **Close the gap.** Find out how it got there, and add the check that would have caught it.
 
 ### Finding a leak early

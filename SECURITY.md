@@ -22,9 +22,11 @@ PyPI never accepts a file name twice, so a fix is always a new version number ([
 Do not open a public issue, pull request or discussion for a vulnerability, and do not post details anywhere public.
 
 1. **Preferred: a private vulnerability report on GitHub.** Private vulnerability reporting is enabled for this repository.
-   Open <https://github.com/Axiumine/axmem/security/advisories/new>. The report stays private to you and the maintainers
-   (the administrators of the repository, who are the two owners), it is encrypted in transit, and the fix, the advisory
-   and the credit can be worked on in the same place.
+   Open <https://github.com/Axiumine/axmem/security/advisories/new>. The report stays private to you and to the
+   administrators of the repository, and GitHub shows it to all of them. Today those are the lead maintainer and the account
+   [@vivi7](https://github.com/vivi7), which has admin access but is not a maintainer of Axmem ([MAINTAINERS.md](MAINTAINERS.md);
+   read from the GitHub API on 2026-11-01). The report is encrypted in transit, and the fix, the advisory and the credit can
+   be worked on in the same place.
 2. **Or write to dev@giovannimanzoni.com.** This is the lead maintainer's address, the one in
    [CONTRIBUTING.md](CONTRIBUTING.md#ways-to-contribute). It has no published PGP key, so ordinary e-mail encryption
    cannot be assumed: if the details must not travel in clear text, send a short message without them and ask for another
@@ -45,7 +47,7 @@ Please never include a real token, an API key or the content of someone's memori
 
 ## What to expect
 
-Axmem is maintained by a lead maintainer and a co-owner ([MAINTAINERS.md](MAINTAINERS.md)). These times are the lead
+Axmem has one maintainer, the lead maintainer ([MAINTAINERS.md](MAINTAINERS.md)). These times are the lead
 maintainer's targets, not guarantees:
 
 | Step | Target |
@@ -81,11 +83,14 @@ handle they choose, unless they ask to stay anonymous. Axmem has no bug bounty a
 
 ## If the lead maintainer does not answer
 
-If you have heard nothing after 14 days, the co-owner and successor listed in [MAINTAINERS.md](MAINTAINERS.md) is the person to
-reach ([GOVERNANCE.md](GOVERNANCE.md) says what the role covers). A private report on GitHub is visible to everyone with
-admin access to the repository, the co-owner among them. You can also open a public issue titled "Security contact
-request", with no details of the vulnerability, asking the co-owner to contact you. The response times above are the lead
-maintainer's: no response time is promised on the co-owner's behalf.
+If you have heard nothing after 14 days, write again on the same private channel: add a comment to the private report on
+GitHub, or send a second message to the e-mail address above. If that gets no answer either, open a public issue titled
+"Security contact request", with no details of the vulnerability, asking the maintainer to contact you.
+
+Nobody else is named to take over the reports: Axmem has one maintainer and no successor. The account @vivi7 can read a
+private report on GitHub, because it is an administrator of the repository, but it is not a maintainer, no role of it in
+handling reports is documented, and no response time is promised for it. The response times above are the lead
+maintainer's.
 
 ## What is in scope
 

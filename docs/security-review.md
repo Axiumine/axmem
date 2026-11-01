@@ -31,8 +31,8 @@ badge (the criterion that asks for a review of the security requirements and of 
    into an independent review.
 2. Whether a review by a project member, or by an AI agent that a project member directed, is enough for that criterion is
    the maintainer's reading of the criterion to make. This page does not claim it is.
-3. **A second human reviewer is an open item.** No independent review of the code is on record, and the co-owner has made no
-   commit yet ([MAINTAINERS.md](../MAINTAINERS.md)). A reviewer who is not the author of the code is the point of a review.
+3. **A second human reviewer is an open item.** No independent review of the code is on record, and Axmem has no maintainer besides the lead
+   ([MAINTAINERS.md](../MAINTAINERS.md)). A reviewer who is not the author of the code is the point of a review.
 
 ## Scope
 

@@ -37,7 +37,7 @@ This Code of Conduct applies within all community spaces (the issues, pull reque
 
 ## Enforcement
 
-Instances of abusive, harassing, or otherwise unacceptable behavior may be reported to the community leaders responsible for enforcement: the maintainers listed in [MAINTAINERS.md](MAINTAINERS.md). Write to the lead maintainer at the e-mail address given as author in [pyproject.toml](pyproject.toml). If the report is about the lead maintainer, write to the co-owner instead, through the contact details on their GitHub profile or by a private message on GitHub. Do not report conduct problems in a public issue. Reports about a security vulnerability are a different matter: see [CONTRIBUTING.md](CONTRIBUTING.md#ways-to-contribute). All complaints will be reviewed and investigated promptly and fairly.
+Instances of abusive, harassing, or otherwise unacceptable behavior may be reported to the community leader responsible for enforcement: the maintainer named in [MAINTAINERS.md](MAINTAINERS.md). Write to the lead maintainer at the e-mail address given as author in [pyproject.toml](pyproject.toml). If the report is about the lead maintainer, nobody else is named to receive it, because Axmem has one maintainer. The account [@vivi7](https://github.com/vivi7) has admin access to the repository but is not a maintainer and does not enforce this Code of Conduct. Do not report conduct problems in a public issue. Reports about a security vulnerability are a different matter: see [CONTRIBUTING.md](CONTRIBUTING.md#ways-to-contribute). All complaints will be reviewed and investigated promptly and fairly.
 
 All community leaders are obligated to respect the privacy and security of the reporter of any incident.
 
