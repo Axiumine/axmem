@@ -151,26 +151,31 @@ request says what changed and why, and links the issue it closes.
 
 **Merge conditions.** The maintainer merges a contributor's pull request only when all of these hold:
 
-1. the maintainer, who is not its author, has approved it, and the open review comments are answered;
-2. the checks of `ci.yml` (`lint`, `smoke-test`) and `quality.yml` (`static`, `trivy`) are green on the last commit;
+1. the maintainer, who is not its author, has read the change and the open review comments are answered;
+2. the checks `lint (py3.14)`, `smoke-test`, `static (3.14)`, `trivy` and the two CodeQL analyses (`analyze (python)` and
+   `analyze (actions)`) are green on the last commit, and the branch is up to date with `main`;
 3. the maintainer has run the slow gates of the `pre-push` hook on the result (see
    [Making a change](#making-a-change)), because CI does not run the tests.
 
-Axmem has one maintainer, so the approval in the first condition is the lead's, and no other maintainer reviews a
-contributor's pull request. No other code owner exists, so the lead's own changes have no approver (see below).
+Axmem has one maintainer, so the reading in the first condition is the lead's, and no other maintainer reviews a
+contributor's pull request. The merge is a merge commit, made by the maintainer through GitHub.
 
-The repository rules for `main` enforce the first two for a contributor: deletion and force pushes are blocked, commits must
-be signed, a change needs a pull request with one approval of a code owner, resolved conversations and the checks `lint`,
-`smoke-test`, `static`, `trivy` and the two CodeQL analyses green on the last commit. The third cannot be enforced, because
-the hosted CI has no GPU. The lead is the only code owner (`.github/CODEOWNERS`) and cannot approve their own pull request.
-The Admin role bypasses the rules, because the release script pushes to `main` and the lead merges their own changes the
-same way, so the rules do not hold the maintainer's own changes. The Admin role also includes the account @vivi7, which has
-access but is not a maintainer ([MAINTAINERS.md](MAINTAINERS.md); see also
-[GOVERNANCE.md](GOVERNANCE.md#if-the-lead-is-unavailable)).
+The repository rules for `main` enforce the second condition for everyone: deletion and force pushes are blocked, commits
+must be signed, a change reaches `main` only through a pull request, and the pull request cannot be merged before the
+checks above are green on its last commit and its branch is up to date. The rules have no bypass actor: nobody can push to
+`main`, the lead and the Admin role included. They do not require an approval, because the lead is the only code owner
+and cannot approve their own pull request, so a required approval would stop every change of the maintainer's own. The
+first condition is therefore a practice of the maintainer, not a rule that GitHub enforces. The third cannot be enforced
+either, because the hosted CI has no GPU. The Admin role includes the account @vivi7, which has access but is not a
+maintainer ([MAINTAINERS.md](MAINTAINERS.md); see also [GOVERNANCE.md](GOVERNANCE.md#if-the-lead-is-unavailable)).
 
-**The maintainer's own changes.** These are pushed to `main` directly after the git hooks have passed on the maintainer's
-machine: the `pre-commit` and `pre-push` hooks run the whole pipeline, including the tests that CI does not run. No second
-person reviews them today.
+**The maintainer's own changes.** These also travel in a pull request, with the same required checks green and the same
+merge commit, and not in a push to `main`: the rules refuse that push. The `pre-commit` and `pre-push` hooks run the whole
+pipeline on the maintainer's machine, including the tests that CI does not run, when the branch is pushed. No second person
+reads these changes and none approves them, because the rules require no approval and no second maintainer exists. The
+checks are automatic and stand in for a reviewer only for what they test. The release follows the same path
+([docs/release.md](docs/release.md)): its script pushes the release commit to a branch, opens the pull request and merges it
+when the checks are green.
 
 ## License
 

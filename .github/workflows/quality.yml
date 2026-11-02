@@ -83,6 +83,13 @@ jobs:
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.14"
+      # The gates that read the lock files and .trivyignore with the standard library alone (python -m scripts.quality
+      # needs no installed dependency): the OpenVEX document behind the accepted findings, and the malicious-package
+      # advisories of OSV. They sit in this job so that the required check names stay what they are.
+      - name: vex (the OpenVEX document explains every accepted finding)
+        run: python -m scripts.quality gate vex
+      - name: malware (no OSV MAL- advisory for a locked package)
+        run: python -m scripts.quality gate malware
       # The gate runs the binary that TRIVY_BIN names. Without one it would run trivy's Docker image, and this job uses no Docker.
       - name: Install trivy
         run: |

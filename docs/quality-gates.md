@@ -20,7 +20,7 @@ the release guard) need a release and its signed files, so `scripts/release-pypi
 with their code covered by the release tests that `tests` runs.
 
 **Where they run.** Hosted CI has no GPU, and the project has no self-hosted runner, so CI runs only the gates that
-need neither a GPU nor Docker (the static gates, trivy, the architecture tests, the package and the wheel), and it
+need neither a GPU nor Docker (the static gates, trivy, malware, vex, the architecture tests, the package and the wheel), and it
 runs them by their gate names: it adds nothing the hooks do not run. Everything that runs the real TensorRT embedder
 and reranker or a real Qdrant (tests, the Qdrant cluster suite, coverage, memory budgets, Qodana, mutation) runs on the
 developer machine, in the `pre-push` Git hook. See [Where the gates run](#where-the-gates-run).
@@ -123,13 +123,18 @@ vulture, radon, shellcheck, actionlint, reuse, mypy, pylint), `tests/architectur
 
 | Stage | Pipeline |
 |---|---|
-| `pre-commit` (staged files) | ruff, imports, bandit, semgrep, vulture, radon-cc, radon-mi, shellcheck, actionlint, reuse → mypy, pylint, architecture, package → snapshots, tests-fast → gitnexus |
-| `pre-push` (whole project) | ruff, imports, bandit, semgrep, vulture, radon-cc, radon-mi, shellcheck, actionlint, reuse, trivy → mypy, pylint, architecture, package, wheel → tests → e2e-qdrant → coverage → memray → qodana → mutation → gitnexus |
-| `ci` (the gates hosted CI runs) | ruff, imports, bandit, semgrep, vulture, radon-cc, radon-mi, shellcheck, actionlint, reuse, trivy → mypy, pylint, architecture, package, wheel |
+| `pre-commit` (staged files) | ruff, imports, bandit, semgrep, vulture, radon-cc, radon-mi, shellcheck, actionlint, reuse → mypy, pylint, architecture, package, malware, vex → snapshots, tests-fast → gitnexus |
+| `pre-push` (whole project) | ruff, imports, bandit, semgrep, vulture, radon-cc, radon-mi, shellcheck, actionlint, reuse, trivy, malware, vex → mypy, pylint, architecture, package, wheel → sbom → tests → e2e-qdrant → coverage → memray → qodana → mutation → gitnexus |
+| `ci` (the gates hosted CI runs) | ruff, imports, bandit, semgrep, vulture, radon-cc, radon-mi, shellcheck, actionlint, reuse, trivy, malware, vex → mypy, pylint, architecture, package, wheel |
 
 `pre-push` puts the cheap gates first (trivy needs a few seconds and the network, the suites need minutes), so a
 finding there refuses the push before the GPU suites start. `coverage` comes after `tests` and `e2e-qdrant`, whose
 data it reads, and `gitnexus` last.
+
+`malware` and `vex` are in `pre-commit` and report `SKIP` unless a file they read is staged: `uv.lock`, the lock file and
+`package.json` of the test harness image, `pyproject.toml` or `.trivyignore` for `malware`, the VEX document or `.trivyignore`
+for `vex`. `vex` reads two local files. `malware` asks api.osv.dev, so a commit that stages `uv.lock` while offline fails it,
+with the cause; `SKIP=malware` leaves it out once, and the push runs it again.
 
 `wheel` is not in `pre-commit`: it installs the locked dependencies, which needs PyPI and NVIDIA's index, so a commit
 made offline must not fail on it. `package`, which is in `pre-commit`, runs `uv build`, which fetches the pinned build
@@ -168,12 +173,12 @@ name, split across jobs (`stage ci` runs the same set in one go on a developer m
 | Workflow and job | What runs |
 |---|---|
 | `quality.yml` job `static` | ruff, imports, bandit, semgrep (with `p/python p/security-audit`, the default of the gate), shellcheck, actionlint, reuse, vulture, radon-cc, radon-mi, mypy, pylint |
-| `quality.yml` job `trivy` | `trivy`, with the pinned release binary downloaded and checked against its SHA-256 (no Docker image) |
+| `quality.yml` job `trivy` | `vex` and `malware` first (standard library only, on the bare setup-python of the job), then `trivy`, with the pinned release binary downloaded and checked against its SHA-256 (no Docker image). The job is a required status check, so the two gates are part of it and add no check name |
 | `ci.yml` job `lint` | the `architecture` gate (`tests/architecture`: the import contracts, the rule proofs and the rules of these workflow files) and the `ruff` gate |
 | `ci.yml` job `smoke-test` | the `package` gate and the `wheel` gate, see [The wheel gate](#the-wheel-gate); the checkout is shallow, because both gates build a copy without git history and pin the version themselves |
 | `publish.yml` job `verify` | on a dispatch on a `v<version>` tag: checks the signed files of the GitHub release again (digests, cosign identity of `release.yml`, the release guard) and runs `dist-check` on them (a package that holds model weights, engines, native libraries or other files than source is refused), before the job `publish` uploads them to PyPI; see [release.md](release.md) |
 | `publish-testpypi.yml` job `verify` | the rehearsal of the same upload on TestPyPI, advisory and not a gate: the checks of the job `verify` of `publish.yml`, step for step (a test builds one from the other with a closed table of differences), before its job `publish` uploads the files to TestPyPI in the environment `testpypi`; started by `scripts/release-testpypi.sh`, see [release.md](release.md) |
-| `release.yml` jobs `sign-artefacts` and `provenance-artefacts` | on a `v<version>` tag: rebuilds the package from the committed `release-digests.json`, refuses to sign unless the rebuild is byte-identical, runs `dist-check`, signs each file with cosign (keyless) and attests them (SLSA-3), and refuses a tag whose section of `CHANGELOG.md` is missing, repeated, empty or too long before it builds, because that section is the body of the GitHub release; started by `scripts/release-pypi.sh`, see [release.md](release.md) |
+| `release.yml` jobs `sign-artefacts` and `provenance-artefacts` | on a `v<version>` tag: rebuilds the package from the committed `release-digests.json`, refuses to sign unless the rebuild is byte-identical, runs `dist-check`, signs each file with cosign (keyless) and attests them (SLSA-3), makes, checks and signs the SBOM of the release, and refuses a tag whose section of `CHANGELOG.md` is missing, repeated, empty or too long before it builds, because that section is the body of the GitHub release; started by `scripts/release-pypi.sh`, see [release.md](release.md) |
 | `scorecard.yml` job `analysis` | on a push to `main` and on a manual run: OpenSSF Scorecard of the repository, published to scorecard.dev and to code scanning; not a gate, and it checks no code of ours, see [OpenSSF Scorecard and Dependabot](#openssf-scorecard-and-dependabot) |
 | `codeql.yml` job `analyze` | on a push to `main` and on a pull request into `main`: CodeQL analysis of the Python code and of the workflow files (one run for each language, no build), the alerts sent to code scanning; not a gate, it has no local equivalent and needs nothing local, see [OpenSSF Scorecard and Dependabot](#openssf-scorecard-and-dependabot) |
 
@@ -326,6 +331,7 @@ wheel or the sdist.
 | `architecture` | `tests/architecture`: the import contracts and the proofs of their rules, the rules of the workflow files, the shape of the release workflows; no GPU and no Docker | `[tool.importlinter]`, `tests/architecture/` |
 | `package` | the wheel and the sdist built from this checkout hold source only, see [Package contents](#package-contents) | `scripts/quality/package.py`, `[tool.hatch.build.targets.*]` |
 | `wheel` | the built wheel installs on the locked dependencies, starts and resolves, see [The wheel gate](#the-wheel-gate) | `scripts/quality/wheel.py` |
+| `sbom` | the SBOM that `release.yml` signs can be made from `uv.lock` and is valid: `scripts/release/sbom.py` makes it with the `uv` of the machine (`uv export --frozen --format cyclonedx1.5`, offline) and checks CycloneDX 1.5, one component with a name, a version and a purl for each package the lock reaches from the wheel's dependencies and none for the `dev` group, the root component Axmem with the version, and a graph whose every reference exists; two runs must give the same bytes. The version is the static one of `pyproject.toml`, else the rehearsal version `0.0.0`. Fails (never skips) without `uv`. In `pre-push` only: it needs no GPU and no Docker, but guards the release, which no push reaches, so it is not in the `ci` stage that hosted CI runs by name. See [Releasing Axmem](release.md#the-sbom) | `scripts/quality/sbom.py`, `scripts/release/sbom.py` |
 | `snapshots` | syrupy snapshot tests (`-m snapshot`): CLI argument tree, settings defaults, Qdrant collection layout and payload types, MCP meta-tool signatures and tool catalogue, HTTP route table | `tests/integration/test_snapshots.py`, `tests/e2e/test_snapshots_e2e.py` |
 | `tests-fast` | `tests/integration`, stopping at the first failure (the architecture tests are the `architecture` gate); every warning is an error (`filterwarnings = error`, see [Warnings](#warnings)) | `pytest.ini` |
 | `tests` | architecture + integration + end-to-end on one Qdrant node with branch coverage (erases previous coverage data first); every warning is an error, as in `tests-fast` | `[tool.coverage.*]`, `pytest.ini` |
@@ -333,6 +339,8 @@ wheel or the sdist.
 | `coverage` | combined **100 %** line and branch coverage of `app` and `main.py`, from the single-node and cluster runs together | `[tool.coverage.report]` |
 | `memray` | memory budgets (`@pytest.mark.limit_memory`) via pytest-memray, run as `pytest tests/e2e -m memory --memray` (Linux/macOS only) | `tests/e2e/test_memory_budget_e2e.py` |
 | `trivy` | HIGH/CRITICAL vulnerabilities (fixed ones), secrets and misconfigurations (`fs` scan); the binary named by `TRIVY_BIN` or on `PATH`, else the pinned Docker image; fails when neither is available; it skips `mutants/` (mutmut's untracked copy of the project, whose own `uv.lock` holds the old pins until the next mutation run) like `.venv` and `test_harness/runs`; what is done with a finding, and with the ones it does not report, is in [Dependency findings](#dependency-findings) | `trivy.yaml`, `.trivyignore` |
+| `malware` | no locked dependency is a malicious package: `uv.lock` (read with `tomllib`) and the `package-lock.json` of the test harness image are read, and OSV (`POST https://api.osv.dev/v1/querybatch`, ecosystem `PyPI` and `npm`) is asked about every package at its locked version; an id that starts with `MAL-` fails the gate. An unreachable API, a malformed answer and a package from a git, path or URL source (it cannot be asked about) fail it too; nothing passes by not looking. Standard library only. Accepted findings are the entries of `.trivyignore`. See [Malicious dependencies](#malicious-dependencies) | `scripts/quality/malware.py`, `.trivyignore` |
+| `vex` | `security/axmem.openvex.json` is an OpenVEX v0.2.0 document in the shape the specification gives, and every entry of `.trivyignore` still in force has a `not_affected` statement with a justification and an impact statement. Standard library only; reads two local files. See [Vulnerabilities that do not affect Axmem](#vulnerabilities-that-do-not-affect-axmem-vex) | `scripts/quality/vex.py`, `security/axmem.openvex.json`, `.trivyignore` |
 | `qodana` | Qodana Ultimate Plus (`jetbrains/qodana-python`), token from `QODANA_TOKEN`; analyses a `git archive` export of `HEAD` (uncommitted changes are not seen) with `--image`; its `bootstrap` installs the locked environment without `actionlint-py` (an sdist that downloads its binary from GitHub when built; no module imports it, trivy scans it in `uv.lock`), so the bootstrap does not need GitHub; fails when the `qodana` CLI or the token is missing | `qodana.yaml` |
 | `mutation` | mutmut on changed `app/` modules; survivors above `MUTATION_MAX_SURVIVORS` fail, and so does any targeted mutant that was never tested (whatever the tolerance) and a results listing that cannot be read or holds no mutant; the run gets a data directory of its own (a mirror of the model cache), so no mutant writes in `~/.local/share/axmem`; one run may take 24 h (`MUTATION_TIMEOUT_S`). Runs in every `pre-push`, see below | `[tool.mutmut]` |
 | `gitnexus` | `detect-changes` on the staged diff (pre-commit) or against the upstream of the branch (pre-push; `origin/main`, then `HEAD~1`, without one); a partial or truncated answer is retried once, then fails. Skipped without a local index or `node` (local tooling a push does not depend on) | `.gitnexus/` (local index) |
@@ -553,6 +561,12 @@ read by a person. The lead maintainer, the only maintainer, decides ([GOVERNANCE
 is named to take over when the lead is unavailable ([GOVERNANCE.md](../GOVERNANCE.md#if-the-lead-is-unavailable)). The
 times below are the lead maintainer's targets, not guarantees, as in [SECURITY.md](../SECURITY.md#what-to-expect).
 
+Two more checks read the same lock file and the same accepted-findings file. The `malware` gate fails on a locked package
+that is a known malicious package ([Malicious dependencies](#malicious-dependencies)), and the `vex` gate holds the
+OpenVEX document to the findings that were accepted ([Vulnerabilities that do not affect
+Axmem](#vulnerabilities-that-do-not-affect-axmem-vex)). Together with `trivy` they are the automatic evaluation of every
+change against this policy (OSPS-VM-05.03): a change that breaks it turns the `trivy` job red.
+
 ### What is scanned
 
 The `trivy` gate runs `trivy fs` over the checkout with `trivy.yaml` and `.trivyignore`. Its vulnerability scanner reads the
@@ -578,7 +592,7 @@ gives the finding.
 
 | Finding | What the policy requires | Who checks |
 |---|---|---|
-| HIGH or CRITICAL, with a fixed version | It blocks. It is fixed before the change is merged and before any release: bump the dependency to the smallest release that carries the fix (`uv lock --upgrade-package <name>`), run the tests, and name the advisory in the Security section of [CHANGELOG.md](../CHANGELOG.md). There is no waiting period | Automated: the `trivy` gate. It refuses a push in the `pre-push` hook and turns the `trivy` job of `quality.yml` red. A contributor's pull request cannot merge while that job is red ([CONTRIBUTING.md](../CONTRIBUTING.md#code-review)); for the maintainers' own pushes the hook is the control, and `--no-verify` or `SKIP=trivy` skips it ([Bypassing, deliberately](#bypassing-deliberately)). A release stops on it (see [Before a release](#before-a-release)) |
+| HIGH or CRITICAL, with a fixed version | It blocks. It is fixed before the change is merged and before any release: bump the dependency to the smallest release that carries the fix (`uv lock --upgrade-package <name>`), run the tests, and name the advisory in the Security section of [CHANGELOG.md](../CHANGELOG.md). There is no waiting period | Automated: the `trivy` gate. It refuses a push in the `pre-push` hook and turns the `trivy` job of `quality.yml` red. No pull request, the maintainer's own included, merges while that job is red ([CONTRIBUTING.md](../CONTRIBUTING.md#code-review)); the hook is the first line of defence, not the only one, and `--no-verify` or `SKIP=trivy` skips only the hook ([Bypassing, deliberately](#bypassing-deliberately)). A release stops on it (see [Before a release](#before-a-release)) |
 | MEDIUM, with a fixed version | It does not block. The lead maintainer reads the advisory within 30 days of the alert and decides whether Axmem is affected, that is, whether the vulnerable code can be reached through a documented use of Axmem. Affected: the bump is required and ships in the next release at the latest. Not affected: the bump is taken with the next regular update (Dependabot opens its pull requests weekly) and the reason is written in the issue or the pull request | Maintainer duty. Dependabot alerts and security updates, and the Vulnerabilities check of the Scorecard run on `main`, report these findings; no gate does |
 | HIGH or CRITICAL, without a fixed version | `trivy` does not report it. The lead maintainer reads the advisory within 14 days of learning of it, the time that [SECURITY.md](../SECURITY.md#what-to-expect) allows for deciding on a report, and decides whether Axmem is affected. Affected: it is handled as a vulnerability report ([SECURITY.md](../SECURITY.md#what-happens-next)), with a workaround written in the Security section of the changelog, and the release waits or names the finding there. Not affected: the reason is written in an issue, and the finding is read again when a fix is out, when it falls under the first row | Maintainer duty, from the same reports |
 | LOW, with a fixed version | It does not block and has no deadline: the bump is taken with the next regular update | Maintainer duty, from the same reports |
@@ -600,9 +614,166 @@ with the reason in a comment on the line above and the review date as the expiry
 
 `<ID>` is the vulnerability ID that `trivy` prints. Once the date in `exp:` has passed, trivy no longer ignores the ID, so the
 gate fails again until a person looks: the dependency is bumped and the entry deleted, or the entry is renewed with a new reason and a
-new date. The date is at most 90 days after the day the entry is written. Trivy enforces the date; the reason and the limit
-of 90 days are checked in review. An entry weakens a gate, so the change that adds one states the reason, and the lead
-maintainer decides; nobody else is consulted. `.trivyignore` holds no entry at present.
+new date. The date is at most 90 days after the day the entry is written. Trivy enforces the date; the `malware` and `vex`
+gates enforce the reason and the limit of 90 days as well, and review checks that the reason is true. An entry weakens a gate, so the change that adds one states the reason, and the lead
+maintainer decides; nobody else is consulted. `.trivyignore` holds no entry at present. An entry is also explained in the
+VEX document, and the `vex` gate fails without that ([below](#vulnerabilities-that-do-not-affect-axmem-vex)).
+
+### Malicious dependencies
+
+A malicious dependency is a package that was published to do harm: to take credentials, to open a way into a machine, to run
+code when it is installed or imported, or to be installed by mistake under a name close to another package's. It is not a
+vulnerability, which a release can fix. No version of it is acceptable, and the harm is done on the machine that installs it:
+the maintainer's, the CI runner's and that of whoever installs Axmem.
+
+**What counts.** A package of `uv.lock` or of the `package-lock.json` of the test harness image (`test_harness/docker`, which
+`npm ci` installs), at the version that is locked, that [OSV](https://osv.dev) lists with an identifier that starts with
+`MAL-`. These are the advisories of the OpenSSF malicious-packages project, which OSV carries for PyPI and npm. The
+gate matches that prefix and nothing else. A vulnerability is the business of `trivy`. A package that nobody has reported is
+found by no list, so a pass means that no locked package has been reported as malicious to that project, not that none is.
+
+**What the gate does.** The `malware` gate (`scripts/quality/malware.py`, standard library only) reads `uv.lock` and the
+`package-lock.json` of the harness image and asks `POST https://api.osv.dev/v1/querybatch` about every package but Axmem itself
+(the root of each lock), with the name, the ecosystem (`PyPI`, `npm` for the second file; the name of an npm package is the
+last `node_modules/` segment of its key, scope included) and the locked version, in requests of at most 1,000 packages (the
+limit of the API). It follows `next_page_token` until no query has
+one, and fails when an answer holds a `MAL-` identifier, printing the package, the version and the identifier. The three
+TensorRT packages, which `uv.lock` takes from NVIDIA's index, are asked about by name like the others: the answer is about the
+project of that name on PyPI, where a placeholder is published under it.
+
+It does not pass by not looking. It fails, and says why, when:
+
+* OSV cannot be reached: a network error, a timeout (30 seconds) or HTTP 429 or 5xx on each of three tries, with a pause that
+  grows between them;
+* OSV answers another HTTP status or redirects (a redirect is not followed), or answers in a shape other than the documented
+  one: a body that is not JSON or is larger than 32 MiB, a count of results that differs from the count of queries, an
+  advisory without a plain-text `id`, a page token that is not a string, or pages that do not end within ten requests. The
+  answer is untrusted input: it is decoded as JSON and never evaluated, every field the gate reads is type-checked, and an
+  identifier is printed only when it is plain text;
+* a package of `uv.lock` comes from a git, path, URL or directory source, or has no version; a package of `package-lock.json`
+  has a `link`, or a `resolved` address other than `https://registry.npmjs.org/` (a repository, a file, a mirror), or has no
+  version. An advisory names a package of an index, so OSV cannot be asked about it. The gate reports it as
+  `UNCHECKED-<name>` and fails, until a person accepts it with an entry in `.trivyignore` (below). Neither lock holds such a
+  package today;
+* `uv.lock` cannot be read or locks no dependency, `package-lock.json` cannot be read or has no `packages` table (npm 6 wrote
+  none; the file must be lockfileVersion 2 or 3), or an entry of `.trivyignore` breaks the rule below;
+* the endpoint is not an HTTPS URL (plain HTTP is accepted to a loopback address, which is how the tests stand in for OSV).
+
+**Where it runs.** In the `trivy` job of `quality.yml`, before `trivy`, on every push and pull request; in the `ci` and `pre-push`
+stages; and in `pre-commit` when a lock file it reads, `pyproject.toml` or `.trivyignore` is staged. The job is one of the required status
+checks of the ruleset of `main` ([release.md](release.md#once-before-the-first-release)), and the gate sits inside it, so the
+ruleset needs no new check name. No pull request, the maintainer's own included, merges while the job is red
+([CONTRIBUTING.md](../CONTRIBUTING.md#code-review)); the hook is the first line of defence, not the only one, and `--no-verify`
+or `SKIP=malware` skips only the hook ([Bypassing, deliberately](#bypassing-deliberately)). The gate fails closed, and the ruleset has
+no bypass actor: while api.osv.dev is down every pull request and every release waits. The way out is to re-run the job when the
+service is back, not to edit the ruleset. No workflow is scheduled, so a package that is
+reported after the last run is found by the next one. The checks of [Before a release](#before-a-release) include the gate:
+the `ci` stage and the hook contain it, and the `trivy` job is part of the CI that must be green on the release commit.
+
+**What happens on a finding.** The gate blocks the change, with no waiting period, as for a fixed HIGH or CRITICAL
+vulnerability: the change does not merge and no release goes out while a lock file names the package. Then, in this order:
+
+1. Do not install the environment again or run the package. Remove the package, or replace it by another or by a version that
+   is not reported (`uv lock --upgrade-package <name>`, or take the dependency out of `pyproject.toml`; for the harness image,
+   change `package.json` and regenerate `package-lock.json`, and do not build the image), so that the lock no longer names
+   the version.
+2. Treat every credential that the CI or the maintainer's machine could have exposed to the package as leaked, from the day the
+   version entered the lock: the contents of the git-ignored `.env` file (`QODANA_TOKEN`), the GitHub login, the SSH and
+   signing keys and the browser sessions of the machine that ran `uv sync`, and any credential of an operator's host that Axmem
+   ran on. Rotate them as [If a credential leaks](security.md#if-a-credential-leaks) says. A hosted run holds no secret and a
+   read-only token that ends with the run (`quality.yml` and `ci.yml`), and no PyPI token exists
+   ([SUP-3](security.md#supply-chain)); a release is signed in CI by an OIDC identity, not by a stored key.
+3. Record it in the Security section of [CHANGELOG.md](../CHANGELOG.md): the package, the version, the advisory and what was
+   rotated. When a released version of Axmem pins the package (the wheel pins its own dependencies), handle it as a report of
+   a vulnerability ([SECURITY.md](../SECURITY.md#what-happens-next)) and release a version that does not.
+
+The existing time targets stay as they are: the 14 and 30 days of [Vulnerabilities](#vulnerabilities) are for findings that do
+not block, and [SECURITY.md](../SECURITY.md#what-to-expect) sets the times for a report about a released version.
+
+**An exception.** OSV withdraws an advisory that turns out to be wrong, and until it does the gate fails. The entry that
+accepts a finding is the one of `.trivyignore` described under [Vulnerabilities](#vulnerabilities), the same file and the same
+form: the reason in a comment on the line above, the identifier that the gate prints, and the review date as `exp:`.
+
+```
+# <package> <version>: why this is not malicious (what was read, where). Decided <date> by <maintainer>, issue #<n>.
+MAL-YYYY-NNNN exp:YYYY-MM-DD
+```
+
+Only a person who has read the advisory and the package, and found that the report is wrong or that the locked version is not
+the affected one, writes it. "Not exploitable here" is not a reason for a malicious package: it runs when it is installed or
+imported. The entry for a `UNCHECKED-<name>` package says that the package was reviewed by hand and why it comes from where it
+does. Trivy ignores an identifier it does not know, so the two programs share the file without disturbing each other. The two
+gates are stricter than trivy about it: an entry without `exp:`, without a reason in the comment directly above it (a blank line
+ends the comment), or with a date more than 90 days ahead fails the gate, where trivy would accept it and never expire it. An
+entry counts as expired from the start of its date, UTC, as trivy treats it.
+
+### Vulnerabilities that do not affect Axmem (VEX)
+
+`security/axmem.openvex.json` is an [OpenVEX](https://github.com/openvex/spec) v0.2.0 document for the product
+`pkg:pypi/axmem`, written by the lead maintainer, Giovanni Manzoni. A VEX statement says whether a vulnerability that a scanner
+finds in a component is exploitable in the product. This document holds a statement only for a vulnerability in a component
+of Axmem that a person decided does not affect it, and it holds none today: no such decision has been made, `.trivyignore`
+has no entry, and the findings that were reported so far were fixed by a bump, not explained away. The document is not generated
+from a scan, and no statement is written for a vulnerability that nobody has judged; an empty list is the honest state. It lies
+in the repository, outside the wheel and the sdist (the `package` gate keeps it out), and is read at the tag of a release. Trivy is
+not pointed at it (`--vex`): an entry of `.trivyignore` is what suppresses a trivy finding, the document is the account of it,
+and the `vex` gate keeps the two from disagreeing.
+
+**When a statement is written.** Every time a decision of this policy says "not affected": the MEDIUM and the unfixed HIGH or
+CRITICAL rows of the [table above](#vulnerabilities), and the exception for a fixed HIGH or CRITICAL finding or a `MAL-`
+advisory. The reason that those rows put in an issue or a pull request goes into `impact_statement` too, with the number of the
+issue. For the exception the entry of `.trivyignore` and the statement go in the same commit.
+
+```json
+{
+  "vulnerability": {"name": "<the ID that trivy or OSV prints>"},
+  "timestamp": "<UTC time of the decision, e.g. 2026-01-31T09:30:00Z>",
+  "products": [
+    {"@id": "pkg:pypi/axmem", "subcomponents": [{"@id": "pkg:pypi/<package>@<locked version>"}]}
+  ],
+  "status": "not_affected",
+  "justification": "<one of the five values below>",
+  "impact_statement": "<why Axmem is not affected, in a sentence a reader can check; issue #<n>>"
+}
+```
+
+`justification` is one of `component_not_present`, `vulnerable_code_not_present`, `vulnerable_code_not_in_execute_path`,
+`vulnerable_code_cannot_be_controlled_by_adversary` and `inline_mitigations_already_exist` (the values of the specification).
+
+**What each status may do.** The specification has four. The document may hold a statement of any of them; only one explains
+an accepted finding.
+
+| Status | In the document | May explain an entry of `.trivyignore` | The statement needs |
+|---|---|---|---|
+| `not_affected` | Yes | Yes, when it is the latest statement for that identifier | a `justification` from the list and an `impact_statement` |
+| `affected` | Yes, to record that Axmem is affected | No: an entry whose latest statement is `affected` fails the gate, because the document contradicts it | an `action_statement`: the remediation or the mitigation |
+| `fixed` | Yes, to record that a release carries the fix | No: when the fix is in, nothing is left to accept and the entry is deleted | nothing more |
+| `under_investigation` | Yes, from the day the maintainer starts to read an advisory (the 14 and 30 day targets above) | No | nothing more |
+
+A `justification` belongs to `not_affected` only. The latest statement for an identifier decides, by `last_updated` and
+otherwise `timestamp`, as OpenVEX reads a document, and it decides for each package a statement names in `subcomponents`
+(the purl without its version; a statement without subcomponents is about its product). An entry of `.trivyignore` accepts
+an identifier for every package, so a later `not_affected` for one package does not hide an `affected` for another. To
+change a verdict, add a statement with a later timestamp; the old one
+stays as the history. A statement is removed only when it was a mistake. When a `not_affected` decision stops being true, add
+an `affected` or `fixed` statement, and bump the dependency or take the entry out.
+
+**When a timestamp or a version changes.**
+
+* Any change to the document (a statement added, edited or removed) raises its `version` by one and sets its `last_updated`
+  to the time of the change, in UTC (`2026-01-31T09:30:00Z`). `version` is never lowered or reused.
+* The `timestamp` of the document, its creation time, and its `@id` never change.
+* The `timestamp` of a statement is the time of the decision and is not edited. Editing a statement (a clearer reason) sets its
+  `last_updated` and raises its own `version`, which is absent until the first edit and then 1, 2, and so on.
+* Every `last_updated` is at or after the `timestamp` next to it, and the `last_updated` of the document is at or after the
+  newest statement. No timestamp is in the future, and each carries a zone.
+
+**What the `vex` gate checks.** With the standard library: the shape of the document and of each statement as set out above (the
+fields it needs, the values of `status` and `justification`, the timestamps, no unknown field, the product, and for
+`not_affected` the component in `subcomponents`); the entries of `.trivyignore` (a date, a reason, at most 90 days ahead); and
+that every entry in force, except one for an `UNCHECKED-` package (it names no vulnerability), has a statement, and that the
+latest statement for each package it names is `not_affected`. It checks the file as it is: that `version` and `last_updated` were raised with a change is seen in
+the review of the diff, not by the gate.
 
 ### Licenses
 
@@ -660,8 +831,10 @@ the hooks from being skipped:
 2. CI must be green on `HEAD` before anything is built, and the `trivy` job of `quality.yml` is part of that CI: it runs on
    every push to a branch, has no condition that could skip it, and a red job makes the run red.
 3. The preflight gate, `python -m scripts.quality stage ci`, runs `trivy` on the maintainer's machine, and the push of the
-   release commit runs the `pre-push` hook, which runs it again.
-4. The release guard requires every push-triggered CI run of `main` on the release commit to be completed and green: in the
+   release commit to its branch `release/<version>` runs the `pre-push` hook, which runs it again. The pull request of that
+   branch cannot be merged before `trivy` is green on its head, a required check of the rules for `main`.
+4. The release guard requires every push-triggered CI run of `main` on the tagged commit, the merge commit of the pull
+   request ([What the tag points at](release.md#what-the-tag-points-at)), to be completed and green: in the
    release script before the dispatch, and in the job `verify` of `publish.yml` before the reviewers of the environment `pypi`
    are asked (condition 2 of [What the release guarantees](release.md#what-the-release-guarantees)).
 

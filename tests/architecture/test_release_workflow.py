@@ -332,4 +332,7 @@ def test_the_dispatch_of_the_rehearsal_workflow_is_one_command_of_its_own_module
 
 def test_uv_does_not_restore_a_cache_in_the_job_that_signs():
     """A tag run would restore what a run of main wrote, and this job holds the identity token and write access."""
-    assert _step("astral-sh/setup-uv")["with"] == {"enable-cache": False}
+    options = _step("astral-sh/setup-uv")["with"]
+
+    assert options["enable-cache"] is False
+    assert set(options) == {"enable-cache", "version", "checksum"}  # the pin of uv is held by test_release_sbom_workflow.py

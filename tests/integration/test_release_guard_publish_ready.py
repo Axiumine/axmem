@@ -94,6 +94,7 @@ def test_a_repository_that_is_set_up_is_ready_and_reads_only(ready, world):
         ({"repo": {"private": True}}, f"{REPO} is not public"),
         ({"repo": {"permissions": {"push": False}}}, f"the gh token has no push right on {REPO}"),
         ({"workflow": {"state": "disabled_manually"}}, "publish.yml is disabled_manually, not active"),
+        ({"repo": {"allow_merge_commit": False}}, f"{REPO} does not allow merge commits"),
     ],
 )
 def test_each_reason_of_the_repository_and_the_workflow_alone_refuses(ready, patch, reason):
@@ -307,8 +308,32 @@ def test_a_main_without_rules_is_a_warning_and_still_ready(ready):
     assert err.splitlines() == [
         "WARNING: main has no non_fast_forward rule",
         "WARNING: main has no deletion rule",
+        "WARNING: main has no pull_request rule",
         "WARNING: main has no required_status_checks rule",
     ]
+
+
+def _pull_request_rule(**parameters):
+    return {"type": "pull_request", "parameters": parameters}
+
+
+def test_a_pull_request_rule_that_leaves_out_merge_commits_is_a_warning(ready):
+    rules = [{"type": kind} for kind in ("non_fast_forward", "deletion", "required_status_checks")]
+    rules.append(_pull_request_rule(allowed_merge_methods=["squash", "rebase"]))
+
+    code, _, err = ready(replace={"main_rules": rules})
+
+    assert code == 0
+    assert err.splitlines() == ["WARNING: the pull request rule of main does not allow merge commits, which the release merges with"]
+
+
+def test_a_pull_request_rule_that_names_merge_commits_or_no_methods_is_no_warning(ready):
+    base = [{"type": kind} for kind in ("non_fast_forward", "deletion", "required_status_checks")]
+
+    for parameters in ({"allowed_merge_methods": ["merge", "squash"]}, {}):
+        code, _, err = ready(replace={"main_rules": [*base, _pull_request_rule(**parameters)]})
+
+        assert (code, err) == (0, "")
 
 
 def test_a_warning_comes_with_the_errors_when_there_are_any(ready):

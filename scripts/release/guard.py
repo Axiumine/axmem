@@ -7,7 +7,9 @@
 good, even after a delete. A version that reached PyPI before its release commit was refused would have no tag and
 no signature ever. The upload is therefore the last step of a release: ``scripts/release-pypi.sh`` runs
 ``scripts.release.guard check`` before it dispatches the workflow, and the workflow runs it again before the
-reviewers of the environment ``pypi`` are asked. The invariant, in code:
+reviewers of the environment ``pypi`` are asked. The invariant, in code ("the release commit" below is the commit the tag
+points at, ``--sha``: the merge commit of the release's pull request, which has the tree of the commit the script made, see
+``docs/release.md``, "What the tag points at"):
 
   1. the release commit (changelog stamp and ``release-digests.json``) is on the remote's main (``--remote``,
      ``origin`` by default) and the manifest on disk is the one committed there;
@@ -15,7 +17,9 @@ reviewers of the environment ``pypi`` are asked. The invariant, in code:
   3. the tag ``v<version>`` is on the remote and points at that commit;
   4. the ``release.yml`` run the push of the tag started on that commit succeeded, and the published GitHub
      release of the tag carries a whole ``.sigstore.json`` bundle for every artefact of the manifest, each
-     signing that artefact's sha256 (a run of another tag or a dispatch never stands in for the tag's own);
+     signing that artefact's sha256 (a run of another tag or a dispatch never stands in for the tag's own).
+     An SBOM that the release carries (``facts.SBOM_SUFFIX``) is held to the same: a whole bundle
+     that signed the sha256 GitHub holds for it. No manifest lists it: proven if there, not needed;
   5. the files to publish are byte-identical to the manifest's digests (``scripts.release.digests verify``) and
      ``dist/`` holds no other file, apart from the ``.gitignore`` that ``uv build`` writes into its output
      directory: a plain file (regular, one link) of exactly the one byte ``*``. Any other entry is named and
@@ -106,7 +110,7 @@ NOT_PLAIN = (
     " (it is a symlink, a hard link or another kind of entry)"
 )
 CONDITIONS = (
-    "the release commit is on the remote's main and its manifest is the one on disk",
+    "the tagged commit is on the remote's main and its manifest is the one on disk",
     "every push CI run of main on the release commit is completed and green",
     "the tag is on the remote and points at the release commit",
     f"{RELEASE_WORKFLOW} succeeded for the tag and the release carries a signed bundle per artefact",

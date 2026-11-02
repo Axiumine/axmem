@@ -248,7 +248,7 @@ class TestOneReleaseAtATime:
         world.configure(ci_release=["red"])
         first = world.release(VERSION)
         assert first.returncode != 0
-        assert "CI is not green on the release commit" in _out(first)
+        assert "CI is not green on the merge commit" in _out(first)
 
         world.configure(ci_release=["green"])
         assert world.release(VERSION).returncode == 0
@@ -417,9 +417,27 @@ class TestTheSettingsThePublicationReliesOn:
         assert "nothing was changed" in _out(done)
         assert world.dispatches() == []
 
-    def test_a_main_without_rules_is_only_a_warning(self, world: World) -> None:
+    def test_a_main_without_rules_is_a_warning_at_the_start_and_a_stop_at_the_merge(self, world: World) -> None:
+        """Nothing holds a merge until the checks are green when main requires none, so the script does not merge."""
+        base = world.origin_git("rev-parse", "main")
         world.configure(publish_ready={"main_rules": []})
         done = world.release(VERSION)
+        assert done.returncode != 0
+        assert "WARNING: main has no pull_request rule" in done.stderr
+        assert "require no status check" in _out(done)
+        assert "STOPPED: the pull request" in _out(done)
+        assert world.dispatches() == []
+        assert world.origin_git("rev-parse", "main") == base
+        assert [pr["state"] for pr in world.pull_requests()] == ["OPEN"]
+
+    def test_a_pull_request_rule_without_merge_commits_is_a_warning_and_the_release_goes_on(self, world: World) -> None:
+        rules = [
+            {"type": "non_fast_forward"},
+            {"type": "deletion"},
+            {"type": "pull_request", "parameters": {"allowed_merge_methods": ["squash"]}},
+            {"type": "required_status_checks", "parameters": {"required_status_checks": [{"context": "lint (py3.14)"}]}},
+        ]
+        world.configure(publish_ready={"main_rules": rules})
+        done = world.release(VERSION)
+        assert "does not allow merge commits" in done.stderr
         assert done.returncode == 0, _out(done)
-        assert "WARNING: main has no" in done.stderr
-        assert world.dispatches() == [DISPATCH]

@@ -3,8 +3,9 @@
 
 """The gates between the release commit and the dispatch of ``publish.yml``, and the resumption of a stopped release.
 
-``test_release_pipeline.py`` pins the flow that goes green and the push that is refused. These cases pin what stops the
-dispatch after the push: a red or an unfinished CI run, a signing run that is red, late or missing its bundles, the
+``test_release_pipeline.py`` pins the flow that goes green and the push that is refused, ``test_release_pipeline_pull_request.py``
+the pull request and its merge. These cases pin what stops the dispatch after the merge: a red or an unfinished CI run on the
+merge commit, a signing run that is red, late or missing its bundles, the
 files of the GitHub release that are not the manifest's bytes, and the integrity preflight over the versions PyPI
 already holds. Each case asserts how many times the workflow was dispatched, and the ones that stop a release run it
 again to prove that the script resumes at the first unfinished step with no new commit and no new tag.
@@ -40,13 +41,14 @@ def _recorded(world: World) -> dict[str, str]:
     return {entry["name"]: entry["sha256"] for entry in world.manifest()["artifacts"]}
 
 
-class TestNothingIsDispatchedBeforeCiIsGreenOnTheReleaseCommit:
-    def test_a_red_run_on_the_release_commit_stops_the_release(self, world: World) -> None:
+class TestNothingIsDispatchedBeforeCiIsGreenOnTheMergeCommit:
+    def test_a_red_run_on_the_merge_commit_stops_the_release(self, world: World) -> None:
         world.configure(ci_release=["pending", "red"])
         done = world.release(VERSION)
         assert done.returncode != 0
-        assert "STOPPED: CI is not green on the release commit" in _out(done)
-        assert world.origin_git("rev-parse", "main") == world.head(), "the release commit was pushed, the stop came after it"
+        assert "STOPPED: CI is not green on the merge commit" in _out(done)
+        assert world.origin_git("rev-parse", "main") == world.head(), "the merge commit is on main, the stop came after it"
+        assert world.merge_commit() == world.head()
         assert world.dispatches() == []
         assert world.origin_git("tag", "--list") == ""
 
@@ -54,9 +56,10 @@ class TestNothingIsDispatchedBeforeCiIsGreenOnTheReleaseCommit:
         self, world: World,
     ) -> None:
         world.configure(ci_release=["pending"])
-        done = world.release(VERSION, RELEASE_WAIT_TIMEOUT_S="1", RELEASE_POLL_INTERVAL_S="0.2")
+        done = world.release(VERSION, RELEASE_WAIT_TIMEOUT_S="8", RELEASE_POLL_INTERVAL_S="0.2")
         assert done.returncode != 0
         assert world.dispatches() == []
+        assert "STOPPED: CI on the merge commit did not finish before the deadline" in _out(done)
         assert RESUME in _out(done)
         assert "Nothing was uploaded to PyPI." in _out(done)
         assert world.origin_git("tag", "--list") == ""
@@ -67,7 +70,7 @@ class TestNothingIsDispatchedBeforeCiIsGreenOnTheReleaseCommit:
         world.configure(ci_release=["red", "green"])
         first = world.release(VERSION)
         assert first.returncode != 0
-        assert "CI is not green on the release commit" in _out(first)
+        assert "CI is not green on the merge commit" in _out(first)
         commits = world.commit_count()
         assert world.release(VERSION).returncode == 0
         assert world.commit_count() == commits
@@ -97,9 +100,10 @@ class TestNothingIsDispatchedBeforeTheSigningRunIsGreen:
 
     def test_a_signing_run_that_never_finishes_stops_at_the_deadline(self, world: World) -> None:
         world.configure(release_runs=["pending"])
-        done = world.release(VERSION, RELEASE_WAIT_TIMEOUT_S="2", RELEASE_POLL_INTERVAL_S="0.2")
+        done = world.release(VERSION, RELEASE_WAIT_TIMEOUT_S="8", RELEASE_POLL_INTERVAL_S="0.2")
         assert done.returncode != 0
         assert world.dispatches() == []
+        assert "STOPPED: the signing run did not finish before the deadline" in _out(done)
         assert RESUME in _out(done)
 
     def test_a_release_without_a_bundle_for_every_artefact_is_not_dispatched(
@@ -236,9 +240,9 @@ class TestTheIntegrityPreflight:
         assert world.origin_git("tag", "--list") == TAG, "the release got as far as the signing run"
 
     def test_a_local_edit_of_the_superseded_list_does_not_excuse_a_version(self, world: World) -> None:
-        world.mark("refuse-push-main")
+        world.mark("refuse-push-branch")
         assert world.release(VERSION).returncode != 0  # the release commit exists and is not pushed
-        world.mark("refuse-push-main", on=False)
+        world.mark("refuse-push-branch", on=False)
         for name in (f"{PACKAGE}-0.1.5.tar.gz", f"{PACKAGE}-0.1.5-py3-none-any.whl"):
             (world.state / "pypi" / name).write_bytes(f"old {name}\n".encode())
         entry: dict[str, Any] = {

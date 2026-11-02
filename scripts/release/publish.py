@@ -47,7 +47,9 @@ TAG_RULES = ("creation", "update", "deletion", "non_fast_forward")
 SELECTED_ONLY = {"protected_branches": False, "custom_branch_policies": True}
 # the repository role Admin: the one actor a tag ruleset may let bypass its rules, so that the maintainer can make a tag
 ADMIN_ROLE_ID = 5
-MAIN_RULES = ("non_fast_forward", "deletion", "required_status_checks")
+# the rules the release flow relies on: no force push or deletion, a pull request (nobody pushes to main, so the release
+# commit travels by one) and the required checks, which the release waits for on the head of that pull request
+MAIN_RULES = ("non_fast_forward", "deletion", "pull_request", "required_status_checks")
 FAILED_LOG_LINES = 30
 # The SLSA generator of release.yml can only be referenced by tag, so the commit it pointed to is recorded beside the tag
 GENERATOR = "slsa-framework/slsa-github-generator"
@@ -79,13 +81,17 @@ def _read(endpoint: str) -> Any:
 
 
 def _repo_problems(repo: str) -> list[str]:
-    """Why the repository cannot publish: it must be public, and the token must be able to push."""
+    """Why the repository cannot publish: it must be public, the token must be able to push, and merge commits must be allowed."""
     body = _read(f"repos/{repo}")
     problems = []
     if body.get("private") is not False:
         problems.append(f"{repo} is not public: make it public before the first release")
     if not (body.get("permissions") or {}).get("push"):
         problems.append(f"the gh token has no push right on {repo}")
+    if body.get("allow_merge_commit") is False:
+        problems.append(
+            f"{repo} does not allow merge commits, which the release merges its pull request with (Settings > General > Pull Requests)",
+        )
     return problems
 
 
@@ -195,9 +201,19 @@ def _ruleset_problems(repo: str) -> list[str]:
 
 
 def _main_warnings(repo: str) -> list[str]:
-    """What the rules in force on ``main`` lack; a warning only, because a bypass actor is not visible here."""
-    held = {rule.get("type") for rule in _read(f"repos/{repo}/rules/branches/main")}
-    return [f"main has no {name} rule" for name in MAIN_RULES if name not in held]
+    """What the rules in force on ``main`` lack; a warning only, because a bypass actor is not visible here.
+
+    The release merges its pull request with a merge commit: a pull request rule that leaves that method out would stop it
+    at the merge, so it is named here, before anything is built.
+    """
+    rules = _read(f"repos/{repo}/rules/branches/main")
+    held = {rule.get("type") for rule in rules}
+    warnings = [f"main has no {name} rule" for name in MAIN_RULES if name not in held]
+    for rule in rules:
+        methods = (rule.get("parameters") or {}).get("allowed_merge_methods")
+        if rule.get("type") == "pull_request" and methods is not None and "merge" not in methods:
+            warnings.append("the pull request rule of main does not allow merge commits, which the release merges with")
+    return warnings
 
 
 def _tag_commit(tag: str) -> str | None:

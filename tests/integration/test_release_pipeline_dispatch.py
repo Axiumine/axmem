@@ -170,7 +170,7 @@ class TestALiveRunIsWaitedOnAndNeverDispatchedAgain:
     ) -> None:
         world.configure(publish_runs=["waiting"])
 
-        done = world.release(VERSION, RELEASE_WAIT_TIMEOUT_S="4", RELEASE_POLL_INTERVAL_S="0.2")
+        done = world.release(VERSION, RELEASE_WAIT_TIMEOUT_S="8", RELEASE_POLL_INTERVAL_S="0.2")
 
         assert done.returncode != 0
         assert world.dispatches() == [DISPATCH]
@@ -183,7 +183,7 @@ class TestALiveRunIsWaitedOnAndNeverDispatchedAgain:
 
     def test_the_re_run_waits_on_that_run_and_dispatches_nothing(self, world: World) -> None:
         world.configure(publish_runs=["waiting"])
-        assert world.release(VERSION, RELEASE_WAIT_TIMEOUT_S="4", RELEASE_POLL_INTERVAL_S="0.2").returncode != 0
+        assert world.release(VERSION, RELEASE_WAIT_TIMEOUT_S="8", RELEASE_POLL_INTERVAL_S="0.2").returncode != 0
         _approve(world)
 
         again = world.release(VERSION)

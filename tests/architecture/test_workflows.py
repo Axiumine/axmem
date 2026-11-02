@@ -25,7 +25,7 @@ GATE_COMMAND = re.compile(r"scripts\.quality\s+gate\s+([\w-]+)")
 # What a workflow may ask `scripts.quality` for: the gates that run on any Linux machine, none of them on a GPU or Docker.
 HOSTED_GATES = {
     "ruff", "imports", "bandit", "semgrep", "shellcheck", "actionlint", "reuse", "vulture", "radon-cc", "radon-mi", "mypy",
-    "pylint", "architecture", "trivy", "package", "wheel",
+    "pylint", "architecture", "trivy", "malware", "vex", "package", "wheel",
 }
 # Words of a step that only a GPU or a Docker host can act on.
 GPU_OR_DOCKER_WORDS = re.compile(
@@ -276,6 +276,18 @@ def test_the_trivy_job_installs_the_version_that_the_gate_pins_and_hands_the_gat
     assert re.fullmatch(r"[0-9a-f]{64}", job["env"]["TRIVY_SHA256"])
     assert "sha256sum --check" in script
     assert 'TRIVY_BIN=$RUNNER_TEMP/trivy/trivy" >> "$GITHUB_ENV"' in script  # without it the gate runs a Docker image
+
+
+def test_the_trivy_job_also_runs_the_vex_and_malware_gates_so_that_the_required_check_names_stay_what_they_are():
+    """OSPS-VM-05.03 and VM-04.02 are met inside the job that is a required status check, not by a new check name."""
+    jobs = _load(WORKFLOWS_DIR / "quality.yml")["jobs"]
+    commands = [step.get("run", "") for step in jobs["trivy"]["steps"]]
+
+    assert "python -m scripts.quality gate vex" in commands
+    assert "python -m scripts.quality gate malware" in commands
+    assert commands.index("python -m scripts.quality gate malware") < commands.index("python -m scripts.quality gate trivy")
+    assert set(jobs) == {"static", "trivy"}
+    assert "if" not in jobs["trivy"]  # no condition may skip the job that a ruleset requires
 
 
 def test_trivy_skips_the_mutation_copy_of_the_project_that_git_ignores():

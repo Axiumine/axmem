@@ -7,7 +7,8 @@ The version of the package comes from the tag and is written nowhere, so the rel
 digest manifest and nothing else, and every build (the one of the release, the one ``release.yml`` signs) pins
 ``SETUPTOOLS_SCM_PRETEND_VERSION`` and ``SOURCE_DATE_EPOCH``; the release builds once, and what PyPI is given is the
 signed files, never a second build. A release runs on the local branch that tracks
-``axiumine/main``, whatever that branch is called, and is pushed to the remote's ``main``.
+``axiumine/main``, whatever that branch is called, and reaches the remote's ``main`` in a pull request from the branch
+``release/<version>`` (nobody pushes to ``main``), the local branch ending on the merge commit.
 The cases that stop or resume a release are in ``test_release_pipeline.py``.
 """
 
@@ -42,7 +43,8 @@ class TestWhatTheReleaseCommits:
         assert world.release(VERSION).returncode == 0
         changed = world.git("diff", "--name-only", base, "HEAD").splitlines()
         assert sorted(changed) == ["CHANGELOG.md", "release-digests.json"]
-        assert world.git("log", "-1", "--format=%s") == RELEASE_MESSAGE
+        assert world.git("log", "-1", "--format=%s", "HEAD^2") == RELEASE_MESSAGE
+        assert world.git("rev-parse", "HEAD^1") == base
         assert world.git("tag", "-l", "--format=%(contents:subject)", TAG) == RELEASE_MESSAGE
 
     def test_the_changelog_is_stamped_with_the_tag_and_a_new_unreleased_section_opens(
@@ -96,14 +98,17 @@ class TestEveryBuildPinsTheVersionAndTheEpoch:
 
 
 class TestTheBranchTheReleaseRunsOn:
-    def test_the_branch_is_not_called_main_and_the_release_goes_to_the_remotes_main(
+    def test_the_branch_is_not_called_main_and_the_release_reaches_the_remotes_main_in_a_pull_request(
         self, world: World,
     ) -> None:
         assert world.branch != "main"
         assert world.release(VERSION).returncode == 0
         assert world.git("rev-parse", "--abbrev-ref", "HEAD") == world.branch
         assert world.origin_git("rev-parse", "refs/heads/main") == world.head()
-        assert world.origin_git("for-each-ref", "--format=%(refname)", "refs/heads") == "refs/heads/main"
+        assert world.origin_git("for-each-ref", "--format=%(refname)", "refs/heads").splitlines() == [
+            "refs/heads/main",
+            f"refs/heads/release/{VERSION}",
+        ]
 
     def test_a_branch_that_does_not_track_the_remotes_main_is_refused(self, world: World) -> None:
         world.git("switch", "-q", "-c", "feature")

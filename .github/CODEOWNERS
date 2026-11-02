@@ -1,6 +1,7 @@
 # The one maintainer listed in MAINTAINERS.md. GitHub asks the code owner to review a pull request that changes a file they
-# own; whether such a review is required before a merge is a rule of the repository, not a setting of this file. With one
-# code owner, the author of a pull request cannot approve it; GOVERNANCE.md says how the rules for main bind the maintainer.
+# own. The rules for main do not make that review a condition of a merge (there is one code owner, and the author of a pull
+# request cannot approve it), so the file names who is asked, not who must agree; GOVERNANCE.md says how the rules bind the
+# maintainer.
 # The last matching pattern wins. The lines below the first repeat the owner on purpose: they name the paths that
 # guard the project and its releases, so that narrowing the default line later does not drop them.
 

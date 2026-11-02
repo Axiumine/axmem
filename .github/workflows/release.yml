@@ -3,7 +3,9 @@
 
 name: Release
 
-# Signs the files that scripts/release-pypi.sh gives to PyPI, and attests them. It runs on the push of a plain release tag
+# Signs the files that scripts/release-pypi.sh gives to PyPI, and attests them. It also makes the SBOM of the release (a
+# CycloneDX file of the locked runtime dependencies, scripts/release/sbom.py), signs it the same way, attaches it and adds it
+# to the subjects of the provenance; it is not a file of PyPI and is in no manifest. It runs on the push of a plain release tag
 # (v<version>, the tag the script pushes) and on nothing else: a run started by hand would sign again and replace the
 # bundles of the push run with ones that publish.yml refuses. It uploads nothing to any index:
 # publish.yml, which the script dispatches on the same tag once the signing here has succeeded, is the only workflow that
@@ -70,11 +72,16 @@ jobs:
               || { echo "::error::HEAD is not the commit that the push of ${TAG_NAME} started"; exit 1; }
           fi
 
-      # No cache: a tag run restores what a run of main wrote, and this job signs.
+      # No cache: a tag run restores what a run of main wrote, and this job signs. The version is pinned, and its archive
+      # checked against the sha256 that GitHub records for uv-x86_64-unknown-linux-gnu.tar.gz of that release: the SBOM is
+      # made by `uv export --format cyclonedx1.5`, a preview feature whose output may change from one version to the next,
+      # and a signed file must not depend on whatever version is the latest on the day of the tag. Change both together.
       - name: Install uv
         uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
         with:
           enable-cache: false
+          version: "0.12.17"
+          checksum: "fa82fd8dde8e8eefdecada6aa0889666556cfceb690d06e0c3bca49eb3070a63"
 
       - name: Set up Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
@@ -142,6 +149,25 @@ jobs:
       - name: Check what the package holds
         run: python3 -m scripts.quality dist-check dist
 
+      # The SBOM is what `pip install` of the wheel brings: the dependencies of pyproject.toml and the extras of the wheel, as
+      # uv.lock at this tag locks them, with no dependency group (docs/release.md). It is made at the epoch and the version of
+      # the manifest, checked against uv.lock and pyproject.toml, and written outside the workspace and dist/ (the manifest, the
+      # guard and publish.yml know the wheel and the sdist only). A lock the generator cannot read, or a document that does not
+      # have the shape, stops the run here, before anything is signed.
+      - name: Generate and check the SBOM
+        id: sbom
+        env:
+          VERSION: ${{ steps.manifest.outputs.version }}
+          EPOCH: ${{ steps.manifest.outputs.epoch }}
+          SBOM_DIR: ${{ runner.temp }}/sbom
+        run: |
+          set -euo pipefail
+          mkdir -p "$SBOM_DIR"
+          file="${SBOM_DIR}/axmem-${VERSION}.cdx.json"
+          python3 -m scripts.release.sbom generate --version "$VERSION" --epoch "$EPOCH" --output "$file"
+          python3 -m scripts.release.sbom verify "$file" --version "$VERSION"
+          echo "path=${file}" >> "$GITHUB_OUTPUT"
+
       - name: Install cosign
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
         with:
@@ -183,6 +209,26 @@ jobs:
               "${f}"
           done
 
+      - name: Sign the SBOM (keyless)
+        env:
+          COSIGN_YES: "true"
+          SBOM: ${{ steps.sbom.outputs.path }}
+        run: |
+          set -euo pipefail
+          cosign sign-blob --yes --bundle "${SBOM}.sigstore.json" "${SBOM}"
+
+      - name: Verify the SBOM signature (round-trip)
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+          SBOM: ${{ steps.sbom.outputs.path }}
+        run: |
+          set -euo pipefail
+          cosign verify-blob \
+            --bundle "${SBOM}.sigstore.json" \
+            --certificate-identity "https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml@refs/tags/${TAG_NAME}" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            "${SBOM}"
+
       - name: Attach artefacts + signatures to release
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
@@ -194,8 +240,21 @@ jobs:
             dist/*.sigstore.json
           fail_on_unmatched_files: true
 
+      # After the step above, which creates the release. The SBOM and its bundle are not in that step's list: they are not in dist/.
+      # --clobber so that a repeated run replaces the pair, as that action does for the files it attaches.
+      - name: Attach the SBOM and its signature to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.ref_name }}
+          SBOM: ${{ steps.sbom.outputs.path }}
+        run: |
+          set -euo pipefail
+          gh release upload "$TAG_NAME" "$SBOM" "${SBOM}.sigstore.json" --repo "$GITHUB_REPOSITORY" --clobber
+
       - name: Compute SLSA provenance subjects (sha256 + name, base64)
         id: subjects
+        env:
+          SBOM: ${{ steps.sbom.outputs.path }}
         run: |
           set -euo pipefail
           shopt -s nullglob
@@ -204,6 +263,8 @@ jobs:
             echo "::error::no artefacts to attest"
             exit 1
           fi
+          # the SBOM is attested with the files it describes
+          artefacts+=("${SBOM}")
           # produce `<sha256>  <basename>` lines, then base64 (single line)
           lines=""
           for f in "${artefacts[@]}"; do

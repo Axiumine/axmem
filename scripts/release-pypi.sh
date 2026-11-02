@@ -10,7 +10,7 @@
 #
 #   - no argument -> print the last version of the package on PyPI that is not yanked, then exit (read-only: needs only
 #                    curl and python3, and touches nothing)
-#   - <version>   -> changelog stamp, build, commit, push, tag, sign, dispatch of the publish workflow, check of PyPI
+#   - <version>   -> changelog stamp, build, commit, pull request, merge, tag, sign, dispatch of the publish workflow, check of PyPI
 #
 # The version is X.Y.Z with an optional aN, bN, rcN, .postN or .devN (PyPI's own spelling, so the tag v<version> and the
 # file names agree). It is not written anywhere: it comes from the tag (hatch-vcs). Every build of a release pins it
@@ -23,17 +23,25 @@
 #
 # Publish path, in the order it runs. PyPI refuses a second upload of a file name for good (even after a delete), so the
 # dispatch is the LAST step: every step that can still fail runs before it, and a version reaches PyPI only when its exact
-# release commit is pushed, CI-green, tagged and signed.
+# commit is on main, CI-green, tagged and signed.
+# Nothing is pushed to main: the rules for main refuse a direct push from anyone, the maintainer included. The release
+# commit goes to the branch release/<version>, a pull request carries it to main, and GitHub merges it with a merge commit
+# once the checks the rules require are green. The tag is made on that MERGE COMMIT, not on the release commit: the guard
+# asks for the push CI runs of main on the tagged commit, which only the merge commit has, and the merge commit has the
+# release commit's tree (checked), so its release-digests.json is the one the build wrote.
 # Refused before anything runs: a version that is not canonical, SKIP or ONLY set (gates left out of the hooks), a second
 # release running in the repository, wait variables that are not numbers above 0, a remote that is not on github.com and
 # a repository whose publication settings are not as publish.yml relies on (scripts.release.guard publish-ready: the
 # repository public, the environment pypi with required reviewers, no admin bypass and the one rule v*.*.* for tags, a
 # ruleset that protects the v* tags). A new release is also refused for a tracked change in the tree, a tag name that is
-# taken (locally, on the remote, or as a remote branch) and a version that is already on PyPI.
-#   fetch + sync checks -> clean tracked tree, tag free, version absent from PyPI -> release integrity of PyPI
+# taken (locally, on the remote, or as a remote branch), a branch release/<version> that exists and a version that is
+# already on PyPI.
+#   fetch + sync checks -> clean tracked tree, tag and branch free, version absent from PyPI -> release integrity of PyPI
 #   (read-only) -> CI-green check of HEAD -> preflight gate -> changelog stamp -> build -> sdist and package checks ->
-#   digest manifest -> RELEASE COMMIT (the repository's hooks run) -> push of main (the pre-push gate) -> wait for CI on
-#   the release commit -> annotated tag on the release commit, push of the tag -> wait for the tag's release.yml run
+#   digest manifest -> RELEASE COMMIT (the repository's hooks run) -> push to release/<version> (the pre-push gate) ->
+#   pull request (title and body written by the script) -> wait for the required checks on its head -> merge with a merge
+#   commit (never --admin or --auto) -> wait for CI on the merge commit -> annotated tag on the merge commit, push of the
+#   tag -> wait for the tag's release.yml run
 #   (rebuild, digest check, cosign, SLSA) and require a bundle per artefact on the GitHub release -> download the signed
 #   files from that release and check them against the manifest -> read PyPI again -> THE GUARD (scripts.release.guard
 #   check, five conditions, on the downloaded files) -> dispatch of publish.yml on the tag (or wait for the run that is
@@ -45,16 +53,17 @@
 # A refused commit, and any failure between the changelog stamp and the commit, restores the release paths and exits;
 # nothing before the dispatch is irreversible.
 # Resume: the state is read from git, GitHub and PyPI, never from a file of the script's own, so re-running
-# `release-pypi.sh <version>` after any stop continues at the first unfinished step (the release commit, its push, CI,
-# the tag, the signing run, the dispatch, the wait for PyPI). A pushed tag is never moved or deleted and nothing is
-# force-pushed. Waits are bounded: RELEASE_POLL_INTERVAL_S (30) between polls, one deadline of RELEASE_WAIT_TIMEOUT_S
-# (28800 = 8 h) from the first wait, in which the approval of the environment counts too; at the deadline the script stops
+# `release-pypi.sh <version>` after any stop continues at the first unfinished step (the release commit, the branch, the
+# pull request, its checks, the merge, CI, the tag, the signing run, the dispatch, the wait for PyPI). A pushed tag or branch
+# is never moved or deleted and nothing is force-pushed; a release commit whose base main has moved past is not rebased, it
+# is dropped and the release made again (nothing is tagged until the merge is done). Waits are bounded: RELEASE_POLL_INTERVAL_S (30) between polls, one deadline of RELEASE_WAIT_TIMEOUT_S
+# (28800 = 8 h) from the first wait after the merge (the checks of the pull request have one of their own), in which the approval of the environment counts too; at the deadline the script stops
 # with the command that resumes. The wait for PyPI to list the files has its own limit (30 minutes from the green run).
 # A version PyPI holds with other bytes, or with a name PyPI already used, is spent: release the next version and list
 # the spent one in release-superseded.json.
 #
 # Where it runs: on the local branch that tracks the remote's main (RELEASE_REMOTE, default axiumine, see
-# scripts/lib/project.sh), with HEAD equal to the pushed tip. See docs/release.md.
+# scripts/lib/project.sh), with HEAD equal to the pushed tip; the local branch ends on the merge commit. See docs/release.md.
 #
 set -euo pipefail
 
@@ -170,8 +179,9 @@ rf_check_waits
 rf_require_hooks_armed
 rf_lock
 
-# release tag + changelog target
+# release tag, the branch the release commit is pushed to, and the changelog target
 TAG="v${VERSION}"
+RELEASE_PR_BRANCH="release/${VERSION}"
 CHANGELOG="${REPO_ROOT}/CHANGELOG.md"
 REMOTE_URL="$(git -C "$REPO_ROOT" remote get-url "$RELEASE_REMOTE")" \
   || err "the remote '${RELEASE_REMOTE}' is not configured in this clone"
@@ -190,11 +200,13 @@ trap release_exit EXIT
 rf_net git -C "$REPO_ROOT" fetch --quiet "$RELEASE_REMOTE" "+refs/heads/${RELEASE_BRANCH}:${RF_MAIN}" \
   || err "git fetch ${RELEASE_REMOTE} ${RELEASE_BRANCH} failed — cannot verify the branch is up to date"
 rf_load_pypi
-RELEASE_SHA="$(rf_release_commit)"
+RELEASE_COMMIT="$(rf_release_commit)"
+# the commit the tag goes on: the merge commit of the pull request of the release commit, known after rf_carry_release
+RELEASE_SHA=""
 
-if [[ -n "$RELEASE_SHA" ]]; then
+if [[ -n "$RELEASE_COMMIT" ]]; then
   # --- a re-run: the release commit exists, continue from it ------------------
-  echo "Release commit ${RELEASE_SHA:0:8} of ${VERSION} found — continuing the release from it."
+  echo "Release commit ${RELEASE_COMMIT:0:8} of ${VERSION} found — continuing the release from it."
   rf_require_resumable
   state=0
   rf_pypi_state "$MANIFEST" || state=$?
@@ -216,6 +228,7 @@ else
   rf_require_synced_main
   rf_require_clean_tree
   rf_require_tag_free
+  rf_require_pr_branch_free
   state=0
   rf_pypi_state "" >/dev/null || state=$?
   case "$state" in
@@ -287,12 +300,14 @@ else
   # cannot prove the signed artifact is the published one, and release.yml fails the release when it is
   # absent rather than signing an unprovable build.
   commit_release "$CHANGELOG" "$MANIFEST"
-  RELEASE_SHA="$(git -C "$REPO_ROOT" rev-parse HEAD)"
+  RELEASE_COMMIT="$(git -C "$REPO_ROOT" rev-parse HEAD)"
 fi
 
 # --- from here the release commit exists: every stop prints the command that resumes ---
-rf_require_release_tree
-rf_push_release
+rf_require_release_tree "$RELEASE_COMMIT"
+# the branch, the pull request, its checks, the merge: RELEASE_SHA is the merge commit, which the rest of the flow tags
+rf_carry_release
+rf_require_release_tree "$RELEASE_SHA"
 rf_wait_ci
 rf_tag
 rf_wait_signing
@@ -302,4 +317,4 @@ publish_release
 rf_wait_pypi
 rf_verify_pypi
 
-echo "Release complete: ${PKG} ${VERSION} on PyPI — commit ${RELEASE_SHA:0:8} on ${RELEASE_REMOTE}/${RELEASE_BRANCH}, signed tag ${TAG}, and PyPI serves the manifest's bytes."
+echo "Release complete: ${PKG} ${VERSION} on PyPI — release commit ${RELEASE_COMMIT:0:8}, merge commit ${RELEASE_SHA:0:8} on ${RELEASE_REMOTE}/${RELEASE_BRANCH}, signed tag ${TAG}, and PyPI serves the manifest's bytes."

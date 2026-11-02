@@ -6,12 +6,14 @@
 A release uploads nothing from this machine: it asks the publish workflow to, once the signed files exist, and PyPI never
 accepts a file name twice, so a publication that happened and then failed would leave a version that no signed tag names.
 The invariant these tests pin is that the dispatch of ``publish.yml`` is the last step of the release: it comes only after
-the exact release commit is on the remote, CI is green on it, its tag is on the remote, ``release.yml`` signed it and the
-files downloaded from the GitHub release are the manifest's bytes. PyPI is read with GET only, and the release ends with
+the release commit has reached ``main`` in a pull request (nobody pushes to ``main``), CI is green on the merge commit, the
+tag on that commit is on the remote, ``release.yml`` signed it and the files downloaded from the GitHub release are the
+manifest's bytes. PyPI is read with GET only, and the release ends with
 the files PyPI serves compared to the manifest. Every case asserts how many times the workflow was dispatched, and the
 cases that stop a release run it again to prove that the script resumes at the first unfinished step with no new commit and
 no new tag. ``test_release_pipeline_axmem.py`` pins what is particular to Axmem (the pinned version, the content of the
-release commit, the branch it runs on), ``test_release_pipeline_dispatch.py`` the contract of the dispatch itself.
+release commit, the branch it runs on), ``test_release_pipeline_pull_request.py`` the pull request and the merge,
+``test_release_pipeline_dispatch.py`` the contract of the dispatch itself.
 """
 
 import shutil
@@ -66,7 +68,10 @@ class TestAllGreen:
             "build",
             "gate check-package.sh",
             "hook pre-commit",
-            "hook pre-push refs/heads/main",
+            f"hook pre-push refs/heads/release/{VERSION}",
+            "gh pr-create",
+            "gh pr-checks green",
+            "gh pr-merge",
             "gh ci green",
             "hook pre-push refs/tags/",
             "gh release green",
@@ -89,15 +94,18 @@ class TestAllGreen:
         assert world.release(VERSION).returncode == 0
         assert len([line for line in world.events() if line.startswith("build ")]) == 1
 
-    def test_the_tag_and_the_release_commit_are_on_the_remote_before_the_dispatch(
+    def test_the_tag_and_the_merge_commit_are_on_the_remote_before_the_dispatch(
         self, world: World,
     ) -> None:
         assert world.release(VERSION).returncode == 0
-        release_commit = world.head()
-        assert world.origin_git("rev-parse", "main") == release_commit
-        assert world.origin_git("rev-parse", f"{TAG}^{{commit}}") == release_commit
-        assert world.git("rev-list", "--count", f"{world.state_base()}..HEAD") == "1"
+        merge_commit = world.head()
+        assert world.origin_git("rev-parse", "main") == merge_commit
+        assert world.origin_git("rev-parse", f"{TAG}^{{commit}}") == merge_commit
+        assert world.git("rev-list", "--count", f"{world.state_base()}..HEAD") == "2"
         assert world.origin_git("cat-file", "-t", TAG) == "tag"
+        release_commit = world.origin_git("rev-parse", f"{merge_commit}^2")
+        assert world.origin_git("rev-parse", f"refs/heads/release/{VERSION}") == release_commit
+        assert world.origin_git("rev-parse", f"{merge_commit}^{{tree}}") == world.origin_git("rev-parse", f"{release_commit}^{{tree}}")
 
     def test_pypi_holds_exactly_the_manifests_bytes_and_the_script_compared_them(
         self, world: World,
@@ -145,16 +153,16 @@ class TestNothingIsDispatchedBeforeTheCommitIsAccepted:
         assert world.git("status", "--porcelain", "--untracked-files=no") == ""
         assert world.origin_git("rev-parse", "main") == base
 
-    def test_a_refused_push_of_main_dispatches_nothing_and_a_rerun_resumes_there(
+    def test_a_refused_push_of_the_release_branch_dispatches_nothing_and_a_rerun_resumes_there(
         self, world: World,
     ) -> None:
-        world.mark("refuse-push-main")
+        world.mark("refuse-push-branch")
         done = world.release(VERSION)
         assert done.returncode != 0
         assert world.dispatches() == []
         assert RESUME in _out(done)
         commits = world.commit_count()
-        world.mark("refuse-push-main", on=False)
+        world.mark("refuse-push-branch", on=False)
         rerun = world.release(VERSION)
         assert rerun.returncode == 0, _out(rerun)
         assert world.dispatches() == [DISPATCH]

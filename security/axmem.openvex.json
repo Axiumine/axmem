@@ -1,0 +1,11 @@
+{
+  "@context": "https://openvex.dev/ns/v0.2.0",
+  "@id": "https://github.com/Axiumine/axmem/blob/main/security/axmem.openvex.json",
+  "author": "Giovanni Manzoni",
+  "role": "Lead maintainer",
+  "timestamp": "2026-11-02T10:53:12Z",
+  "last_updated": "2026-11-02T10:53:12Z",
+  "version": 1,
+  "tooling": "Written by hand and checked by the vex gate (scripts/quality/vex.py)",
+  "statements": []
+}

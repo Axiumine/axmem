@@ -220,6 +220,7 @@ def test_a_main_without_rules_is_a_warning_and_still_ready(ready):
     assert err.splitlines() == [
         "WARNING: main has no non_fast_forward rule",
         "WARNING: main has no deletion rule",
+        "WARNING: main has no pull_request rule",
         "WARNING: main has no required_status_checks rule",
     ]
 

@@ -15,7 +15,7 @@
 # upload step work (nothing installs the files from TestPyPI); it does not prove PyPI's own publisher or the environment pypi.
 #
 # It makes no release: no changelog stamp, no build, no commit, no tag, no push. It needs a release that scripts/release-pypi.sh
-# has made up to the signing run (release commit pushed and green in CI, tag pushed, release.yml run green with a bundle per
+# has made up to the signing run (release commit merged into main by its pull request, CI green on the merge commit, tag pushed on it, release.yml run green with a bundle per
 # file), checked out as HEAD, and it uploads exactly the signed files of that release, the same bytes the upload to PyPI
 # of that tag will carry. The only ref it writes is the remote-tracking ref refs/remotes/<remote>/main (the guard fetches
 # it); HEAD, the branches and the tags are not changed.
@@ -29,7 +29,7 @@
 # beside a release that waits for the approval of the environment pypi), a remote that is not on github.com and a repository
 # whose publication settings are not as the workflow relies on (scripts.release.guard testpypi-ready: every check of
 # publish-ready, for the environment testpypi).
-#   release commit of the version in HEAD's history (none: run release-pypi.sh first) -> HEAD is that tree -> wait for the
+#   release commit of the version in HEAD's history (none: run release-pypi.sh first) -> its merge commit on main (the tag's commit) -> HEAD is that tree -> wait for the
 #   signing run -> download the signed files of the GitHub release, check them against the manifest -> THE GUARD
 #   (scripts.release.guard check, five conditions) -> read TestPyPI -> dispatch of publish-testpypi.yml on the tag (or wait
 #   for the run that is live; no second dispatch) -> wait for the run, which a reviewer of the environment testpypi must
@@ -81,11 +81,16 @@ tp_require_ready
 rf_init_tmp
 
 # --- the release this rehearses: made by release-pypi.sh, read from git -------------------------------------------
-RELEASE_SHA="$(rf_release_commit)"
-[[ -n "$RELEASE_SHA" ]] \
+RELEASE_COMMIT="$(rf_release_commit)"
+[[ -n "$RELEASE_COMMIT" ]] \
   || err "no release commit of ${VERSION} in the history of HEAD — run: bash scripts/release-pypi.sh ${VERSION} (it stops at the approval of the environment pypi), then rehearse. The rehearsal makes no release of its own"
-echo "Release commit ${RELEASE_SHA:0:8} of ${VERSION} found."
-rf_require_release_tree
+echo "Release commit ${RELEASE_COMMIT:0:8} of ${VERSION} found."
+# The tag, and so the signing run and the guard, are on the merge commit of the pull request of the release commit.
+# The fetch writes the remote-tracking ref of main and nothing else.
+rf_fetch_main
+RELEASE_SHA=""
+rf_resolve_merge
+rf_require_release_tree "$RELEASE_SHA"
 rf_wait_signing
 rf_fetch_signed
 tp_check
@@ -110,6 +115,6 @@ else
 fi
 tp_verify
 
-echo "TestPyPI only; PyPI was not touched. ${PKG} ${VERSION} is on ${TESTPYPI_HOST} with the manifest's digests (release commit ${RELEASE_SHA:0:8}, tag ${TAG})."
+echo "TestPyPI only; PyPI was not touched. ${PKG} ${VERSION} is on ${TESTPYPI_HOST} with the manifest's digests (release commit ${RELEASE_COMMIT:0:8}, merge commit ${RELEASE_SHA:0:8}, tag ${TAG})."
 tp_next
 echo "TestPyPI rehearsal complete: now approve environment ${PUBLISH_ENVIRONMENT}"

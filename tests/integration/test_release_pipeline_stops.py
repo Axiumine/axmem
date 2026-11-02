@@ -171,10 +171,10 @@ class TestAReleaseCommitThatCannotBeContinuedFrom:
     def test_a_branch_that_the_remote_moved_past_while_the_commit_was_unpushed_is_refused(
         self, world: World,
     ) -> None:
-        world.mark("refuse-push-main")
+        world.mark("refuse-push-branch")
         assert world.release(VERSION).returncode != 0
         world.advance_origin()
-        world.mark("refuse-push-main", on=False)
+        world.mark("refuse-push-branch", on=False)
         done = world.release(VERSION)
         assert done.returncode != 0
         assert "DIVERGED" in _out(done)
@@ -183,7 +183,7 @@ class TestAReleaseCommitThatCannotBeContinuedFrom:
     def test_a_second_commit_on_top_of_an_unpushed_release_commit_is_refused(
         self, world: World,
     ) -> None:
-        world.mark("refuse-push-main")
+        world.mark("refuse-push-branch")
         assert world.release(VERSION).returncode != 0
         _commit_locally(world)
         done = world.release(VERSION)

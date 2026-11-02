@@ -38,8 +38,10 @@ adapters), has tests that keep coverage at 100 %, updates the docs and the chang
 security boundary (authentication and scopes, the request body limit, the loopback guard). The procedure, the checks that
 must be green and the conditions for a merge are in that section.
 
-The lead maintainer's own changes are pushed to `main` after the git hooks have passed on the maintainer's machine. No
-second person reviews them: the project has no second maintainer.
+The lead maintainer's own changes also travel in a pull request, because the rules for `main` refuse a push from anyone: the
+branch is pushed after the git hooks have passed on the maintainer's machine, and the pull request is merged when the
+required checks are green. No second person reviews them and none approves them: the project has no second maintainer,
+and the rules require no approval, because the one code owner cannot approve their own pull request.
 
 ## Access
 
@@ -72,8 +74,8 @@ The account @vivi7 is an owner of the `Axiumine` organization and an admin of `A
 API on 2026-11-01). It is not a maintainer. What follows is what the GitHub role allows. It is access, not a role in
 the project, and it is not a succession plan. With the Admin role the account can:
 
-* answer, label and close issues, review and merge pull requests, and push to `main`, because the Admin role bypasses the
-  rules for `main`;
+* answer, label and close issues, and review and merge pull requests, with the same required checks and the same merge
+  commit as the lead (the rules for `main` have no bypass actor, so the Admin role cannot push to `main` either);
 * change the settings of the repository and the organization: the rulesets for branches and tags, the environments of the
   release workflows, and who has access;
 * create a release tag, because the Admin role is the only bypass actor of the tag ruleset on `v*`;
@@ -95,7 +97,7 @@ Nobody is named to receive these. The table says what only the lead holds and wh
 | The signing identity | Nothing personal. `release.yml` signs the files keyless in CI, and the identity is that workflow at the tag, not a person or a key. The script makes the release commit and the tag with the git identity of whoever runs it. | Nothing to hand over. |
 | Secrets | The repository, the organization and the release environments hold no secret. | Nothing to hand over. |
 | Security reports | They go to the contact named in [SECURITY.md](SECURITY.md), which is the lead maintainer's address alone. GitHub's private vulnerability reporting is enabled for the repository (read from the GitHub API on 2026-10-29). GitHub shows a report to the administrators of the repository and the security managers of the organization; the organization has no security manager and no team, so today the readers are the lead and the account @vivi7, the only administrators. Whether a person gets an e-mail depends on their own GitHub notification settings, which nobody else can read. | A report may wait unanswered. [SECURITY.md](SECURITY.md) tells the reporter to write again on the same private channel after 14 days and then to open a public issue titled "Security contact request", with no details. Nobody is named to answer it. |
-| The rules for `main` | They block deletion and force pushes and require signed commits, a pull request with one approval of a code owner (`CODEOWNERS`), resolved conversations and the checks `lint`, `smoke-test`, `static`, `trivy` and the two CodeQL analyses, green on the last commit. The lead is the only code owner and cannot approve their own pull request. The Admin role is the only bypass actor, because the release script pushes to `main` and the lead merges their own changes that way ([docs/release.md](docs/release.md#once-before-the-first-release)). The Admin role includes the account @vivi7, which is not a maintainer. | The rules bind a contributor, not the lead. Nobody reviews the lead's pull requests, so the approval is a formality for them and the OpenSSF Scorecard check Code-Review stays at 0. |
+| The rules for `main` | They block deletion and force pushes, require signed commits, and let a change in only through a pull request with the checks `lint (py3.14)`, `smoke-test`, `static (3.14)`, `trivy`, `analyze (python)` and `analyze (actions)` green on the last commit and the branch up to date. They have no bypass actor: nobody pushes to `main`, the lead and the Admin role included, and the release script reaches `main` through a pull request too ([docs/release.md](docs/release.md#once-before-the-first-release)). They require no approval and no code-owner review, because the lead is the only code owner and cannot approve their own pull request. The Admin role includes the account @vivi7, which is not a maintainer. | The rules bind the lead as well, but they do not make a second person read a change: nobody reviews or approves the lead's pull requests, the checks are automatic, and the OpenSSF Scorecard check Code-Review stays low. Two-person review stays unmet, and a second maintainer is the only way to meet it. |
 
 The release script keeps no state of its own: it reads git, GitHub and PyPI, so it can be run again from another checkout
 and continues at the first step that is not done ([docs/release.md](docs/release.md#when-it-stops)). That has not been tried

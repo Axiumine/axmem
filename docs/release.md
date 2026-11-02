@@ -2,8 +2,9 @@
 
 Axmem ships to one place, PyPI, by trusted publishing. A version is one tag, `v<version>`, and the route is:
 
-1. `scripts/release-pypi.sh <version>` on the maintainer's machine builds the version, makes the release commit, pushes it
-   and tags it;
+1. `scripts/release-pypi.sh <version>` on the maintainer's machine builds the version, makes the release commit, carries it
+   to `main` in a pull request that GitHub merges with a merge commit once the required checks are green, and tags the merge
+   commit (nothing is pushed to `main`: the rules for `main` refuse a direct push from anyone);
 2. the tag starts `.github/workflows/release.yml`, which rebuilds the package, signs the files (cosign, keyless) and attests
    them (SLSA-3) and uploads nothing;
 3. once the signing succeeded and the guard is satisfied, the script dispatches `.github/workflows/publish.yml` on the tag;
@@ -12,8 +13,8 @@ Axmem ships to one place, PyPI, by trusted publishing. A version is one tag, `v<
 
 No PyPI token, password or environment file exists anywhere in this flow, and `uv publish` is never run. What the script
 does use is the maintainer's own GitHub login, which it neither reads nor stores: `gh auth login` (see "Once, before the
-first release") for the GitHub API, the CI runs, the release downloads and the dispatch, and the same login in git for the
-push of `main` and of the tag. PyPI is only read, without any login. A GitHub release made by hand starts nothing:
+first release") for the GitHub API, the pull request, the CI runs, the release downloads and the dispatch, and the same login in
+git for the push of the release branch and of the tag. PyPI is only read, without any login. A GitHub release made by hand starts nothing:
 `publish.yml` runs only when it is dispatched on a tag. What happens when the lead maintainer cannot release is in
 [GOVERNANCE.md](../GOVERNANCE.md#if-the-lead-is-unavailable): nobody is named to take over, and the lead is the only owner of
 the PyPI project and the only required reviewer of the release environments.
@@ -26,11 +27,12 @@ rehearsal is advisory, not a gate, nothing on the PyPI path reads it, and it nev
 ## What the release guarantees
 
 PyPI refuses a second upload of a file name for good, even after the file is deleted. So the dispatch is the last step, and
-a version reaches PyPI only when its exact release commit is pushed, green in CI, tagged and signed, and the files being
-uploaded are byte for byte the files that were signed. The proof is in code, in `scripts/release/guard.py`, and holds five
-conditions before the workflow is dispatched (and again inside `publish.yml`):
+a version reaches PyPI only when its exact release commit is merged into `main`, green in CI, tagged and signed, and the files
+being uploaded are byte for byte the files that were signed. The proof is in code, in `scripts/release/guard.py`, and holds
+five conditions before the workflow is dispatched (and again inside `publish.yml`). "That commit" below is the commit the tag
+points at, which is the merge commit of the release pull request (see "What the tag points at"):
 
-1. the release commit is on the remote's `main`, and the manifest `release-digests.json` on disk is the one committed there;
+1. that commit is on the remote's `main`, and the manifest `release-digests.json` on disk is the one committed there;
 2. every push-triggered CI run of `main` on that commit is completed, and green;
 3. the tag is on the remote and points at that commit;
 4. the `release.yml` run that the push of the tag started succeeded, and the GitHub release carries a whole `.sigstore.json`
@@ -41,6 +43,30 @@ conditions before the workflow is dispatched (and again inside `publish.yml`):
 A fixed HIGH or CRITICAL finding of the dependency scan stops a release, at the CI check of the second condition and at the
 preflight gate of "Cutting a release"; [Dependency findings](quality-gates.md#dependency-findings) says which findings block,
 and what the maintainer checks by hand before a release.
+
+### What the tag points at
+
+The tag `v<version>` points at the merge commit M of the release pull request, not at the release commit R that the script
+made (R is M's second parent, so it is reachable from the tag and from `main`). Everything that reads the tag was checked
+before this was decided:
+
+* The guard (conditions 2 and 3, here and in `publish.yml`, which is frozen per tag) asks for the push-triggered CI runs of
+  `main` on the tagged commit. R was a branch and a pull request head, so the runs it has are those of the branch
+  `release/<version>` and of the pull request, none of them a run of `main`; M is the commit that `main` was moved to, and
+  CI ran on it there. A tag on R would need a different condition 2 (the runs of the pull request in place of the runs of
+  `main`), which loosens the one check that ties the tag to the CI of `main`. On M the guard is unchanged.
+* The tree of M is the tree of R. The rules for `main` want the pull request up to date with `main`, the script refuses a
+  release commit whose base is behind, and `python3 -m scripts.release.pull_request merge-commit` compares the two trees and
+  refuses a merge commit that differs. So `release-digests.json` committed at the tag is the manifest the build wrote.
+* `release.yml` rebuilds from the tagged tree, at the epoch and the version that the manifest records, and signs only if
+  the rebuild is byte-identical to the manifest. The epoch is the commit time of the commit before R, written in the manifest,
+  so it does not depend on which commit is tagged. The SLSA provenance names the tag and the commit M. The integrity check
+  and `publish.yml` read the manifest at the tag (`git show`), and M holds the same file as R.
+* A squash or a rebase of the pull request gives its commit another hash and no merge commit has R as a parent: the script
+  stops without a tag (the version is not spent) and says so. Only a merge commit is accepted.
+
+The checks that ran on R, as the head of the pull request, are the ones the rules for `main` require (see "Cutting a
+release", step 8); the checks on M are the push runs of `main`. Both are green before the tag exists.
 
 `release.yml` rebuilds the package from the tag at the epoch and the version that the manifest records, refuses to sign
 unless the rebuild is byte-identical to the manifest, checks that the package holds only Axmem's source (the `dist-check` of
@@ -108,31 +134,48 @@ read the generator's release notes first); a test keeps the version and the tag 
 * GitHub, Settings, Rules, Rulesets:
   * a tag ruleset on `refs/tags/v*`: creation restricted to the maintainer (the Admin role is the only bypass actor; it
     includes the `@vivi7` account, which is not a maintainer), update, deletion and non-fast-forward blocked
-    (`publish-ready` enforces it, bypass list included);
+    (`publish-ready` enforces it, bypass list included). This bypass stays, unlike the one on `main`: creation of a release tag is
+    refused to everyone else, so it is what lets the maintainer make the tag;
   * recommended: a branch ruleset that blocks the creation of `refs/heads/v*`, so no branch can be named like a tag;
-  * a ruleset on `main` without force push or deletion, with signed commits, a pull request with one code-owner approval,
-    resolved conversations and the required status checks (`lint (py3.14)`, `static (3.14)`, `trivy`, `smoke-test`,
-    `analyze (python)`, `analyze (actions)`), with the Admin role as the only bypass actor, because the script pushes to
-    `main` (`publish-ready` only warns when it is missing).
+  * a ruleset on `main` with **no bypass actor**: no force push or deletion, signed commits, a pull request with no
+    required approval and no code-owner requirement (the one maintainer cannot approve their own pull request, so a required
+    approval would stop every release), resolved conversations, merge commits allowed, and the required status checks
+    (`lint (py3.14)`, `static (3.14)`, `trivy`, `smoke-test`, `analyze (python)`, `analyze (actions)`) in the strict form (the
+    branch must be up to date with `main`). Nobody can push to `main`, the maintainer and the Admin role included: the
+    release commit travels in a pull request, and no pull request merges before the checks are green. With no required
+    approval nobody reviews the maintainer's own changes, release commits among them; that is an open item (see
+    [GOVERNANCE.md](../GOVERNANCE.md#what-needs-a-hand-over)), not something the checks replace. `publish-ready` only warns
+    when one of these rules is missing, and the release stops at the merge if the rules ask for more than the script can
+    give (a required approval, for one).
+* GitHub, Settings, General, Pull Requests: Allow merge commits on. The release merges its pull request with a merge
+  commit and tags that commit, so `publish-ready` refuses a repository that has the option off, and warns when the
+  pull request rule of `main` leaves merge commits out of its allowed methods. Squash and rebase may stay on for other
+  pull requests; the release never uses them.
 * GitHub, Settings, Actions, General: when Allow select actions is on, allow `actions/*`, `astral-sh/setup-uv`,
   `sigstore/cosign-installer`, `softprops/action-gh-release`, `pypa/gh-action-pypi-publish` and the workflow of the
   `slsa-framework` generator. The default workflow token may stay read-only.
 * Install `uv`, `git`, `gh`, `curl`, `flock` and `timeout`, and Python 3.12 or newer as `python3`. The checks of
   `scripts/release/` use the standard library alone.
-* Log in with `gh auth login` (github.com, HTTPS) with a fine-grained token limited to `Axiumine/axmem`: Contents, Actions
-  and Workflows with write access, Administration with read access (`publish-ready` reads the environment and the
-  rulesets, with their bypass lists). Run `publish-ready` once and adjust the token to what it reports. This login is the
-  one credential a release needs: answer yes to "Authenticate Git with your GitHub credentials" (or run
-  `gh auth setup-git`) so that git pushes `main` and the tag to the HTTPS remote with it; an SSH remote is served by the
-  maintainer's key instead. `publish-ready` is the first call a release makes to GitHub, so a missing or too narrow login stops it
+* Log in with `gh auth login` (github.com, HTTPS) with a fine-grained token limited to `Axiumine/axmem`: Contents, Pull
+  requests, Actions and Workflows with write access, Administration with read access (`publish-ready` reads the environment
+  and the rulesets, with their bypass lists; the release reads the rules in force on `main` and the check runs of the pull
+  request). Run `publish-ready` once and adjust the token to what it reports. This login is the one credential a release
+  needs: answer yes to "Authenticate Git with your GitHub credentials" (or run `gh auth setup-git`) so that git pushes the
+  release branch and the tag to the HTTPS remote with it; an SSH remote is served by the maintainer's key instead. `publish-ready` is the first call a release makes to GitHub, so a missing or too narrow login stops it
   before anything is changed.
-* Enable the hooks with `uv run python -m scripts.quality install`. A release makes a commit and pushes it, so the
-  pre-commit hook and the GPU gate of the pre-push hook run: a release needs the NVIDIA GPU and Docker like any other push.
+* Enable the hooks with `uv run python -m scripts.quality install`. A release makes a commit and pushes it to the release
+  branch, and pushes the tag, so the pre-commit hook and the GPU gate of the pre-push hook run: a release needs the NVIDIA GPU
+  and Docker like any other push.
   `SKIP` and `ONLY`, which leave gates out of a stage, make the script refuse to start.
+* Sign commits in git (`commit.gpgsign`), with a key that is registered on the maintainer's GitHub account as a signing key.
+  The rules for `main` require verified signatures, and a pull request merged with a merge commit carries the release commit
+  onto `main` as it is. The script does not check the signature before it pushes, and it never rewrites a commit: an unsigned
+  release commit is refused at the merge, and has to be dropped and made again (see "When it stops").
 * The remote is `axiumine` (`RELEASE_REMOTE` in `scripts/lib/project.sh`, or the environment variable of that name),
   `https://github.com/Axiumine/axmem`. Check out the local branch that tracks `axiumine/main`, with HEAD equal to the pushed
-  tip: the script refuses a branch that is behind, diverged or ahead of it. The remote must already hold
-  `release-superseded.json` (see below).
+  tip: the script refuses a branch that is behind, diverged or ahead of it. When the release is merged the script moves that
+  branch on to the merge commit (a fast-forward), so that the pre-push gate of the tag tests the tree it pushes. The remote
+  must already hold `release-superseded.json` (see below).
 * Merge the release flow into `axiumine/main` before the first release: `workflow_dispatch` needs `publish.yml` (and
   `publish-testpypi.yml`, for the rehearsal) on the default branch and inside the tagged commit, and the pending publisher
   names that file. A release commit made before `publish-testpypi.yml` reached `main` cannot be rehearsed at its tag. Never push all tags to
@@ -154,8 +197,9 @@ closed table of differences).
 
 The sequence is by hand, in two terminals of the same checkout, and the rehearsal needs no release of its own:
 
-1. terminal A: `bash scripts/release-pypi.sh 0.6.0rc1`. It makes the release commit, pushes it, tags it, waits for the signing
-   run and dispatches `publish.yml`, which waits for the approval of the environment `pypi`;
+1. terminal A: `bash scripts/release-pypi.sh 0.6.0rc1`. It makes the release commit, merges it into `main` in a pull request,
+   tags the merge commit, waits for the signing run and dispatches `publish.yml`, which waits for the approval of the
+   environment `pypi`;
 2. terminal B, once the release is tagged (the rehearsal waits for the signing run too): `bash scripts/release-testpypi.sh 0.6.0rc1`.
    The first line it prints says that it goes to TestPyPI, that it is advisory and that PyPI is not touched. It runs
    `testpypi-ready`, checks the signed files with the release guard and dispatches `publish-testpypi.yml` on the tag;
@@ -169,7 +213,8 @@ Nothing enforces this order. The rehearsal is advisory, not a gate: the script d
 was approved, and the PyPI path reads nothing of the rehearsal. The order is the maintainer's.
 
 What the script does. It needs a release that `release-pypi.sh` made up to the signing run, with HEAD at the tree of the
-release commit; with none it stops and names `release-pypi.sh`. It makes no release: no commit, tag, push, build or changelog
+release commit (the merge commit has the same tree); with none it stops and names `release-pypi.sh`. It finds the merge commit
+of the release commit on `main`, which is the commit the tag is on. It makes no release: no commit, tag, push, build or changelog
 stamp. It holds its own lock (`release-testpypi.lock`), so it runs beside the release, which holds `release-pypi.lock` while it
 waits for the approval. It dispatches `publish-testpypi.yml` once on the tag (a live run is waited for, never a second one
 dispatched), never `publish.yml`, and reads only `test.pypi.org` and `test-files.pythonhosted.org`, never `pypi.org` or
@@ -286,12 +331,13 @@ The steps, in order:
 3. fetch the remote, read the JSON of the project from `https://pypi.org/pypi/axmem/json`, and look in the history of HEAD for
    the release commit of this version (the manifest names the version and the tag `v<version>`). Found: a re-run (step 4).
    None: a new release (step 5). The state is read, never stored;
-4. a re-run: the release commit must be on the remote's `main`, or be the only commit ahead of it, and the manifest on disk
-   the committed one. If PyPI holds every file of the manifest with its sha256, the script verifies the integrity, checks
-   the downloaded copies, prints `Release complete` and stops. If PyPI holds none or some of the files, it continues at the
-   push (step 7). If PyPI holds other bytes, the version is spent and it stops;
+4. a re-run: the release commit must be merged into the remote's `main` already, or be the only commit ahead of it, and the
+   manifest on disk the committed one. If PyPI holds every file of the manifest with its sha256, the script verifies the
+   integrity, checks the downloaded copies, prints `Release complete` and stops. If PyPI holds none or some of the files, it
+   continues at the carry to `main` (step 8). If PyPI holds other bytes, the version is spent and it stops;
 5. a new release: the branch tracks `axiumine/main` and is in sync, the tracked tree is clean, the version is absent from PyPI
-   (otherwise it is spent), the tag `v<version>` is free locally and on the remote and no remote branch has that name, the
+   (otherwise it is spent), the tag `v<version>` is free locally and on the remote and no remote branch has that name, no
+   remote branch `release/<version>` exists (one is what an earlier attempt left), the
    **release integrity** of PyPI holds (every version on it has a pushed tag, a manifest that lists its files and a signed
    release, or is named in `release-superseded.json`; the version in hand may hold a subset of its manifest), and CI is green
    on HEAD. A refusal changes nothing;
@@ -304,37 +350,57 @@ The steps, in order:
    tag, epoch, tool versions and the sha256 of each file. Nothing is committed yet, so a re-run does it again: a failure
    anywhere between the stamp and the commit (a gate, the build, Ctrl-C) puts `CHANGELOG.md` and the manifest back to HEAD;
 7. the release commit (changelog and manifest; the hooks run, and the integration tests among them refuse a stamped section that
-   would give no notes: empty, repeated or longer than a release body takes), then the push to the remote's `main` (the pre-push gate runs).
-   A refused commit restores both paths to HEAD and stops; a re-run is a new release. A refused push keeps the local commit,
-   and a re-run pushes it;
-8. wait for CI on the release commit, tag it `v0.6.0` (annotated), push the tag. A tag at the commit is done, a tag
-   elsewhere is an error; a pushed tag is never moved or deleted;
-9. wait for the `release.yml` run that the push of the tag started (rebuild equals the manifest, cosign, SLSA), require a
+   would give no notes: empty, repeated or longer than a release body takes). The rules for `main` require signed commits:
+   the commit is signed by the maintainer's own git configuration, and GitHub signs the merge commit. A refused commit
+   restores both paths to HEAD and stops; a re-run is a new release;
+8. carry the release commit to `main`. Nothing is pushed to `main`; each part is done only when it is not done, read from
+   git and GitHub, so a re-run continues at the first one left:
+   1. the release commit is based on the tip of the remote's `main`, which is fetched again for this: the gates and hooks
+      since the start take hours (the rules want the pull request up to date, and a release commit is never rebased: if
+      `main` moved, the script stops, see "When it stops"). The same question is asked again just before the merge, because
+      `main` can move while the checks run;
+   2. push it to the branch `release/<version>` (the pre-push gate runs on this push). A branch of that name at the release
+      commit is done; at another commit it is an error, because the script never moves or deletes a branch;
+   3. open a pull request from that branch into `main`, with a title and a body the script writes (`chore(release): release
+      axmem <version> to PyPI`, what the commit changes and what follows; no attribution line). An open or merged pull
+      request for the release commit is done;
+   4. wait for the checks that the rules for `main` require, read from `repos/Axiumine/axmem/rules/branches/main`, to be
+      green on the head of the pull request, on two polls in a row; a red one, a pull request closed or moved, no required
+      check at all, and the deadline stop;
+   5. merge it with a merge commit: `gh pr merge --merge --match-head-commit <release commit>`. There is no `--admin` and no
+      `--auto`: GitHub applies the rules for `main` to this call as to anyone's, and a refusal stops the script;
+   6. fetch `main`, find the merge commit (the commit of its first-parent line that has the release commit as second parent),
+      check that its tree is the release commit's tree, and move the local branch to it by a fast-forward (the pre-push gate
+      of the tag tests the working tree, and refuses a commit that is not the checked-out HEAD). The branch
+      `release/<version>` stays on the remote;
+9. wait for CI on the merge commit (the push runs of `main` on it), tag it `v0.6.0` (annotated), push the tag. A tag at the
+   commit is done, a tag elsewhere is an error; a pushed tag is never moved or deleted;
+10. wait for the `release.yml` run that the push of the tag started (rebuild equals the manifest, cosign, SLSA), require a
    bundle for every file, download the wheel and the sdist from the GitHub release into a temporary directory and verify them
    against the manifest;
-10. read PyPI again; if it already holds the manifest's files, verify and finish without a dispatch; if it holds other bytes,
+11. read PyPI again; if it already holds the manifest's files, verify and finish without a dispatch; if it holds other bytes,
     stop, the version is spent. Then run the guard (the five conditions, with the downloaded signed files as `dist`). A
     refusal stops before any dispatch;
-11. look at the runs of `publish.yml` for this tag and commit: a live run is waited for; a successful run younger than 30
+12. look at the runs of `publish.yml` for this tag and commit: a live run is waited for; a successful run younger than 30
     minutes means no dispatch (PyPI's CDN may lag); otherwise
     `gh workflow run publish.yml --ref v0.6.0 -f tag=v0.6.0`, find the new run and wait for it (a dispatch is refused while a
     branch of the remote is named like the tag). The wait for the approval of the environment counts against the deadline
     below;
-12. the run, in CI: the job `verify` (no id-token, no environment) checks that the run is on the tag and that the tag is the
+13. the run, in CI: the job `verify` (no id-token, no environment) checks that the run is on the tag and that the tag is the
     commit of the run, downloads the release, verifies the digests and `cosign verify-blob` with the identity of
     `release.yml` at the tag, runs the guard and `dist-check` (the standard library of the tag, no `uv`), checks the digests
     once more and writes the sha256 of every file into its summary. The job `publish` (environment `pypi`, `id-token: write`)
     starts when a reviewer approves, checks the sums again, reads the project JSON of PyPI, takes out of `dist` every file
     that PyPI lists with the same sha256 (a different sha256 fails the run) and uploads the rest with
     `pypa/gh-action-pypi-publish`; with nothing left, the upload is skipped;
-13. poll the JSON of PyPI every 30 seconds until it lists every file of the manifest with the same sha256, for `RF_PYPI_LAG_S`
+14. poll the JSON of PyPI every 30 seconds until it lists every file of the manifest with the same sha256, for `RF_PYPI_LAG_S`
     (30 minutes) counted from the end of the green run, apart from the deadline below. A read that fails (a 5xx, a timeout)
     counts as a read that listed nothing, and is tried again;
-14. download each file from `files.pythonhosted.org` (https only), verify it against the manifest and print
+15. download each file from `files.pythonhosted.org` (https only), verify it against the manifest and print
     `Release complete`. A re-run after this ends at step 4 with nothing to do.
 
 Every wait is bounded: `RELEASE_POLL_INTERVAL_S` seconds apart (30), and one deadline of `RELEASE_WAIT_TIMEOUT_S` seconds
-(28800, eight hours) from the first wait. At the deadline the script stops with nothing more done and prints the command
+(28800, eight hours) from the first wait after the merge; the wait for the checks of the pull request has a deadline of its own. At the deadline the script stops with nothing more done and prints the command
 that resumes.
 
 ## When it stops
@@ -346,8 +412,16 @@ A pushed tag is never moved or deleted, and nothing is force-pushed.
 | Stop | What it means |
 |---|---|
 | the release commit was refused | a hook refused it; the changelog and the manifest are restored to HEAD, nothing was pushed, tagged or dispatched; a re-run is a new release, and the version is not spent |
-| the push was refused | the local release commit survives; a re-run finds it, accepts it as the only commit ahead and pushes it again; nothing is tagged before it is on `main` |
-| CI is red on the release commit | the commit stays on `main`, no tag, PyPI untouched. If a job was flaky, `gh run rerun <id>` and re-run the script; otherwise fix it on `main` and release the next version |
+| the push of the release branch was refused | the local release commit survives; a re-run finds it, accepts it as the only commit ahead and pushes it again; nothing is merged or tagged before the branch is on the remote |
+| the branch `release/<version>` is on the remote at another commit | an earlier attempt left it. The script never moves or deletes a branch: close its pull request if one is open, delete the branch, re-run. Before any commit exists the same branch refuses a new release at the start |
+| a required check is red on the pull request | nothing is merged, tagged or dispatched. If a job was flaky, `gh run rerun <id>` and re-run the script, which finds the branch and the pull request and waits again; otherwise close the pull request, delete the branch, fix the cause on `main` in a pull request, and release again (the version is not spent) |
+| the checks did not finish before the deadline, or a required check has no run | the pull request stays open. A re-run waits again. A check with no run after ten minutes means the workflow does not run on pull requests, or the name in the rules is not a job name |
+| the rules for `main` require no status check | the script does not merge: nothing would hold the merge until the checks are green. Restore the rule, then re-run |
+| GitHub refused the merge | the reason is printed (a required approval or code-owner review that the sole maintainer cannot give, an unresolved conversation, merge commits not allowed). Nobody is exempt and the script has no way around the rules; fix the cause on GitHub and re-run. A refusal caused by the release commit itself, such as a commit without a verified signature, cannot be fixed after the push because the script never rewrites a commit: drop the release commit as in the next row |
+| `main` moved past the base of the release commit | the rules want the pull request up to date, and the script never rebases a release commit. It is found when the branch would be pushed, or just before the merge; GitHub would only refuse the merge. Nothing was tagged, so the version is not spent: close the pull request, delete the branch, `git reset --hard axiumine/main` (it drops the unmerged release commit) and release again. A re-run without that is refused as `DIVERGED` |
+| the pull request was closed, or its branch moved | a closed pull request is replaced by a new one for the same branch; a branch that moved is the branch of another commit (see above) |
+| the pull request was merged by squash or rebase | no merge commit has the release commit as a parent, so there is no commit to tag: the script stops without a tag. The files of `main` are the release's, but the tag is made only on a merge commit; release the next version |
+| CI is red on the merge commit | the merge commit is on `main`, no tag, PyPI untouched. If a job was flaky, `gh run rerun <id>` and re-run the script; otherwise fix it on `main` in a pull request and release the next version |
 | the signing run of the tag failed | the tag stays and PyPI is untouched. For flaky infrastructure, `gh run rerun <id>` of the run that the push of the tag started (`release.yml` has no manual trigger). A defect in `release.yml` or `publish.yml` at the tag cannot be fixed in place: release the next version |
 | the dispatch failed (a `gh` error, 403, 404, or the run not seen within 120 seconds) | nothing was uploaded by the script. A re-run waits for a live run, or dispatches again; a double dispatch is harmless (the runs queue, and an identical upload is the same bytes) |
 | the run waits for approval | the status `waiting` and the URL of the run are printed; a reviewer of the environment approves it, and the wait counts against the deadline. A re-run waits on the live run and never dispatches a second. A rejection is a failed run |
@@ -357,7 +431,7 @@ A pushed tag is never moved or deleted, and nothing is force-pushed.
 | PyPI says a file name was used before | a deleted file keeps its name: the version is spent. Release the next version and list this one in `release-superseded.json`; a blind re-run would only dispatch another red run |
 | the run is green and PyPI does not list the files | PyPI's CDN can lag. The script polls for 30 minutes from the green run, then stops with `run succeeded, PyPI not listing yet`. A re-run does not dispatch while the green run is younger than 30 minutes and polls again; later, if PyPI still lists nothing, it dispatches again, which is harmless |
 | PyPI holds the version with other digests | the version is spent, nothing is dispatched. Release the next version and list this one in `release-superseded.json` with the sha256 that PyPI serves |
-| PyPI holds the version and the remote has no tag | a re-run is refused by the integrity check, a new release by the version being on PyPI. Push the lost tag at the release commit if its digests equal PyPI's, otherwise list the version in `release-superseded.json` |
+| PyPI holds the version and the remote has no tag | a re-run is refused by the integrity check, a new release by the version being on PyPI. Push the lost tag at the merge commit of the release (not at the release commit) if its digests equal PyPI's, otherwise list the version in `release-superseded.json` |
 | PyPI holds every file of the manifest (a re-run after a success) | the integrity, the check of the downloaded copies, `Release complete`, exit 0; nothing is dispatched |
 | the script died after the dispatch (Ctrl-C, the network) | a re-run reads the runs of `publish.yml`: a live or recent one is waited for and no second one is dispatched; then PyPI decides |
 
@@ -390,8 +464,10 @@ The list that counts is the one on the remote's `main`, so a local edit does not
 
 Two signatures cover a release, made by two workflows, and each is checked where it lives.
 
-GitHub carries the files `release.yml` signed: the wheel, the sdist, one `.sigstore.json` bundle for each, and the
-provenance file `axmem-artefacts.intoto.jsonl`. To verify them:
+GitHub carries the files `release.yml` signed: the wheel, the sdist, the SBOM (`axmem-<version>.cdx.json`, see
+[The SBOM](#the-sbom)), one `.sigstore.json` bundle for each of the three, and the provenance file
+`axmem-artefacts.intoto.jsonl`, which lists the sha256 of the three files. A release made before the SBOM was added
+(`v0.6.0rc1`) has the wheel, the sdist, their two bundles and the provenance, and no SBOM. To verify them:
 
 ```bash
 gh release download v0.6.0 --repo Axiumine/axmem --pattern 'axmem-0.6.0*'
@@ -415,6 +491,53 @@ The keyless signature is recorded in the public Rekor transparency log, with the
 The rehearsal on TestPyPI is not part of this check: files on test.pypi.org carry the identity of `publish-testpypi.yml`, and
 a version that is on TestPyPI says nothing about PyPI. Nor is the install check (`scripts/smoke-release.sh`): it compares the
 bytes an index serves with the manifest of the tag and installs and uses them, and verifies no signature.
+
+## The SBOM
+
+Every release carries a software bill of materials: `axmem-<version>.cdx.json`, CycloneDX 1.5, signed by `release.yml` with
+cosign like the wheel and the sdist (`axmem-<version>.cdx.json.sigstore.json`, the same identity) and listed among the
+subjects of the SLSA provenance. It is attached to the GitHub release only; it is not uploaded to PyPI, it is in no part of
+`release-digests.json` and it is not inside the wheel.
+
+**What it lists.** What `pip install` of the wheel brings: the packages that `uv.lock` locks for the `dependencies` of
+`pyproject.toml` and, for the extras the wheel declares (there are none today), for those, and what each of them needs in
+turn. The `dev` and `harness` groups are not in it, because a user of the wheel never installs one. It holds one component for
+each package, with name, version, purl and the file URLs and SHA-256 that the lock records, and Axmem itself as the root
+component with the version of the release (`pyproject.toml` leaves the version dynamic, so `release.yml` takes it from the
+manifest). It lists the packages for every platform the lock covers (`pywin32` is in it), not those of one machine, and it
+lists the NVIDIA packages that the wheel names (`tensorrt-cu13` and the others): the wheel does not contain them, the user
+installs them from NVIDIA's index. It does not list the build backend (`hatchling`, `hatch-vcs`), the GitHub Actions of the
+workflows or the models that the server downloads at run time.
+
+**How it is made.** `scripts/release/sbom.py` runs `uv export --frozen --no-default-groups --all-extras --format
+cyclonedx1.5 --preview-features sbom-export` (a preview feature of uv, so `release.yml` pins the version of uv and checks
+its archive) and changes four things that would make two runs differ or say too much: the serial number (a UUID version 5 of
+the content instead of a random one), the time (`SOURCE_DATE_EPOCH` of the release instead of the clock), the root component
+(the version and the purl of the release) and the dependencies of the root (the packages `pyproject.toml` names, not the
+members of the `dev` group that a runtime dependency also reaches, which uv 0.12.17 counts as direct ones). The same lock,
+version and epoch give the same bytes.
+
+**How it is checked.** The step of `release.yml` runs `scripts.release.sbom verify` on the file before anything is signed:
+CycloneDX 1.5, one component with a name, a version and a purl for each package that the walk of `uv.lock` reaches from the
+dependencies of the project (the walk is the module's own, it does not take uv's word), the root component, and a dependency
+graph whose every reference exists. A document that fails stops the run, and so the release. The `sbom` gate runs the same
+generator and checker on the lock of the checkout in `pre-push` and requires two runs to give the same bytes, so a new uv or a
+lock that the walk does not read fails the push and not the release (a pushed tag is never moved). The release guard
+(condition 4) and the integrity check hold an SBOM that a release carries to the same proof as the other files: a whole
+bundle that signed the sha256 GitHub holds for the attached file. They do not require one, so that `v0.6.0rc1` stays proven;
+a release whose `release.yml` run did not make, check and sign the SBOM has a red run, and the guard refuses a red run.
+
+To check one by hand:
+
+```bash
+gh release download v0.6.1 --repo Axiumine/axmem --pattern '*.cdx.json*'
+cosign verify-blob axmem-0.6.1.cdx.json \
+  --bundle axmem-0.6.1.cdx.json.sigstore.json \
+  --certificate-identity "https://github.com/Axiumine/axmem/.github/workflows/release.yml@refs/tags/v0.6.1" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+# in a checkout of the tag, which holds the uv.lock the SBOM was made from
+python3 -m scripts.release.sbom verify axmem-0.6.1.cdx.json --version 0.6.1
+```
 
 ## Known gap
 
@@ -444,9 +567,11 @@ are seen only by the first rehearsal.
 | `scripts/release/integrity.py` | the integrity check of every version on PyPI |
 | `scripts/release/superseded.py` | the reader of `release-superseded.json` |
 | `scripts/release/digests.py` | writes and verifies `release-digests.json` |
+| `scripts/release/sbom.py` | makes the SBOM of a release from `uv.lock` and checks its shape |
 | `scripts/release/notes.py` | cuts the section of a tag out of `CHANGELOG.md`, as the notes of its GitHub release |
 | `scripts/release/ci_green.py` | the CI check of a commit |
+| `scripts/release/pull_request.py` | the release pull request: find or open it, wait for the required checks on its head, merge it with a merge commit, and find the merge commit the tag is made on |
 | `scripts/release/sdist.py` | refuses an sdist with files that git does not track |
-| `.github/workflows/release.yml` | the release notes, the rebuild, the digest check, the signing and the provenance; uploads nothing |
+| `.github/workflows/release.yml` | the release notes, the rebuild, the digest check, the signing, the SBOM and the provenance; uploads nothing |
 | `.github/workflows/publish.yml` | the verification of the signed files and the upload to PyPI; dispatched by the script on the tag |
 | `.github/workflows/publish-testpypi.yml` | `publish.yml` with the listed differences: the same verification and the upload to TestPyPI; dispatched by the rehearsal script on the tag |
