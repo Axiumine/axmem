@@ -48,7 +48,7 @@ Hooks table in [docs/quality-gates.md](quality-gates.md#hooks).
 
 `pre-commit` checks staged files (lint, shell scripts and workflows, import boundaries, security, dead code, complexity,
 types, architecture tests, the package, snapshots, fast tests, GitNexus impact); `pre-push` runs the full pipeline: the
-same static gates over the whole project, trivy and the wheel (it installs the locked dependencies, so it needs the network),
+same static gates over the whole project, trivy, malware and vex (the malicious-package check asks api.osv.dev) and the wheel (it installs the locked dependencies, so it needs the network),
 the architecture, integration and end-to-end suites with coverage (they start a real Qdrant
 node in Docker), the three-node Qdrant cluster e2e (Docker), **100 % combined coverage**, memory budgets (memray),
 Qodana and mutation testing of the `app/` modules that the push changes (the slowest gate: one run is stopped after 24
@@ -330,7 +330,7 @@ tests). The workflow alone does not make it mandatory for merging. CI does not r
 is caught
 
 **Jobs**: `static` (lint, import boundaries, security, shell scripts and workflows, dead code, complexity, types and pylint, on Python 3.14) and `trivy`
-(the pinned release binary, checked against its SHA-256). Snapshots, coverage, memory budgets, Qodana and mutation are not
+(the pinned release binary, checked against its SHA-256, after the `vex` and `malware` gates). Snapshots, coverage, memory budgets, Qodana and mutation are not
 here: they need the GPU, Docker or a token and run in the `pre-push` hook. See [quality-gates.md](quality-gates.md).
 
 ### `codeql.yml` - CodeQL
@@ -351,7 +351,7 @@ for `scorecard.yml` below says.
 default branch, which the badge in the README reads. It runs on a hosted runner with a read-only token (the Scorecard job
 alone may write the code scanning results and request the OIDC token that signs the result) and holds no secret. It
 publishes a result for readers and is not a quality gate, but it is not free of consequence: `scripts/release/ci_green.py`
-requires every push-triggered run of `main` on the release commit to be non-failed, so a failed run of this workflow (the
+requires every push-triggered run of `main` on the merge commit of the release (the commit the tag is made on) to be non-failed, so a failed run of this workflow (the
 API refused the result, or Scorecard was unreachable) or of `codeql.yml` stops a release until the run is repeated
 (`gh run rerun`). A run that the `if` of the job skipped counts as skipped, not as failed.
 
@@ -378,10 +378,13 @@ nothing, holds no token and is not a gate: nothing on the PyPI path reads it.
 
 ## Creating a Release
 
-There is one route, and it is a script: `scripts/release-pypi.sh <version>` builds, tags and signs the version, dispatches
-`publish.yml` and checks what PyPI serves. Do not tag by hand and do not publish a GitHub release by hand: a hand-made
-release publishes nothing, and a tag pushed by hand starts `release.yml` without the release commit and the manifest that it
-needs. The setup, the steps and what to do when one stops are in [Releasing Axmem](release.md). Before the real upload,
+There is one route, and it is a script: `scripts/release-pypi.sh <version>` builds the version, commits the changelog stamp
+and the digest manifest, and carries that commit to `main` in a pull request (a branch `release/<version>`, the required
+checks, a merge commit made by GitHub), then tags the merge commit, waits for the signing, dispatches `publish.yml` and
+checks what PyPI serves. Nothing is pushed to `main`: the rules for `main` refuse a direct push from anyone, the maintainer
+included, and the script has no flag that would push there. Do not tag by hand and do not publish a GitHub release by hand: a
+hand-made release publishes nothing, and a tag pushed by hand starts `release.yml` without the release commit and the manifest
+that it needs. The setup, the steps and what to do when one stops are in [Releasing Axmem](release.md). Before the real upload,
 `scripts/release-testpypi.sh <version>` rehearses the same signed files on TestPyPI; it is optional and advisory, makes no
 release, and is described there too. Once a version is on an index, `scripts/smoke-release.sh --index testpypi|pypi <version>`
 installs its files from there and uses the server they start, on this machine's GPU, Docker and models; it is advisory too.

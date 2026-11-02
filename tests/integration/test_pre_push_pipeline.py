@@ -20,7 +20,7 @@ from scripts.quality import cli, core, registry, security, static, testing
 
 ROOT = Path(__file__).resolve().parents[2]
 STATIC_GATES = ["ruff", "imports", "bandit", "semgrep", "vulture", "radon-cc", "radon-mi", "shellcheck", "actionlint", "reuse"]
-HOSTED_GATES = [*STATIC_GATES, "trivy", "mypy", "pylint", "architecture", "package", "wheel"]
+HOSTED_GATES = [*STATIC_GATES, "trivy", "malware", "vex", "mypy", "pylint", "architecture", "package", "wheel"]
 NEEDS_GPU_OR_DOCKER = {
     "snapshots", "tests-fast", "tests", "e2e-qdrant", "coverage", "memray", "qodana", "mutation", "gitnexus",
 }
@@ -36,7 +36,7 @@ def test_the_pre_push_pipeline_runs_the_cheap_gates_first_and_each_gate_after_th
 
     for cheap in HOSTED_GATES:
         assert order.index(cheap) < order.index("tests"), f"{cheap} should fail the push before the long suites start"
-    assert groups[0] == [*STATIC_GATES, "trivy"]
+    assert groups[0] == [*STATIC_GATES, "trivy", "malware", "vex"]
     assert order.index("tests") < order.index("e2e-qdrant") < order.index("coverage")  # coverage reads both data files
     assert order.index("coverage") < order.index("memray") < order.index("qodana") < order.index("mutation")
     assert order[-1] == "gitnexus"
@@ -54,9 +54,12 @@ def test_the_ci_stage_holds_the_gates_that_need_neither_a_gpu_nor_docker():
 def test_the_pre_commit_stage_runs_the_cheap_local_gates_and_leaves_out_what_needs_the_network():
     pre_commit = [name for group in registry.STAGES["pre-commit"] for name in group]
 
-    assert {*STATIC_GATES, "mypy", "pylint", "architecture", "package", "snapshots", "tests-fast", "gitnexus"} == set(pre_commit)
+    assert {*STATIC_GATES, "mypy", "pylint", "architecture", "package", "malware", "vex", "snapshots", "tests-fast", "gitnexus"} == set(
+        pre_commit,
+    )
     assert registry.STAGES["pre-commit"][0] == STATIC_GATES
     assert not {"wheel", "trivy"} & set(pre_commit)  # these fetch from PyPI, NVIDIA's index and trivy's database
+    # malware asks api.osv.dev as well, but its gate runs only when uv.lock or pyproject.toml is staged (see test_quality_malware_gate.py)
 
 
 def test_every_gate_of_the_registry_is_in_a_stage_a_hook_runs():

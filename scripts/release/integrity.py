@@ -14,7 +14,7 @@ package on PyPI it requires
   * every ``release.yml`` run of the tag's own push succeeded (a run GitHub no longer records is accepted
     when the release also carries the provenance file, the last thing the workflow uploads), and
   * a published GitHub release that carries every file PyPI serves for the version, with that sha256, and
-    a whole ``.sigstore.json`` bundle for each, signing that sha256,
+    a whole ``.sigstore.json`` bundle for each, signing that sha256 (an SBOM, if any, too),
 
 unless ``release-superseded.json`` (``scripts.release.superseded``) lists the version. A listed version is
 skipped only when the sha256 of every file PyPI serves for it is the listed one: a different digest, or a file

@@ -76,7 +76,7 @@ Docker is only a test dependency. The project has no container deployment: it ru
 Commits and pushes are gated by `.githooks/` (enable with `uv run python -m scripts.quality install`).
 The pipeline (ruff, import-linter, bandit, semgrep, shellcheck, actionlint, reuse, vulture, radon cc/mi, mypy, pylint,
 the architecture tests, the package and wheel checks, snapshot
-tests, coverage at 100%, Qdrant e2e, memray, trivy, Qodana, mutmut,
+tests, coverage at 100%, Qdrant e2e, memray, trivy, malware, vex, sbom, Qodana, mutmut,
 GitNexus) and how to run or bypass single gates is documented in
 [docs/quality-gates.md](docs/quality-gates.md). Run `uv run python -m scripts.quality stage pre-commit`
 before committing; do not weaken a threshold to make a gate pass, fix the code or justify the exception.
@@ -89,7 +89,7 @@ script that no hook reaches. Two analysis services exist only on GitHub and have
 to "a check is never only a step of a workflow"; `tests/architecture/test_workflows.py` fixes their names.
 
 The `pre-push` hook is the GPU gate. Hosted CI has no GPU and there is no self-hosted runner, so GitHub Actions runs only
-the static gates (ruff, import-linter, bandit, semgrep, shellcheck, actionlint, reuse, vulture, radon, mypy, pylint, trivy), the
+the static gates (ruff, import-linter, bandit, semgrep, shellcheck, actionlint, reuse, vulture, radon, mypy, pylint, trivy, malware, vex), the
 architecture tests and the package and wheel gates, each called by its gate name, the same name the hooks run. Everything that needs the NVIDIA GPU, Docker or a real Qdrant (tests, e2e, the cluster suite, coverage,
 memray, Qodana, mutation) runs only in `pre-push` on the developer machine, where a missing GPU or Docker daemon fails the
 push instead of skipping a gate. Never add a self-hosted runner, a schedule or a GPU or Docker job to `.github/workflows`

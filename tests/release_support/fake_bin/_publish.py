@@ -334,7 +334,10 @@ def _ready(repo: str) -> dict[str, Any]:
         "bypass_actors": [{"actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "always"}],
     }
     return {
-        "repo": {"full_name": repo, "private": False, "permissions": {"admin": True, "push": True, "pull": True}},
+        "repo": {
+            "full_name": repo, "private": False, "allow_merge_commit": True,
+            "permissions": {"admin": True, "push": True, "pull": True},
+        },
         "workflow": {"id": 1, "name": "Publish to PyPI", "path": ".github/workflows/publish.yml", "state": "active"},
         "testpypi_workflow": {
             "id": 2, "name": "Publish to TestPyPI", "path": ".github/workflows/publish-testpypi.yml", "state": "active",
@@ -361,7 +364,25 @@ def _ready(repo: str) -> dict[str, Any]:
         "testpypi_policies": {"total_count": 1, "branch_policies": [{"id": 2, "name": "v*.*.*", "type": "tag"}]},
         "rulesets": [{"id": 7, "name": "release tags", "target": "tag", "enforcement": "active"}],
         "ruleset_details": {"7": ruleset},
-        "main_rules": [{"type": kind} for kind in ("non_fast_forward", "deletion", "required_status_checks")],
+        "main_rules": [
+            {"type": "non_fast_forward"},
+            {"type": "deletion"},
+            {"type": "required_signatures"},
+            {
+                "type": "pull_request",
+                "parameters": {"required_approving_review_count": 0, "allowed_merge_methods": ["merge", "squash", "rebase"]},
+            },
+            {
+                "type": "required_status_checks",
+                "parameters": {
+                    "strict_required_status_checks_policy": True,
+                    "required_status_checks": [
+                        {"context": name}
+                        for name in ("lint (py3.14)", "static (3.14)", "trivy", "smoke-test", "analyze (python)", "analyze (actions)")
+                    ],
+                },
+            },
+        ],
     }
 
 

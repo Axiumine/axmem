@@ -18,7 +18,7 @@ from scripts.release import guard
 from tests.integration.release_guard_world import TAG, World
 from tests.release_support import fakes
 
-CONDITION_ONE = "[1] the release commit is on the remote's main and its manifest is the one on disk: FAIL"
+CONDITION_ONE = "[1] the tagged commit is on the remote's main and its manifest is the one on disk: FAIL"
 
 
 @pytest.fixture

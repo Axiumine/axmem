@@ -7,15 +7,22 @@
 #
 # The release script never uploads anything itself. The upload is made by the publish workflow (publish.yml, trusted
 # publishing: PyPI trusts the workflow's OIDC identity, so no token exists anywhere), and the script dispatches it last,
-# and only after `scripts.release.guard` has proved the release (see its docstring): the release commit is on the
+# and only after `scripts.release.guard` has proved the release (see its docstring): the tagged commit is on the
 # remote's main, CI is green on it, the tag is on the remote, the signing run succeeded, the bundles are on the GitHub
 # release and the files to publish are the manifest's bytes, downloaded from that release. These functions are those
 # steps. Every one reads the state from git, GitHub and PyPI, never from a file of its own, so a re-run of the script
 # continues at the first unfinished step.
 #
+# Nothing is pushed to main: the rules for main refuse a direct push from anyone. The release commit goes to the branch
+# release/<version>, a pull request carries it to main, and GitHub merges it with a merge commit when the required checks
+# are green (rf_carry_release). The tag is made on that merge commit, not on the release commit: the guard asks for the
+# push-triggered CI runs of main on the tagged commit, which only the merge commit has, and the merge commit has the
+# release commit's tree (checked), so the manifest committed in it is the one the build wrote.
+#
 # The caller sets, before it calls any of them:
-#   SCRIPT_DIR REPO_ROOT VERSION TAG PKG MANIFEST GH_REPO RELEASE_REMOTE RELEASE_BRANCH
-#   RELEASE_SHA (the release commit, once it exists)
+#   SCRIPT_DIR REPO_ROOT VERSION TAG PKG MANIFEST GH_REPO RELEASE_REMOTE RELEASE_BRANCH RELEASE_PR_BRANCH
+#   RELEASE_COMMIT (the release commit, once it exists) and RELEASE_SHA (the commit the tag is on: the merge commit of the
+#   pull request of the release commit, once rf_carry_release has found it)
 # (scripts/lib/project.sh, sourced first, supplies PKG, RELEASE_REMOTE, RELEASE_BRANCH and the PyPI settings) and defines
 # err() (print "ERROR: ..." and exit 1). Nothing here reads an environment file or holds a credential: PyPI is read
 # through its public JSON API.
@@ -42,6 +49,10 @@ RF_TMP=""
 RF_JSON=""
 RF_DEADLINE=""
 RF_GREEN_AT=""
+# The pull request of the release (rf_find_pr, rf_open_pr).
+PR_STATE=""
+PR_NUMBER=""
+PR_URL=""
 
 # Run one of the checks of scripts/release (python -m scripts.release.<module>) from the repository root, where the
 # package is importable. They use the standard library alone, so no environment is needed.
@@ -148,12 +159,14 @@ rf_require_clean_tree() {
     || err "a tracked file is marked skip-worktree or assume-unchanged, so git cannot see its changes — clear the mark first (git update-index --no-skip-worktree / --no-assume-unchanged): ${hidden%%$'\n'*}"
 }
 
-# The release commit's tree is what is checked out, with no tracked change: the pre-push gate tests the working tree
+# The tree of the release is what is checked out, with no tracked change: the pre-push gate tests the working tree
 # (docs/quality-gates.md) and the guard reads the manifest on disk, so the push and the checks run on what is published.
+# The release commit and its merge commit have the same tree.
+#   $1 the commit whose tree HEAD must have: the release commit, or the merge commit once it is known
 rf_require_release_tree() {
   rf_require_clean_tree
-  [[ "$(git -C "$REPO_ROOT" rev-parse "HEAD^{tree}")" == "$(git -C "$REPO_ROOT" rev-parse "${RELEASE_SHA}^{tree}")" ]] \
-    || err "HEAD is not the tree of the release commit ${RELEASE_SHA:0:8} — check that commit out and re-run: the pre-push gate tests the working tree and the guard reads the manifest on disk"
+  [[ "$(git -C "$REPO_ROOT" rev-parse "HEAD^{tree}")" == "$(git -C "$REPO_ROOT" rev-parse "${1}^{tree}")" ]] \
+    || err "HEAD is not the tree of the release commit ${RELEASE_COMMIT:0:8} — check that commit (or its merge commit) out and re-run: the pre-push gate tests the working tree and the guard reads the manifest on disk"
 }
 
 # A scratch directory for the PyPI JSON and the files downloaded to compare, removed on exit.
@@ -232,6 +245,17 @@ rf_require_tag_free() {
     || err "the name ${TAG} is already taken on ${RELEASE_REMOTE} (${found##*[[:space:]]}) — release another version (the inherited Forgetful tags v0.0.1..v0.5.5 of this clone are taken too)"
 }
 
+# The branch the release commit will be pushed to is free on the remote: a branch of that name is what an earlier release
+# of this version left, and this script never moves or deletes a branch. Asked before anything is built, so a leftover
+# costs nothing. (rf_push_release_branch meets the same branch when it holds this very release commit.)
+rf_require_pr_branch_free() {
+  local found
+  found="$(rf_net git -C "$REPO_ROOT" ls-remote --heads "$RELEASE_REMOTE" "refs/heads/${RELEASE_PR_BRANCH}")" \
+    || err "git ls-remote ${RELEASE_REMOTE} failed — cannot tell whether the branch ${RELEASE_PR_BRANCH} is free"
+  [[ -z "$found" ]] \
+    || err "the branch ${RELEASE_PR_BRANCH} exists on ${RELEASE_REMOTE} (${found%%[[:space:]]*}) and no release commit of ${VERSION} is in this history — it is left over from an earlier attempt: close its pull request if one is open and delete the branch (this script never deletes one), then re-run"
+}
+
 # No branch of the remote is named like the tag: the dispatch names its ref as a short name, which GitHub resolves branch
 # first. The environment's tag-only rule would still refuse such a run, but it is stopped here, with the cause.
 # (rf_require_tag_free asks the same for a new release.)
@@ -298,29 +322,165 @@ rf_require_synced_main() {
   err "the local branch has $(git -C "$REPO_ROOT" rev-list --count "${RF_MAIN}..HEAD") commit(s) CI has not seen — push, wait for CI to go green, then release"
 }
 
-# A release whose commit exists continues from it: pushed to the remote's main already, or the one commit
-# the local branch is ahead by. The manifest on disk must be the one committed there.
-rf_require_resumable() {
-  if ! git -C "$REPO_ROOT" merge-base --is-ancestor "$RELEASE_SHA" "$RF_MAIN"; then
-    [[ "$(git -C "$REPO_ROOT" rev-parse HEAD)" == "$RELEASE_SHA" ]] && rf_on_release_branch \
-      && [[ "$(git -C "$REPO_ROOT" rev-list --count "${RF_MAIN}..HEAD")" == "1" ]] \
-      || err "the release commit ${RELEASE_SHA:0:8} of ${VERSION} is not on ${RELEASE_REMOTE}/${RELEASE_BRANCH}, and it is not the only commit the branch tracking it is ahead by"
-    git -C "$REPO_ROOT" merge-base --is-ancestor "$RF_MAIN" HEAD \
-      || err "the local branch has DIVERGED from ${RELEASE_REMOTE}/${RELEASE_BRANCH} — reconcile the two before continuing the release"
-  fi
-  git -C "$REPO_ROOT" diff --quiet "$RELEASE_SHA" -- "$(basename "$MANIFEST")" \
-    || err "$(basename "$MANIFEST") differs from the one committed at ${RELEASE_SHA:0:8}"
+# What a release says when the remote's main has moved past the base of the release commit (a pull request was merged while
+# the release waited). The rules for main want the pull request up to date with main, and a release commit is never
+# rebased: its manifest was built from its tree. Nothing was tagged yet, so the version is not spent.
+rf_stale_base_hint() {
+  echo "${RELEASE_REMOTE}/${RELEASE_BRANCH} has moved past the base of the release commit ${RELEASE_COMMIT:0:8}. Nothing was tagged and the version is not spent: $(rf_drop_release_hint)"
 }
 
-# Push the release commit to the remote's main (the pre-push gate runs). Nothing to do when the remote has it.
-rf_push_release() {
-  if git -C "$REPO_ROOT" merge-base --is-ancestor "$RELEASE_SHA" "$RF_MAIN"; then
-    echo "The release commit ${RELEASE_SHA:0:8} is already on ${RELEASE_REMOTE}/${RELEASE_BRANCH}."
+# The way back from an unmerged release commit that cannot be used and is never changed (no rebase, no new signature, no
+# force push): drop it and make it again. The script never deletes a branch or resets by itself.
+rf_drop_release_hint() {
+  echo "close the pull request of ${RELEASE_PR_BRANCH} if one is open, delete that branch on ${RELEASE_REMOTE}, run 'git reset --hard ${RELEASE_REMOTE}/${RELEASE_BRANCH}' (it drops the unmerged release commit) and release again"
+}
+
+# A release whose commit exists continues from it: merged into the remote's main already (the commit is an ancestor of
+# it), or the one commit the local branch is ahead by. The manifest on disk must be the one committed there.
+rf_require_resumable() {
+  if ! git -C "$REPO_ROOT" merge-base --is-ancestor "$RELEASE_COMMIT" "$RF_MAIN"; then
+    [[ "$(git -C "$REPO_ROOT" rev-parse HEAD)" == "$RELEASE_COMMIT" ]] && rf_on_release_branch \
+      && [[ "$(git -C "$REPO_ROOT" rev-list --count "${RF_MAIN}..HEAD")" == "1" ]] \
+      || err "the release commit ${RELEASE_COMMIT:0:8} of ${VERSION} is not on ${RELEASE_REMOTE}/${RELEASE_BRANCH}, and it is not the only commit the branch tracking it is ahead by"
+    git -C "$REPO_ROOT" merge-base --is-ancestor "$RF_MAIN" HEAD \
+      || err "the local branch has DIVERGED from ${RELEASE_REMOTE}/${RELEASE_BRANCH} — $(rf_stale_base_hint)"
+  fi
+  git -C "$REPO_ROOT" diff --quiet "$RELEASE_COMMIT" -- "$(basename "$MANIFEST")" \
+    || err "$(basename "$MANIFEST") differs from the one committed at ${RELEASE_COMMIT:0:8}"
+}
+
+rf_fetch_main() {
+  rf_net git -C "$REPO_ROOT" fetch --quiet "$RELEASE_REMOTE" "+refs/heads/${RELEASE_BRANCH}:${RF_MAIN}" \
+    || rf_stop "git fetch ${RELEASE_REMOTE} ${RELEASE_BRANCH} failed"
+}
+
+# The base of the release commit is the tip of the remote's main, so the pull request is up to date as the rules for main
+# require. The caller has fetched main just before: the gates and the hooks that ran since the start of the script take
+# hours, and the checks of the pull request take a while too. A stale branch is refused here, with the way back, instead of
+# at the merge, where GitHub would only say that the branch is not up to date. A release commit that is on main already (a
+# pull request merged meanwhile) is not stale; the caller finds its merge commit.
+rf_require_current_base() {
+  git -C "$REPO_ROOT" merge-base --is-ancestor "$RELEASE_COMMIT" "$RF_MAIN" \
+    || git -C "$REPO_ROOT" merge-base --is-ancestor "$RF_MAIN" "$RELEASE_COMMIT" \
+    || err "$(rf_stale_base_hint)"
+}
+
+# Push the release commit to the branch release/<version> (the pre-push gate runs on this push, as it did on the push of
+# main). Nothing to do when the remote has it there; a branch of that name at another commit is never moved.
+rf_push_release_branch() {
+  local listed remote_sha
+  listed="$(rf_net git -C "$REPO_ROOT" ls-remote --heads "$RELEASE_REMOTE" "refs/heads/${RELEASE_PR_BRANCH}")" \
+    || rf_stop "could not ask ${RELEASE_REMOTE} whether it has the branch ${RELEASE_PR_BRANCH}"
+  remote_sha="$(awk 'END { print $1 }' <<<"$listed")"
+  if [[ -n "$remote_sha" ]]; then
+    [[ "$remote_sha" == "$RELEASE_COMMIT" ]] \
+      || err "the branch ${RELEASE_PR_BRANCH} is on ${RELEASE_REMOTE} at ${remote_sha:0:8}, not at the release commit ${RELEASE_COMMIT:0:8} — this script never moves or deletes a branch: close its pull request if one is open, delete the branch, then re-run"
+    echo "The branch ${RELEASE_PR_BRANCH} is already on ${RELEASE_REMOTE} at the release commit."
     return 0
   fi
-  echo "Pushing the release commit ${RELEASE_SHA:0:8} to ${RELEASE_REMOTE}/${RELEASE_BRANCH} (the pre-push gate runs)..."
-  git -C "$REPO_ROOT" push "$RELEASE_REMOTE" "${RELEASE_SHA}:refs/heads/${RELEASE_BRANCH}" \
-    || rf_stop "the push of the release commit was refused — fix what the hook reported above"
+  echo "Pushing the release commit ${RELEASE_COMMIT:0:8} to ${RELEASE_REMOTE}/${RELEASE_PR_BRANCH} (the pre-push gate runs)..."
+  git -C "$REPO_ROOT" push "$RELEASE_REMOTE" "${RELEASE_COMMIT}:refs/heads/${RELEASE_PR_BRANCH}" \
+    || rf_stop "the push of the release commit to ${RELEASE_PR_BRANCH} was refused — fix what the hook reported above"
+}
+
+# The pull request of the release branch at the release commit, read from GitHub: PR_STATE is none, open or merged.
+rf_find_pr() {
+  local out
+  out="$(rf_py pull_request find --repo "$GH_REPO" --branch "$RELEASE_PR_BRANCH" --sha "$RELEASE_COMMIT")" \
+    || rf_stop "GitHub could not be asked for the pull requests of ${RELEASE_PR_BRANCH}"
+  IFS=$'\t' read -r PR_STATE PR_NUMBER PR_URL <<<"$out"
+}
+
+# Open it when there is none. The title and the body are written by scripts.release.pull_request.
+rf_open_pr() {
+  local out
+  if [[ "$PR_STATE" != "none" ]]; then
+    echo "The pull request #${PR_NUMBER} of ${RELEASE_PR_BRANCH} is ${PR_STATE}: ${PR_URL}"
+    return 0
+  fi
+  echo "Opening a pull request from ${RELEASE_PR_BRANCH} into ${RELEASE_BRANCH}..."
+  out="$(rf_py pull_request create --repo "$GH_REPO" --branch "$RELEASE_PR_BRANCH" \
+    --package "$PKG" --version "$VERSION" --tag "$TAG")" \
+    || rf_stop "the pull request of ${RELEASE_PR_BRANCH} could not be opened (see above)"
+  IFS=$'\t' read -r PR_STATE PR_NUMBER PR_URL <<<"$out"
+  echo "Opened the pull request #${PR_NUMBER}: ${PR_URL}"
+}
+
+# Wait until the checks the rules for main require are done and green on the head of the pull request (on two polls
+# running); a red check, a pull request that was closed or moved, and the deadline stop.
+rf_wait_pr_checks() {
+  local rc=0
+  rf_set_deadline
+  rf_py pull_request wait --repo "$GH_REPO" --number "$PR_NUMBER" --sha "$RELEASE_COMMIT" \
+    --deadline "$RF_DEADLINE" --interval "$RELEASE_POLL_INTERVAL_S" || rc=$?
+  case "$rc" in
+    0) ;;
+    3) rf_stop "the required checks of the pull request ${PR_URL} did not finish before the deadline (RELEASE_WAIT_TIMEOUT_S=${RELEASE_WAIT_TIMEOUT_S})" ;;
+    2) rf_stop "GitHub could not be asked for the required checks of the pull request ${PR_URL}" ;;
+    *) rf_stop "the pull request ${PR_URL} cannot be merged (see above) — for a flaky job, 'gh run rerun <id>' and re-run, and a pull request that was closed is replaced by the re-run; for a real failure, fix the cause on main in a pull request, then $(rf_drop_release_hint)" ;;
+  esac
+}
+
+# Merge with a merge commit. GitHub applies the rules for main to this call as to anybody's; there is no way around them
+# here (no --admin, no --auto), and a refusal is not retried. Main is looked at first: the strict rule refuses a pull request
+# that main has moved past, and that is the one refusal with a cause the script can name (and no fix on GitHub: the release
+# commit is never rebased).
+rf_merge_pr() {
+  rf_fetch_main
+  rf_require_current_base
+  rf_py pull_request merge --repo "$GH_REPO" --number "$PR_NUMBER" --sha "$RELEASE_COMMIT" \
+    || rf_stop "GitHub did not merge the pull request ${PR_URL} (see above) — the rules for main bind everybody, so fix the cause on GitHub and re-run. A cause in the release commit itself, an unsigned commit for one, cannot be fixed after the push: $(rf_drop_release_hint)"
+}
+
+# The commit the tag goes on: the merge commit on the first-parent line of the remote's main that has the release commit as
+# its second parent and its tree. Sets RELEASE_SHA. A release commit that got to main another way (a squash or a rebase,
+# which give it another hash) has no such commit and ends the release: the tag would not be on the commit that was built.
+rf_resolve_merge() {
+  local out rc=0
+  out="$(rf_py pull_request merge-commit --root "$REPO_ROOT" --remote "$RELEASE_REMOTE" --sha "$RELEASE_COMMIT")" || rc=$?
+  case "$rc" in
+    0)
+      RELEASE_SHA="$out"
+      echo "The release commit ${RELEASE_COMMIT:0:8} is on ${RELEASE_REMOTE}/${RELEASE_BRANCH} in the merge commit ${RELEASE_SHA:0:8}."
+      ;;
+    4) err "no merge commit of the release commit ${RELEASE_COMMIT:0:8} is on ${RELEASE_REMOTE}/${RELEASE_BRANCH}: its pull request (${PR_URL:--}) is not merged, or was merged by squash or rebase, which give the commit another hash. Nothing was tagged, and the tag is made only on the merge commit: merge the pull request with a merge commit, or release the next version" ;;
+    *) err "the merge commit of the release commit ${RELEASE_COMMIT:0:8} is not what was built (see above) — nothing was tagged; release the next version" ;;
+  esac
+}
+
+# The push of the tag runs the pre-push gate, which tests the working tree and refuses a commit that is not the checked-out
+# HEAD: the local branch moves from the release commit to its merge commit (a fast-forward, the release commit is its parent).
+rf_checkout_merge() {
+  local head
+  head="$(git -C "$REPO_ROOT" rev-parse HEAD)"
+  [[ "$head" != "$RELEASE_SHA" ]] || return 0
+  [[ "$head" == "$RELEASE_COMMIT" ]] \
+    || err "HEAD is neither the release commit ${RELEASE_COMMIT:0:8} nor its merge commit ${RELEASE_SHA:0:8} — check out the merge commit (git switch --detach ${RELEASE_SHA}) and re-run: the pre-push gate of the tag tests the working tree"
+  git -C "$REPO_ROOT" merge --ff-only --quiet "$RELEASE_SHA" \
+    || err "could not move the local branch to the merge commit ${RELEASE_SHA:0:8}"
+  echo "Moved the local branch to the merge commit ${RELEASE_SHA:0:8}."
+}
+
+# From the release commit to the commit the tag goes on, each step done only when it is not done: the branch pushed, the
+# pull request open, its checks green, merged. The state is read from git and GitHub; a merged pull request, or a release
+# commit that is on main already, goes straight to the merge commit.
+rf_carry_release() {
+  rf_fetch_main
+  if git -C "$REPO_ROOT" merge-base --is-ancestor "$RELEASE_COMMIT" "$RF_MAIN"; then
+    echo "The release commit ${RELEASE_COMMIT:0:8} is already on ${RELEASE_REMOTE}/${RELEASE_BRANCH}."
+  else
+    rf_find_pr
+    if [[ "$PR_STATE" != "merged" ]]; then
+      rf_require_current_base
+      rf_push_release_branch
+      rf_open_pr
+      rf_wait_pr_checks
+      rf_merge_pr
+    fi
+    rf_fetch_main
+  fi
+  rf_resolve_merge
+  rf_checkout_merge
 }
 
 # One deadline for every wait of this run, set when the first wait starts.
@@ -328,7 +488,7 @@ rf_set_deadline() {
   [[ -n "$RF_DEADLINE" ]] || RF_DEADLINE=$(( $(date +%s) + 10#${RELEASE_WAIT_TIMEOUT_S} ))
 }
 
-# Wait until every push CI run of main on the release commit is done; red, no run and the deadline stop.
+# Wait until every push CI run of main on the merge commit (the commit the tag goes on) is done; red, no run and the deadline stop.
 rf_wait_ci() {
   local rc=0
   rf_set_deadline
@@ -336,14 +496,14 @@ rf_wait_ci() {
     --wait --deadline "$RF_DEADLINE" --interval "$RELEASE_POLL_INTERVAL_S" || rc=$?
   case "$rc" in
     0) ;;
-    3) rf_stop "CI on the release commit did not finish before the deadline (RELEASE_WAIT_TIMEOUT_S=${RELEASE_WAIT_TIMEOUT_S})" ;;
-    2) rf_stop "GitHub could not be asked for the CI runs of the release commit" ;;
-    *) rf_stop "CI is not green on the release commit ${RELEASE_SHA:0:8}" ;;
+    3) rf_stop "CI on the merge commit did not finish before the deadline (RELEASE_WAIT_TIMEOUT_S=${RELEASE_WAIT_TIMEOUT_S})" ;;
+    2) rf_stop "GitHub could not be asked for the CI runs of the merge commit" ;;
+    *) rf_stop "CI is not green on the merge commit ${RELEASE_SHA:0:8}" ;;
   esac
 }
 
-# Tag the release commit and push the tag. A pushed tag is a fact: it is never moved or deleted, so a
-# tag on the remote that is not at the release commit is an error, not something to repair here.
+# Tag the merge commit and push the tag. A pushed tag is a fact: it is never moved or deleted, so a
+# tag on the remote that is not at the merge commit is an error, not something to repair here.
 rf_tag() {
   local remote_sha local_sha listed
   listed="$(rf_net git -C "$REPO_ROOT" ls-remote --tags "$RELEASE_REMOTE" "refs/tags/${TAG}" "refs/tags/${TAG}^{}")" \
@@ -351,13 +511,13 @@ rf_tag() {
   remote_sha="$(awk 'END { print $1 }' <<<"$listed")"
   if [[ -n "$remote_sha" ]]; then
     [[ "$remote_sha" == "$RELEASE_SHA" ]] \
-      || err "tag ${TAG} is on ${RELEASE_REMOTE} at ${remote_sha:0:8}, not at the release commit ${RELEASE_SHA:0:8} — a pushed tag is never moved"
-    echo "Tag ${TAG} is already on ${RELEASE_REMOTE} at the release commit."
+      || err "tag ${TAG} is on ${RELEASE_REMOTE} at ${remote_sha:0:8}, not at the merge commit ${RELEASE_SHA:0:8} — a pushed tag is never moved"
+    echo "Tag ${TAG} is already on ${RELEASE_REMOTE} at the merge commit."
     return 0
   fi
   if local_sha="$(git -C "$REPO_ROOT" rev-parse -q --verify "refs/tags/${TAG}^{commit}")"; then
     [[ "$local_sha" == "$RELEASE_SHA" ]] \
-      || err "a local tag ${TAG} points at ${local_sha:0:8}, not at the release commit ${RELEASE_SHA:0:8} — delete that local tag yourself, this script never moves a tag"
+      || err "a local tag ${TAG} points at ${local_sha:0:8}, not at the merge commit ${RELEASE_SHA:0:8} — delete that local tag yourself, this script never moves a tag"
   else
     git -C "$REPO_ROOT" tag -a "$TAG" "$RELEASE_SHA" -m "🤖 chore(release): release ${PKG} ${VERSION} to PyPI" \
       || err "git tag ${TAG} failed"
@@ -366,7 +526,7 @@ rf_tag() {
   echo "Pushed tag ${TAG}."
 }
 
-# Wait for the release.yml run of the release commit (rebuild at the manifest's epoch, digest check,
+# Wait for the release.yml run of the merge commit (rebuild at the manifest's epoch, digest check,
 # cosign signature, SLSA provenance), then require a bundle on the GitHub release for every artefact.
 rf_wait_signing() {
   local rc=0

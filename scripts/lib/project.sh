@@ -18,8 +18,8 @@ RELEASE_BRANCH="main"
 # the repository: the upload is made by the publish workflow in CI, which PyPI recognises by its OIDC identity (workflow
 # file and environment below), and this side only reads PyPI's public JSON and files. The release does use the
 # maintainer's own GitHub login, which no script reads or stores: `gh auth login` (a fine-grained token on the repository,
-# for the API, the CI runs, the release downloads and the dispatch) and the same login in git for the push of main and
-# of the tag.
+# for the API, the pull request, the CI runs, the release downloads and the dispatch) and the same login in git for the push
+# of the release branch and of the tag.
 PYPI_HOST="pypi.org"                       # the JSON API of the project: https://<host>/pypi/<PKG>/json
 PYPI_FILES_HOST="files.pythonhosted.org"   # the only host the files are downloaded from
 PUBLISH_WORKFLOW="publish.yml"             # the workflow that uploads; dispatched on the release tag

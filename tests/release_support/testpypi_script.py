@@ -28,7 +28,7 @@ FIRST_LINE = (
 LAST_LINE = "TestPyPI rehearsal complete: now approve environment pypi"
 PYPI_RUN_URL = "https://github.example/run/publish-1000"
 TESTPYPI_RUN_URL = "https://github.example/run/testpypi-2000"
-WAIT = {"RELEASE_WAIT_TIMEOUT_S": "4", "RELEASE_POLL_INTERVAL_S": "0.2"}
+WAIT = {"RELEASE_WAIT_TIMEOUT_S": "8", "RELEASE_POLL_INTERVAL_S": "0.2"}
 
 
 def run_script(world: World, *args: str, **env: str) -> subprocess.CompletedProcess[str]:

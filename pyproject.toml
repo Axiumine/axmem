@@ -419,8 +419,10 @@ pytest_add_cli_args = [
     "--ignore=tests/integration/test_harness_throwaway_server.py",
     "--ignore=tests/integration/test_harness_walkthrough.py",
     "--ignore=tests/integration/test_main_lifespan_and_routes.py",
+    "--ignore=tests/integration/test_quality_malware_gate.py",  # OSV stood in for by a loopback server, per case; tests scripts/quality, not app/
     "--ignore=tests/integration/test_quality_reuse_gate.py",  # the real tool on scratch repositories and on the checkout
     "--ignore=tests/integration/test_quality_runner.py",
+    "--ignore=tests/integration/test_quality_vex_gate.py",  # reads security/ and .trivyignore of the checkout; tests scripts/quality, not app/
     "--ignore=tests/integration/test_quality_shell_gates.py",  # real tools on scratch repositories and on the checkout
     "--ignore=tests/integration/test_quality_wheel_gate.py",  # builds the real package of the checkout
     # The release scripts tests run the scripts of a copy of scripts/ in scratch repositories and read git metadata

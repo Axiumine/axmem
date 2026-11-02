@@ -2,11 +2,11 @@
 # SPDX-FileCopyrightText: 2026 Giovanni Manzoni
 # SPDX-License-Identifier: AGPL-3.0-only
 
-"""Fake ``gh``: CI runs, release.yml and publish.yml runs, release assets and bundles, the GitHub settings, as the test's config scripts them.
+"""Fake ``gh``: CI runs, pull requests and their checks, release.yml and publish.yml runs, release assets and bundles, the GitHub settings, as the test's config scripts them.
 
 Config keys (``config.json`` in the state directory): ``ci_base`` / ``ci_release`` (states of the CI runs of the
-starting commit and of the release commit, played one call at a time), ``ci_raw`` (rows that replace the CI runs of
-the release commit), ``release_runs`` (states of the ``release.yml`` run of the release's own tag),
+starting commit and of the commit on ``main`` that the release is tagged on, the merge commit of the release's pull
+request, played one call at a time), ``ci_raw`` (rows that replace the CI runs of that commit), ``release_runs`` (states of the ``release.yml`` run of the release's own tag),
 ``release_runs_rerun`` (the same after ``gh run rerun`` of a run that is not a ``publish.yml`` run, default green),
 ``release_raw`` (rows that replace the ``release.yml`` runs; ``@tag`` in a row is the first tag at the commit),
 ``signed_tags`` (tags of old releases that are whole: tag to artefact names), ``assets`` (``no_release``,
@@ -16,8 +16,11 @@ the release commit), ``release_runs`` (states of the ``release.yml`` run of the 
 not the manifest's bytes), ``release_extra`` (names of files that ``release download`` writes besides the ones asked for),
 ``gh_fail_from`` (every call from the n-th fails), ``gh_fail_on`` (kind to n: that kind of call fails from its
 n-th), ``gh_hooks`` (shell commands run before the n-th call, or before the n-th call of a kind, to change the world
-while the script waits). The kinds are ``ci``, ``release-runs``, ``release-view``, ``release-download`` and the ones of
+while the script waits). The kinds are ``ci``, ``release-runs``, ``release-view``, ``release-download``, the ones of
+``_pulls.py``: ``pr-list``, ``pr-create``, ``pr-view``, ``pr-merge``, ``pr-checks``, and the ones of
 ``_publish.py``: ``publish-runs``, ``publish-dispatch``, ``publish-view``, ``publish-log``, ``publish-rerun``, ``api``.
+``gh pr ...`` and the check runs of a commit are answered by ``_pulls.py``, which documents the keys ``pr_checks``,
+``pr_checks_raw``, ``pr_checks_double``, ``pr_merge_fail``, ``pr_merge_as`` and ``pr_create_fail``.
 
 Tags are plain ``v<version>``. The runs of ``release.yml`` (the push of the tag) and of ``publish.yml`` (the dispatch)
 are kept apart: ``run list --workflow release.yml`` answers the first, ``--workflow publish.yml`` the second, any other
@@ -41,6 +44,7 @@ from pathlib import Path
 from typing import Any
 
 import _publish
+import _pulls
 import _state
 
 args = sys.argv[1:]
@@ -275,6 +279,8 @@ def release_download(tag: str) -> None:
         (target / extra).write_bytes(b"a file the manifest does not list\n")
 
 
+if _pulls.handle(args, origin_git, fail_kind):
+    sys.exit(0)
 if _publish.handle(args, origin_git, fail_kind, release_artefacts, _state.GITHUB_REPO):
     sys.exit(0)
 require_repository()

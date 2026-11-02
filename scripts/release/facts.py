@@ -34,6 +34,8 @@ PUBLISH_WORKFLOW = "publish.yml"
 PYPI_FILE_HOST = "files.pythonhosted.org"
 BUNDLE_SUFFIX = ".sigstore.json"
 PROVENANCE_SUFFIX = ".intoto.jsonl"
+# the CycloneDX file that release.yml signs and attaches beside the wheel and the sdist
+SBOM_SUFFIX = ".cdx.json"
 # how long a commit may show no run at all before "no run" is an answer and not "not started yet"
 NO_RUN_GRACE_S = 600
 # a git or gh call that has not answered in this long is an error, not a wait (the waits have their own deadline)
@@ -322,13 +324,27 @@ class Target(NamedTuple):
     digests: dict[str, str | None]
 
 
+def sbom_digests(release: Release) -> dict[str, str | None]:
+    """Each SBOM the release carries (a name ending ``SBOM_SUFFIX``), with the sha256 GitHub holds.
+
+    No manifest lists the SBOM: it is not a file of PyPI, and ``release.yml`` makes it from the
+    ``uv.lock`` of the tag, with the uv it pins, so the release script cannot know its bytes
+    beforehand. What can be proven is that the bundle attached beside it signed the very bytes that
+    are attached: the digest of the asset itself stands for the expected one. A release without an
+    SBOM (a version cut before the workflow made one) is no problem here: the run of the tag must be
+    green, and that run fails when the SBOM is not made, checked and signed.
+    """
+    return {n: a.digest for n, a in release.assets.items() if n.endswith(SBOM_SUFFIX)}
+
+
 def _release_problems(release: Release, target: Target) -> list[str]:
     """Why a published GitHub release is not proven to carry what ``target`` ships, signed; empty when it is."""
+    digests = {**target.digests, **sbom_digests(release)}
     problems = [f"the GitHub release of {target.tag} is still a draft"] if release.draft else []
-    whole = bundle_problems(release, list(target.digests))
-    problems += whole + digest_problems(release, target.digests)
+    whole = bundle_problems(release, list(digests))
+    problems += whole + digest_problems(release, digests)
     if not whole and not release.draft:
-        problems += bundle_digest_problems(target.repo, target.tag, target.digests)
+        problems += bundle_digest_problems(target.repo, target.tag, digests)
     return problems
 
 
@@ -336,10 +352,11 @@ def signing_problems(target: Target, need_run: bool) -> list[str]:
     """Why the release of ``target`` is not proven signed; empty when it is.
 
     The release must be published and carry each artefact with its expected sha256 and a whole bundle for it,
-    and each bundle must have signed that sha256. With ``need_run`` every ``release.yml`` run of the tag push
-    on the commit must also have succeeded. Without it (an old version, whose run GitHub may no longer record)
-    a missing run is accepted when the release also carries the provenance file, the last thing the workflow
-    uploads; a run that is recorded must still have succeeded.
+    and each bundle must have signed that sha256. An SBOM on the release is held to the same
+    (``sbom_digests``). With ``need_run`` every ``release.yml`` run of the tag push on the commit
+    must also have succeeded. Without it (an old version, whose run GitHub may no longer record) a
+    missing run is accepted when the release also carries the provenance file, the last thing the
+    workflow uploads; a run that is recorded must still have succeeded.
     """
     state, why = run_verdict(release_runs(target.repo, target.sha, target.tag))
     problems = [why] if state in ("pending", "red") or (state == "none" and need_run) else []

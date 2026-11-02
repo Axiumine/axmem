@@ -14,6 +14,48 @@ without the mark, with the commit that landed it, in the commit that lands it.
 
 ### Added
 
+- Every release carries a software bill of materials. `release.yml` makes `axmem-<version>.cdx.json`, a CycloneDX 1.5 file of
+  what `pip install` of the wheel brings: one component with name, version and purl for each package that `uv.lock` locks for
+  the runtime dependencies (the `dev` group is not in it), and Axmem as the root with the version of the release. It is made
+  from the lock of the tag by the new `scripts/release/sbom.py`, with a pinned uv (0.12.17, with the archive checksum; the
+  SBOM export is a uv preview feature), and is the same bytes for the same lock, version and `SOURCE_DATE_EPOCH`. The run
+  checks it against `uv.lock` before anything is signed, signs it with cosign (keyless, a `.sigstore.json` bundle) like the
+  wheel and the sdist, attaches it and its bundle to the GitHub release and lists it among the subjects of the SLSA
+  provenance. The release guard and the integrity check refuse a release that carries an SBOM without a whole bundle over the
+  bytes attached (`facts.sbom_digests`); they do not require one, because `v0.6.0rc1` was made before this change and has
+  none, and a release made with it fails its run when the SBOM step fails. The SBOM is not on PyPI and is in no manifest. The
+  new `sbom` gate in `pre-push` builds the document twice from the current lock and validates it, so a generator that breaks
+  fails the push and not a tag. See [docs/release.md](docs/release.md), "The SBOM", and `SUP-9` of
+  [docs/security.md](docs/security.md). `tests/integration/test_release_sbom.py` and `test_release_facts_sbom.py` run the
+  real generator and checker on documents with a package dropped, a version emptied or changed, a purl wrong and the root
+  missing, and `tests/architecture/test_release_sbom_workflow.py` holds the steps of the workflow in place. No release
+  carries an SBOM until the first one is cut with this change.
+- The `malware` quality gate (`scripts/quality/malware.py`, standard library only) asks the OSV API (`POST /v1/querybatch`,
+  1,000 queries per request, every page followed, three tries with a growing pause, a body capped at 32 MiB, HTTPS only, no
+  redirect) about every package of `uv.lock` (ecosystem `PyPI`) and of the `package-lock.json` of the test harness image
+  (`npm`) at its locked version, and fails on an identifier that starts with `MAL-`, a malicious-package advisory, naming the
+  package, the version and the identifier. It never passes by not looking: an unreachable API, an answer in another shape and
+  a package from a git, path or URL source (`UNCHECKED-<name>`) fail it. An accepted finding is an entry of `.trivyignore`
+  with a reason and a date; the new `scripts/quality/suppressions.py` reads the file for this gate and for `vex`, and holds
+  each entry to a reason, a date and at most 90 days ahead (trivy accepts an undated entry). The gate runs in the `trivy` job
+  of `quality.yml`, so no required check name changes, and in `ci` and `pre-push`, and in `pre-commit` when a lock file,
+  `pyproject.toml` or `.trivyignore` is staged. The policy (what a malicious dependency is, what follows a finding, the
+  rotation of the credentials that CI or the maintainer's machine could have exposed) is in
+  [docs/quality-gates.md](docs/quality-gates.md#malicious-dependencies) and `SUP-10` of [docs/security.md](docs/security.md).
+  It finds only what has been reported to OSV under `MAL-`. `tests/integration/test_quality_malware_gate.py` stands in for
+  OSV with a loopback server.
+- `security/axmem.openvex.json`, an OpenVEX v0.2.0 document for `pkg:pypi/axmem` by the lead maintainer, and the `vex`
+  quality gate (`scripts/quality/vex.py`) that checks it. The document holds a statement only for a vulnerability in a
+  component that a person decided does not affect Axmem, and is empty today, because no vulnerability has been judged so; the
+  findings of Dependabot and OSV-Scanner so far were fixed by version bumps, which the Security section records. The gate
+  checks the shape of the document and of each statement and requires a `not_affected` statement, with a justification and an
+  impact statement, for every entry of `.trivyignore` still in force; a statement of status `affected`, `fixed` or
+  `under_investigation` is a record and explains no entry. It runs next to `malware`, in the `trivy` job of `quality.yml`, in
+  `ci` and `pre-push`, and in `pre-commit` when `.trivyignore` or the document is staged. That `version` and `last_updated`
+  were raised when a statement changed is a duty of review, which the gate cannot see; the document is not signed and not
+  attached to a release. See [docs/quality-gates.md](docs/quality-gates.md#vulnerabilities-that-do-not-affect-axmem-vex) and
+  `SUP-11` of [docs/security.md](docs/security.md). `tests/integration/test_quality_vex_gate.py` covers the shape and the
+  link with `.trivyignore`.
 - The GitHub release of a version carries the log of its changes as its notes. `release.yml` cuts the section `## [v<version>]`
   of `CHANGELOG.md` at the tag (the one that `scripts/release-pypi.sh` stamps from `## [Unreleased]`) with the new
   `scripts/release/notes.py` and gives the file to `softprops/action-gh-release` as `body_path`, so the notes are what the
@@ -158,6 +200,33 @@ without the mark, with the commit that landed it, in the commit that lands it.
 
 ### Changed
 
+- The release no longer pushes to `main`, and the rules for `main` have no bypass actor. The ruleset of `main` is a
+  repository setting, not a file: the maintainer applies it right after this change is merged (2026-11-02), and the state
+  that results is that nobody pushes to `main`, the lead maintainer and the Admin role included. A change reaches `main` only
+  through a pull request, with the checks `lint (py3.14)`, `static (3.14)`, `trivy`, `smoke-test`, `analyze (python)` and
+  `analyze (actions)` green and the branch up to date; deletion and force pushes stay blocked, commits stay signed, and no
+  approval is required, because the one maintainer cannot approve their own pull request (nobody reviews the maintainer's own
+  changes, which `GOVERNANCE.md` lists as an open item). The tag ruleset on `v*` keeps the Admin role as its bypass actor,
+  since that is how the maintainer creates a release tag. `scripts/release-pypi.sh` now pushes the release commit to
+  `release/<version>` (the `pre-push` gate runs on that push), opens a pull request with a title and body it writes (no
+  attribution line), waits until the required checks are green on the head of the pull request, merges it with a merge commit
+  (`gh pr merge --merge --match-head-commit`, never `--admin`, never `--auto`) and makes the tag `v<version>` on the merge
+  commit, because only the merge commit has the push-triggered CI runs of `main` that the release guard asks for; its tree is
+  the release commit's, so the manifest, the rebuild by `release.yml` and `guard find-release` are unchanged. Every step is
+  skipped when it is done, so a re-run resumes from git, GitHub and PyPI; a branch of the release at another commit is never
+  moved or deleted, a `main` that moved past the base of the release commit stops the release (nothing is tagged and the
+  version is not spent), and a pull request merged by squash or rebase gets no tag. The new `scripts/release/pull_request.py`
+  holds the checks. `publish-ready` refuses a repository with merge commits off and warns when `main` has no `pull_request`
+  rule or its rule leaves merge commits out. The login of `gh` needs Pull requests write access. `CONTRIBUTING.md`,
+  `GOVERNANCE.md`, `docs/release.md`, `docs/contributors.md`, `docs/security.md`, `docs/quality-gates.md` and
+  `.github/CODEOWNERS` no longer say that the Admin role bypasses the rules or that the maintainer pushes to `main`: the
+  maintainer's own changes also go through a pull request. `tests/integration/test_release_pipeline_pull_request.py` and
+  `test_release_pull_request_checks.py` cover the new steps, the refusals and the resume paths.
+- `CODE_OF_CONDUCT.md`, section Enforcement, names the one route there is for a report about the lead maintainer: GitHub
+  Support (the profile page of the account, Block or Report, Report abuse, or the report-abuse form). GitHub Support judges
+  the report against the GitHub Community Guidelines and Terms of Service, not against this Code of Conduct, and the offer to
+  report a comment, an issue or a pull request to the repository admins goes to the lead maintainer and the account `vivi7`,
+  which is not a neutral party. Nobody inside the project is named to receive such a report.
 - The project has one maintainer, Giovanni Manzoni, and no successor. `MAINTAINERS.md`, `GOVERNANCE.md`, `SECURITY.md`,
   `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, the docs under `docs/` and the proposed answers of `.bestpractices.json` called the
   GitHub account `vivi7` a "co-owner and successor" and spoke of two owners; they now say that the account has owner access to

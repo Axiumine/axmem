@@ -82,7 +82,7 @@ class TestTheTagsOwnRunDecides:
         world.configure(release_raw=[{**SUCCESS, **row}])
 
         done = world.release(
-            VERSION, RELEASE_WAIT_TIMEOUT_S="2", RELEASE_POLL_INTERVAL_S="0.2",
+            VERSION, RELEASE_WAIT_TIMEOUT_S="8", RELEASE_POLL_INTERVAL_S="0.2",
         )
 
         assert done.returncode != 0
@@ -106,10 +106,11 @@ class TestTheTagsOwnRunDecides:
         )
 
         done = world.release(
-            VERSION, RELEASE_WAIT_TIMEOUT_S="2", RELEASE_POLL_INTERVAL_S="0.2",
+            VERSION, RELEASE_WAIT_TIMEOUT_S="8", RELEASE_POLL_INTERVAL_S="0.2",
         )
 
         assert done.returncode != 0
+        assert "STOPPED: the signing run did not finish before the deadline" in _out(done)
         assert world.dispatches() == []
 
 

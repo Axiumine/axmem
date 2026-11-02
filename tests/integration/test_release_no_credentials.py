@@ -124,7 +124,8 @@ class TestAnEnvironmentFileThatCannotBeOpenedAndAmbientSecrets:
 
         assert done.returncode == 0, _out(done)
         argv = _argv(tmp_path)
-        assert {line.split()[0] for line in argv} >= {"git", "curl", "gh", "uv", "python3"}, "the shims saw the release"
+        # the body of the pull request is one argument over several lines: the blank ones are no command
+        assert {line.split()[0] for line in argv if line.strip()} >={"git", "curl", "gh", "uv", "python3"}, "the shims saw the release"
         for value in AMBIENT.values():
             assert [line for line in argv if value in line] == []
             assert [line for line in world.events() if value in line] == []

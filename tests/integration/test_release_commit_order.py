@@ -5,8 +5,9 @@
 
 A release that dispatched first and committed afterwards could leave a version on PyPI that no commit and no tag names:
 PyPI refuses a second upload of a file name for good, so the upload is the one step that cannot be undone. The script
-therefore refuses what it can before anything changes, makes the release commit, pushes it, waits for CI, tags it and waits
-for the signing run, and only then asks the guard and dispatches ``publish.yml``, which makes the upload.
+therefore refuses what it can before anything changes, makes the release commit, carries it to ``main`` in a pull request
+(branch, checks, merge commit), waits for CI on the merge commit, tags it and waits for the signing run, and only then asks
+the guard and dispatches ``publish.yml``, which makes the upload.
 
 Two kinds of test pin that. The structure tests read the script and compare where its commands sit. The hermetic tests lift
 ``commit_release``, ``rf_stop`` and ``rf_stop_dispatched`` out of the script (``tests/release_support/script.py``) and run
@@ -51,12 +52,15 @@ REFUSALS = (
     r"^  rf_require_synced_main$",
     r"^  rf_require_clean_tree$",
     r"^  rf_require_tag_free$",
+    r"^  rf_require_pr_branch_free$",
     r"^  rf_py ci_green --repo \"\$GH_REPO\" --sha \"\$LOCAL_TIP\"",
     r"^  \( cd \"\$REPO_ROOT\" && uv run --frozen python -m scripts\.quality stage ci \)",
 )
 STAMP = r"^  stamp_changelog \"\$CHANGELOG\" \"\$TAG\"$"
 COMMIT = r"^  commit_release \"\$CHANGELOG\" \"\$MANIFEST\"$"
-REQUIRE_TREE = r"^rf_require_release_tree$"
+REQUIRE_TREE = r"^rf_require_release_tree \"\$RELEASE_COMMIT\"$"
+CARRY = r"^rf_carry_release$"
+REQUIRE_MERGED_TREE = r"^rf_require_release_tree \"\$RELEASE_SHA\"$"
 PUBLISH = r"^publish_release$"
 ORDER = (
     *REFUSALS,
@@ -69,8 +73,10 @@ ORDER = (
     r"^  BUILD=0 bash .*check-package\.sh",
     r"^  rf_py digests write",
     COMMIT,
+    r"^  RELEASE_COMMIT=\"\$\(git .* rev-parse HEAD\)\"$",
     REQUIRE_TREE,
-    r"^rf_push_release$",
+    CARRY,
+    REQUIRE_MERGED_TREE,
     r"^rf_wait_ci$",
     r"^rf_tag$",
     r"^rf_wait_signing$",
@@ -177,12 +183,12 @@ class TestTheDispatchIsTheLastStep:
     def test_the_publish_path_runs_in_the_order_of_the_invariant(self, script: str) -> None:
         offsets = [_command(script, pattern) for pattern in ORDER]
         assert offsets == sorted(offsets), (
-            "refusals, preflight, changelog stamp, pinned build, manifest, release commit, push, CI, tag, "
-            "signing run, signed files, PyPI read, guard and dispatch, wait for PyPI, read-back"
+            "refusals, preflight, changelog stamp, pinned build, manifest, release commit, pull request and merge, "
+            "CI on the merge commit, tag, signing run, signed files, PyPI read, guard and dispatch, wait for PyPI, read-back"
         )
 
     def test_the_commit_is_made_before_anything_is_pushed(self, script: str) -> None:
-        assert _command(script, COMMIT) < _command(script, r"^rf_push_release$")
+        assert _command(script, COMMIT) < _command(script, CARRY)
 
     def test_nothing_is_changed_before_the_refusals_have_run(self, script: str) -> None:
         """The stamp is the first edit of the tree: every check that needs no change comes before it."""
@@ -268,6 +274,23 @@ class TestTheDispatchIsTheLastStep:
         text = "\n".join(commands)
         assert not re.search(r"git\b.*\bpush\b.*(--force|--delete|\s-f\b|\s\+|\s:refs)", text)
         assert not re.search(r"git\b.*\btag\b.*(\s-d\b|--delete|\s-f\b|--force)", text)
+
+    def test_nothing_is_pushed_to_main_and_the_only_branch_pushed_is_the_release_branch(self) -> None:
+        """The rules for main refuse every direct push: the two pushes are the release branch and the tag."""
+        both = RELEASE_SCRIPT.read_text(encoding="utf-8") + RELEASE_FLOW.read_text(encoding="utf-8")
+        pushes = [ln.strip() for ln in _code(both) if re.match(r"\s*(rf_net\s+)?git\s.*\bpush\b", ln)]
+        assert len(pushes) == 2, pushes
+        assert any("${RELEASE_COMMIT}:refs/heads/${RELEASE_PR_BRANCH}" in ln for ln in pushes), pushes
+        assert any("refs/tags/${TAG}" in ln for ln in pushes), pushes
+        assert not [ln for ln in pushes if re.search(r"refs/heads/\$\{?RELEASE_BRANCH|\bmain\b|HEAD:", ln)], pushes
+
+    def test_the_merge_is_a_merge_commit_made_by_the_rules_not_around_them(self) -> None:
+        module = (REPO_ROOT / "scripts" / "release" / "pull_request.py").read_text(encoding="utf-8")
+        commands = [ln for ln in module.splitlines() if "gh" in ln and "pr" in ln and "merge" in ln and "[" in ln]
+        assert len(commands) == 1, commands
+        assert '"--merge"' in commands[0]
+        assert "--match-head-commit" in commands[0]
+        assert not re.search(r'"--(admin|auto|squash|rebase|delete-branch)"', module)
 
     def test_the_script_never_resets_by_itself(self, script: str) -> None:
         both = script + RELEASE_FLOW.read_text(encoding="utf-8")

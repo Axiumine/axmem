@@ -15,7 +15,10 @@ what they see and refuse when a marker file says so.
 
 The working repository is on the local branch ``LOCAL_BRANCH`` (``axmem``), which tracks ``axiumine/main``. The name is
 chosen to differ from ``main``, which the local branch of the real repository is called: a release runs on the branch
-that tracks the remote's main, whatever it is called, and pushes to the remote's ``main``. There is no environment file;
+that tracks the remote's main, whatever it is called. It never pushes to the remote's ``main`` (the rules for ``main`` refuse
+every direct push): it pushes the release commit to ``release/<version>``, opens a pull request, waits for its checks and
+merges it with a merge commit, which the fake ``gh`` makes in the bare remote (``_pulls.py``). The tag is on that merge
+commit, which is the remote's ``main`` after the release. There is no environment file;
 ``trap_env`` plants one that cannot be read, to prove that the release never opens it.
 
 Every fake, stub and hook appends one line to ``events.log`` in the state directory, so a test reads what the release
@@ -31,6 +34,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shlex
 import shutil
 import subprocess
 from pathlib import Path
@@ -69,7 +73,7 @@ while read -r local_ref local_sha remote_ref remote_sha; do
   echo "hook pre-push $remote_ref" >> "$FAKE_STATE/events.log"
   case "$remote_ref" in
     refs/tags/*) marker=refuse-push-tag ;;
-    *) marker=refuse-push-main ;;
+    *) marker=refuse-push-branch ;;
   esac
   if [ -e "$FAKE_STATE/$marker" ]; then echo "pre-push refused $remote_ref" >&2; exit 1; fi
 done
@@ -203,6 +207,16 @@ class World:
         (self.state / "base.sha").write_text(self.head(), encoding="utf-8")
         (self.state / "events.log").unlink(missing_ok=True)
 
+    def pull_requests(self) -> list[dict[str, Any]]:
+        """The pull requests the fake ``gh`` holds (number, state, head, base, head_sha, title, body, merge)."""
+        path = self.state / "prs.json"
+        loaded: list[dict[str, Any]] = json.loads(path.read_text(encoding="utf-8")) if path.exists() else []
+        return loaded
+
+    def merge_commit(self) -> str:
+        """The merge commit of the release: the tip of the remote's ``main`` once the release pull request is merged."""
+        return self.origin_git("rev-parse", "refs/heads/main")
+
     def state_base(self) -> str:
         """The commit the world started from (the one before any release commit)."""
         return (self.state / "base.sha").read_text(encoding="utf-8").strip()
@@ -212,8 +226,8 @@ class World:
         return self.git("rev-parse", "HEAD")
 
     def commit_count(self) -> int:
-        """How many commits the working repository's branch has."""
-        return int(self.git("rev-list", "--count", "HEAD"))
+        """How many commits the working repository's branch has, not counting the merge commit of the release pull request."""
+        return int(self.git("rev-list", "--count", "--no-merges", "HEAD"))
 
     def add_old_release(self, version: str, signed: bool, manifest: str = "ok") -> list[str]:
         """Put ``version`` on the fake PyPI; with ``signed`` its tag, manifest, green run and bundles exist too.
@@ -335,6 +349,19 @@ class World:
         self._git(["git", "-C", str(other), "commit", "-q", "-m", "elsewhere"])
         self._git(["git", "-C", str(other), "push", "-q", "origin", f"HEAD:{REMOTE_BRANCH}"])
         return self._git(["git", "-C", str(other), "rev-parse", "HEAD"])
+
+    def advance_origin_later(self) -> str:
+        """A shell command that does what ``advance_origin`` does, for a ``gh_hooks`` entry to run while the release is busy.
+
+        The second clone is made now, so the command only commits and pushes.
+        """
+        other = self.tmp / "later"
+        self._git(["git", "clone", "-q", str(self.origin), str(other)])
+        who = ["-c", "user.name=Other", "-c", "user.email=other@example.invalid"]
+        return (
+            f"cd {shlex.quote(str(other))} && echo moved > elsewhere.txt && git add . && "
+            f"git {shlex.join(who)} commit -q -m elsewhere && git push -q origin HEAD:{REMOTE_BRANCH}"
+        )
 
     def manifest(self) -> dict[str, Any]:
         """The ``release-digests.json`` committed at HEAD."""
