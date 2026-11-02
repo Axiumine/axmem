@@ -400,7 +400,7 @@ The steps, in order:
     `Release complete`. A re-run after this ends at step 4 with nothing to do.
 
 Every wait is bounded: `RELEASE_POLL_INTERVAL_S` seconds apart (30), and one deadline of `RELEASE_WAIT_TIMEOUT_S` seconds
-(28800, eight hours) from the first wait. At the deadline the script stops with nothing more done and prints the command
+(28800, eight hours) from the first wait after the merge; the wait for the checks of the pull request has a deadline of its own. At the deadline the script stops with nothing more done and prints the command
 that resumes.
 
 ## When it stops

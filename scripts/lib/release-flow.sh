@@ -409,10 +409,11 @@ rf_open_pr() {
 # Wait until the checks the rules for main require are done and green on the head of the pull request (on two polls
 # running); a red check, a pull request that was closed or moved, and the deadline stop.
 rf_wait_pr_checks() {
-  local rc=0
-  rf_set_deadline
+  local rc=0 deadline
+  # The checks have a deadline of their own: the one deadline of the later waits starts at the CI wait, after the merge.
+  deadline=$(( $(date +%s) + 10#${RELEASE_WAIT_TIMEOUT_S} ))
   rf_py pull_request wait --repo "$GH_REPO" --number "$PR_NUMBER" --sha "$RELEASE_COMMIT" \
-    --deadline "$RF_DEADLINE" --interval "$RELEASE_POLL_INTERVAL_S" || rc=$?
+    --deadline "$deadline" --interval "$RELEASE_POLL_INTERVAL_S" || rc=$?
   case "$rc" in
     0) ;;
     3) rf_stop "the required checks of the pull request ${PR_URL} did not finish before the deadline (RELEASE_WAIT_TIMEOUT_S=${RELEASE_WAIT_TIMEOUT_S})" ;;
@@ -483,7 +484,7 @@ rf_carry_release() {
   rf_checkout_merge
 }
 
-# One deadline for every wait of this run, set when the first wait starts.
+# One deadline for every wait after the merge (CI, signing, PyPI), set when the first of them starts.
 rf_set_deadline() {
   [[ -n "$RF_DEADLINE" ]] || RF_DEADLINE=$(( $(date +%s) + 10#${RELEASE_WAIT_TIMEOUT_S} ))
 }

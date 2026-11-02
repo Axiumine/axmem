@@ -11,7 +11,7 @@ completed, none failed, and one succeeded (runs that were all skipped verified n
 (the release flow checks the release commit before it tags it and again, for the branch runs, as the last
 condition of its guard). ``--wait`` polls every ``--interval`` seconds until the same runs are green on two
 polls in a row, a run is red, or no run appeared for ten minutes, and never past ``--deadline`` (epoch
-seconds); the release flow sets one deadline for all its waits.
+seconds); the release flow sets one deadline for all its waits after the merge.
 
 Exit codes: 0 = green, 1 = red / pending / no runs / nothing succeeded, 2 = GitHub query failed (or
 more runs than the check reads), 3 = ``--wait`` reached its deadline.

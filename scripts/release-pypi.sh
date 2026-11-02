@@ -57,7 +57,7 @@
 # pull request, its checks, the merge, CI, the tag, the signing run, the dispatch, the wait for PyPI). A pushed tag or branch
 # is never moved or deleted and nothing is force-pushed; a release commit whose base main has moved past is not rebased, it
 # is dropped and the release made again (nothing is tagged until the merge is done). Waits are bounded: RELEASE_POLL_INTERVAL_S (30) between polls, one deadline of RELEASE_WAIT_TIMEOUT_S
-# (28800 = 8 h) from the first wait, in which the approval of the environment counts too; at the deadline the script stops
+# (28800 = 8 h) from the first wait after the merge (the checks of the pull request have one of their own), in which the approval of the environment counts too; at the deadline the script stops
 # with the command that resumes. The wait for PyPI to list the files has its own limit (30 minutes from the green run).
 # A version PyPI holds with other bytes, or with a name PyPI already used, is spent: release the next version and list
 # the spent one in release-superseded.json.
