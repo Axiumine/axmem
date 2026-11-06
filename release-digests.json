@@ -1,12 +1,12 @@
 {
   "artifacts": [
     {
-      "name": "axmem-0.6.0rc1-py3-none-any.whl",
-      "sha256": "7b34592365a230e9b5748a9ddaec71eebc167abbf41960b8879b64b87164631e"
+      "name": "axmem-0.6.0rc2-py3-none-any.whl",
+      "sha256": "154576fc0fbdc422f1667938b5eba326ef64ac00a16c83dd26230a416bc644c7"
     },
     {
-      "name": "axmem-0.6.0rc1.tar.gz",
-      "sha256": "6905be2885fa2a5d9c9c23f4848da4d9177aea6b4ac2a3f379673e02a9df6400"
+      "name": "axmem-0.6.0rc2.tar.gz",
+      "sha256": "120607c88c30d8602bce4992e2512c78b5190bae10943c431840849e42ded123"
     }
   ],
   "build": {
@@ -16,7 +16,7 @@
   },
   "package": "axmem",
   "schema": 1,
-  "source_date_epoch": 1793203522,
-  "tag": "v0.6.0rc1",
-  "version": "0.6.0rc1"
+  "source_date_epoch": 1793643839,
+  "tag": "v0.6.0rc2",
+  "version": "0.6.0rc2"
 }
