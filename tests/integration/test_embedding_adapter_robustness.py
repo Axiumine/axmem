@@ -17,6 +17,7 @@ import time
 from unittest.mock import MagicMock
 
 import httpx
+import httpx2
 import openai
 import pytest
 from pydantic import ValidationError
@@ -191,17 +192,17 @@ class FakeAzureEndpoint:
         self.on_request = None
         self.bodies: list[dict] = []
 
-    def __call__(self, request: httpx.Request) -> httpx.Response:
+    def __call__(self, request: httpx2.Request) -> httpx2.Response:  # openai 3 speaks httpx2, not httpx
         body = json.loads(request.content)
         self.bodies.append(body)
         if self.on_request is not None:
             self.on_request()
         if self.rejects_dimensions and "dimensions" in body:
-            return httpx.Response(400, json={"error": {
+            return httpx2.Response(400, json={"error": {
                 "code": "BadRequest",
                 "message": "Unrecognized request argument supplied: dimensions",
             }})
-        return httpx.Response(200, json={
+        return httpx2.Response(200, json={
             "object": "list",
             "model": "text-embedding-ada-002",
             "usage": {"prompt_tokens": 1, "total_tokens": 1},
@@ -216,7 +217,7 @@ class FakeAzureEndpoint:
 @pytest.fixture
 def fake_azure(azure_config, monkeypatch):
     endpoint = FakeAzureEndpoint()
-    http_client = httpx.Client(transport=httpx.MockTransport(endpoint))
+    http_client = httpx2.Client(transport=httpx2.MockTransport(endpoint))
     monkeypatch.setattr(
         ea, "AzureOpenAI", functools.partial(ea.AzureOpenAI, http_client=http_client),
     )
