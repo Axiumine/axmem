@@ -12,6 +12,8 @@ without the mark, with the commit that landed it, in the commit that lands it.
 
 ## [Unreleased]
 
+## [v0.6.0rc2] - 2026-11-06
+
 ### Added
 
 - Every release carries a software bill of materials. `release.yml` makes `axmem-<version>.cdx.json`, a CycloneDX 1.5 file of
