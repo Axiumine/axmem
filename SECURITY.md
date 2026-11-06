@@ -121,6 +121,6 @@ maintainer's.
 
 ## Checking what you install
 
-Every release is signed and carries a provenance attestation. To verify the files before installing them, see
+Every release is signed and carries a provenance attestation, and since `v0.6.0rc2` a signed software bill of materials (a CycloneDX file). To verify the files before installing them, see
 [Checking a release](docs/release.md#checking-a-release). The security properties of the server are described in
 [docs/security.md](docs/security.md).
