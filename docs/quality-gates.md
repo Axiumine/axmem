@@ -504,7 +504,8 @@ commit the refreshed files with the change that caused them.
 holds `@pytest.mark.limit_memory` budgets (bulk create, query with reranking). The TensorRT embedder and
 reranker engines are loaded before the measured section, and the budgets are generous multiples of the measured peak so they fail on a
 leak or an accidental full-table load, not on noise. Without `--memray` the tests run as ordinary smoke
-tests; on Windows the gate is skipped because memray is not available there. Change a budget only with the
+tests: pytest-memray starts its tracker for any test with the marker, and a stopped tracker aborts the next `Decimal.from_float`
+(pytest 9.2's `approx` calls it), so `tests/memory_budget_support.py` takes the marker off unless `--memray` is given. On Windows the gate is skipped because memray is not available there. Change a budget only with the
 new measurement in a comment next to it.
 
 ### Fuzzing

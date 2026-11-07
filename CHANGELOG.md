@@ -25,7 +25,11 @@ without the mark, with the commit that landed it, in the commit that lands it.
   `google-auth` to 2.62.0 (was 2.48.0) and `anyio` to 4.16.0 (was 4.14.2), and drops `rsa`. `anyio` is raised on purpose, not by
   Dependabot: 4.14.2 imports a pytest name that pytest 9.2 deprecates, pytest 9.2 reports warnings raised while a plugin is
   imported, and `filterwarnings = error` turned that one into a failure to load the plugin, which stopped the `architecture`
-  gate; `mutmut` 3.8.1 fixes a stats-collection crash with pytest 9.2 (its release notes); the mutation gate has not run with it yet. What a user can see:
+  gate; `mutmut` 3.8.1 fixes a stats-collection crash with pytest 9.2 (its release notes); the mutation gate has not run with it yet.
+  pytest 9.2's `approx` calls `Decimal.from_float` for a float tolerance, and that call aborted the `tests` gate after a
+  `limit_memory` test: pytest-memray starts its tracker for any marked test, `--memray` or not, and the stopped tracker leaves a
+  stale `free` (`mremap_chunk(): invalid pointer`); `tests/memory_budget_support.py` now takes the marker off unless `--memray` is
+  given, as `pytest.ini` always said. What a user can see:
   - The OpenAI and Azure embeddings clients (`openai` 3) use `httpx2` and verify the TLS certificate of the provider against the
     operating system's trust store, where `openai` 2 used the `certifi` bundle; `SSL_CERT_FILE` and `SSL_CERT_DIR` are still
     honoured. A host with no system CA certificates can no longer reach an HTTPS `OPENAI_BASE_URL` or Azure endpoint. The text
