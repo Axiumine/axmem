@@ -11,7 +11,7 @@
     - [x] JWT verification and static bearer tokens (hashes only), fail-closed `AUTH_MODE`
     - [ ] Authorisation Code flow and Dynamic Client Registration (the GitHub and Google OAuth providers were removed)
 - [x] Store
-    - [x] Qdrant, the only store (one node or a three-node cluster)
+    - [x] Qdrant, the only store (one node or a cluster)
 - [ ] Embedding Adapters
     - [x] TensorRT (in-process on the NVIDIA GPU, the default; replaced the FastEmbed CPU embedder)
     - [x] Google
