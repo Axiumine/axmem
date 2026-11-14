@@ -555,6 +555,8 @@ branch that changes most of `app/` (dozens of modules, tens of thousands of muta
 rerun resumes: the mutants already tested stay in `mutants/` (git-ignored), and a rerun continues from them while the code
 and the files the tests read are unchanged; `rm -rf mutants` starts over.
 
+A mutant that mutmut stops is a `timeout`, and the gate counts it as not killed. The limit of one mutant is (the estimated time of its tests + `timeout_constant`) x `timeout_multiplier` seconds of wall clock, and the estimate is the time of the tests alone: a worker also collects the suites and starts CUDA before its first test (`forkserver_warmup = "none"`), which takes longer when every core runs a worker. `[tool.mutmut]` sets `timeout_constant = 10.0` for that (the default is 1.0, which is 16.5 s for tests of 0.1 s); a mutant that hangs, such as an infinite loop, still ends as a timeout, later. A timeout that repeats on a mutant, not on a different one each run, is a test that is missing: a mutant that makes OpenSSL ask for a passphrase on the controlling terminal waits for a keystroke when a terminal is at hand, so the tests of `app/config/tls.py` replace `ssl` and check what `load_cert_chain` receives (`test_tls_edge_cases.py`).
+
 ## Dependency findings
 
 This is the policy for findings of software composition analysis: a known vulnerability in a locked dependency, and the

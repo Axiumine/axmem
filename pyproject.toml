@@ -389,6 +389,13 @@ do_not_mutate = ["app/_version.py"]
 # process that ran the baseline, and warming the server up with a collection would start CUDA in it as well.
 process_isolation = "forkserver"
 forkserver_warmup = "none"
+# A mutant is stopped, and booked as a timeout that the gate counts as not killed, after (the estimated time of its tests +
+# timeout_constant) x timeout_multiplier seconds of wall clock: 16.5 s with the defaults (1 and 15) for the 0.1 s of the tests
+# of a small function. The estimate is the time of the tests alone, but a worker that is forked from a server with no warm-up
+# (above) collects the suites and starts CUDA before its first test, and with one worker per core that took longer than 16 s
+# now and then: a different mutant of app.config.tls._load_pair timed out in each of three pushes, and none in a run of that
+# function alone. 10 s more (151.5 s in that case) leaves a hang, such as an infinite loop, to end as a timeout as before.
+timeout_constant = 10.0
 also_copy = [
     "pytest.ini", "main.py", "pyproject.toml", "ruff.toml",
     ".env.example",  # test_reference_docs parses it

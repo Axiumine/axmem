@@ -61,6 +61,7 @@ without the mark, with the commit that landed it, in the commit that lands it.
   written for, and hosted CI runs no provider test, so a pull request for it would be green and wrong. Minor and patch releases of
   `google-genai` 2 still arrive through the group. The entry is lifted when the adapter, `service_failures` and the tests are
   changed for version 3 and the pre-push gate has run them.
+- The `mutation` gate no longer fails a push on a mutant that is stopped only because the machine is busy. mutmut stops a mutant after (the estimated time of its tests + `timeout_constant`) x `timeout_multiplier` seconds, 16.5 s with the defaults for a function whose tests take 0.1 s, and books it as a timeout, which the gate counts as a mutant that was not killed. The estimate leaves out the start of the worker (it collects the suites and starts CUDA, as `forkserver_warmup = "none"` requires), and with one worker per core that took longer than 16.5 s now and then: three pushes in a row stopped on a different mutant of `app.config.tls._load_pair`, and a run of that function alone passed. `[tool.mutmut]` in `pyproject.toml` sets `timeout_constant = 10.0` (151.5 s in that case); the tolerated survivors stay 0, and a mutant that hangs still ends as a timeout.
 
 ### Security
 
