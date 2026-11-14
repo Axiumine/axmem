@@ -331,6 +331,12 @@ without the mark, with the commit that landed it, in the commit that lands it.
 - The docs and `.env.example` said that `AUTH_MODE=none` needs `127.0.0.1` or `::1`; the server accepts, as 0.6.0rc1 does, any
   address of `127.0.0.0/8` and `::1` (and no host name, `localhost` included). The text now says what the code does. No behaviour
   changed.
+- The `tests` gate of the `pre-push` hook runs its suites without the `GIT_*` variables that a hook exports, as the other test
+  gates already did. A push made from a linked git worktree exports `GIT_DIR` (a clone does not), so the tests that build
+  temporary repositories ran their `git` commands on the real repository: three tests failed with "remote already exists" and
+  one of them set `core.bare=true` in the shared `.git/config`. The architecture test of the mutation sandbox no longer counts
+  `.git`, a file in a worktree and a directory in a clone, as a path that the sandbox must hold, so the `architecture` gate
+  passes in a worktree too.
 
 ### Security
 
@@ -360,6 +366,7 @@ without the mark, with the commit that landed it, in the commit that lands it.
   found; the `trivy` gate had not stopped on them.
 - `joserfc` is pinned at 1.7.6 (was 1.7.0), the smallest release that carries the fixes of two advisories published on 2026-10-30: GHSA-jpxq-7h8p-2q76 (high: an unbounded `recipients` array in a JWE General JSON message leads to CPU exhaustion through repeated RSA private-key decryption, fixed in 1.7.5) and GHSA-9pg5-8c7x-5hfx (medium: the size guard for a compact JWS allocates the attacker-controlled segments before it rejects them). FastMCP verifies bearer tokens with `joserfc`, and `tests/jwt_support.py` signs them with it. OpenSSF Scorecard's Vulnerabilities check listed both for the old lock file the same day, before the `trivy` database had them; the scan of the new `uv.lock` reports no issue.
 - `pyasn1` is locked at 0.6.5 (was 0.6.4), the release that fixes four denial-of-service findings of high severity that the `trivy` database listed on 2026-10-31: CVE-2026-119194 (hash collisions in schemaless decoding), CVE-2026-119195 (quadratic processing of fragmented ASN.1 data), CVE-2026-119196 (decoding of a constructed bit string) and CVE-2026-119197 (quadratic complexity in the decoding of a binary REAL). Axmem does not call `pyasn1`: it comes in through `google-auth` (with `pyasn1-modules` and `rsa`), which `google-genai` needs, so it is in the lock file and in an install that has the Gemini embedding provider. Only `uv.lock` changes; `pyproject.toml` does not pin it. The scan of the new `uv.lock` reports no issue.
+- `dnspython` is locked at 2.9.2 (was 2.9.0), the release that fixes CVE-2026-128089 (high: excessive memory and CPU use), which the `trivy` database listed for 2.9.0 when it was refreshed on 2026-11-14. Axmem does not call `dnspython`: it comes in through `email-validator` and `pydantic`, which `fastmcp` needs. Only `uv.lock` changes; `pyproject.toml` does not pin it. The scan of the new `uv.lock` reports no issue.
 - Operations note, not a change to any file: four security settings of the GitHub repository `Axiumine/axmem` are enabled, as the
   GitHub API reported on 2026-10-29: private vulnerability reporting (the private channel that `SECURITY.md` names), secret scanning,
   secret scanning push protection and Dependabot security updates. The first three were off in the audit that began this work.
