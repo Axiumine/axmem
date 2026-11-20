@@ -14,6 +14,14 @@ without the mark, with the commit that landed it, in the commit that lands it.
 
 ### Changed
 
+- The next Dependabot group (pull request #21, which it replaces, with #20) is taken on top of the backlog above. `pyproject.toml` pins:
+  `cuda-python` 13.5.0 (was 13.4.4), `numpy` 2.5.5 (was 2.5.4), `platformdirs` 4.14.5 (was 4.14.0), `pydantic` 2.14.3 (was 2.14.2),
+  `pydantic-settings` 2.16.3 (was 2.16.2); the `dev` group: `coverage` 7.17.3, `grimp` 3.20, `httpx2` 2.16.2, `import-linter`
+  2.16, `joserfc` 1.8.0, `pylint` 4.1.4, `pytest-asyncio` 1.5.0 and `ruff` 0.17.5. `uv.lock` also moves `cuda-bindings` to 13.5.0,
+  `httpcore2` to 2.16.2, `pydantic-core` to 2.50.4 and `typing-inspection` to 0.4.5. Pull request #21 was cut from `main` before
+  the backlog and would have put `openai` 2.20.0, `google-genai` 1.66.0, `anyio` 4.14.2 and `jiter` 0.13.0 back, so only the
+  versions above were taken from it. The test harness image base moves to the `node:24` index digest `9d26675` (was `e7add2a`).
+  Pull request #6 (`google-genai` 3) stays deferred.
 - The Dependabot backlog is taken in one change (pull requests #15, #7, #6, #5, #4 and #2, which it replaces). Runtime pins
   of `pyproject.toml`: `google-genai` 2.34.0 (was 1.66.0), `openai` 3.41.0 (was 2.20.0), `numpy` 2.5.4 (was 2.4.2), `ollama`
   0.6.3 (was 0.6.1), `platformdirs` 4.14.0 (was 4.7.0), `pydantic` 2.14.2 (was 2.12.5), `pydantic-settings` 2.16.2 (was

@@ -9,7 +9,7 @@
 # this Dockerfile, package.json and package-lock.json.
 # node:24, multi-arch index digest resolved on 2026-10-29. To move to a newer base:
 # `docker buildx imagetools inspect node:24`, copy the top-level Digest here.
-FROM node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413
+FROM node:24@sha256:9d266751ca3d7fdbe651c878ffd5ad0a42fed49a18c283509267c97f025b7496
 
 # node:24 inherits docker-entrypoint.sh which prepends `node` to any command it can't
 # resolve, mangling python/opencode invocations. Clear it so commands run directly.
