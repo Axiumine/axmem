@@ -152,7 +152,7 @@ def fetch_model(repository: str, model_dir: str | Path, setting: str = "EMBEDDIN
     return ModelFiles(paths[ONNX_FILE], paths[TOKENIZER_FILE], digests[ONNX_FILE], root)
 
 
-def load_tokenizer(path: Path) -> tuple[Tokenizer, int]:  # type: ignore[no-any-unimported]  # tokenizers ships no type information
+def load_tokenizer(path: Path) -> tuple[Tokenizer, int]:
     """The tokenizer (truncating a text, or a query and document pair, to 512 tokens; no padding) and its pad id."""
     try:
         tokenizer = Tokenizer.from_file(str(path))

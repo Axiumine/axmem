@@ -12,6 +12,77 @@ without the mark, with the commit that landed it, in the commit that lands it.
 
 ## [Unreleased]
 
+### Changed
+
+- The next Dependabot group (pull request #21, which it replaces, with #20) is taken on top of the backlog above. `pyproject.toml` pins:
+  `cuda-python` 13.5.0 (was 13.4.4), `numpy` 2.5.5 (was 2.5.4), `platformdirs` 4.14.5 (was 4.14.0), `pydantic` 2.14.3 (was 2.14.2),
+  `pydantic-settings` 2.16.3 (was 2.16.2); the `dev` group: `coverage` 7.17.3, `grimp` 3.20, `httpx2` 2.16.2, `import-linter`
+  2.16, `joserfc` 1.8.0, `pylint` 4.1.4, `pytest-asyncio` 1.5.0 and `ruff` 0.17.5. `uv.lock` also moves `cuda-bindings` to 13.5.0,
+  `httpcore2` to 2.16.2, `pydantic-core` to 2.50.4 and `typing-inspection` to 0.4.5. Pull request #21 was cut from `main` before
+  the backlog and would have put `openai` 2.20.0, `google-genai` 1.66.0, `anyio` 4.14.2 and `jiter` 0.13.0 back, so only the
+  versions above were taken from it. The test harness image base moves to the `node:24` index digest `9d26675` (was `e7add2a`).
+  Pull request #6 (`google-genai` 3) stays deferred.
+- The Dependabot backlog is taken in one change (pull requests #15, #7, #6, #5, #4 and #2, which it replaces). Runtime pins
+  of `pyproject.toml`: `google-genai` 2.34.0 (was 1.66.0), `openai` 3.41.0 (was 2.20.0), `numpy` 2.5.4 (was 2.4.2), `ollama`
+  0.6.3 (was 0.6.1), `platformdirs` 4.14.0 (was 4.7.0), `pydantic` 2.14.2 (was 2.12.5), `pydantic-settings` 2.16.2 (was
+  2.14.2), `qdrant-client` 1.20.0 (was 1.19.1), `starlette` 1.10.0 (was 1.3.1), `tiktoken` 0.14.0 (was 0.12.0), `tokenizers`
+  0.23.3 (was 0.22.2) and `uvicorn` 0.54.0 (was 0.40.0). The `dev` group: `coverage` 7.17.0, `cryptography` 50.0.2, `grimp`
+  3.18, `joserfc` 1.7.7, `mutmut` 3.8.1, `mypy` 2.4.1, `pytest` 9.2.0, `pytest-asyncio` 1.4.1, `requests` 2.34.2, `reuse`
+  6.3.0 and `ruff` 0.17.3. The build backend: `hatchling` 1.33.0. `uv.lock` also moves `pydantic-core` to 2.50.2 (was 2.41.5),
+  `typing-extensions` to 4.16.0 (was 4.15.0), `typing-inspection` to 0.4.4 (was 0.4.2), `jiter` to 0.18.0 (was 0.13.0),
+  `google-auth` to 2.62.0 (was 2.48.0) and `anyio` to 4.16.0 (was 4.14.2), and drops `rsa`. `anyio` is raised on purpose, not by
+  Dependabot: 4.14.2 imports a pytest name that pytest 9.2 deprecates, pytest 9.2 reports warnings raised while a plugin is
+  imported, and `filterwarnings = error` turned that one into a failure to load the plugin, which stopped the `architecture`
+  gate; `mutmut` 3.8.1 fixes a stats-collection crash with pytest 9.2 (its release notes); the mutation gate has not run with it yet.
+  pytest 9.2's `approx` calls `Decimal.from_float` for a float tolerance, and that call aborted the `tests` gate after a
+  `limit_memory` test: pytest-memray starts its tracker for any marked test, `--memray` or not, and the stopped tracker leaves a
+  stale `free` (`mremap_chunk(): invalid pointer`); `tests/memory_budget_support.py` now takes the marker off unless `--memray` is
+  given, as `pytest.ini` always said. What a user can see:
+  - The OpenAI and Azure embeddings clients (`openai` 3) use `httpx2` and verify the TLS certificate of the provider against the
+    operating system's trust store, where `openai` 2 used the `certifi` bundle; `SSL_CERT_FILE` and `SSL_CERT_DIR` are still
+    honoured. A host with no system CA certificates can no longer reach an HTTPS `OPENAI_BASE_URL` or Azure endpoint. The text
+    of an SDK error is shorter (`Error code: 401 - ...`); the lines Axmem prints for an operator are the same.
+  - `uvicorn` 0.53 trusts `X-Forwarded-*` from `::1` as well as `127.0.0.1` by default (`FORWARDED_ALLOW_IPS`), so a reverse
+    proxy on the IPv6 loopback address is now trusted. Axmem's own code reads neither the client address nor those headers.
+    Since 0.48 uvicorn's own default cipher string is `None` and no longer `TLSv1`; the HTTPS option passes its own
+    `TLS_CIPHERS`, so the ciphers offered are the same.
+  - `google-genai` 2 changes nothing for the Gemini embeddings adapter (the 2.0 breaking changes are in an API that Axmem does
+    not call). An environment with `GOOGLE_GENAI_USE_ENTERPRISE=true` now switches the client to Vertex mode, as
+    `GOOGLE_GENAI_USE_VERTEXAI` already did.
+  - `tokenizers` 0.23 ships its own type information, so the `type: ignore` on `load_tokenizer` and the `tokenizers.*` entry of
+    the mypy `ignore_missing_imports` override are gone; the encodings of the two tokenizers compared (bge and MiniLM; a text and a query and
+    document pair, truncated to 512 tokens) are the same ids, type ids and masks as with 0.22.2. The one `type: ignore` for a
+    package without type information that is left is the `tensorrt` logger base class.
+  - `pytest.ini` has no `ignore` line any more: the `DeprecationWarning` for `typing._UnionGenericAlias` that `google.genai.types`
+    raised at import is not raised by google-genai 2.34.0 on Python 3.14, so `filterwarnings = error` has no exception left.
+  - `app/config/tls.py` says what uvicorn's default cipher string is now.
+  The suites that need the GPU, Docker or a Qdrant node are not run by hosted CI; the pre-push hook is where these versions
+  are tested.
+- The three pinned GitHub Actions of the workflows move to their latest majors: `actions/checkout` 7.0.1 (was 4.4.0, eleven uses
+  in seven files), `actions/setup-python` 7.1.0 (was 5.6.0) and `actions/download-artifact` 8.0.2 (was 4.3.0, in `publish.yml` and
+  `publish-testpypi.yml`). Each is still a 40-hex commit with the version in a comment, the form `test_workflows.py` checks.
+  Nothing changes for a user of the package. `release.yml` and the publish workflows have not run with these pins yet: the
+  first release cut after this change is their first run, and a workflow is frozen at its tag.
+- Dependabot no longer offers a new major version of `google-genai` (`.github/dependabot.yml`). google-genai 3 makes API
+  version `v1` the Gemini default (it was `v1beta`) and `httpx2` the default HTTP client, which the adapter's tests and
+  `app/repositories/service_failures.py` (it recognises a timeout or a refused connection of the SDK as an `httpx` error) are not
+  written for, and hosted CI runs no provider test, so a pull request for it would be green and wrong. Minor and patch releases of
+  `google-genai` 2 still arrive through the group. The entry is lifted when the adapter, `service_failures` and the tests are
+  changed for version 3 and the pre-push gate has run them.
+- The `mutation` gate no longer fails a push on a mutant that is stopped only because the machine is busy. mutmut stops a mutant after (the estimated time of its tests + `timeout_constant`) x `timeout_multiplier` seconds, 16.5 s with the defaults for a function whose tests take 0.1 s, and books it as a timeout, which the gate counts as a mutant that was not killed. The estimate leaves out the start of the worker (it collects the suites and starts CUDA, as `forkserver_warmup = "none"` requires), and with one worker per core that took longer than 16.5 s now and then: three pushes in a row stopped on a different mutant of `app.config.tls._load_pair`, and a run of that function alone passed. `[tool.mutmut]` in `pyproject.toml` sets `timeout_constant = 10.0` (151.5 s in that case); the tolerated survivors stay 0, and a mutant that hangs still ends as a timeout.
+
+### Security
+
+- `pydantic` is pinned at 2.14.2 (was 2.12.5), which carries the fixes of three advisories of medium severity that the
+  `pydantic` repository lists as affecting 2.12.5: GHSA-955g-x97g-8mcp (quadratic time and memory in the validation of a URL
+  with several hosts) and GHSA-gj4f-r7mf-jjxh (an unbounded exponent in the validation of a `Fraction`), both fixed in 2.14.0,
+  and GHSA-3r8g-cqwr-jr29 (a validation bypass of aliased fields in a `TypedDict` or dataclass that allows extra data), fixed in
+  2.14.2. The release notes of 2.14.2 also name GHSA-qpmf-fgh3-ff25 (JSON validation of extra keys), which affects 2.13.0 and later
+  only. `uv.lock` locks `pydantic-core` at 2.50.2 with it. Whether Axmem is reachable through them was not examined beyond a search of its
+  own code: its four `TypedDict` types (in `app/models/tool_registry_models.py` and `app/repositories/embeddings/embedding_adapter.py`)
+  are type hints for internal tables and keyword arguments and none has an alias, and it has no pydantic alias and no `Fraction`;
+  FastMCP and the MCP SDK validate with pydantic too.
+
 ## [v0.6.0rc2] - 2026-11-06
 
 ### Added

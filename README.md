@@ -486,7 +486,7 @@ For all environment variables with detailed explanations, see [Configuration Gui
 - [Assurance case](docs/assurance-case.md) – Why the security claims of the project hold, and the evidence for each
 - [Roadmap](docs/roadmap.md) – What the project plans to do next
 - [Governance](GOVERNANCE.md) and [Maintainers](MAINTAINERS.md) – Who decides, who has access and what happens if the lead maintainer is unavailable
-- Releases are signed with cosign (keyless) and carry SLSA level 3 provenance; PyPI files carry a PEP 740 attestation. To check one, see [Checking a release](docs/release.md#checking-a-release).
+- Releases are signed with cosign (keyless) and carry SLSA level 3 provenance and, since `v0.6.0rc2`, a signed CycloneDX SBOM; PyPI files carry a PEP 740 attestation. To check one, see [Checking a release](docs/release.md#checking-a-release).
 
 ### External Resources
 

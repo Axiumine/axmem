@@ -290,10 +290,12 @@ group, no hook and no entry in `scripts/quality/registry.py`.
 most three open pull requests for each, the minor and patch updates of an ecosystem in one pull request and the commit
 prefix `chore(deps)`. It is a setting of GitHub's Dependabot service, read
 from the default branch: it is not a workflow, adds no trigger to `.github/workflows` and runs nothing on a runner of
-ours. Its pull requests run `ci.yml`, `quality.yml` and `codeql.yml` like any other. Three things are left out of it on
+ours. Its pull requests run `ci.yml`, `quality.yml` and `codeql.yml` like any other. Four things are left out of it on
 purpose, and the file says why: the `slsa-framework/slsa-github-generator` reference of `release.yml`, which is changed
 together with `SLSA_GENERATOR_VERSION` and `SLSA_GENERATOR_COMMIT`, the three TensorRT packages, which are bumped by hand
-as [GPU models](gpu-models.md) describes, and a new major version of the `node` image, which is chosen by hand. `.github/CODEOWNERS` names the lead maintainer ([MAINTAINERS.md](../MAINTAINERS.md))
+as [GPU models](gpu-models.md) describes, a new major version of the `node` image, which is chosen by hand, and a new major
+version of `google-genai`, which waits until the adapter and its tests are changed for version 3 (hosted CI runs no provider
+test, so a pull request for it would be green whatever it breaks). `.github/CODEOWNERS` names the lead maintainer ([MAINTAINERS.md](../MAINTAINERS.md))
 as the owner of every file.
 
 `.bestpractices.json` at the repository root prefills the [OpenSSF Best Practices](https://www.bestpractices.dev/) badge form.
@@ -388,9 +390,9 @@ No rule or threshold that was on before was loosened: the findings were fixed in
   runs. The score is 8.00 and 1785 of its findings are `line-too-long`, so a higher threshold needs about 480 lines rewrapped;
   the line length is not raised to get there.
 * **`pytest`** (`pytest.ini`): `filterwarnings = error`, so a deprecated call, an unawaited coroutine or a leaked resource
-  fails the test that causes it. One `ignore` line follows, limited to one message, one category and one module: the
-  `DeprecationWarning` that `google.genai.types` (google-genai 1.66.0, pinned) raises at import for
-  `typing._UnionGenericAlias`, which only a newer release of that library removes. Two tests carry a
+  fails the test that causes it. No `ignore` line follows: the one for the `DeprecationWarning` that `google.genai.types`
+  (google-genai 1.66.0) raised at import for `typing._UnionGenericAlias` went with the bump to 2.34.0, which no longer
+  imports it on Python 3.14. Two tests carry a
   `@pytest.mark.filterwarnings` for the `RuntimeWarning` that `runpy` raises when a test runs `scripts.release.integrity` or
   `scripts.release.guard` as a program. The dev group pins `httpx2` because `starlette.testclient` warns that `httpx` is
   deprecated for it.
@@ -502,7 +504,8 @@ commit the refreshed files with the change that caused them.
 holds `@pytest.mark.limit_memory` budgets (bulk create, query with reranking). The TensorRT embedder and
 reranker engines are loaded before the measured section, and the budgets are generous multiples of the measured peak so they fail on a
 leak or an accidental full-table load, not on noise. Without `--memray` the tests run as ordinary smoke
-tests; on Windows the gate is skipped because memray is not available there. Change a budget only with the
+tests: pytest-memray starts its tracker for any test with the marker, and a stopped tracker aborts the next `Decimal.from_float`
+(pytest 9.2's `approx` calls it), so `tests/memory_budget_support.py` takes the marker off unless `--memray` is given. On Windows the gate is skipped because memray is not available there. Change a budget only with the
 new measurement in a comment next to it.
 
 ### Fuzzing
@@ -551,6 +554,8 @@ a scope of its own (`MUTATION_TARGETS`), or `SKIP=mutation git push` once, said 
 branch that changes most of `app/` (dozens of modules, tens of thousands of mutants) is the one that can reach it, and a
 rerun resumes: the mutants already tested stay in `mutants/` (git-ignored), and a rerun continues from them while the code
 and the files the tests read are unchanged; `rm -rf mutants` starts over.
+
+A mutant that mutmut stops is a `timeout`, and the gate counts it as not killed. The limit of one mutant is (the estimated time of its tests + `timeout_constant`) x `timeout_multiplier` seconds of wall clock, and the estimate is the time of the tests alone: a worker also collects the suites and starts CUDA before its first test (`forkserver_warmup = "none"`), which takes longer when every core runs a worker. `[tool.mutmut]` sets `timeout_constant = 10.0` for that (the default is 1.0, which is 16.5 s for tests of 0.1 s); a mutant that hangs, such as an infinite loop, still ends as a timeout, later. A timeout that repeats on a mutant, not on a different one each run, is a test that is missing: a mutant that makes OpenSSL ask for a passphrase on the controlling terminal waits for a keystroke when a terminal is at hand, so the tests of `app/config/tls.py` replace `ssl` and check what `load_cert_chain` receives (`test_tls_edge_cases.py`).
 
 ## Dependency findings
 
@@ -1018,9 +1023,10 @@ untested.
   Docker), pin its tool in the `dev` group and add a row to the tables above. A check that only a workflow, a script or a
   person runs is not accepted.
 * The same convention applies to the other linters: `# noqa: <code> - reason` for ruff,
-  `# type: ignore[<code>]` with a reason for mypy (`warn_unused_ignores` flags stale ones; the code base has three: two on a class or
-  type that comes from a package without type information, `tensorrt` and `tokenizers`, and one on `_field_name` in
-  `app/config/settings.py`, where pydantic types `field_name` as optional). The code base
+  `# type: ignore[<code>]` with a reason for mypy (`warn_unused_ignores` flags stale ones; the code base has two: one on a class that
+  comes from a package without type information, the logger base class of `tensorrt`, and one on `_field_name` in
+  `app/config/settings.py`, where pydantic types `field_name` as optional; `tokenizers` had a third until it shipped its own
+  type information in 0.23). The code base
   uses no inline pylint disables; a noisy check is disabled once, with a comment, in
   `[tool.pylint."messages control"]`. The members of the native modules `tensorrt` and `cuda.*` are not checked
   (`ignored-modules` in `[tool.pylint.typecheck]`, the counterpart of the mypy override): they are filled in at

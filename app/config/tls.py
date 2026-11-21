@@ -14,9 +14,11 @@ What a client can negotiate, as ``uvicorn_tls_options`` configures it:
 - TLS 1.2 or later. The context is the one uvicorn builds with ``ssl.PROTOCOL_TLS_SERVER``, whose minimum version is TLS 1.2
   since Python 3.10 (this package needs 3.14); SSLv3, TLS 1.0 and TLS 1.1 are not offered.
 - For TLS 1.2, only ECDHE key exchange with AES-GCM or ChaCha20-Poly1305 (``TLS_CIPHERS``): forward secrecy and
-  authenticated encryption. uvicorn's own default cipher string (``TLSv1``) would do the opposite: it drops every AES-GCM
-  suite and keeps CBC-SHA1 suites and the ones without encryption or authentication. TLS 1.3 suites are not affected by a
-  cipher string and are all forward secret.
+  authenticated encryption. uvicorn's own default cipher string up to 0.47 (``TLSv1``) would do the opposite: it drops every
+  AES-GCM suite and keeps CBC-SHA1 suites and the ones without encryption or authentication; since 0.48 the default is
+  ``None``, which leaves OpenSSL's own list (CBC suites included) in force. Either way the options pass ``TLS_CIPHERS``
+  themselves, so a change of the uvicorn default changes nothing here. TLS 1.3 suites are not affected by a cipher string and
+  are all forward secret.
 
 ``plaintext_exposure_warning`` is the one line logged when the server serves plain HTTP beyond the loopback interface.
 """
