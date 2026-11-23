@@ -4,6 +4,6 @@
   "private": true,
   "description": "Agent CLIs baked into the UAT walkthrough image (test_harness/docker/Dockerfile). The lock file pins them; npm ci installs exactly it.",
   "dependencies": {
-    "opencode-ai": "1.19.5"
+    "opencode-ai": "1.19.6"
   }
 }
