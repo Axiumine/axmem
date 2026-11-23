@@ -23,9 +23,9 @@ dependencies = [
     "huggingface-hub==1.4.1",
     "numpy==2.5.5",
     "ollama==0.6.3",
-    "openai==3.41.0",
-    "platformdirs==4.14.5",
-    "pydantic==2.14.3",
+    "openai==3.57.0",
+    "platformdirs==4.14.8",
+    "pydantic==2.14.4",
     "pydantic-settings==2.16.3",
     "starlette==1.10.0",
     "tensorrt-cu13==11.4.0.106",
@@ -68,7 +68,7 @@ dev = [
     # starlette.testclient (tests/integration/test_auth_info.py) warns that httpx is deprecated for it and asks for httpx2;
     # pytest.ini turns warnings into errors.
     "httpx2==2.16.2",
-    "import-linter==2.16",
+    "import-linter==2.17",
     # The tests that sign tokens (tests/jwt_support.py) import it; FastMCP verifies with it and installs it.
     "joserfc==1.8.0",
     "memray==1.20.0 ; sys_platform != 'win32'",
@@ -85,7 +85,7 @@ dev = [
     # The reuse gate (docs/quality-gates.md, "Licensing headers"). The extra installs the library that the gate names to detect
     # the encoding of a file, so that the result does not depend on whether the machine has libmagic.
     "reuse[charset-normalizer]==6.3.0",
-    "ruff==0.17.5",
+    "ruff==0.17.6",
     "shellcheck-py==0.11.0.1",
     "syrupy==6.1.1",
     "twine==7.0.0",
