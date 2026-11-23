@@ -13,6 +13,7 @@ from pydantic import SecretStr
 from app.config.settings import settings
 from tests import CONFIG_HOME
 from tests.embedding_doubles import spy_on
+from tests.memory_budget_support import pytest_collection_modifyitems  # noqa: F401 - a pytest hook, found by name
 from tests.qdrant_support import (
     QdrantServer,
     drop_prefix,

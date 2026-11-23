@@ -1,13 +1,17 @@
 # SPDX-FileCopyrightText: 2026 Giovanni Manzoni
 # SPDX-License-Identifier: AGPL-3.0-only
 
-"""Three corners of ``app/config/tls.py`` that a configuration written for a real server never reaches.
+"""Four corners of ``app/config/tls.py`` that a configuration written for a real server never reaches.
 
 ``test_tls_settings.py`` runs the whole of the TLS checks with the files a server would be given. The cases here pin what
 those cannot tell apart: that a key which is encrypted with a password no one configured is refused whatever that password
-is, that a host name which only looks like ``localhost`` is warned about, and the separator of the names in the refusal for
-a half-set configuration.
+is, that OpenSSL is never handed ``None`` as the password (it would then ask for one on the terminal and wait), that a host
+name which only looks like ``localhost`` is warned about, and the separator of the names in the refusal for a half-set
+configuration.
 """
+import ssl
+from types import SimpleNamespace
+
 import pytest
 from pydantic import SecretStr
 
@@ -64,6 +68,41 @@ def test_the_same_key_is_accepted_with_its_password(tls, guessable_files):
     tls(guessable_files.certificate, guessable_files.private_key, password=GUESSABLE_PASSWORD)
 
     assert ensure_tls_usable("http") is None
+
+
+@pytest.fixture
+def loads(monkeypatch):
+    """What ``_load_pair`` hands to ``load_cert_chain``, recorded in place of OpenSSL, which is never reached.
+
+    OpenSSL asks for a passphrase on the controlling terminal when the password it is given is ``None``: with a terminal
+    at hand (a developer's, not a CI job's) that waits for a keystroke, so a mutant that passes ``None`` would end as a
+    timeout of ``mutmut`` instead of a failed test. The recorder fails it at once, with or without a terminal.
+    """
+    calls = []
+
+    class RecordedContext:
+        def __init__(self, protocol):
+            assert protocol == ssl.PROTOCOL_TLS_SERVER
+
+        def load_cert_chain(self, certfile, keyfile, password):
+            calls.append((certfile, keyfile, password))
+
+    stand_in = SimpleNamespace(SSLContext=RecordedContext, PROTOCOL_TLS_SERVER=ssl.PROTOCOL_TLS_SERVER, SSLError=ssl.SSLError)
+    monkeypatch.setattr(tls_module, "ssl", stand_in)
+    return calls
+
+
+def test_openssl_gets_both_files_and_a_password_that_is_never_none(tls, guessable_files, loads):
+    tls(guessable_files.certificate, guessable_files.private_key)
+    ensure_tls_usable("http")
+    tls(guessable_files.certificate, guessable_files.private_key, password=GUESSABLE_PASSWORD)
+    ensure_tls_usable("http")
+
+    unset, configured = loads
+    assert unset[:2] == (str(guessable_files.certificate), str(guessable_files.private_key))
+    assert callable(unset[2])
+    assert unset[2]() == ""
+    assert configured == (str(guessable_files.certificate), str(guessable_files.private_key), GUESSABLE_PASSWORD)
 
 
 @pytest.mark.parametrize("host", ["XlocalhostX", "Xlocalhost", "localhostX", "[Xlocalhost]", "XXlocalhostXX"])

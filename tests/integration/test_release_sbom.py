@@ -133,6 +133,17 @@ def test_another_version_or_another_epoch_gives_another_document_with_another_se
 # --- the checker refuses each way a document can be wrong -------------------------------------------
 
 
+def _locked(name: str) -> str:
+    """The version uv.lock locks for `name`: the messages below name what the lock holds, so a bump does not break them."""
+    packages = tomllib.loads((ROOT / "uv.lock").read_text(encoding="utf-8"))["package"]
+    (version,) = [package["version"] for package in packages if package["name"] == name]
+    return version
+
+
+HTTPX = f"httpx {_locked('httpx')}"
+PYYAML = f"pyyaml {_locked('pyyaml')}"
+
+
 def _component(document, name):
     (found,) = [c for c in document["components"] if c["name"] == name]
     return found
@@ -228,14 +239,14 @@ def _timestamp(document):
 @pytest.mark.parametrize(
     ("break_it", "message"),
     [
-        (_drop_component, "httpx 0.28.1 is locked for the wheel and has no component"),
+        (_drop_component, f"{HTTPX} is locked for the wheel and has no component"),
         (_add_dev_component, "ruff 0.17.1 has a component and is not reached from the wheel's dependencies"),
-        (_duplicate_component, "httpx 0.28.1 (bom-ref httpx-42@0.28.1) is listed twice"),
+        (_duplicate_component, f"{HTTPX} (bom-ref {{httpx_ref}}) is listed twice"),
         (_no_purl, "has no purl"),
         (_empty_version, "has no version"),
-        (_wrong_purl, "httpx 0.28.1 has purl 'pkg:pypi/httpx@0.0.1', not 'pkg:pypi/httpx@0.28.1'"),
+        (_wrong_purl, f"{HTTPX} has purl 'pkg:pypi/httpx@0.0.1', not 'pkg:pypi/{HTTPX.replace(' ', '@')}'"),
         (_unknown_ref, "the dependency graph names 'nothing@0', which is no component"),
-        (_root_on_a_group_member, "the root depends on pyyaml 6.0.3, which the project does not name"),
+        (_root_on_a_group_member, f"the root depends on {PYYAML}, which the project does not name"),
         (_root_without_a_dependency, "and the root does not depend on it"),
         (_dependencies_not_a_list, "dependencies is not a list"),
         (_components_not_a_list, "components is not a list"),
@@ -251,6 +262,7 @@ def _timestamp(document):
     ],
 )
 def test_the_checker_refuses_a_document_that_is_wrong_in_one_way_and_says_which(document, break_it, message):
+    message = message.replace("{httpx_ref}", _component(document, "httpx")["bom-ref"])  # the index depends on the lock
     break_it(document)
 
     found = sbom.problems(document, ROOT, VERSION)
@@ -502,7 +514,7 @@ def test_generate_writes_nothing_when_the_document_is_not_valid(tmp_path, monkey
     out = tmp_path / "x.cdx.json"
 
     assert _generate(out) == 1
-    assert "httpx 0.28.1 is locked for the wheel and has no component" in capsys.readouterr().err
+    assert f"{HTTPX} is locked for the wheel and has no component" in capsys.readouterr().err
     assert not out.exists()
 
 
@@ -537,7 +549,7 @@ def test_the_gate_fails_on_a_document_that_is_not_valid_and_lists_why(monkeypatc
 
     assert not ok
     assert output.startswith(gate.HEADER)
-    assert "httpx 0.28.1 is locked for the wheel and has no component" in output
+    assert f"{HTTPX} is locked for the wheel and has no component" in output
 
 
 def test_the_gate_fails_on_a_generator_whose_bytes_change_from_one_run_to_the_next(monkeypatch, made):

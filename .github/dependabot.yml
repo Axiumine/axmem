@@ -9,7 +9,7 @@ version: 2
 
 updates:
   # The actions of .github/workflows. Dependabot keeps a 40-hex commit pin and rewrites the version comment on the
-  # same line (`# v4.4.0`), the form that test_every_action_of_every_workflow_is_a_commit_not_a_tag_that_can_move checks.
+  # same line (`# v7.0.1`), the form that test_every_action_of_every_workflow_is_a_commit_not_a_tag_that_can_move checks.
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
@@ -47,6 +47,15 @@ updates:
       - dependency-name: "tensorrt-cu13"
       - dependency-name: "tensorrt-cu13-bindings"
       - dependency-name: "tensorrt-cu13-libs"
+      # google-genai 3 (2026-11-05) makes API version v1 the Gemini default (it was v1beta; two model aliases exist only on
+      # v1beta) and httpx2 the default HTTP client, with httpx no longer installed. The Google adapter's tests fix the
+      # /v1beta path, and app/repositories/service_failures.py recognises a timeout or a refused connection of the SDK by
+      # `isinstance(exc, httpx.HTTPError)`, which an httpx2 error is not. Hosted CI runs no provider test (they need the
+      # GPU gate), so a pull request for the major would be green while the adapter is wrong. Lift this when the adapter,
+      # service_failures and the tests are changed for it and the pre-push gate has run them; minor and patch releases
+      # of google-genai 2 still arrive through the group above.
+      - dependency-name: "google-genai"
+        update-types: ["version-update:semver-major"]
 
   # The base image of the UAT walkthrough harness: `FROM node:24@sha256:...` in test_harness/docker/Dockerfile. Dependabot
   # keeps the digest of the tag current, so the pin follows the image without a hand edit. This is the Dockerfile of a

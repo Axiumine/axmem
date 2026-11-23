@@ -136,7 +136,11 @@ def test_contract_rejects_forbidden_dependency(tmp_path, contract_id, source, ta
     # Isolate each contract because several production rules intentionally overlap.
     write_config(tmp_path, options, [])
     status, output = check(tmp_path)
-    assert status == 0, output
+    # import-linter 2.16 refuses a configuration with no contract (exit 1); before it passed with 0.
+    # Either way the planted import is not reported while no contract looks at it.
+    assert status == 1, output
+    assert "No contracts found" in output, output
+    assert "BROKEN" not in output, output
 
     write_config(tmp_path, options, [contract])
     status, output = check(tmp_path)
