@@ -23,7 +23,7 @@ dependencies = [
     "huggingface-hub==1.4.1",
     "numpy==2.5.5",
     "ollama==0.6.3",
-    "openai==3.41.0",
+    "openai==3.57.0",
     "platformdirs==4.14.5",
     "pydantic==2.14.3",
     "pydantic-settings==2.16.3",
