@@ -14,6 +14,9 @@ without the mark, with the commit that landed it, in the commit that lands it.
 
 ### Changed
 
+- Dependabot pull requests #24 and #23 are merged through the local gates. `pyproject.toml` pins `openai` 3.57.0 (was 3.41.0),
+  `platformdirs` 4.14.8 (was 4.14.5) and `pydantic` 2.14.4 (was 2.14.3); the `dev` group: `import-linter` 2.17 and `ruff` 0.17.6.
+  `uv.lock` also moves `pydantic-core` to 2.50.5. The test harness image installs `opencode-ai` 1.19.6 (was 1.19.5).
 - The next Dependabot group (pull request #21, which it replaces, with #20) is taken on top of the backlog above. `pyproject.toml` pins:
   `cuda-python` 13.5.0 (was 13.4.4), `numpy` 2.5.5 (was 2.5.4), `platformdirs` 4.14.5 (was 4.14.0), `pydantic` 2.14.3 (was 2.14.2),
   `pydantic-settings` 2.16.3 (was 2.16.2); the `dev` group: `coverage` 7.17.3, `grimp` 3.20, `httpx2` 2.16.2, `import-linter`
