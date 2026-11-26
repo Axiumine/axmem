@@ -16,7 +16,7 @@ classifiers = [
 ]
 dependencies = [
     "dotenv==0.9.9",
-    "fastmcp==3.4.10",
+    "fastmcp==4.2.5",
     "cuda-python==13.5.0",
     "google-genai==2.34.0",
     "httpx==0.28.1",
