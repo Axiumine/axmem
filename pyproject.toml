@@ -60,7 +60,7 @@ dev = [
     "atheris==3.1.0 ; sys_platform == 'linux' and platform_machine == 'x86_64'",
     "bandit[toml]==1.9.4",
     "check-wheel-contents==0.6.3",
-    "coverage[toml]==7.17.3",
+    "coverage[toml]==7.17.5",
     # The TLS tests (tests/tls_support.py) make their own certificate authority and server certificates with it; the JWT
     # verifiers of FastMCP install it already.
     "cryptography==50.0.2",
@@ -79,7 +79,7 @@ dev = [
     "pytest-asyncio==1.5.0",
     "pytest-cov==7.1.0",
     "pytest-memray==1.11.0 ; sys_platform != 'win32'",
-    "pyyaml==6.0.3",
+    "pyyaml==6.0.4",
     "radon==6.0.1",
     "requests==2.34.2",
     # The reuse gate (docs/quality-gates.md, "Licensing headers"). The extra installs the library that the gate names to detect
