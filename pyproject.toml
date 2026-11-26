@@ -87,7 +87,7 @@ dev = [
     "reuse[charset-normalizer]==6.3.0",
     "ruff==0.17.6",
     "shellcheck-py==0.11.0.1",
-    "syrupy==6.1.1",
+    "syrupy==7.0.3",
     "twine==7.0.0",
     "vulture==2.16",
 ]
